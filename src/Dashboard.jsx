@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from './supabaseClient'; // 💡 Supabase 클라이언트 연결 추가
 import { Box, Drawer, AppBar, Toolbar, List, Typography, Paper, ListItemButton, ListItemIcon, ListItemText, IconButton, Button, Link, TextField, Divider, Modal, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TableFooter, Checkbox, Autocomplete, InputBase, Select, MenuItem } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import EngineeringIcon from '@mui/icons-material/Engineering';
@@ -7,13 +8,10 @@ import AssignmentIcon from '@mui/icons-material/Assignment';
 import CloseIcon from '@mui/icons-material/Close';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import ExcelJS from 'exceljs'; // 💡 엑셀 조작 라이브러리 (필수!)
+import ExcelJS from 'exceljs';
 
 const drawerWidth = 240;
 
-// =========================================================
-// 날짜 관련 유틸리티
-// =========================================================
 const todayObj = new Date();
 const currentYear = todayObj.getFullYear();
 const currentMonth = todayObj.getMonth();
@@ -54,19 +52,9 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const [viewMonth, setViewMonth] = useState(currentMonth);
   const [selectedWeekDate, setSelectedWeekDate] = useState(todayMidnight);
 
-  
-
-  const [savedData, setSavedData] = useState(() => {
-    const localData = localStorage.getItem('smart_builder_data');
-    return localData ? JSON.parse(localData) : {};
-  });
-  
-  const [manualStatus, setManualStatus] = useState(() => {
-    const localStatus = localStorage.getItem('smart_builder_manual_status');
-    return localStatus ? JSON.parse(localStatus) : {};
-  });
-
-  
+  // 💡 더 이상 localStorage를 사용하지 않고 초기값을 빈 객체로 둡니다.
+  const [savedData, setSavedData] = useState({});
+  const [manualStatus, setManualStatus] = useState({});
 
   const [workerRows, setWorkerRows] = useState([]);
   const [taskRows, setTaskRows] = useState([]);
@@ -76,13 +64,62 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const [workerFetchDate, setWorkerFetchDate] = useState('');
   const [taskFetchDate, setTaskFetchDate] = useState('');
 
+  // 💡 1. 화면이 켜지면 Supabase에서 우리 현장의 과거 데이터를 전부 불러옵니다.
   useEffect(() => {
-    localStorage.setItem('smart_builder_data', JSON.stringify(savedData));
-  }, [savedData]);
+    if (!userProfile?.project_name) return;
 
-  useEffect(() => {
-    localStorage.setItem('smart_builder_manual_status', JSON.stringify(manualStatus));
-  }, [manualStatus]);
+    const fetchReports = async () => {
+      const { data, error } = await supabase
+        .from('daily_reports')
+        .select('*')
+        .eq('project_name', userProfile.project_name);
+
+      if (error) {
+        console.error('데이터를 불러오지 못했습니다:', error);
+        return;
+      }
+
+      const newData = {};
+      const newStatus = {};
+      data.forEach(row => {
+        newData[row.date] = {
+          workers: row.workers || [],
+          tasks: row.tasks || [],
+          todayTask: row.today_task || '',
+          tomorrowTask: row.tomorrow_task || ''
+        };
+        if (row.status) {
+          newStatus[row.date] = row.status;
+        }
+      });
+      
+      setSavedData(newData);
+      setManualStatus(newStatus);
+    };
+
+    fetchReports();
+  }, [userProfile]);
+
+  // 💡 2. 데이터를 Supabase로 전송하는 핵심 만능 함수!
+  const syncDataToDB = async (dateKey, dataOverrides = {}, statusOverride = null) => {
+    if (!userProfile?.project_name || !user?.email) return;
+
+    const currentData = { ...(savedData[dateKey] || {}), ...dataOverrides };
+    const currentStatus = statusOverride !== null ? statusOverride : (manualStatus[dateKey] || 'open');
+
+    const { error } = await supabase.from('daily_reports').upsert({
+      date: dateKey,
+      project_name: userProfile.project_name,
+      author_email: user.email,
+      workers: currentData.workers || [],
+      tasks: currentData.tasks || [],
+      today_task: currentData.todayTask || '',
+      tomorrow_task: currentData.tomorrowTask || '',
+      status: currentStatus
+    }, { onConflict: 'date, project_name' });
+
+    if (error) console.error('DB 저장 에러:', error);
+  };
 
   const toggleDrawer = () => setOpen(!open);
 
@@ -162,19 +199,21 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     return false;
   };
 
-  const handleToggleDeadline = (dateStr) => {
+  const handleToggleDeadline = async (dateStr) => {
     const currentlyClosed = isClosed(dateStr);
     if (currentlyClosed && userProfile?.role !== '관리자') {
       alert('이미 마감된 일지입니다.\n마감 반려(취소)는 최고 관리자만 가능합니다.');
       return;
     }
     if (!currentlyClosed && !window.confirm(`[${dateStr}] 일보를 마감 처리하시겠습니까?`)) return;
-    setManualStatus(prev => ({ ...prev, [dateStr]: currentlyClosed ? 'open' : 'closed' }));
+    
+    const newStatus = currentlyClosed ? 'open' : 'closed';
+    setManualStatus(prev => ({ ...prev, [dateStr]: newStatus }));
+    
+    // 💡 DB에 상태값 전송!
+    await syncDataToDB(dateStr, {}, newStatus);
   };
 
-  // =========================================================
-  // 💡 [핵심] 실제 엑셀 템플릿(양식) 다운로드 로직
-  // =========================================================
   const handleDownloadExcel = async (dayObj) => {
     const dateStr = dayObj.date;
     const workers = savedData[dateStr]?.workers || [];
@@ -192,7 +231,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       await workbook.xlsx.load(arrayBuffer);
       const worksheet = workbook.worksheets[0]; 
 
-      // 1. 기본 정보 채우기
       const parts = dateStr.split('.');
       const formattedDateForExcel = `20${parts[0]}년 ${parseInt(parts[1], 10)}월 ${parseInt(parts[2], 10)}일 ${dayObj.dayName}요일`;
 
@@ -200,14 +238,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       worksheet.getCell('C4').value = userProfile?.company || '업체명 미지정';
       worksheet.getCell('C5').value = formattedDateForExcel;
 
-      // 2. 근로자 데이터 기입 (40개 단위로 확장)
       workers.forEach((worker, index) => {
-        if (index < 40) { // 1열: 40명 수용 (18~57행)
+        if (index < 40) { 
           const row = 18 + index; 
           worksheet.getCell(`B${row}`).value = worker.job || '';
           worksheet.getCell(`C${row}`).value = worker.name || '';
           worksheet.getCell(`D${row}`).value = worker.job || '';
-        } else if (index < 80) { // 2열: 다음 40명 수용
+        } else if (index < 80) { 
           const row = 18 + (index - 40);
           worksheet.getCell(`H${row}`).value = worker.job || '';
           worksheet.getCell(`I${row}`).value = worker.name || '';
@@ -267,16 +304,23 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     }));
   };
 
-  const handleSetNoTask = (dateKey) => {
-    if (isClosed(dateKey)) return;
-    if (!window.confirm(`[${dateKey}] 일자를 "작업없음" 처리하시겠습니까?`)) return;
-    setSavedData(prev => ({
-      ...prev,
-      [dateKey]: { workers: [], tasks: [], todayTask: '작업없음', tomorrowTask: '작업없음' }
-    }));
+  // 💡 텍스트 입력창 바깥을 클릭(onBlur)했을 때 DB로 저장
+  const handleTaskBlur = async (dateKey) => {
+    await syncDataToDB(dateKey);
   };
 
-  const handleFetchPreviousCardTasks = (currentDateKey) => {
+  const handleSetNoTask = async (dateKey) => {
+    if (isClosed(dateKey)) return;
+    if (!window.confirm(`[${dateKey}] 일자를 "작업없음" 처리하시겠습니까?`)) return;
+    
+    const overrides = { workers: [], tasks: [], todayTask: '작업없음', tomorrowTask: '작업없음' };
+    setSavedData(prev => ({ ...prev, [dateKey]: overrides }));
+    
+    // 💡 DB에 저장
+    await syncDataToDB(dateKey, overrides);
+  };
+
+  const handleFetchPreviousCardTasks = async (currentDateKey) => {
     if (isClosed(currentDateKey)) return;
     const parts = currentDateKey.split('.');
     const curr = new Date(2000 + parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
@@ -292,25 +336,27 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       return;
     }
     
-    setSavedData(prev => ({
-      ...prev,
-      [currentDateKey]: { ...(prev[currentDateKey] || { workers: [], tasks: [] }), todayTask: prevTodayTask, tomorrowTask: prevTomorrowTask }
-    }));
+    const overrides = { ...(savedData[currentDateKey] || {}), todayTask: prevTodayTask, tomorrowTask: prevTomorrowTask };
+    setSavedData(prev => ({ ...prev, [currentDateKey]: overrides }));
+    
+    // 💡 DB에 저장
+    await syncDataToDB(currentDateKey, overrides);
   };
 
-  const handleSaveModal = () => {
+  const handleSaveModal = async () => {
     const isWorkerValid = workerRows.every(row => row.job && row.name && row.name.trim() !== '' && row.day !== '' && row.day !== null);
     if (!isWorkerValid) {
       alert('근로자 목록의 [직종], [성명], [주간공수]는 필수 입력 항목입니다.');
       return;
     }
 
-    setSavedData(prev => ({
-      ...prev,
-      [selectedDateKey]: { ...(prev[selectedDateKey] || {}), workers: workerRows, tasks: taskRows }
-    }));
+    const overrides = { workers: workerRows, tasks: taskRows };
+    setSavedData(prev => ({ ...prev, [selectedDateKey]: { ...(prev[selectedDateKey] || {}), ...overrides } }));
 
-    alert('저장되었습니다!');
+    // 💡 모달에서 작성한 근로자, 주요작업 DB에 저장
+    await syncDataToDB(selectedDateKey, overrides);
+
+    alert('안전하게 저장되었습니다!');
     handleCloseModal();
   };
 
@@ -512,11 +558,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                     </Box>
                   </Box>
                   
+                  {/* 💡 onBlur 이벤트가 추가되었습니다 */}
                   <Typography variant="caption" fontWeight="bold" sx={{ fontSize: '0.7rem', color: closedStatus ? '#94a3b8' : 'inherit' }}>금일 작업</Typography>
-                  <TextField disabled={closedStatus} multiline rows={2} fullWidth size="small" value={day.todayTask} onChange={(e) => handleCardTaskChange(day.date, 'todayTask', e.target.value)} sx={{ mb: 1, '& .MuiInputBase-root': { fontSize: '0.75rem', p: 0.8, bgcolor: closedStatus ? '#f1f5f9' : 'white' } }} />
+                  <TextField disabled={closedStatus} multiline rows={2} fullWidth size="small" value={day.todayTask} onChange={(e) => handleCardTaskChange(day.date, 'todayTask', e.target.value)} onBlur={() => handleTaskBlur(day.date)} sx={{ mb: 1, '& .MuiInputBase-root': { fontSize: '0.75rem', p: 0.8, bgcolor: closedStatus ? '#f1f5f9' : 'white' } }} />
                   
+                  {/* 💡 onBlur 이벤트가 추가되었습니다 */}
                   <Typography variant="caption" fontWeight="bold" sx={{ fontSize: '0.7rem', color: closedStatus ? '#94a3b8' : 'inherit' }}>명일 작업</Typography>
-                  <TextField disabled={closedStatus} multiline rows={1} fullWidth size="small" value={day.tomorrowTask} onChange={(e) => handleCardTaskChange(day.date, 'tomorrowTask', e.target.value)} sx={{ mb: 1.5, '& .MuiInputBase-root': { fontSize: '0.75rem', p: 0.8, bgcolor: closedStatus ? '#f1f5f9' : 'white' } }} />
+                  <TextField disabled={closedStatus} multiline rows={1} fullWidth size="small" value={day.tomorrowTask} onChange={(e) => handleCardTaskChange(day.date, 'tomorrowTask', e.target.value)} onBlur={() => handleTaskBlur(day.date)} sx={{ mb: 1.5, '& .MuiInputBase-root': { fontSize: '0.75rem', p: 0.8, bgcolor: closedStatus ? '#f1f5f9' : 'white' } }} />
                   
                   <Box sx={{ mt: 'auto', display: 'flex', justifyContent: 'center', gap: 1, pt: 1 }}>
                     {!closedStatus && (
