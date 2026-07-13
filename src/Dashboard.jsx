@@ -44,7 +44,7 @@ const modalStyle = {
 const headerCellStyle = { borderRight: '1px solid #cbd5e1', fontWeight: 'bold', color: '#334155', py: 1 };
 const bodyCellStyle = { borderRight: '1px solid #cbd5e1', p: 0 }; 
 
-export default function Dashboard() {
+export default function Dashboard({ user, userProfile, onLogout }) {
   const [open, setOpen] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedDateKey, setSelectedDateKey] = useState(''); 
@@ -54,8 +54,7 @@ export default function Dashboard() {
   const [viewMonth, setViewMonth] = useState(currentMonth);
   const [selectedWeekDate, setSelectedWeekDate] = useState(todayMidnight);
 
-  // 💡 현장명 상태 (C3 셀에 입력될 값)
-  const [projectName, setProjectName] = useState('한라건설 용인금어지구');
+  
 
   const [savedData, setSavedData] = useState(() => {
     const localData = localStorage.getItem('smart_builder_data');
@@ -67,7 +66,7 @@ export default function Dashboard() {
     return localStatus ? JSON.parse(localStatus) : {};
   });
 
-  const [userRole, setUserRole] = useState('관리자'); 
+  
 
   const [workerRows, setWorkerRows] = useState([]);
   const [taskRows, setTaskRows] = useState([]);
@@ -165,7 +164,7 @@ export default function Dashboard() {
 
   const handleToggleDeadline = (dateStr) => {
     const currentlyClosed = isClosed(dateStr);
-    if (currentlyClosed && userRole !== '관리자') {
+    if (currentlyClosed && userProfile?.role !== '관리자') {
       alert('이미 마감된 일지입니다.\n마감 반려(취소)는 최고 관리자만 가능합니다.');
       return;
     }
@@ -197,8 +196,8 @@ export default function Dashboard() {
       const parts = dateStr.split('.');
       const formattedDateForExcel = `20${parts[0]}년 ${parseInt(parts[1], 10)}월 ${parseInt(parts[2], 10)}일 ${dayObj.dayName}요일`;
 
-      worksheet.getCell('C3').value = projectName;
-      worksheet.getCell('C4').value = '㈜욱림건설';
+      worksheet.getCell('C3').value = userProfile?.project_name || '현장명 미지정';
+      worksheet.getCell('C4').value = userProfile?.company || '업체명 미지정';
       worksheet.getCell('C5').value = formattedDateForExcel;
 
       // 2. 근로자 데이터 기입 (40개 단위로 확장)
@@ -365,14 +364,17 @@ export default function Dashboard() {
       <AppBar position="absolute" sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, bgcolor: '#1e293b' }}>
         <Toolbar sx={{ minHeight: '56px !important' }}>
           <IconButton edge="start" color="inherit" onClick={toggleDrawer} sx={{ marginRight: '36px' }}><MenuIcon /></IconButton>
-          <Typography component="h1" variant="subtitle1" color="inherit" noWrap sx={{ flexGrow: 1, fontWeight: 'bold' }}>🏗️ 스마트 공사 관리 - 협력사 작업일보 작성</Typography>
+          <Typography component="h1" variant="subtitle1" color="inherit" noWrap sx={{ flexGrow: 1, fontWeight: 'bold' }}>
+            🏗️ {userProfile?.project_name || '현장명 로딩중...'} - 작업일보 작성
+          </Typography>
           
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography variant="caption" sx={{ color: '#94a3b8' }}>테스트용 권한:</Typography>
-            <Select size="small" value={userRole} onChange={(e) => setUserRole(e.target.value)} sx={{ color: 'white', bgcolor: 'rgba(255,255,255,0.1)', height: '32px', fontSize: '0.8rem', '& .MuiSvgIcon-root': { color: 'white' } }}>
-              <MenuItem value="관리자">관리자 (마감 취소 가능)</MenuItem>
-              <MenuItem value="일반관리자">일반관리자 (마감 취소 불가)</MenuItem>
-            </Select>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+              접속자: {userProfile?.manager_name} ({userProfile?.role})
+            </Typography>
+            <Button color="inherit" onClick={onLogout} size="small" sx={{ border: '1px solid rgba(255,255,255,0.5)' }}>
+              로그아웃
+            </Button>
           </Box>
         </Toolbar>
       </AppBar>
@@ -480,7 +482,7 @@ export default function Dashboard() {
                       
                       <Button 
                         onClick={() => handleToggleDeadline(day.date)} 
-                        disabled={closedStatus && userRole !== '관리자'}
+                        disabled={closedStatus && userProfile?.role !== '관리자'}
                         variant="outlined" 
                         size="small" 
                         sx={{ minWidth: 0, px: 1, py: 0.2, fontSize: '0.65rem', fontWeight: 'bold', 
@@ -496,7 +498,9 @@ export default function Dashboard() {
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                       <Typography variant="caption" fontWeight="bold" sx={{ color: 'white', bgcolor: closedStatus ? '#94a3b8' : '#0f766e', px: 0.5, py: 0.2, borderRadius: 1 }}>건축</Typography>
                       <Typography variant="caption" fontWeight="bold" sx={{ color: closedStatus ? '#64748b' : 'inherit' }}>내장공사</Typography>
-                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>ㅇㅇ건설 · 김반장</Typography>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.65rem' }}>
+                        {userProfile?.company || '소속없음'} · {userProfile?.manager_name || '담당자없음'}
+                        </Typography>
                     </Box>
                     <Typography variant="caption" sx={{ bgcolor: closedStatus ? '#94a3b8' : '#334155', color: 'white', px: 0.5, py: 0.2, borderRadius: 1, fontSize: '0.65rem' }}>출역일보</Typography>
                   </Box>
