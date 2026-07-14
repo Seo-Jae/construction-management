@@ -136,7 +136,7 @@ function ReportPlaceholder({ title }) {
         {title}
       </Typography>
       <Typography variant="body2" color="text.secondary">
-        메뉴 연결이 완료되었습니다. 다음 단계에서 보고서 입력 화면을 구성합니다.
+        메뉴 연결 완료 / 테스트 후 적용 예정
       </Typography>
     </Paper>
   );
