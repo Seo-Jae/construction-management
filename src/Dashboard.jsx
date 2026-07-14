@@ -36,11 +36,45 @@ import AdminDashboard from './page/AdminDashboard.jsx';
 
 const drawerWidth = 240;
 
-const todayObj = new Date();
-const currentYear = todayObj.getFullYear();
-const currentMonth = todayObj.getMonth();
-const currentDate = todayObj.getDate();
-const todayMidnight = new Date(currentYear, currentMonth, currentDate);
+const getKoreaDateTimeParts = (date = new Date()) => {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  });
+
+  const values = {};
+
+  formatter.formatToParts(date).forEach((part) => {
+    if (part.type !== 'literal') {
+      values[part.type] = Number(part.value);
+    }
+  });
+
+  return {
+    year: values.year,
+    month: values.month,
+    day: values.day,
+    hour: values.hour,
+    minute: values.minute,
+    second: values.second,
+  };
+};
+
+const createKoreaCalendarDate = (date = new Date()) => {
+  const parts = getKoreaDateTimeParts(date);
+
+  /*
+    Date 객체는 화면 달력 계산용으로만 사용합니다.
+    연/월/일 값은 반드시 한국시간에서 추출합니다.
+  */
+  return new Date(parts.year, parts.month - 1, parts.day);
+};
 
 const formatYYMMDD = (date) => {
   const yy = String(date.getFullYear()).slice(2);
@@ -179,15 +213,34 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     project_name: activeProjectName,
   };
 
+  /*
+    한국시간 기준 시계입니다.
+    브라우저를 계속 열어둬도 자정과 오전 10시가 지나면
+    오늘 표시와 자동 마감 상태가 1분 이내에 갱신됩니다.
+  */
+  const [koreaClock, setKoreaClock] = useState(() => new Date());
+  const koreaNow = getKoreaDateTimeParts(koreaClock);
+  const todayMidnight = new Date(
+    koreaNow.year,
+    koreaNow.month - 1,
+    koreaNow.day,
+  );
+
   const [open, setOpen] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [buildingConfigs, setBuildingConfigs] = useState({});
-  const [selectedDateKey, setSelectedDateKey] = useState(''); 
-  const [selectedDateDisplay, setSelectedDateDisplay] = useState(''); 
+  const [selectedDateKey, setSelectedDateKey] = useState('');
+  const [selectedDateDisplay, setSelectedDateDisplay] = useState('');
 
-  const [viewYear, setViewYear] = useState(currentYear);
-  const [viewMonth, setViewMonth] = useState(currentMonth);
-  const [selectedWeekDate, setSelectedWeekDate] = useState(todayMidnight);
+  const [viewYear, setViewYear] = useState(
+    () => getKoreaDateTimeParts().year,
+  );
+  const [viewMonth, setViewMonth] = useState(
+    () => getKoreaDateTimeParts().month - 1,
+  );
+  const [selectedWeekDate, setSelectedWeekDate] = useState(
+    () => createKoreaCalendarDate(),
+  );
 
   const [currentView, setCurrentView] = useState(() =>
     isManagementRole ? 'admin-dashboard' : 'daily',
@@ -207,9 +260,21 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const [selectedProcess, setSelectedProcess] = useState(processOptions[0]);
   const [selectedCells, setSelectedCells] = useState(new Set());
   const [selectedStatusAction, setSelectedStatusAction] = useState('작업완료'); 
-  const [progressDate, setProgressDate] = useState(formatYYYYMMDD(formatYYMMDD(todayObj)));
+  const [progressDate, setProgressDate] = useState(() =>
+    formatYYYYMMDD(formatYYMMDD(createKoreaCalendarDate())),
+  );
   
   const [unitProgressData, setUnitProgressData] = useState({});
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setKoreaClock(new Date());
+    }, 60 * 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
 
   useEffect(() => {
     if (isManagementRole) {
@@ -256,8 +321,9 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         const { data, error } = await supabase
             .from("unit_progress")
             .select("*")
-            .eq("project_name", activeProjectName) // 💡 현장명 조건 필수 추가!
-            .eq("process_type", selectedProcess); // 현재 콤보박스에서 선택된 공정만 필터링
+            .eq("project_name", activeProjectName)
+            .eq("process_type", selectedProcess)
+            .neq("status", "작업전")
 
         if (error) return console.error(error);
 
@@ -417,9 +483,31 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const handleNextMonth = () => { if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0); } else setViewMonth(m => m + 1); };
   const handleDayClick = (day) => { if (!day) return; setSelectedWeekDate(new Date(viewYear, viewMonth, day)); };
   const isClosed = (dateStr) => {
-    if (!dateStr) return false; if (manualStatus[dateStr] === 'open') return false; if (manualStatus[dateStr] === 'closed') return true;
-    const parts = dateStr.split('.'); const targetDate = new Date(2000 + parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
-    return targetDate < todayMidnight || (targetDate.getTime() === todayMidnight.getTime() && new Date().getHours() >= 10);
+    if (!dateStr) return false;
+
+    // 최고관리자가 취소한 open 상태를 자동 마감보다 우선합니다.
+    if (manualStatus[dateStr] === 'open') return false;
+    if (manualStatus[dateStr] === 'closed') return true;
+
+    const parts = dateStr.split('.');
+    const targetDate = new Date(
+      2000 + parseInt(parts[0], 10),
+      parseInt(parts[1], 10) - 1,
+      parseInt(parts[2], 10),
+    );
+
+    const targetTime = targetDate.getTime();
+    const todayTime = todayMidnight.getTime();
+
+    // 한국시간 기준 지난 날짜는 자동 마감입니다.
+    if (targetTime < todayTime) return true;
+
+    // 한국시간 기준 오늘은 오전 10시부터 자동 마감입니다.
+    if (targetTime === todayTime && koreaNow.hour >= 10) {
+      return true;
+    }
+
+    return false;
   };
   const handleToggleDeadline = async (dateStr) => {
     const currentlyClosed = isClosed(dateStr);
@@ -957,44 +1045,142 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     });
   };
 
-  const handleSaveProgress = async () => {
-    if (!activeProjectName) return;
+  const splitProgressCellKey = (cellKey) => {
+    const separatorIndex = cellKey.lastIndexOf('-');
 
-    // Supabase에 데이터를 보내기 위해 배열로 매핑
-    const updates = Array.from(selectedCells).map(cellKey => {
-      const [building, unit] = cellKey.split('-');
+    if (separatorIndex === -1) {
       return {
-        project_name: activeProjectName,
-        building: building,
-        unit: unit,
-        process_type: selectedProcess,
-        status: selectedStatusAction,
-        completion_date: progressDate
+        building: '',
+        unit: cellKey,
       };
-    });
+    }
 
-    // 💡 에러 상세 확인을 위한 수정
-    const { error } = await supabase
-      .from('unit_progress')
-      .upsert(updates, { onConflict: 'project_name, building, unit, process_type' });
+    return {
+      building: cellKey.slice(0, separatorIndex),
+      unit: cellKey.slice(separatorIndex + 1),
+    };
+  };
 
-    if (error) {
-      console.error('Supabase 저장 상세 에러:', error); // 콘솔에서 정확한 이유 확인 가능
-      alert(`저장 실패: ${error.message}`); 
-    } else {
-      // 💡 저장 성공 시, 서버 재요청 없이 로컬 상태만 즉시 업데이트하여 화면 반영
-      const newProgressData = { ...unitProgressData };
-      Array.from(selectedCells).forEach(cellKey => {
-          newProgressData[cellKey] = {
-              status: selectedStatusAction,
-              date: progressDate 
+  const handleSaveProgress = async () => {
+    if (!activeProjectName) {
+      alert('선택된 현장이 없습니다.');
+      return;
+    }
+
+    if (selectedCells.size === 0) {
+      alert('변경할 세대를 선택해주세요.');
+      return;
+    }
+
+    const selectedCellKeys = Array.from(selectedCells);
+
+    try {
+      /*
+        작업전은 Supabase에 저장하지 않습니다.
+
+        DB 행 없음 = 작업전
+        작업중 = DB 저장
+        작업완료 = DB 저장
+      */
+      if (selectedStatusAction === '작업전') {
+        const unitsByBuilding = selectedCellKeys.reduce(
+          (groups, cellKey) => {
+            const { building, unit } = splitProgressCellKey(cellKey);
+
+            if (!building || !unit) return groups;
+
+            if (!groups[building]) {
+              groups[building] = [];
+            }
+
+            groups[building].push(unit);
+            return groups;
+          },
+          {},
+        );
+
+        const deleteResults = await Promise.all(
+          Object.entries(unitsByBuilding).map(
+            async ([building, units]) =>
+              supabase
+                .from('unit_progress')
+                .delete()
+                .eq('project_name', activeProjectName)
+                .eq('process_type', selectedProcess)
+                .eq('building', building)
+                .in('unit', units),
+          ),
+        );
+
+        const failedDelete = deleteResults.find(
+          (result) => result.error,
+        );
+
+        if (failedDelete?.error) {
+          throw failedDelete.error;
+        }
+
+        setUnitProgressData((prev) => {
+          const next = {
+            ...prev,
           };
+
+          selectedCellKeys.forEach((cellKey) => {
+            delete next[cellKey];
+          });
+
+          return next;
+        });
+
+        setSelectedCells(new Set());
+        alert('작업전으로 되돌렸습니다.');
+        return;
+      }
+
+      const updates = selectedCellKeys.map((cellKey) => {
+        const { building, unit } = splitProgressCellKey(cellKey);
+
+        return {
+          project_name: activeProjectName,
+          building,
+          unit,
+          process_type: selectedProcess,
+          status: selectedStatusAction,
+          completion_date: progressDate,
+        };
       });
-      setUnitProgressData(newProgressData);
-      
-      // 💡 선택 초기화 및 성공 알림
-      setSelectedCells(new Set()); 
+
+      const { error } = await supabase
+        .from('unit_progress')
+        .upsert(updates, {
+          onConflict:
+            'project_name, building, unit, process_type',
+        });
+
+      if (error) {
+        throw error;
+      }
+
+      setUnitProgressData((prev) => {
+        const next = {
+          ...prev,
+        };
+
+        selectedCellKeys.forEach((cellKey) => {
+          next[cellKey] = {
+            status: selectedStatusAction,
+            date: progressDate,
+          };
+        });
+
+        return next;
+      });
+
+      setSelectedCells(new Set());
       alert('저장되었습니다.');
+    } catch (error) {
+      console.error('공정 상태 저장 오류:', error);
+      alert(`저장 실패: ${error?.message || '알 수 없는 오류'}`);
     }
   };
 

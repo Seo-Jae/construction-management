@@ -14,11 +14,75 @@ const PAGE_SIZE = 1000;
 
 const pad2 = (value) => String(value).padStart(2, '0');
 
-const formatYYMMDD = (date) => {
-  const yy = String(date.getFullYear()).slice(2);
-  const mm = pad2(date.getMonth() + 1);
-  const dd = pad2(date.getDate());
-  return `${yy}.${mm}.${dd}`;
+const formatKoreaYYMMDD = (date = new Date()) => {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+
+  const values = {};
+
+  formatter.formatToParts(date).forEach((part) => {
+    if (part.type !== 'literal') {
+      values[part.type] = part.value;
+    }
+  });
+
+  const yy = String(values.year).slice(2);
+  return `${yy}.${values.month}.${values.day}`;
+};
+
+const hasMeaningfulDailyReport = (report) => {
+  const workers = Array.isArray(report?.workers)
+    ? report.workers
+    : [];
+  const tasks = Array.isArray(report?.tasks)
+    ? report.tasks
+    : [];
+
+  const hasWorker = workers.some((worker) => {
+    const name = String(worker?.name || '').trim();
+    const job = String(worker?.job || '').trim();
+    const process = String(worker?.process || '').trim();
+    const location = String(worker?.location || '').trim();
+    const workContent = String(
+      worker?.workContent || worker?.work_content || '',
+    ).trim();
+    const day = Number(worker?.day) || 0;
+    const night = Number(worker?.night) || 0;
+
+    return Boolean(
+      name ||
+        job ||
+        process ||
+        location ||
+        workContent ||
+        day > 0 ||
+        night > 0,
+    );
+  });
+
+  const hasTask = tasks.some((task) =>
+    Object.values(task || {}).some((value) =>
+      String(value ?? '').trim(),
+    ),
+  );
+
+  const todayTask = String(report?.today_task || '').trim();
+  const tomorrowTask = String(report?.tomorrow_task || '').trim();
+
+  /*
+    단순히 마감 상태 행만 존재하는 것은 일보 등록으로 보지 않습니다.
+    근로자/작업 내용 또는 '작업없음' 같은 실제 내용이 있어야 등록입니다.
+  */
+  return Boolean(
+    hasWorker ||
+      hasTask ||
+      todayTask ||
+      tomorrowTask,
+  );
 };
 
 const isValidUnit = (config, floor, unitNumber) => {
@@ -269,13 +333,30 @@ export default function AdminDashboard({
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
+  const [koreaTodayKey, setKoreaTodayKey] = useState(() =>
+    formatKoreaYYMMDD(),
+  );
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      const nextKey = formatKoreaYYMMDD();
+
+      setKoreaTodayKey((currentKey) =>
+        currentKey === nextKey ? currentKey : nextKey,
+      );
+    }, 60 * 1000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+  }, []);
 
   const loadDashboard = useCallback(async () => {
     setLoading(true);
     setErrorMessage('');
 
     try {
-      const todayKey = formatYYMMDD(new Date());
+      const todayKey = koreaTodayKey;
 
       const [
         buildingRows,
@@ -288,7 +369,7 @@ export default function AdminDashboard({
         ),
         fetchAllRows(
           'daily_reports',
-          'project_name, date, workers, status',
+          'project_name, date, workers, tasks, today_task, tomorrow_task, status',
           (query) => query.eq('date', todayKey),
         ),
         fetchAllRows(
@@ -316,7 +397,9 @@ export default function AdminDashboard({
             (row) => row.project_name === projectName,
           );
           const projectReports = todayReports.filter(
-            (row) => row.project_name === projectName,
+            (row) =>
+              row.project_name === projectName &&
+              hasMeaningfulDailyReport(row),
           );
           const projectProgress = progressRows.filter(
             (row) => row.project_name === projectName,
@@ -403,7 +486,7 @@ export default function AdminDashboard({
     } finally {
       setLoading(false);
     }
-  }, [processOptions]);
+  }, [processOptions, koreaTodayKey]);
 
   useEffect(() => {
     loadDashboard();
