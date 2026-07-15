@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  Badge,
   Box,
   Collapse,
   List,
@@ -9,11 +10,13 @@ import {
   Tooltip,
 } from '@mui/material';
 import HomeRoundedIcon from '@mui/icons-material/HomeRounded';
+import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 import EngineeringIcon from '@mui/icons-material/Engineering';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import { fetchPendingApprovalSummary } from '../utils/approvalQueries.js';
 
 const dailyMenus = [
   { value: 'daily', label: '출력일보작성' },
@@ -133,6 +136,8 @@ export default function Sidebar({
   const [dailyOpen, setDailyOpen] = useState(isDailyView);
   const [progressOpen, setProgressOpen] = useState(isProgressView);
   const [reportOpen, setReportOpen] = useState(isReportView);
+  const [approvalPendingCount, setApprovalPendingCount] =
+    useState(0);
 
   useEffect(() => {
     if (isDailyView) setDailyOpen(true);
@@ -145,6 +150,63 @@ export default function Sidebar({
   useEffect(() => {
     if (isReportView) setReportOpen(true);
   }, [isReportView]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadApprovalCount = async () => {
+      try {
+        const result =
+          await fetchPendingApprovalSummary();
+
+        if (active) {
+          setApprovalPendingCount(
+            result.counts.total,
+          );
+        }
+      } catch (error) {
+        console.error(
+          '사이드 결재 대기 건수 조회 오류:',
+          error,
+        );
+
+        if (active) {
+          setApprovalPendingCount(0);
+        }
+      }
+    };
+
+    loadApprovalCount();
+
+    const timer = window.setInterval(
+      loadApprovalCount,
+      20 * 1000,
+    );
+
+    const handleFocus = () => {
+      loadApprovalCount();
+    };
+
+    const handleApprovalChanged = () => {
+      loadApprovalCount();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener(
+      'approval-workflow-changed',
+      handleApprovalChanged,
+    );
+
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener(
+        'approval-workflow-changed',
+        handleApprovalChanged,
+      );
+    };
+  }, [currentView]);
 
   const handleViewChange = (view) => {
     if (typeof onViewChange === 'function') onViewChange(view);
@@ -182,6 +244,89 @@ export default function Sidebar({
             }}
             sx={{ opacity: drawerOpen ? 1 : 0 }}
           />
+        </ListItemButton>
+      </Tooltip>
+
+      <Tooltip
+        title={
+          drawerOpen
+            ? ''
+            : `결재함${
+                approvalPendingCount > 0
+                  ? ` (${approvalPendingCount})`
+                  : ''
+              }`
+        }
+        placement="right"
+        arrow
+      >
+        <ListItemButton
+          selected={currentView === 'approval-inbox'}
+          onClick={() =>
+            handleViewChange('approval-inbox')
+          }
+          sx={topMenuSx(
+            currentView === 'approval-inbox',
+          )}
+        >
+          <ListItemIcon
+            sx={{
+              minWidth: 34,
+              color: 'inherit',
+              justifyContent: 'center',
+            }}
+          >
+            <Badge
+              badgeContent={approvalPendingCount}
+              color="error"
+              max={99}
+              invisible={approvalPendingCount === 0}
+              sx={{
+                '& .MuiBadge-badge': {
+                  minWidth: 16,
+                  height: 16,
+                  px: 0.35,
+                  fontSize: '0.58rem',
+                  fontWeight: 900,
+                },
+              }}
+            >
+              <FactCheckOutlinedIcon fontSize="small" />
+            </Badge>
+          </ListItemIcon>
+
+          <ListItemText
+            primary="결재함"
+            primaryTypographyProps={{
+              noWrap: true,
+              fontSize: '0.8rem',
+              fontWeight:
+                currentView === 'approval-inbox'
+                  ? 700
+                  : 500,
+            }}
+            sx={{ opacity: drawerOpen ? 1 : 0 }}
+          />
+
+          {drawerOpen && approvalPendingCount > 0 && (
+            <Box
+              sx={{
+                minWidth: 25,
+                px: 0.65,
+                py: 0.15,
+                borderRadius: 999,
+                textAlign: 'center',
+                color: '#ffffff',
+                bgcolor: '#dc2626',
+                fontSize: '0.62rem',
+                fontWeight: 900,
+              }}
+            >
+              {approvalPendingCount > 99
+                ? '99+'
+                : approvalPendingCount}
+            </Box>
+          )}
         </ListItemButton>
       </Tooltip>
 

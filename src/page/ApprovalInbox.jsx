@@ -25,6 +25,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { supabase } from '../supabaseClient';
 import { invokeApprovalFunction } from '../utils/approvalFunction.js';
+import { fetchApprovalInboxData } from '../utils/approvalQueries.js';
 
 const REQUEST_STATUS = {
   pending: {
@@ -372,112 +373,17 @@ export default function ApprovalInbox() {
     setErrorMessage('');
 
     try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+      const result = await fetchApprovalInboxData();
 
-      if (userError) {
-        throw userError;
-      }
-
-      const email = String(user?.email || '').toLowerCase();
-
-      if (!email) {
-        throw new Error(
-          '로그인 계정의 이메일을 확인하지 못했습니다.',
-        );
-      }
-
-      setUserEmail(email);
-
-      const { data, error } = await supabase
-        .from('approval_steps')
-        .select(
-          `
-          id,
-          request_id,
-          step_order,
-          approver_name,
-          approver_position,
-          approver_email,
-          status,
-          acted_at,
-          comment,
-          created_at,
-          approval_requests!inner(
-            id,
-            report_type,
-            report_title,
-            report_key,
-            project_name,
-            requester_name,
-            requester_email,
-            payload,
-            status,
-            current_step_order,
-            current_approver_email,
-            created_at,
-            completed_at
-          )
-        `,
-        )
-        .eq('approver_email', email)
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        throw error;
-      }
-
-      const rows = data || [];
-      setItems(rows);
-
-      const requestIds = Array.from(
-        new Set(rows.map((row) => row.request_id)),
-      );
-
-      if (requestIds.length === 0) {
-        setStepsByRequest({});
-        return;
-      }
-
-      const { data: allSteps, error: stepsError } =
-        await supabase
-          .from('approval_steps')
-          .select(
-            `
-            id,
-            request_id,
-            step_order,
-            approver_name,
-            approver_position,
-            approver_email,
-            status,
-            acted_at,
-            comment
-          `,
-          )
-          .in('request_id', requestIds)
-          .order('step_order', { ascending: true });
-
-      if (stepsError) {
-        throw stepsError;
-      }
-
-      const grouped = {};
-
-      (allSteps || []).forEach((step) => {
-        if (!grouped[step.request_id]) {
-          grouped[step.request_id] = [];
-        }
-        grouped[step.request_id].push(step);
-      });
-
-      setStepsByRequest(grouped);
+      setUserEmail(result.email);
+      setItems(result.items);
+      setStepsByRequest(result.stepsByRequest);
 
       if (
         requestedId &&
-        rows.some((row) => row.request_id === requestedId)
+        result.items.some(
+          (row) => row.request_id === requestedId,
+        )
       ) {
         setExpandedRequestId(requestedId);
       }
@@ -493,6 +399,34 @@ export default function ApprovalInbox() {
 
   useEffect(() => {
     loadInbox();
+
+    const timer = window.setInterval(
+      loadInbox,
+      20 * 1000,
+    );
+
+    const handleFocus = () => {
+      loadInbox();
+    };
+
+    const handleApprovalChanged = () => {
+      loadInbox();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener(
+      'approval-workflow-changed',
+      handleApprovalChanged,
+    );
+
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener(
+        'approval-workflow-changed',
+        handleApprovalChanged,
+      );
+    };
   }, [loadInbox]);
 
   const handleAction = async (requestId, decision) => {
@@ -535,6 +469,10 @@ export default function ApprovalInbox() {
 
       window.alert(
         `${actionName} 처리가 완료되었습니다.${emailMessage}`,
+      );
+
+      window.dispatchEvent(
+        new Event('approval-workflow-changed'),
       );
 
       await loadInbox();

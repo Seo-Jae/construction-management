@@ -234,6 +234,10 @@ export default function ApprovalRequestDialog({
         `결재요청이 등록되었습니다.\n${emailMessage}`,
       );
 
+      window.dispatchEvent(
+        new Event('approval-workflow-changed'),
+      );
+
       onSubmitted?.(data);
       onClose?.();
     } catch (error) {

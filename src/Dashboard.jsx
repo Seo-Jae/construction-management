@@ -38,6 +38,7 @@ import MultiProcessProgress from './page/MultiProcessProgress.jsx';
 import CompletionSummary from './page/CompletionSummary.jsx';
 import WeeklyReport from './page/WeeklyReport.jsx';
 import ProposalReport from './page/ProposalReport.jsx';
+import ApprovalInbox from './page/ApprovalInbox.jsx';
 import AdminDashboard from './page/AdminDashboard.jsx';
 
 const drawerWidth = 240;
@@ -197,6 +198,7 @@ const viewTitles = {
   'report-approval': '품의 보고',
   'report-outsourcing-approval': '외주 품의 보고',
   'report-accident': '사고 경위 보고',
+  'approval-inbox': '결재함',
 };
 
 function ReportPlaceholder({ title }) {
@@ -326,9 +328,19 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     () => createKoreaCalendarDate(),
   );
 
-  const [currentView, setCurrentView] = useState(() =>
-    isManagementRole ? 'admin-dashboard' : 'main',
-  );
+  const [currentView, setCurrentView] = useState(() => {
+    const requestedView = new URLSearchParams(
+      window.location.search,
+    ).get('view');
+
+    if (requestedView === 'approval-inbox') {
+      return 'approval-inbox';
+    }
+
+    return isManagementRole
+      ? 'admin-dashboard'
+      : 'main';
+  });
 
   const [savedData, setSavedData] = useState({});
   const [manualStatus, setManualStatus] = useState({});
@@ -361,13 +373,24 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   }, []);
 
   useEffect(() => {
+    const requestedView = new URLSearchParams(
+      window.location.search,
+    ).get('view');
+
+    if (requestedView === 'approval-inbox') {
+      setCurrentView('approval-inbox');
+      return;
+    }
+
     if (isManagementRole) {
       setCurrentView('admin-dashboard');
       setSelectedProjectName('');
       return;
     }
 
-    setSelectedProjectName(userProfile?.project_name || '');
+    setSelectedProjectName(
+      userProfile?.project_name || '',
+    );
     setCurrentView('main');
   }, [isManagementRole, userProfile?.project_name]);
 
@@ -1656,9 +1679,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             sx={{ flexGrow: 1, fontWeight: 'bold' }}
           >
             🏗️{' '}
-            {currentView === 'admin-dashboard'
+            {[
+              'admin-dashboard',
+              'approval-inbox',
+            ].includes(currentView)
               ? '욱림건설'
-              : activeProjectName || '현장을 선택해주세요'}{' '}
+              : activeProjectName ||
+                '현장을 선택해주세요'}{' '}
             - {viewTitles[currentView] || '현장 관리'}
           </Typography>
 
@@ -1723,6 +1750,10 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               processOptions={processOptions}
               onOpenProject={handleOpenAdminProject}
             />
+          )}
+
+          {currentView === 'approval-inbox' && (
+            <ApprovalInbox />
           )}
 
           {currentView === 'main' && activeProjectName && (
@@ -1847,6 +1878,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
           {isManagementRole &&
             currentView !== 'admin-dashboard' &&
+            currentView !== 'approval-inbox' &&
             !activeProjectName && (
               <Paper
                 variant="outlined"

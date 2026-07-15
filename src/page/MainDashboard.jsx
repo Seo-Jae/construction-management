@@ -24,6 +24,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import TrendingUpOutlinedIcon from '@mui/icons-material/TrendingUpOutlined';
 import { supabase } from '../supabaseClient';
 import { getProjectCellKeys } from '../utils/buildingUnits.js';
+import { fetchPendingApprovalSummary } from '../utils/approvalQueries.js';
 
 const PAGE_SIZE = 1000;
 
@@ -368,7 +369,7 @@ function ProgressSummaryCard({
   );
 }
 
-function ApprovalCard({ onNavigate }) {
+function ApprovalCard({ counts, onNavigate }) {
   return (
     <Paper
       variant="outlined"
@@ -425,7 +426,7 @@ function ApprovalCard({ onNavigate }) {
               letterSpacing: '-0.04em',
             }}
           >
-            0건
+            {counts.total.toLocaleString()}건
           </Typography>
         </Box>
 
@@ -437,41 +438,43 @@ function ApprovalCard({ onNavigate }) {
             gap: 0.65,
           }}
         >
-          {['품의 보고', '외주 품의', '사고 경위'].map(
-            (label) => (
-              <Box
-                key={label}
+          {[
+            ['주간 보고', counts.weekly],
+            ['품의 보고', counts.proposal],
+            ['기타', counts.other],
+          ].map(([label, count]) => (
+            <Box
+              key={label}
+              sx={{
+                px: 0.7,
+                py: 0.7,
+                borderRadius: 1.1,
+                border: '1px solid #ffedd5',
+                bgcolor: '#ffffff',
+                textAlign: 'center',
+              }}
+            >
+              <Typography
                 sx={{
-                  px: 0.7,
-                  py: 0.7,
-                  borderRadius: 1.1,
-                  border: '1px solid #ffedd5',
-                  bgcolor: '#ffffff',
-                  textAlign: 'center',
+                  color: '#64748b',
+                  fontSize: '0.63rem',
+                  fontWeight: 700,
                 }}
               >
-                <Typography
-                  sx={{
-                    color: '#64748b',
-                    fontSize: '0.63rem',
-                    fontWeight: 700,
-                  }}
-                >
-                  {label}
-                </Typography>
-                <Typography
-                  sx={{
-                    mt: 0.2,
-                    color: '#9a3412',
-                    fontSize: '0.76rem',
-                    fontWeight: 900,
-                  }}
-                >
-                  0건
-                </Typography>
-              </Box>
-            ),
-          )}
+                {label}
+              </Typography>
+              <Typography
+                sx={{
+                  mt: 0.2,
+                  color: '#9a3412',
+                  fontSize: '0.76rem',
+                  fontWeight: 900,
+                }}
+              >
+                {Number(count || 0).toLocaleString()}건
+              </Typography>
+            </Box>
+          ))}
         </Box>
 
         <Box
@@ -490,13 +493,13 @@ function ApprovalCard({ onNavigate }) {
               fontSize: '0.66rem',
             }}
           >
-            결재상태 기능 연결 전에는 0건으로 표시됩니다.
+            현재 로그인 이메일에 배정된 결재 대기 건수입니다.
           </Typography>
 
           <Button
             size="small"
             variant="outlined"
-            onClick={() => onNavigate?.('report-approval')}
+            onClick={() => onNavigate?.('approval-inbox')}
             sx={{
               flexShrink: 0,
               minWidth: 0,
@@ -512,7 +515,7 @@ function ApprovalCard({ onNavigate }) {
               },
             }}
           >
-            품의 보고
+            결재 처리
           </Button>
         </Box>
       </Box>
@@ -1109,9 +1112,37 @@ export default function MainDashboard({
   onNavigate,
 }) {
   const [progressRows, setProgressRows] = useState([]);
+  const [approvalCounts, setApprovalCounts] = useState({
+    total: 0,
+    weekly: 0,
+    proposal: 0,
+    other: 0,
+  });
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
+
+  const loadApprovalCounts =
+    useCallback(async () => {
+      try {
+        const result =
+          await fetchPendingApprovalSummary();
+
+        setApprovalCounts(result.counts);
+      } catch (error) {
+        console.error(
+          'Main 결재 대기 건수 조회 오류:',
+          error,
+        );
+
+        setApprovalCounts({
+          total: 0,
+          weekly: 0,
+          proposal: 0,
+          other: 0,
+        });
+      }
+    }, []);
 
   const loadProgress = useCallback(async () => {
     if (!projectName) {
@@ -1137,7 +1168,40 @@ export default function MainDashboard({
 
   useEffect(() => {
     loadProgress();
-  }, [loadProgress, refreshKey]);
+    loadApprovalCounts();
+
+    const timer = window.setInterval(
+      loadApprovalCounts,
+      20 * 1000,
+    );
+
+    const handleFocus = () => {
+      loadApprovalCounts();
+    };
+
+    const handleApprovalChanged = () => {
+      loadApprovalCounts();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener(
+      'approval-workflow-changed',
+      handleApprovalChanged,
+    );
+
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener(
+        'approval-workflow-changed',
+        handleApprovalChanged,
+      );
+    };
+  }, [
+    loadApprovalCounts,
+    loadProgress,
+    refreshKey,
+  ]);
 
   const totalUnits = useMemo(
     () => getProjectCellKeys(buildingConfigs).size,
@@ -1225,7 +1289,10 @@ export default function MainDashboard({
           totalCount={totalCount}
         />
 
-        <ApprovalCard onNavigate={onNavigate} />
+        <ApprovalCard
+          counts={approvalCounts}
+          onNavigate={onNavigate}
+        />
       </Box>
 
       <Box
