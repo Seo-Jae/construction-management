@@ -9,9 +9,6 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import DownloadIcon from '@mui/icons-material/Download';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import SendOutlinedIcon from '@mui/icons-material/SendOutlined';
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
 import ApprovalRequestDialog from './ApprovalRequestDialog.jsx';
@@ -695,7 +692,14 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
           borderColor: '#cbd5e1',
         }}
       >
-        <Box sx={{ p: 1.5, display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Box
+          sx={{
+            p: 1.5,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.7,
+          }}
+        >
           <Box sx={{ flexGrow: 1 }}>
             <Typography fontWeight={900} sx={{ color: '#1e293b', fontSize: '0.96rem' }}>
               주간 업무 보고 작성
@@ -708,9 +712,13 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
           <Button
             size="small"
             variant="contained"
-            startIcon={<SendOutlinedIcon />}
             onClick={() => setApprovalOpen(true)}
             sx={{
+              minWidth: 72,
+              px: 1.15,
+              whiteSpace: 'nowrap',
+              fontSize: '0.72rem',
+              fontWeight: 800,
               bgcolor: '#2563eb',
               '&:hover': { bgcolor: '#1d4ed8' },
             }}
@@ -721,21 +729,37 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
           <Button
             size="small"
             variant="outlined"
-            startIcon={loading ? <CircularProgress size={14} /> : <RefreshIcon />}
             onClick={fetchProgressRows}
             disabled={loading}
+            sx={{
+              minWidth: 72,
+              px: 1.05,
+              whiteSpace: 'nowrap',
+              fontSize: '0.72rem',
+              fontWeight: 800,
+            }}
           >
-            새로고침
+            {loading ? (
+              <CircularProgress size={13} />
+            ) : (
+              '새로고침'
+            )}
           </Button>
 
           <Button
             size="small"
             variant="contained"
             color="success"
-            startIcon={<DownloadIcon />}
             onClick={handleDownloadExcel}
+            sx={{
+              minWidth: 48,
+              px: 1.05,
+              whiteSpace: 'nowrap',
+              fontSize: '0.72rem',
+              fontWeight: 900,
+            }}
           >
-            엑셀 다운로드
+            XLS
           </Button>
         </Box>
 

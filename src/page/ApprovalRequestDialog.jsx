@@ -38,6 +38,58 @@ const bodyCellSx = {
   fontSize: '0.72rem',
 };
 
+const getEdgeFunctionErrorMessage = async (error) => {
+  const fallback =
+    error?.message || 'Edge Function 호출에 실패했습니다.';
+
+  const response = error?.context;
+
+  if (!response) {
+    return fallback;
+  }
+
+  try {
+    const readableResponse =
+      typeof response.clone === 'function'
+        ? response.clone()
+        : response;
+
+    const contentType =
+      readableResponse.headers?.get?.('content-type') || '';
+
+    let payload;
+
+    if (contentType.includes('application/json')) {
+      payload = await readableResponse.json();
+    } else {
+      const text = await readableResponse.text();
+      payload = text ? { error: text } : {};
+    }
+
+    const mainMessage =
+      payload?.error ||
+      payload?.message ||
+      payload?.details ||
+      fallback;
+
+    const extras = [
+      payload?.stage ? `단계: ${payload.stage}` : '',
+      payload?.code ? `코드: ${payload.code}` : '',
+      payload?.hint ? `안내: ${payload.hint}` : '',
+    ].filter(Boolean);
+
+    return extras.length > 0
+      ? `${mainMessage}\n${extras.join('\n')}`
+      : mainMessage;
+  } catch (parseError) {
+    console.error(
+      'Edge Function 오류 본문 해석 실패:',
+      parseError,
+    );
+    return fallback;
+  }
+};
+
 export default function ApprovalRequestDialog({
   open,
   onClose,
@@ -189,9 +241,9 @@ export default function ApprovalRequestDialog({
       onClose?.();
     } catch (error) {
       console.error('결재요청 등록 실패:', error);
-      setErrorMessage(
-        error?.message || '결재요청을 등록하지 못했습니다.',
-      );
+      const detailedMessage =
+        await getEdgeFunctionErrorMessage(error);
+      setErrorMessage(detailedMessage);
     } finally {
       setSubmitting(false);
     }
@@ -277,6 +329,7 @@ export default function ApprovalRequestDialog({
           <TableContainer
             sx={{
               maxHeight: 360,
+              overflowX: 'hidden',
               border: '1px solid #cbd5e1',
               borderRadius: 1,
             }}

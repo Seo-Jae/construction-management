@@ -81,6 +81,58 @@ const REPORT_TYPE_LABEL = {
   proposal: '품의 보고',
 };
 
+const getEdgeFunctionErrorMessage = async (error) => {
+  const fallback =
+    error?.message || 'Edge Function 호출에 실패했습니다.';
+
+  const response = error?.context;
+
+  if (!response) {
+    return fallback;
+  }
+
+  try {
+    const readableResponse =
+      typeof response.clone === 'function'
+        ? response.clone()
+        : response;
+
+    const contentType =
+      readableResponse.headers?.get?.('content-type') || '';
+
+    let payload;
+
+    if (contentType.includes('application/json')) {
+      payload = await readableResponse.json();
+    } else {
+      const text = await readableResponse.text();
+      payload = text ? { error: text } : {};
+    }
+
+    const mainMessage =
+      payload?.error ||
+      payload?.message ||
+      payload?.details ||
+      fallback;
+
+    const extras = [
+      payload?.stage ? `단계: ${payload.stage}` : '',
+      payload?.code ? `코드: ${payload.code}` : '',
+      payload?.hint ? `안내: ${payload.hint}` : '',
+    ].filter(Boolean);
+
+    return extras.length > 0
+      ? `${mainMessage}\n${extras.join('\n')}`
+      : mainMessage;
+  } catch (parseError) {
+    console.error(
+      'Edge Function 오류 본문 해석 실패:',
+      parseError,
+    );
+    return fallback;
+  }
+};
+
 const formatDateTime = (value) => {
   if (!value) return '-';
 
@@ -491,9 +543,9 @@ export default function ApprovalInbox() {
       await loadInbox();
     } catch (error) {
       console.error('결재 처리 실패:', error);
-      setErrorMessage(
-        error?.message || '결재 처리를 완료하지 못했습니다.',
-      );
+      const detailedMessage =
+        await getEdgeFunctionErrorMessage(error);
+      setErrorMessage(detailedMessage);
     } finally {
       setActingRequestId('');
     }

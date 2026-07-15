@@ -8,9 +8,6 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import DownloadIcon from '@mui/icons-material/Download';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import SendOutlinedIcon from '@mui/icons-material/SendOutlined';
 import ExcelJS from 'exceljs';
 import ApprovalRequestDialog from './ApprovalRequestDialog.jsx';
 
@@ -732,9 +729,13 @@ export default function ProposalReport({ userProfile }) {
           <Button
             size="small"
             variant="contained"
-            startIcon={<SendOutlinedIcon />}
             onClick={handleOpenApproval}
             sx={{
+              minWidth: 72,
+              px: 1.15,
+              whiteSpace: 'nowrap',
+              fontSize: '0.72rem',
+              fontWeight: 800,
               bgcolor: '#2563eb',
               '&:hover': { bgcolor: '#1d4ed8' },
             }}
@@ -745,8 +746,14 @@ export default function ProposalReport({ userProfile }) {
           <Button
             size="small"
             variant="outlined"
-            startIcon={<RefreshIcon />}
             onClick={handleReset}
+            sx={{
+              minWidth: 72,
+              px: 1.05,
+              whiteSpace: 'nowrap',
+              fontSize: '0.72rem',
+              fontWeight: 800,
+            }}
           >
             새로고침
           </Button>
@@ -755,10 +762,16 @@ export default function ProposalReport({ userProfile }) {
             size="small"
             variant="contained"
             color="success"
-            startIcon={<DownloadIcon />}
             onClick={handleDownloadExcel}
+            sx={{
+              minWidth: 48,
+              px: 1.05,
+              whiteSpace: 'nowrap',
+              fontSize: '0.72rem',
+              fontWeight: 900,
+            }}
           >
-            엑셀 다운로드
+            XLS
           </Button>
         </Box>
 
