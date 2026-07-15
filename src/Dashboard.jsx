@@ -39,6 +39,82 @@ import ProposalReport from './page/ProposalReport.jsx';
 import AdminDashboard from './page/AdminDashboard.jsx';
 
 const drawerWidth = 240;
+const SUPABASE_PAGE_SIZE = 1000;
+const PROGRESS_WRITE_CHUNK_SIZE = 500;
+
+const splitIntoChunks = (items, chunkSize) => {
+  const chunks = [];
+
+  for (let index = 0; index < items.length; index += chunkSize) {
+    chunks.push(items.slice(index, index + chunkSize));
+  }
+
+  return chunks;
+};
+
+const fetchAllProgressRows = async ({
+  projectName,
+  processType,
+}) => {
+  const allRows = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('unit_progress')
+      .select('building, unit, status, completion_date')
+      .eq('project_name', projectName)
+      .eq('process_type', processType)
+      .neq('status', '작업전')
+      .order('building', { ascending: true })
+      .order('unit', { ascending: true })
+      .range(from, from + SUPABASE_PAGE_SIZE - 1);
+
+    if (error) {
+      throw error;
+    }
+
+    const rows = data || [];
+    allRows.push(...rows);
+
+    if (rows.length < SUPABASE_PAGE_SIZE) {
+      break;
+    }
+
+    from += SUPABASE_PAGE_SIZE;
+  }
+
+  return allRows;
+};
+
+const fetchAllDailyReportRows = async (projectName) => {
+  const allRows = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('daily_reports')
+      .select('*')
+      .eq('project_name', projectName)
+      .order('date', { ascending: true })
+      .range(from, from + SUPABASE_PAGE_SIZE - 1);
+
+    if (error) {
+      throw error;
+    }
+
+    const rows = data || [];
+    allRows.push(...rows);
+
+    if (rows.length < SUPABASE_PAGE_SIZE) {
+      break;
+    }
+
+    from += SUPABASE_PAGE_SIZE;
+  }
+
+  return allRows;
+};
 
 const getKoreaDateTimeParts = (date = new Date()) => {
   const formatter = new Intl.DateTimeFormat('en-CA', {
@@ -319,37 +395,64 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     };
 
     const fetchUnitProgress = async () => {
-        // 💡 데이터를 불러오기 전에 기존 공정의 색상 데이터를 비워줍니다 (잔상 방지)
-        setUnitProgressData({});
+      // 공정이 바뀔 때 이전 공정 색상이 잠시 남지 않도록 먼저 비웁니다.
+      setUnitProgressData({});
 
-        const { data, error } = await supabase
-            .from("unit_progress")
-            .select("*")
-            .eq("project_name", activeProjectName)
-            .eq("process_type", selectedProcess)
-            .neq("status", "작업전")
+      try {
+        /*
+          Supabase REST 조회는 프로젝트 설정에 따라 한 번에
+          최대 1,000행까지만 반환될 수 있습니다.
 
-        if (error) return console.error(error);
+          1,275세대처럼 1,000건을 넘는 현장도 전부 표시되도록
+          1,000건 단위로 마지막 페이지까지 반복 조회합니다.
+        */
+        const data = await fetchAllProgressRows({
+          projectName: activeProjectName,
+          processType: selectedProcess,
+        });
 
         const mapped = {};
-        data.forEach(row => {
-            mapped[`${row.building}-${row.unit}`] = {
-                status: row.status,
-                date: row.completion_date
-            };
+
+        data.forEach((row) => {
+          mapped[`${row.building}-${row.unit}`] = {
+            status: row.status,
+            date: row.completion_date,
+          };
         });
+
         setUnitProgressData(mapped);
+      } catch (error) {
+        console.error('공정 데이터 전체 조회 오류:', error);
+      }
     };
 
     const fetchReports = async () => {
-        const { data, error } = await supabase.from("daily_reports").select("*").eq("project_name", activeProjectName);
-        if (error) return;
-        const newData = {}; const newStatus = {};
-        data.forEach(row => {
-            newData[row.date] = { workers: row.workers || [], tasks: row.tasks || [], todayTask: row.today_task || "", tomorrowTask: row.tomorrow_task || "" };
-            if (row.status) newStatus[row.date] = row.status;
+      try {
+        const data = await fetchAllDailyReportRows(
+          activeProjectName,
+        );
+
+        const newData = {};
+        const newStatus = {};
+
+        data.forEach((row) => {
+          newData[row.date] = {
+            workers: row.workers || [],
+            tasks: row.tasks || [],
+            todayTask: row.today_task || '',
+            tomorrowTask: row.tomorrow_task || '',
+          };
+
+          if (row.status) {
+            newStatus[row.date] = row.status;
+          }
         });
-        setSavedData(newData); setManualStatus(newStatus);
+
+        setSavedData(newData);
+        setManualStatus(newStatus);
+      } catch (error) {
+        console.error('공사일보 전체 조회 오류:', error);
+      }
     };
 
     fetchBuildingConfigs();
@@ -1155,15 +1258,26 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         };
       });
 
-      const { error } = await supabase
-        .from('unit_progress')
-        .upsert(updates, {
-          onConflict:
-            'project_name, building, unit, process_type',
-        });
+      /*
+        전체선택 시 1,000세대를 넘는 현장도 안정적으로 저장되도록
+        한 번에 모두 보내지 않고 500건 단위로 나눠서 저장합니다.
+      */
+      const updateChunks = splitIntoChunks(
+        updates,
+        PROGRESS_WRITE_CHUNK_SIZE,
+      );
 
-      if (error) {
-        throw error;
+      for (const updateChunk of updateChunks) {
+        const { error } = await supabase
+          .from('unit_progress')
+          .upsert(updateChunk, {
+            onConflict:
+              'project_name, building, unit, process_type',
+          });
+
+        if (error) {
+          throw error;
+        }
       }
 
       setUnitProgressData((prev) => {
@@ -1182,7 +1296,9 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       });
 
       setSelectedCells(new Set());
-      alert('저장되었습니다.');
+      alert(
+        `${selectedCellKeys.length.toLocaleString()}세대가 저장되었습니다.`,
+      );
     } catch (error) {
       console.error('공정 상태 저장 오류:', error);
       alert(`저장 실패: ${error?.message || '알 수 없는 오류'}`);
