@@ -19,6 +19,7 @@ import {
 } from '@mui/material';
 import SendOutlinedIcon from '@mui/icons-material/SendOutlined';
 import { supabase } from '../supabaseClient';
+import { invokeApprovalFunction } from '../utils/approvalFunction.js';
 
 const headerCellSx = {
   py: 0.8,
@@ -198,23 +199,19 @@ export default function ApprovalRequestDialog({
     setErrorMessage('');
 
     try {
-      const { data, error } = await supabase.functions.invoke(
-        'approval-workflow',
-        {
-          body: {
-            action: 'create',
-            reportType,
-            reportTitle,
-            reportKey,
-            projectName,
-            requesterName,
-            payload,
-            approverIds: selectedApprovers.map(
-              (approver) => approver.id,
-            ),
-          },
-        },
-      );
+      const { data, error } =
+        await invokeApprovalFunction({
+          action: 'create',
+          reportType,
+          reportTitle,
+          reportKey,
+          projectName,
+          requesterName,
+          payload,
+          approverIds: selectedApprovers.map(
+            (approver) => approver.id,
+          ),
+        });
 
       if (error) {
         throw error;

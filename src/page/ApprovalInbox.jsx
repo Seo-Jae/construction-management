@@ -24,6 +24,7 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { supabase } from '../supabaseClient';
+import { invokeApprovalFunction } from '../utils/approvalFunction.js';
 
 const REQUEST_STATUS = {
   pending: {
@@ -510,17 +511,13 @@ export default function ApprovalInbox() {
     setErrorMessage('');
 
     try {
-      const { data, error } = await supabase.functions.invoke(
-        'approval-workflow',
-        {
-          body: {
-            action: 'act',
-            requestId,
-            decision,
-            comment: comments[requestId] || '',
-          },
-        },
-      );
+      const { data, error } =
+        await invokeApprovalFunction({
+          action: 'act',
+          requestId,
+          decision,
+          comment: comments[requestId] || '',
+        });
 
       if (error) {
         throw error;
