@@ -30,6 +30,7 @@ import {
   getProjectCellKeys,
 } from './utils/buildingUnits.js';
 import Sidebar from './components/Sidebar.jsx';
+import MainDashboard from './page/MainDashboard.jsx';
 import DailyReport from './page/DailyReport.jsx';
 import MonthlyWorkerStatus from './page/MonthlyWorkerStatus.jsx';
 import ProgressInput from './page/ProgressInput.jsx';
@@ -184,6 +185,7 @@ const headerCellStyle = { borderRight: '1px solid #cbd5e1', fontWeight: 'bold', 
 const bodyCellStyle = { borderRight: '1px solid #cbd5e1', p: 0 }; 
 
 const viewTitles = {
+  main: 'Main',
   'admin-dashboard': '욱림건설 전체 현장 Dashboard',
   daily: '출력일보작성',
   'daily-monthly-workers': '금월 투입현황',
@@ -325,7 +327,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   );
 
   const [currentView, setCurrentView] = useState(() =>
-    isManagementRole ? 'admin-dashboard' : 'daily',
+    isManagementRole ? 'admin-dashboard' : 'main',
   );
 
   const [savedData, setSavedData] = useState({});
@@ -366,12 +368,12 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     }
 
     setSelectedProjectName(userProfile?.project_name || '');
-    setCurrentView('daily');
+    setCurrentView('main');
   }, [isManagementRole, userProfile?.project_name]);
 
   const handleOpenAdminProject = (projectName) => {
     setSelectedProjectName(projectName);
-    setCurrentView('daily');
+    setCurrentView('main');
   };
 
   // 💡 공정이 변경될 때마다 화면에 선택되어 있던 세대와 팝업창을 즉시 지워줍니다.
@@ -1720,6 +1722,20 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             <AdminDashboard
               processOptions={processOptions}
               onOpenProject={handleOpenAdminProject}
+            />
+          )}
+
+          {currentView === 'main' && activeProjectName && (
+            <MainDashboard
+              projectName={activeProjectName}
+              buildingConfigs={buildingConfigs}
+              processOptions={processOptions}
+              savedData={savedData}
+              viewYear={viewYear}
+              viewMonth={viewMonth}
+              handlePrevMonth={handlePrevMonth}
+              handleNextMonth={handleNextMonth}
+              onNavigate={setCurrentView}
             />
           )}
 

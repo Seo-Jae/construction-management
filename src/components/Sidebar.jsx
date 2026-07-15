@@ -8,6 +8,7 @@ import {
   ListItemText,
   Tooltip,
 } from '@mui/material';
+import HomeRoundedIcon from '@mui/icons-material/HomeRounded';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 import EngineeringIcon from '@mui/icons-material/Engineering';
 import AssessmentIcon from '@mui/icons-material/Assessment';
@@ -151,6 +152,39 @@ export default function Sidebar({
 
   return (
     <List sx={{ px: 0.75, py: 0.75 }}>
+      <Tooltip
+        title={drawerOpen ? '' : 'Main'}
+        placement="right"
+        arrow
+      >
+        <ListItemButton
+          selected={currentView === 'main'}
+          onClick={() => handleViewChange('main')}
+          sx={topMenuSx(currentView === 'main')}
+        >
+          <ListItemIcon
+            sx={{
+              minWidth: 34,
+              color: 'inherit',
+              justifyContent: 'center',
+            }}
+          >
+            <HomeRoundedIcon fontSize="small" />
+          </ListItemIcon>
+
+          <ListItemText
+            primary="Main"
+            primaryTypographyProps={{
+              noWrap: true,
+              fontSize: '0.8rem',
+              fontWeight:
+                currentView === 'main' ? 700 : 500,
+            }}
+            sx={{ opacity: drawerOpen ? 1 : 0 }}
+          />
+        </ListItemButton>
+      </Tooltip>
+
       {isManagementRole && (
         <Tooltip
           title={drawerOpen ? '' : 'Dashboard'}
