@@ -280,38 +280,24 @@ function ProjectCard({ project, onOpenProject }) {
               minWidth: 0,
             }}
           >
-            <Typography
-              sx={{
-                color: '#475569',
-                fontSize: '0.66rem',
-                lineHeight: 1.35,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              전일누계: {project.previousWorkers.toLocaleString()}명
-            </Typography>
-            <Typography
-              sx={{
-                color: '#0f172a',
-                fontSize: '0.66rem',
-                fontWeight: 800,
-                lineHeight: 1.35,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              금일출력: {project.todayWorkers.toLocaleString()}명
-            </Typography>
-            <Typography
-              sx={{
-                color: '#0369a1',
-                fontSize: '0.66rem',
-                fontWeight: 900,
-                lineHeight: 1.35,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              누계출력: {project.cumulativeWorkers.toLocaleString()}명
-            </Typography>
+            {[
+              `전일누계: ${project.previousWorkers.toLocaleString()}명`,
+              `금일출력: ${project.todayWorkers.toLocaleString()}명`,
+              `누계출력: ${project.cumulativeWorkers.toLocaleString()}명`,
+            ].map((label) => (
+              <Typography
+                key={label}
+                sx={{
+                  color: '#475569',
+                  fontSize: '0.66rem',
+                  fontWeight: 400,
+                  lineHeight: 1.35,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {label}
+              </Typography>
+            ))}
           </Box>
         </Box>
 

@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Box, Paper, Tooltip, Typography } from '@mui/material';
+import { Box, Tooltip, Typography } from '@mui/material';
 import {
   buildFloorVisualCells,
   countUniqueUnits,
@@ -104,16 +104,14 @@ export default function BuildingGrid({
         alignItems: 'center',
       }}
     >
-      <Paper
-        variant="outlined"
+      <Box
         sx={{
-          p: 0.75,
-          bgcolor: '#ffffff',
-          borderColor: '#cbd5e1',
-          boxShadow: '0 1px 3px rgba(15, 23, 42, 0.06)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: `${CELL_GAP}px`,
+          bgcolor: 'transparent',
         }}
       >
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: `${CELL_GAP}px` }}>
           {floorNumbers.map((floor) => {
             const floorCells = buildFloorVisualCells(config, floor);
 
@@ -233,8 +231,7 @@ export default function BuildingGrid({
               </Box>
             );
           })}
-        </Box>
-      </Paper>
+      </Box>
 
       <Typography
         sx={{

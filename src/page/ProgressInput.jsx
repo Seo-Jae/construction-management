@@ -9,6 +9,7 @@ import {
   Typography,
 } from '@mui/material';
 import BuildingGrid from '../BuildingGrid';
+import { getProjectCellKeys } from '../utils/buildingUnits.js';
 
 const STATUS_OPTIONS = ['작업전', '작업중', '작업완료'];
 
@@ -79,6 +80,11 @@ export default function ProgressInput({
       }),
   );
 
+  const selectAllCells = () => {
+    const allCellKeys = getProjectCellKeys(buildingConfigs);
+    setSelectedCells?.(new Set(allCellKeys));
+  };
+
   const clearSelectedCells = () => {
     setSelectedCells?.(new Set());
   };
@@ -138,6 +144,62 @@ export default function ProgressInput({
               {status === '작업완료' ? '완료' : status}
             </Button>
           ))}
+
+          <Box
+            sx={{
+              width: '1px',
+              height: 22,
+              mx: 0.25,
+              bgcolor: '#cbd5e1',
+              flexShrink: 0,
+            }}
+          />
+
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={selectAllCells}
+            disabled={sortedBuildings.length === 0}
+            sx={{
+              minWidth: 74,
+              py: 0.25,
+              px: 1,
+              color: '#7c3aed',
+              borderColor: '#c4b5fd',
+              bgcolor: '#ffffff',
+              fontSize: '0.72rem',
+              boxShadow: 'none',
+              '&:hover': {
+                borderColor: '#8b5cf6',
+                bgcolor: '#f5f3ff',
+              },
+            }}
+          >
+            전체선택
+          </Button>
+
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={clearSelectedCells}
+            disabled={selectionCount === 0}
+            sx={{
+              minWidth: 88,
+              py: 0.25,
+              px: 1,
+              color: '#64748b',
+              borderColor: '#cbd5e1',
+              bgcolor: '#ffffff',
+              fontSize: '0.72rem',
+              boxShadow: 'none',
+              '&:hover': {
+                borderColor: '#94a3b8',
+                bgcolor: '#f8fafc',
+              },
+            }}
+          >
+            전체선택해제
+          </Button>
         </Box>
 
         <Typography
@@ -299,11 +361,10 @@ export default function ProgressInput({
         sx={{
           flexGrow: 1,
           minHeight: 0,
-          overflowX: 'auto',
-          overflowY: 'hidden',
+          overflow: 'auto',
           bgcolor: '#f1f5f9',
           borderRadius: 1,
-          scrollbarGutter: 'stable',
+          scrollbarGutter: 'stable both-edges',
         }}
       >
         {sortedBuildings.length === 0 ? (
@@ -328,7 +389,8 @@ export default function ProgressInput({
               gap: 4,
               width: 'max-content',
               minWidth: '100%',
-              height: '100%',
+              minHeight: '100%',
+              height: 'max-content',
               px: 1.5,
               pt: 0.5,
               pb: 1,

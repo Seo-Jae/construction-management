@@ -212,16 +212,14 @@ function MultiProcessBuildingGrid({
         alignItems: 'center',
       }}
     >
-      <Paper
-        variant="outlined"
+      <Box
         sx={{
-          p: 0.75,
-          bgcolor: '#ffffff',
-          borderColor: '#cbd5e1',
-          boxShadow: '0 1px 3px rgba(15, 23, 42, 0.06)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '2px',
+          bgcolor: 'transparent',
         }}
       >
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
           {floorNumbers.map((floor) => {
             const floorCells = buildFloorVisualCells(config, floor);
 
@@ -316,8 +314,7 @@ function MultiProcessBuildingGrid({
             </Box>
           );
           })}
-        </Box>
-      </Paper>
+      </Box>
 
       <Typography
         sx={{
@@ -670,9 +667,9 @@ export default function MultiProcessProgress({
           minHeight: 0,
           overflow: 'auto',
           p: 1.5,
-          borderColor: '#cbd5e1',
+          borderColor: 'transparent',
           boxShadow: 'none',
-          bgcolor: '#f8fafc',
+          bgcolor: '#f1f5f9',
         }}
       >
         {loading && (
