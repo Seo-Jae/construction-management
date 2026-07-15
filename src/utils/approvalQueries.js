@@ -70,11 +70,15 @@ const fetchRequestsByIds = async (requestIds) => {
 export const fetchPendingApprovalSummary = async () => {
   const { email } = await getCurrentApprovalIdentity();
 
+  /*
+    현재 차례인 pending뿐 아니라 이후 순서인 waiting도
+    결재함에 들어온 열린 건으로 집계합니다.
+  */
   const { data: steps, error: stepError } = await supabase
     .from('approval_steps')
     .select('id, request_id, status')
     .eq('approver_email', email)
-    .eq('status', 'pending')
+    .in('status', ['pending', 'waiting'])
     .order('created_at', { ascending: false });
 
   if (stepError) {
@@ -92,6 +96,8 @@ export const fetchPendingApprovalSummary = async () => {
 
   const counts = {
     total: 0,
+    actionable: 0,
+    waiting: 0,
     weekly: 0,
     proposal: 0,
     other: 0,
@@ -106,6 +112,12 @@ export const fetchPendingApprovalSummary = async () => {
 
     counts.total += 1;
 
+    if (step.status === 'pending') {
+      counts.actionable += 1;
+    } else {
+      counts.waiting += 1;
+    }
+
     if (request.report_type === 'weekly') {
       counts.weekly += 1;
     } else if (request.report_type === 'proposal') {
@@ -119,6 +131,63 @@ export const fetchPendingApprovalSummary = async () => {
     email,
     counts,
   };
+};
+
+export const fetchReportApprovalStatus = async ({
+  reportType,
+  reportKey,
+  projectName = '',
+}) => {
+  if (!reportType || !reportKey) {
+    return null;
+  }
+
+  const { userId } = await getCurrentApprovalIdentity();
+
+  let query = supabase
+    .from('approval_requests')
+    .select(
+      `
+      id,
+      report_type,
+      report_title,
+      report_key,
+      project_name,
+      status,
+      current_step_order,
+      current_approver_email,
+      created_at,
+      completed_at
+    `,
+    )
+    .eq('requester_user_id', userId)
+    .eq('report_type', reportType)
+    .eq('report_key', reportKey)
+    .order('created_at', { ascending: false })
+    .limit(20);
+
+  if (projectName) {
+    query = query.eq('project_name', projectName);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    throw error;
+  }
+
+  const rows = data || [];
+
+  /*
+    같은 보고서가 여러 차례 반려 후 재요청될 수 있으므로
+    pending을 최우선, 승인완료를 그다음으로 판단합니다.
+  */
+  return (
+    rows.find((row) => row.status === 'pending') ||
+    rows.find((row) => row.status === 'approved') ||
+    rows[0] ||
+    null
+  );
 };
 
 export const fetchApprovalInboxData = async () => {

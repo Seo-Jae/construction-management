@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -12,6 +12,7 @@ import {
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
 import ApprovalRequestDialog from './ApprovalRequestDialog.jsx';
+import { fetchReportApprovalStatus } from '../utils/approvalQueries.js';
 
 const REPORT_PROCESSES = [
   { label: '바닥먹매김', processType: '바닥먹' },
@@ -552,10 +553,17 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [approvalOpen, setApprovalOpen] = useState(false);
+  const [approvalStatus, setApprovalStatus] = useState(null);
+  const [approvalStatusLoading, setApprovalStatusLoading] =
+    useState(false);
 
   const projectName = userProfile?.project_name || '';
   const managerName = userProfile?.manager_name || '';
   const period = useMemo(() => getReportPeriod(new Date()), []);
+  const approvalReportKey = useMemo(
+    () => `weekly:${toDateKey(period.currentWeekStart)}`,
+    [period],
+  );
   const totalUnits = useMemo(
     () => calculateTotalUnits(buildingConfigs),
     [buildingConfigs],
@@ -565,6 +573,78 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
     () => buildProcessStats(progressRows, totalUnits, period),
     [progressRows, totalUnits, period],
   );
+
+
+  const loadApprovalStatus = useCallback(async () => {
+    if (!projectName || !approvalReportKey) {
+      setApprovalStatus(null);
+      return;
+    }
+
+    setApprovalStatusLoading(true);
+
+    try {
+      const status = await fetchReportApprovalStatus({
+        reportType: 'weekly',
+        reportKey: approvalReportKey,
+        projectName,
+      });
+
+      setApprovalStatus(status);
+    } catch (error) {
+      console.error(
+        '주간 업무 보고 결재상태 조회 실패:',
+        error,
+      );
+    } finally {
+      setApprovalStatusLoading(false);
+    }
+  }, [approvalReportKey, projectName]);
+
+  useEffect(() => {
+    loadApprovalStatus();
+
+    const timer = window.setInterval(
+      loadApprovalStatus,
+      20 * 1000,
+    );
+
+    const handleFocus = () => {
+      loadApprovalStatus();
+    };
+
+    const handleApprovalChanged = () => {
+      loadApprovalStatus();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener(
+      'approval-workflow-changed',
+      handleApprovalChanged,
+    );
+
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener(
+        'approval-workflow-changed',
+        handleApprovalChanged,
+      );
+    };
+  }, [loadApprovalStatus]);
+
+  const approvalState = approvalStatus?.status || '';
+  const approvalLocked = ['pending', 'approved'].includes(
+    approvalState,
+  );
+  const approvalButtonText =
+    approvalState === 'pending'
+      ? '결재중'
+      : approvalState === 'approved'
+        ? '승인완료'
+        : approvalState === 'rejected'
+          ? '재결재요청'
+          : '결재요청';
 
   const fetchProgressRows = async () => {
     if (!projectName) return;
@@ -707,23 +787,58 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
             <Typography sx={{ mt: 0.2, color: '#64748b', fontSize: '0.72rem' }}>
               입력한 내용은 오른쪽 미리보기에 즉시 반영됩니다.
             </Typography>
+            {approvalState === 'rejected' && (
+              <Typography
+                sx={{
+                  mt: 0.25,
+                  color: '#dc2626',
+                  fontSize: '0.68rem',
+                  fontWeight: 800,
+                }}
+              >
+                반려된 보고서입니다. 내용을 수정한 뒤 재결재요청할 수 있습니다.
+              </Typography>
+            )}
           </Box>
 
           <Button
             size="small"
             variant="contained"
             onClick={() => setApprovalOpen(true)}
+            disabled={approvalStatusLoading || approvalLocked}
             sx={{
-              minWidth: 72,
+              minWidth: approvalState === 'rejected' ? 92 : 72,
               px: 1.15,
               whiteSpace: 'nowrap',
               fontSize: '0.72rem',
               fontWeight: 800,
-              bgcolor: '#2563eb',
-              '&:hover': { bgcolor: '#1d4ed8' },
+              bgcolor:
+                approvalState === 'approved'
+                  ? '#15803d'
+                  : approvalState === 'pending'
+                    ? '#d97706'
+                    : '#2563eb',
+              '&:hover': {
+                bgcolor:
+                  approvalState === 'approved'
+                    ? '#15803d'
+                    : approvalState === 'pending'
+                      ? '#d97706'
+                      : '#1d4ed8',
+              },
+              '&.Mui-disabled': {
+                color: '#ffffff',
+                bgcolor:
+                  approvalState === 'approved'
+                    ? '#15803d'
+                    : '#d97706',
+                opacity: 0.82,
+              },
             }}
           >
-            결재요청
+            {approvalStatusLoading
+              ? '확인중'
+              : approvalButtonText}
           </Button>
 
           <Button
@@ -863,9 +978,15 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
         onClose={() => setApprovalOpen(false)}
         reportType="weekly"
         reportTitle={`주간 업무 보고 ${period.display}`}
-        reportKey={`weekly:${toDateKey(period.currentWeekStart)}`}
+        reportKey={approvalReportKey}
         projectName={projectName}
         requesterName={managerName}
+        onSubmitted={() => {
+          setApprovalStatus({
+            status: 'pending',
+          });
+          loadApprovalStatus();
+        }}
         payload={{
           projectName,
           managerName,

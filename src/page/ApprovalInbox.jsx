@@ -53,7 +53,7 @@ const REQUEST_STATUS = {
 
 const STEP_STATUS = {
   waiting: {
-    label: '대기',
+    label: '앞 단계 승인 대기',
     color: '#64748b',
     bgcolor: '#f1f5f9',
   },
@@ -545,6 +545,13 @@ export default function ApprovalInbox() {
       item.approval_requests?.status === 'pending',
   ).length;
 
+  const waitingCount = items.filter(
+    (item) =>
+      item.item_kind === 'approver' &&
+      item.status === 'waiting' &&
+      item.approval_requests?.status === 'pending',
+  ).length;
+
   const requesterResultCount = items.filter(
     (item) =>
       item.item_kind === 'requester' &&
@@ -598,8 +605,9 @@ export default function ApprovalInbox() {
                 fontSize: '0.7rem',
               }}
             >
-              {userEmail || '-'} · 현재 결재 대기{' '}
-              {pendingCount.toLocaleString()}건 · 처리 결과{' '}
+              {userEmail || '-'} · 지금 처리할 결재{' '}
+              {pendingCount.toLocaleString()}건 · 결재 예정{' '}
+              {waitingCount.toLocaleString()}건 · 처리 결과{' '}
               {requesterResultCount.toLocaleString()}건
             </Typography>
           </Box>
@@ -676,6 +684,14 @@ export default function ApprovalInbox() {
               stepsByRequest[item.request_id] || [];
             const rejectedStep = allSteps.find(
               (step) => step.status === 'rejected',
+            );
+            const currentPendingStep = allSteps.find(
+              (step) => step.status === 'pending',
+            );
+            const incompleteSteps = allSteps.filter(
+              (step) =>
+                step.status === 'pending' ||
+                step.status === 'waiting',
             );
 
             return (
@@ -792,6 +808,40 @@ export default function ApprovalInbox() {
                       요청자: {request?.requester_name || '-'} ·
                       요청일: {formatDateTime(request?.created_at)}
                     </Typography>
+
+                    {request?.status === 'pending' && (
+                      <Typography
+                        sx={{
+                          mt: 0.28,
+                          color: '#475569',
+                          fontSize: '0.66rem',
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        현재 결재자:{' '}
+                        <Box
+                          component="span"
+                          sx={{
+                            color: '#c2410c',
+                            fontWeight: 900,
+                          }}
+                        >
+                          {currentPendingStep
+                            ? `${currentPendingStep.approver_name} ${currentPendingStep.approver_position}`
+                            : '-'}
+                        </Box>
+                        {' · '}
+                        미결재:{' '}
+                        {incompleteSteps.length > 0
+                          ? incompleteSteps
+                              .map(
+                                (step) =>
+                                  `${step.approver_name} ${step.approver_position}`,
+                              )
+                              .join(' → ')
+                          : '-'}
+                      </Typography>
+                    )}
                   </Box>
 
                   <Box
@@ -806,7 +856,10 @@ export default function ApprovalInbox() {
                       size="small"
                       variant="outlined"
                       onClick={() =>
-                        setPreviewRequest(request)
+                        setPreviewRequest({
+                          ...request,
+                          approval_steps: allSteps,
+                        })
                       }
                       disabled={
                         !['weekly', 'proposal'].includes(
@@ -829,7 +882,10 @@ export default function ApprovalInbox() {
                       variant="contained"
                       color="success"
                       onClick={() =>
-                        handleDownloadReport(request)
+                        handleDownloadReport({
+                          ...request,
+                          approval_steps: allSteps,
+                        })
                       }
                       disabled={
                         downloadingRequestId === request?.id ||

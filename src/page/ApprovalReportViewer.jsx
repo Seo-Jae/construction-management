@@ -105,6 +105,64 @@ const formatProposalDate = (value) => {
   return `${parts[0]}.${parts[1]}.${parts[2]}`;
 };
 
+
+const getApprovalSignatureNames = (steps) => {
+  const result = {
+    director: '',
+    chief: '',
+    ceo: '',
+  };
+
+  (Array.isArray(steps) ? steps : [])
+    .filter((step) => step?.status === 'approved')
+    .forEach((step) => {
+      const position = String(
+        step?.approver_position || '',
+      ).trim();
+      const name = String(
+        step?.approver_name || '',
+      ).trim();
+
+      if (!name) return;
+
+      if (
+        position.includes('대표') ||
+        position.includes('사장')
+      ) {
+        result.ceo = name;
+      } else if (position.includes('실장')) {
+        result.chief = name;
+      } else if (position === '이사') {
+        result.director = name;
+      }
+    });
+
+  return result;
+};
+
+const applySignatureCell = (
+  worksheet,
+  address,
+  name,
+) => {
+  const cell = worksheet.getCell(address);
+
+  cell.value = name || '';
+  cell.font = {
+    ...(cell.font || {}),
+    name: '궁서',
+    bold: true,
+    size: 18,
+    italic: false,
+  };
+  cell.alignment = {
+    ...(cell.alignment || {}),
+    horizontal: 'center',
+    vertical: 'middle',
+    wrapText: true,
+  };
+};
+
 const saveWorkbook = async (workbook, filename) => {
   const buffer = await workbook.xlsx.writeBuffer();
   const blob = new Blob([buffer], {
@@ -159,17 +217,34 @@ const downloadWeeklyReport = async (request) => {
     period?.display ||
     request?.report_key ||
     '';
-  worksheet.getCell('D2').value =
+  const managerName =
     payload?.managerName ||
     request?.requester_name ||
     '';
+  const approvalNames = getApprovalSignatureNames(
+    request?.approval_steps,
+  );
 
-  worksheet.getCell('D2').font = {
-    ...(worksheet.getCell('D2').font || {}),
-    name: '궁서',
-    bold: true,
-    size: 18,
-  };
+  applySignatureCell(
+    worksheet,
+    'D2',
+    managerName,
+  );
+  applySignatureCell(
+    worksheet,
+    'E2',
+    approvalNames.director,
+  );
+  applySignatureCell(
+    worksheet,
+    'F2',
+    approvalNames.chief,
+  );
+  applySignatureCell(
+    worksheet,
+    'G2',
+    approvalNames.ceo,
+  );
 
   stats.forEach((row, index) => {
     const excelRow = 8 + index;
@@ -274,25 +349,30 @@ const downloadProposalReport = async (request) => {
     };
   });
 
-  const signatureCell = worksheet.getCell('D4');
+  const approvalNames = getApprovalSignatureNames(
+    request?.approval_steps,
+  );
 
-  signatureCell.value = authorName;
-  signatureCell.style = {
-    ...cloneValue(signatureCell.style),
-    font: {
-      ...cloneValue(signatureCell.font),
-      name: '궁서',
-      size: 18,
-      bold: true,
-      italic: false,
-    },
-    alignment: {
-      ...cloneValue(signatureCell.alignment),
-      horizontal: 'center',
-      vertical: 'middle',
-      wrapText: true,
-    },
-  };
+  applySignatureCell(
+    worksheet,
+    'D4',
+    authorName,
+  );
+  applySignatureCell(
+    worksheet,
+    'E4',
+    approvalNames.director,
+  );
+  applySignatureCell(
+    worksheet,
+    'F4',
+    approvalNames.chief,
+  );
+  applySignatureCell(
+    worksheet,
+    'G4',
+    approvalNames.ceo,
+  );
 
   const narrative =
     payload?.narrative ||
@@ -381,7 +461,33 @@ const previewValueSx = {
   alignItems: 'center',
 };
 
-function ApprovalSignArea({ authorName }) {
+function ApprovalSignArea({
+  authorName,
+  approvalSteps = [],
+}) {
+  const approvalNames = getApprovalSignatureNames(
+    approvalSteps,
+  );
+
+  const signatures = [
+    {
+      role: '담당',
+      name: authorName,
+    },
+    {
+      role: '이사',
+      name: approvalNames.director,
+    },
+    {
+      role: '실장',
+      name: approvalNames.chief,
+    },
+    {
+      role: '사장',
+      name: approvalNames.ceo,
+    },
+  ];
+
   return (
     <Box
       sx={{
@@ -391,50 +497,47 @@ function ApprovalSignArea({ authorName }) {
         borderLeft: '1px solid #374151',
       }}
     >
-      {['담당', '이사', '실장', '사장'].map(
-        (role, index) => (
+      {signatures.map((signature) => (
+        <Box
+          key={signature.role}
+          sx={{
+            minWidth: 90,
+            borderRight: '1px solid #374151',
+          }}
+        >
           <Box
-            key={role}
             sx={{
-              minWidth: 90,
-              borderRight: '1px solid #374151',
+              height: 29,
+              borderBottom: '1px solid #374151',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '0.7rem',
+              fontWeight: 900,
             }}
           >
-            <Box
-              sx={{
-                height: 29,
-                borderBottom: '1px solid #374151',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                fontSize: '0.7rem',
-                fontWeight: 900,
-              }}
-            >
-              {role}
-            </Box>
-            <Box
-              sx={{
-                height: 75,
-                px: 0.5,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                textAlign: 'center',
-                fontFamily:
-                  index === 0
-                    ? '"Gungsuh", "궁서", serif'
-                    : 'inherit',
-                fontSize:
-                  index === 0 ? '18px' : '0.74rem',
-                fontWeight: index === 0 ? 900 : 400,
-              }}
-            >
-              {index === 0 ? authorName : ''}
-            </Box>
+            {signature.role}
           </Box>
-        ),
-      )}
+          <Box
+            sx={{
+              height: 75,
+              px: 0.5,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              textAlign: 'center',
+              fontFamily:
+                '"Gungsuh", "궁서", serif',
+              fontSize: '18px',
+              fontWeight: 900,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'keep-all',
+            }}
+          >
+            {signature.name || ''}
+          </Box>
+        </Box>
+      ))}
     </Box>
   );
 }
@@ -516,7 +619,10 @@ function WeeklyPreview({ request }) {
           </Typography>
         </Box>
 
-        <ApprovalSignArea authorName={managerName} />
+        <ApprovalSignArea
+          authorName={managerName}
+          approvalSteps={request?.approval_steps}
+        />
       </Box>
 
       <Box
@@ -749,7 +855,10 @@ function ProposalPreview({ request }) {
           </Typography>
         </Box>
 
-        <ApprovalSignArea authorName={authorName} />
+        <ApprovalSignArea
+          authorName={authorName}
+          approvalSteps={request?.approval_steps}
+        />
       </Box>
 
       <Box

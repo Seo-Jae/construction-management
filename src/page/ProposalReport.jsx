@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Box,
@@ -10,6 +10,7 @@ import {
 } from '@mui/material';
 import ExcelJS from 'exceljs';
 import ApprovalRequestDialog from './ApprovalRequestDialog.jsx';
+import { fetchReportApprovalStatus } from '../utils/approvalQueries.js';
 
 const MIN_REPORT_LINES = 5;
 const MAX_REPORT_LINES = 16;
@@ -474,6 +475,14 @@ export default function ProposalReport({ userProfile }) {
   const [note, setNote] = useState('');
   const [downloadError, setDownloadError] = useState('');
   const [approvalOpen, setApprovalOpen] = useState(false);
+  const [approvalStatus, setApprovalStatus] = useState(null);
+  const [approvalStatusLoading, setApprovalStatusLoading] =
+    useState(false);
+
+  const approvalReportKey = useMemo(
+    () => `proposal:${reportDate}:${title.trim()}`,
+    [reportDate, title],
+  );
 
   const narrative = useMemo(
     () =>
@@ -482,6 +491,90 @@ export default function ProposalReport({ userProfile }) {
         : '당 현장의 발생으로 관련 내용을 아래와 같이 보고드리오니 검토 후 재가 바랍니다.',
     [title],
   );
+
+
+  const loadApprovalStatus = useCallback(async () => {
+    if (
+      !projectName ||
+      !title.trim() ||
+      !approvalReportKey
+    ) {
+      setApprovalStatus(null);
+      return;
+    }
+
+    setApprovalStatusLoading(true);
+
+    try {
+      const status = await fetchReportApprovalStatus({
+        reportType: 'proposal',
+        reportKey: approvalReportKey,
+        projectName,
+      });
+
+      setApprovalStatus(status);
+    } catch (error) {
+      console.error(
+        '품의 보고 결재상태 조회 실패:',
+        error,
+      );
+    } finally {
+      setApprovalStatusLoading(false);
+    }
+  }, [
+    approvalReportKey,
+    projectName,
+    title,
+  ]);
+
+  useEffect(() => {
+    const debounceTimer = window.setTimeout(
+      loadApprovalStatus,
+      300,
+    );
+
+    const timer = window.setInterval(
+      loadApprovalStatus,
+      20 * 1000,
+    );
+
+    const handleFocus = () => {
+      loadApprovalStatus();
+    };
+
+    const handleApprovalChanged = () => {
+      loadApprovalStatus();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener(
+      'approval-workflow-changed',
+      handleApprovalChanged,
+    );
+
+    return () => {
+      window.clearTimeout(debounceTimer);
+      window.clearInterval(timer);
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener(
+        'approval-workflow-changed',
+        handleApprovalChanged,
+      );
+    };
+  }, [loadApprovalStatus]);
+
+  const approvalState = approvalStatus?.status || '';
+  const approvalLocked = ['pending', 'approved'].includes(
+    approvalState,
+  );
+  const approvalButtonText =
+    approvalState === 'pending'
+      ? '결재중'
+      : approvalState === 'approved'
+        ? '승인완료'
+        : approvalState === 'rejected'
+          ? '재결재요청'
+          : '결재요청';
 
   const handleLineChange = (index, value) => {
     setReportLines((previous) =>
@@ -705,23 +798,58 @@ export default function ProposalReport({ userProfile }) {
             <Typography sx={{ mt: 0.2, color: '#64748b', fontSize: '0.72rem' }}>
               입력한 내용은 오른쪽 미리보기에 즉시 반영됩니다.
             </Typography>
+            {approvalState === 'rejected' && (
+              <Typography
+                sx={{
+                  mt: 0.25,
+                  color: '#dc2626',
+                  fontSize: '0.68rem',
+                  fontWeight: 800,
+                }}
+              >
+                반려된 보고서입니다. 내용을 수정한 뒤 재결재요청할 수 있습니다.
+              </Typography>
+            )}
           </Box>
 
           <Button
             size="small"
             variant="contained"
             onClick={handleOpenApproval}
+            disabled={approvalStatusLoading || approvalLocked}
             sx={{
-              minWidth: 72,
+              minWidth: approvalState === 'rejected' ? 92 : 72,
               px: 1.15,
               whiteSpace: 'nowrap',
               fontSize: '0.72rem',
               fontWeight: 800,
-              bgcolor: '#2563eb',
-              '&:hover': { bgcolor: '#1d4ed8' },
+              bgcolor:
+                approvalState === 'approved'
+                  ? '#15803d'
+                  : approvalState === 'pending'
+                    ? '#d97706'
+                    : '#2563eb',
+              '&:hover': {
+                bgcolor:
+                  approvalState === 'approved'
+                    ? '#15803d'
+                    : approvalState === 'pending'
+                      ? '#d97706'
+                      : '#1d4ed8',
+              },
+              '&.Mui-disabled': {
+                color: '#ffffff',
+                bgcolor:
+                  approvalState === 'approved'
+                    ? '#15803d'
+                    : '#d97706',
+                opacity: 0.82,
+              },
             }}
           >
-            결재요청
+            {approvalStatusLoading
+              ? '확인중'
+              : approvalButtonText}
           </Button>
 
           <Button
@@ -912,9 +1040,15 @@ export default function ProposalReport({ userProfile }) {
         onClose={() => setApprovalOpen(false)}
         reportType="proposal"
         reportTitle={`품의 보고 - ${title || '제목 미작성'}`}
-        reportKey={`proposal:${reportDate}:${title.trim()}`}
+        reportKey={approvalReportKey}
         projectName={projectName}
         requesterName={authorName}
+        onSubmitted={() => {
+          setApprovalStatus({
+            status: 'pending',
+          });
+          loadApprovalStatus();
+        }}
         payload={{
           projectName,
           authorName,
