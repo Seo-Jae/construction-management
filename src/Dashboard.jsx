@@ -295,7 +295,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
   /*
     한국시간 기준 시계입니다.
-    브라우저를 계속 열어둬도 자정과 오전 10시가 지나면
+    브라우저를 계속 열어둬도 자정과 23시 59분이 지나면
     오늘 표시와 자동 마감 상태가 1분 이내에 갱신됩니다.
   */
   const [koreaClock, setKoreaClock] = useState(() => new Date());
@@ -609,8 +609,12 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     // 한국시간 기준 지난 날짜는 자동 마감입니다.
     if (targetTime < todayTime) return true;
 
-    // 한국시간 기준 오늘은 오전 10시부터 자동 마감입니다.
-    if (targetTime === todayTime && koreaNow.hour >= 10) {
+    // 한국시간 기준 오늘은 23시 59분부터 자동 마감합니다.
+    if (
+      targetTime === todayTime &&
+      koreaNow.hour === 23 &&
+      koreaNow.minute >= 59
+    ) {
       return true;
     }
 

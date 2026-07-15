@@ -222,22 +222,24 @@ export default function DailyReport({
               </Box>
 
               <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
-                <Button
-                  onClick={() => handleOpenModal(day)}
-                  variant="outlined"
-                  size="small"
-                  sx={{
-                    minWidth: 0,
-                    px: 1,
-                    py: 0.2,
-                    fontSize: '0.65rem',
-                    color: '#0ea5e9',
-                    borderColor: '#0ea5e9',
-                    fontWeight: 'bold',
-                  }}
-                >
-                  근로자 추가/수정
-                </Button>
+                {!closedStatus && (
+                  <Button
+                    onClick={() => handleOpenModal(day)}
+                    variant="outlined"
+                    size="small"
+                    sx={{
+                      minWidth: 0,
+                      px: 1,
+                      py: 0.2,
+                      fontSize: '0.65rem',
+                      color: '#0ea5e9',
+                      borderColor: '#0ea5e9',
+                      fontWeight: 'bold',
+                    }}
+                  >
+                    근로자 추가/수정
+                  </Button>
+                )}
 
                 <Button
                   onClick={() => handleDownloadExcel(day)}
