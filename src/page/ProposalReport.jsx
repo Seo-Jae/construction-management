@@ -122,26 +122,7 @@ function ReportContentInputs({
         </Button>
       </Box>
 
-      <ApprovalRequestDialog
-        open={approvalOpen}
-        onClose={() => setApprovalOpen(false)}
-        reportType="proposal"
-        reportTitle={`품의 보고 - ${title || '제목 미작성'}`}
-        reportKey={`proposal:${reportDate}:${title.trim()}`}
-        projectName={projectName}
-        requesterName={authorName}
-        payload={{
-          projectName,
-          authorName,
-          title,
-          reportDate,
-          reportLines,
-          itemName,
-          amount,
-          note,
-          narrative,
-        }}
-      />
+      
     </Box>
   );
 }
@@ -925,6 +906,27 @@ export default function ProposalReport({ userProfile }) {
           note={note}
         />
       </Box>
+
+      <ApprovalRequestDialog
+        open={approvalOpen}
+        onClose={() => setApprovalOpen(false)}
+        reportType="proposal"
+        reportTitle={`품의 보고 - ${title || '제목 미작성'}`}
+        reportKey={`proposal:${reportDate}:${title.trim()}`}
+        projectName={projectName}
+        requesterName={authorName}
+        payload={{
+          projectName,
+          authorName,
+          title,
+          reportDate,
+          reportLines,
+          itemName,
+          amount,
+          note,
+          narrative,
+        }}
+      />
     </Box>
   );
 }

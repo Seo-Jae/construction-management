@@ -3,7 +3,7 @@ import { supabase } from '../supabaseClient';
 const normalizeEmail = (value) =>
   String(value || '').trim().toLowerCase();
 
-export const getCurrentApprovalEmail = async () => {
+export const getCurrentApprovalIdentity = async () => {
   const {
     data: { user },
     error,
@@ -14,15 +14,41 @@ export const getCurrentApprovalEmail = async () => {
   }
 
   const email = normalizeEmail(user?.email);
+  const userId = String(user?.id || '').trim();
 
-  if (!email) {
+  if (!userId || !email) {
     throw new Error(
-      '로그인 계정의 이메일을 확인하지 못했습니다.',
+      '로그인 계정 정보를 확인하지 못했습니다.',
     );
   }
 
-  return email;
+  return {
+    userId,
+    email,
+  };
 };
+
+export const getCurrentApprovalEmail = async () => {
+  const identity = await getCurrentApprovalIdentity();
+  return identity.email;
+};
+
+const REQUEST_SELECT = `
+  id,
+  report_type,
+  report_title,
+  report_key,
+  project_name,
+  requester_user_id,
+  requester_name,
+  requester_email,
+  payload,
+  status,
+  current_step_order,
+  current_approver_email,
+  created_at,
+  completed_at
+`;
 
 const fetchRequestsByIds = async (requestIds) => {
   if (!Array.isArray(requestIds) || requestIds.length === 0) {
@@ -31,23 +57,7 @@ const fetchRequestsByIds = async (requestIds) => {
 
   const { data, error } = await supabase
     .from('approval_requests')
-    .select(
-      `
-      id,
-      report_type,
-      report_title,
-      report_key,
-      project_name,
-      requester_name,
-      requester_email,
-      payload,
-      status,
-      current_step_order,
-      current_approver_email,
-      created_at,
-      completed_at
-    `,
-    )
+    .select(REQUEST_SELECT)
     .in('id', requestIds);
 
   if (error) {
@@ -58,16 +68,8 @@ const fetchRequestsByIds = async (requestIds) => {
 };
 
 export const fetchPendingApprovalSummary = async () => {
-  const email = await getCurrentApprovalEmail();
+  const { email } = await getCurrentApprovalIdentity();
 
-  /*
-    결재요청 테이블과 관계 조회를 한 번에 묶지 않고,
-    현재 이메일의 pending 단계부터 직접 조회합니다.
-
-    이렇게 하면 현장 선택 여부와 관계없이 결재 건수를
-    정확히 불러올 수 있고, 다음 결재자로 넘어간 순간에도
-    해당 이메일의 pending 단계가 바로 집계됩니다.
-  */
   const { data: steps, error: stepError } = await supabase
     .from('approval_steps')
     .select('id, request_id, status')
@@ -120,10 +122,14 @@ export const fetchPendingApprovalSummary = async () => {
 };
 
 export const fetchApprovalInboxData = async () => {
-  const email = await getCurrentApprovalEmail();
+  const { userId, email } =
+    await getCurrentApprovalIdentity();
 
-  const { data: ownSteps, error: ownStepError } =
-    await supabase
+  const [
+    { data: ownSteps, error: ownStepError },
+    { data: ownRequests, error: ownRequestError },
+  ] = await Promise.all([
+    supabase
       .from('approval_steps')
       .select(
         `
@@ -140,16 +146,28 @@ export const fetchApprovalInboxData = async () => {
       `,
       )
       .eq('approver_email', email)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false }),
+
+    supabase
+      .from('approval_requests')
+      .select(REQUEST_SELECT)
+      .eq('requester_user_id', userId)
+      .order('created_at', { ascending: false }),
+  ]);
 
   if (ownStepError) {
     throw ownStepError;
   }
 
+  if (ownRequestError) {
+    throw ownRequestError;
+  }
+
   const requestIds = Array.from(
-    new Set(
-      (ownSteps || []).map((step) => step.request_id),
-    ),
+    new Set([
+      ...(ownSteps || []).map((step) => step.request_id),
+      ...(ownRequests || []).map((request) => request.id),
+    ]),
   );
 
   if (requestIds.length === 0) {
@@ -160,9 +178,16 @@ export const fetchApprovalInboxData = async () => {
     };
   }
 
-  const requests = await fetchRequestsByIds(requestIds);
-  const requestMap = new Map(
-    requests.map((request) => [request.id, request]),
+  const additionalRequests = await fetchRequestsByIds(
+    requestIds,
+  );
+
+  const requestMap = new Map();
+
+  [...additionalRequests, ...(ownRequests || [])].forEach(
+    (request) => {
+      requestMap.set(request.id, request);
+    },
   );
 
   const { data: allSteps, error: allStepError } =
@@ -199,33 +224,72 @@ export const fetchApprovalInboxData = async () => {
     stepsByRequest[step.request_id].push(step);
   });
 
-  const items = (ownSteps || [])
+  const approverItems = (ownSteps || [])
     .map((step) => ({
       ...step,
+      item_kind: 'approver',
       approval_requests:
         requestMap.get(step.request_id) || null,
     }))
-    .filter((item) => item.approval_requests)
-    .sort((a, b) => {
-      const aPending =
-        a.status === 'pending' &&
-        a.approval_requests?.status === 'pending';
-      const bPending =
-        b.status === 'pending' &&
-        b.approval_requests?.status === 'pending';
+    .filter((item) => item.approval_requests);
 
-      if (aPending !== bPending) {
-        return aPending ? -1 : 1;
-      }
+  /*
+    요청자가 자신의 진행중·승인·반려 결과를 같은 결재함에서
+    확인하도록 요청자 전용 항목을 추가합니다.
+  */
+  const requesterItems = (ownRequests || []).map((request) => ({
+    id: `requester-${request.id}`,
+    request_id: request.id,
+    item_kind: 'requester',
+    step_order: 0,
+    approver_name: '',
+    approver_position: '',
+    approver_email: email,
+    status: request.status,
+    acted_at: request.completed_at,
+    comment: '',
+    created_at: request.created_at,
+    approval_requests: request,
+  }));
 
-      return String(
-        b.approval_requests?.created_at || b.created_at,
-      ).localeCompare(
-        String(
-          a.approval_requests?.created_at || a.created_at,
-        ),
-      );
-    });
+  const items = [
+    ...approverItems,
+    ...requesterItems,
+  ].sort((a, b) => {
+    const aActionable =
+      a.item_kind === 'approver' &&
+      a.status === 'pending' &&
+      a.approval_requests?.status === 'pending';
+
+    const bActionable =
+      b.item_kind === 'approver' &&
+      b.status === 'pending' &&
+      b.approval_requests?.status === 'pending';
+
+    if (aActionable !== bActionable) {
+      return aActionable ? -1 : 1;
+    }
+
+    const aRejected =
+      a.item_kind === 'requester' &&
+      a.approval_requests?.status === 'rejected';
+
+    const bRejected =
+      b.item_kind === 'requester' &&
+      b.approval_requests?.status === 'rejected';
+
+    if (aRejected !== bRejected) {
+      return aRejected ? -1 : 1;
+    }
+
+    return String(
+      b.approval_requests?.created_at || b.created_at,
+    ).localeCompare(
+      String(
+        a.approval_requests?.created_at || a.created_at,
+      ),
+    );
+  });
 
   return {
     email,

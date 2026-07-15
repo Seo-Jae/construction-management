@@ -76,6 +76,29 @@ const STEP_STATUS = {
   },
 };
 
+const REQUESTER_ITEM_STATUS = {
+  pending: {
+    label: '승인 진행중',
+    color: '#0369a1',
+    bgcolor: '#e0f2fe',
+  },
+  approved: {
+    label: '승인 완료',
+    color: '#15803d',
+    bgcolor: '#dcfce7',
+  },
+  rejected: {
+    label: '반려됨',
+    color: '#b91c1c',
+    bgcolor: '#fee2e2',
+  },
+  cancelled: {
+    label: '취소됨',
+    color: '#64748b',
+    bgcolor: '#e2e8f0',
+  },
+};
+
 const REPORT_TYPE_LABEL = {
   weekly: '주간 업무 보고',
   proposal: '품의 보고',
@@ -486,8 +509,17 @@ export default function ApprovalInbox() {
 
   const pendingCount = items.filter(
     (item) =>
+      item.item_kind === 'approver' &&
       item.status === 'pending' &&
       item.approval_requests?.status === 'pending',
+  ).length;
+
+  const requesterResultCount = items.filter(
+    (item) =>
+      item.item_kind === 'requester' &&
+      ['approved', 'rejected'].includes(
+        item.approval_requests?.status,
+      ),
   ).length;
 
   return (
@@ -536,7 +568,8 @@ export default function ApprovalInbox() {
               }}
             >
               {userEmail || '-'} · 현재 결재 대기{' '}
-              {pendingCount.toLocaleString()}건
+              {pendingCount.toLocaleString()}건 · 처리 결과{' '}
+              {requesterResultCount.toLocaleString()}건
             </Typography>
           </Box>
 
@@ -587,24 +620,32 @@ export default function ApprovalInbox() {
               fontSize: '0.78rem',
             }}
           >
-            해당 이메일로 요청된 결재가 없습니다.
+            결재 요청 또는 처리 내역이 없습니다.
           </Paper>
         ) : (
           items.map((item) => {
             const request = item.approval_requests;
+            const isRequesterItem =
+              item.item_kind === 'requester';
             const requestStatus =
               REQUEST_STATUS[request?.status] ||
               REQUEST_STATUS.pending;
-            const stepStatus =
-              STEP_STATUS[item.status] ||
-              STEP_STATUS.waiting;
+            const stepStatus = isRequesterItem
+              ? REQUESTER_ITEM_STATUS[request?.status] ||
+                REQUESTER_ITEM_STATUS.pending
+              : STEP_STATUS[item.status] ||
+                STEP_STATUS.waiting;
             const isPending =
+              !isRequesterItem &&
               item.status === 'pending' &&
               request?.status === 'pending';
             const isExpanded =
               expandedRequestId === item.request_id;
             const allSteps =
               stepsByRequest[item.request_id] || [];
+            const rejectedStep = allSteps.find(
+              (step) => step.status === 'rejected',
+            );
 
             return (
               <Paper
@@ -650,6 +691,26 @@ export default function ApprovalInbox() {
                           height: 20,
                           color: '#1d4ed8',
                           bgcolor: '#dbeafe',
+                          fontSize: '0.6rem',
+                          fontWeight: 900,
+                        }}
+                      />
+
+                      <Chip
+                        label={
+                          isRequesterItem
+                            ? '내가 요청한 보고'
+                            : '내 결재 항목'
+                        }
+                        size="small"
+                        sx={{
+                          height: 20,
+                          color: isRequesterItem
+                            ? '#6d28d9'
+                            : '#0f766e',
+                          bgcolor: isRequesterItem
+                            ? '#ede9fe'
+                            : '#ccfbf1',
                           fontSize: '0.6rem',
                           fontWeight: 900,
                         }}
@@ -730,6 +791,47 @@ export default function ApprovalInbox() {
                 <Collapse in={isExpanded}>
                   <ReportSnapshot request={request} />
 
+                  {isRequesterItem &&
+                    request?.status === 'rejected' && (
+                      <Alert
+                        severity="error"
+                        sx={{
+                          mt: 1,
+                          fontSize: '0.7rem',
+                          '& .MuiAlert-message': {
+                            width: '100%',
+                          },
+                        }}
+                      >
+                        <Typography
+                          sx={{
+                            color: '#991b1b',
+                            fontSize: '0.72rem',
+                            fontWeight: 900,
+                          }}
+                        >
+                          반려자:{' '}
+                          {rejectedStep
+                            ? `${rejectedStep.approver_name} ${rejectedStep.approver_position}`
+                            : '-'}
+                        </Typography>
+                        <Typography
+                          sx={{
+                            mt: 0.35,
+                            color: '#7f1d1d',
+                            fontSize: '0.7rem',
+                            whiteSpace: 'pre-wrap',
+                          }}
+                        >
+                          반려내용:{' '}
+                          {String(
+                            rejectedStep?.comment || '',
+                          ).trim() ||
+                            '반려내용이 입력되지 않았습니다.'}
+                        </Typography>
+                      </Alert>
+                    )}
+
                   <Divider sx={{ my: 1 }} />
 
                   <Typography
@@ -792,6 +894,27 @@ export default function ApprovalInbox() {
                                   )}`
                                 : ''}
                             </Typography>
+
+                            {String(
+                              step.comment || '',
+                            ).trim() && (
+                              <Typography
+                                sx={{
+                                  mt: 0.25,
+                                  maxWidth: 220,
+                                  color:
+                                    step.status === 'rejected'
+                                      ? '#991b1b'
+                                      : '#475569',
+                                  fontSize: '0.58rem',
+                                  lineHeight: 1.4,
+                                  whiteSpace: 'pre-wrap',
+                                  wordBreak: 'break-word',
+                                }}
+                              >
+                                의견: {step.comment}
+                              </Typography>
+                            )}
                           </Box>
 
                           {index < allSteps.length - 1 && (
