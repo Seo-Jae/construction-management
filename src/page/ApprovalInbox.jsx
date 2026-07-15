@@ -18,8 +18,6 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
-import CloseOutlinedIcon from '@mui/icons-material/CloseOutlined';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -849,7 +847,6 @@ export default function ApprovalInbox() {
                         size="small"
                         variant="outlined"
                         color="error"
-                        startIcon={<CloseOutlinedIcon />}
                         onClick={() =>
                           handleAction(
                             item.request_id,
@@ -859,6 +856,11 @@ export default function ApprovalInbox() {
                         disabled={
                           actingRequestId === item.request_id
                         }
+                        sx={{
+                          minWidth: 58,
+                          whiteSpace: 'nowrap',
+                          fontWeight: 800,
+                        }}
                       >
                         반려
                       </Button>
@@ -867,17 +869,6 @@ export default function ApprovalInbox() {
                         size="small"
                         variant="contained"
                         color="success"
-                        startIcon={
-                          actingRequestId ===
-                          item.request_id ? (
-                            <CircularProgress
-                              size={14}
-                              color="inherit"
-                            />
-                          ) : (
-                            <CheckCircleOutlineIcon />
-                          )
-                        }
                         onClick={() =>
                           handleAction(
                             item.request_id,
@@ -887,8 +878,20 @@ export default function ApprovalInbox() {
                         disabled={
                           actingRequestId === item.request_id
                         }
+                        sx={{
+                          minWidth: 82,
+                          whiteSpace: 'nowrap',
+                          fontWeight: 800,
+                        }}
                       >
-                        결재 승인
+                        {actingRequestId === item.request_id ? (
+                          <CircularProgress
+                            size={14}
+                            color="inherit"
+                          />
+                        ) : (
+                          '결재 승인'
+                        )}
                       </Button>
                     </Box>
                   )}
