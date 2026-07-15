@@ -5,7 +5,10 @@ import {
   Button,
   CircularProgress,
   Divider,
+  IconButton,
   Paper,
+  SvgIcon,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import { supabase } from '../supabaseClient';
@@ -33,6 +36,30 @@ const formatKoreaYYMMDD = (date = new Date()) => {
   const yy = String(values.year).slice(2);
   return `${yy}.${values.month}.${values.day}`;
 };
+
+const dateKeyToNumber = (dateKey) => {
+  const parts = String(dateKey || '')
+    .split('.')
+    .map(Number);
+
+  if (
+    parts.length !== 3 ||
+    parts.some((value) => !Number.isFinite(value))
+  ) {
+    return null;
+  }
+
+  const [yy, mm, dd] = parts;
+  return (2000 + yy) * 10000 + mm * 100 + dd;
+};
+
+function PrinterIcon(props) {
+  return (
+    <SvgIcon {...props} viewBox="0 0 24 24">
+      <path d="M6 9V3h12v6h1a3 3 0 0 1 3 3v5h-4v4H6v-4H2v-5a3 3 0 0 1 3-3h1Zm2-4v4h8V5H8Zm8 14v-5H8v5h8Zm3-4h1v-3a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v3h2v-3h12v3h1Z" />
+    </SvgIcon>
+  );
+}
 
 const hasMeaningfulDailyReport = (report) => {
   const workers = Array.isArray(report?.workers)
@@ -251,17 +278,75 @@ function ProjectCard({ project, onOpenProject }) {
       <Box
         sx={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+          gridTemplateColumns: '1.45fr 0.85fr 0.85fr',
           gap: 0.8,
+          alignItems: 'stretch',
         }}
       >
-        <Box>
-          <Typography sx={{ color: '#64748b', fontSize: '0.67rem' }}>
-            금일 출력
-          </Typography>
-          <Typography fontWeight={900} sx={{ mt: 0.2, fontSize: '1.05rem' }}>
-            {project.todayWorkers.toLocaleString()}명
-          </Typography>
+        <Box
+          sx={{
+            display: 'grid',
+            gridTemplateColumns: '0.82fr 1.18fr',
+            gap: 0.85,
+            minWidth: 0,
+          }}
+        >
+          <Box>
+            <Typography sx={{ color: '#64748b', fontSize: '0.67rem' }}>
+              금일 출력
+            </Typography>
+            <Typography
+              fontWeight={900}
+              sx={{ mt: 0.2, fontSize: '1.05rem' }}
+            >
+              {project.todayWorkers.toLocaleString()}명
+            </Typography>
+          </Box>
+
+          <Box
+            sx={{
+              pl: 0.9,
+              borderLeft: '1px solid #e2e8f0',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'center',
+              gap: 0.18,
+              minWidth: 0,
+            }}
+          >
+            <Typography
+              sx={{
+                color: '#475569',
+                fontSize: '0.66rem',
+                lineHeight: 1.35,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              전일누계: {project.previousWorkers.toLocaleString()}명
+            </Typography>
+            <Typography
+              sx={{
+                color: '#0f172a',
+                fontSize: '0.66rem',
+                fontWeight: 800,
+                lineHeight: 1.35,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              금일출력: {project.todayWorkers.toLocaleString()}명
+            </Typography>
+            <Typography
+              sx={{
+                color: '#0369a1',
+                fontSize: '0.66rem',
+                fontWeight: 900,
+                lineHeight: 1.35,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              누계출력: {project.cumulativeWorkers.toLocaleString()}명
+            </Typography>
+          </Box>
         </Box>
 
         <Box>
@@ -305,6 +390,7 @@ function ProjectCard({ project, onOpenProject }) {
       </Box>
 
       <Button
+        className="admin-dashboard-no-print"
         fullWidth
         size="small"
         variant="contained"
@@ -360,7 +446,7 @@ export default function AdminDashboard({
 
       const [
         buildingRows,
-        todayReports,
+        dailyReports,
         progressRows,
       ] = await Promise.all([
         fetchAllRows(
@@ -370,7 +456,6 @@ export default function AdminDashboard({
         fetchAllRows(
           'daily_reports',
           'project_name, date, workers, tasks, today_task, tomorrow_task, status',
-          (query) => query.eq('date', todayKey),
         ),
         fetchAllRows(
           'unit_progress',
@@ -383,7 +468,7 @@ export default function AdminDashboard({
       buildingRows.forEach((row) => {
         if (row?.project_name) projectNames.add(row.project_name);
       });
-      todayReports.forEach((row) => {
+      dailyReports.forEach((row) => {
         if (row?.project_name) projectNames.add(row.project_name);
       });
       progressRows.forEach((row) => {
@@ -396,11 +481,28 @@ export default function AdminDashboard({
           const projectBuildings = buildingRows.filter(
             (row) => row.project_name === projectName,
           );
-          const projectReports = todayReports.filter(
+          const todayDateNumber = dateKeyToNumber(todayKey);
+
+          const projectAllReports = dailyReports.filter(
+            (row) => row.project_name === projectName,
+          );
+
+          const projectReports = projectAllReports.filter(
             (row) =>
-              row.project_name === projectName &&
+              row.date === todayKey &&
               hasMeaningfulDailyReport(row),
           );
+
+          const previousReports = projectAllReports.filter((row) => {
+            const reportDateNumber = dateKeyToNumber(row.date);
+
+            return (
+              reportDateNumber !== null &&
+              todayDateNumber !== null &&
+              reportDateNumber < todayDateNumber
+            );
+          });
+
           const projectProgress = progressRows.filter(
             (row) => row.project_name === projectName,
           );
@@ -457,17 +559,28 @@ export default function AdminDashboard({
               ? 0
               : (completedProgress / totalProgressTargets) * 100;
 
+          const previousWorkers = previousReports.reduce(
+            (total, report) =>
+              total + calculateWorkerCount(report?.workers),
+            0,
+          );
+
           const todayWorkers = projectReports.reduce(
             (total, report) =>
               total + calculateWorkerCount(report?.workers),
             0,
           );
 
+          const cumulativeWorkers =
+            previousWorkers + todayWorkers;
+
           return {
             projectName,
             buildingCount: projectBuildings.length,
             totalUnits,
+            previousWorkers,
             todayWorkers,
+            cumulativeWorkers,
             completedProgress,
             fullyCompletedProcessCount,
             progressRate,
@@ -517,6 +630,10 @@ export default function AdminDashboard({
     };
   }, [projects]);
 
+  const handlePrintDashboard = () => {
+    window.print();
+  };
+
   if (loading) {
     return (
       <Paper
@@ -535,14 +652,66 @@ export default function AdminDashboard({
   }
 
   return (
-    <Box
-      sx={{
-        height: '100%',
-        minHeight: 0,
-        overflowY: 'auto',
-        pr: 0.4,
-      }}
-    >
+    <>
+      <style>
+        {`
+          @media print {
+            @page {
+              size: A4 landscape;
+              margin: 10mm;
+            }
+
+            html,
+            body {
+              background: #ffffff !important;
+            }
+
+            body * {
+              visibility: hidden !important;
+            }
+
+            #admin-dashboard-print-area,
+            #admin-dashboard-print-area * {
+              visibility: visible !important;
+            }
+
+            #admin-dashboard-print-area {
+              position: absolute !important;
+              left: 0 !important;
+              top: 0 !important;
+              width: 100% !important;
+              height: auto !important;
+              min-height: 0 !important;
+              overflow: visible !important;
+              padding: 0 !important;
+              margin: 0 !important;
+              background: #ffffff !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+
+            #admin-dashboard-print-area .admin-dashboard-no-print {
+              display: none !important;
+            }
+
+            #admin-dashboard-print-area .MuiPaper-root {
+              break-inside: avoid;
+              page-break-inside: avoid;
+              box-shadow: none !important;
+            }
+          }
+        `}
+      </style>
+
+      <Box
+        id="admin-dashboard-print-area"
+        sx={{
+          height: '100%',
+          minHeight: 0,
+          overflowY: 'auto',
+          pr: 0.4,
+        }}
+      >
       <Paper
         variant="outlined"
         sx={{
@@ -586,13 +755,44 @@ export default function AdminDashboard({
             </Typography>
           </Box>
 
-          <Button
-            size="small"
-            variant="outlined"
-            onClick={loadDashboard}
+          <Box
+            className="admin-dashboard-no-print"
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.7,
+            }}
           >
-            새로고침
-          </Button>
+            <Tooltip title="Dashboard 인쇄">
+              <IconButton
+                size="small"
+                aria-label="Dashboard 인쇄"
+                onClick={handlePrintDashboard}
+                sx={{
+                  width: 32,
+                  height: 32,
+                  border: '1px solid #93c5fd',
+                  borderRadius: 1,
+                  color: '#2563eb',
+                  bgcolor: '#ffffff',
+                  '&:hover': {
+                    bgcolor: '#eff6ff',
+                    borderColor: '#60a5fa',
+                  },
+                }}
+              >
+                <PrinterIcon sx={{ fontSize: 18 }} />
+              </IconButton>
+            </Tooltip>
+
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={loadDashboard}
+            >
+              새로고침
+            </Button>
+          </Box>
         </Box>
       </Paper>
 
@@ -671,6 +871,7 @@ export default function AdminDashboard({
           ))}
         </Box>
       )}
-    </Box>
+      </Box>
+    </>
   );
 }
