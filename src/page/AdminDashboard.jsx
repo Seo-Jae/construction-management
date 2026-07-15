@@ -15,8 +15,85 @@ import { supabase } from '../supabaseClient';
 import { countUniqueUnits } from '../utils/buildingUnits.js';
 
 const PAGE_SIZE = 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const PROJECT_SCHEDULES = {
+  '한라건설 용인금어지구': {
+    startDate: '25.06.30',
+    endDate: '26.12.31',
+  },
+  '현대건설 용인마크밸리': {
+    startDate: '25.10.31',
+    endDate: '27.12.07',
+  },
+  '대우건설 용인현장': {
+    startDate: '26.04.15',
+    endDate: '28.02.29',
+  },
+};
 
 const pad2 = (value) => String(value).padStart(2, '0');
+
+const parseDateKeyToUtc = (dateKey) => {
+  const parts = String(dateKey || '')
+    .split('.')
+    .map(Number);
+
+  if (
+    parts.length !== 3 ||
+    parts.some((value) => !Number.isFinite(value))
+  ) {
+    return null;
+  }
+
+  const [yy, month, day] = parts;
+  const fullYear = yy < 100 ? 2000 + yy : yy;
+
+  return Date.UTC(fullYear, month - 1, day);
+};
+
+const getProjectSchedule = (projectName, todayKey) => {
+  const schedule = PROJECT_SCHEDULES[projectName];
+
+  if (!schedule) {
+    return {
+      startDate: '-',
+      endDate: '-',
+      startSort: Number.MAX_SAFE_INTEGER,
+      dDayLabel: '일정 미등록',
+      dDayState: 'unknown',
+    };
+  }
+
+  const todayUtc = parseDateKeyToUtc(todayKey);
+  const startUtc = parseDateKeyToUtc(schedule.startDate);
+  const endUtc = parseDateKeyToUtc(schedule.endDate);
+
+  let dDayLabel = 'D-000';
+  let dDayState = 'active';
+
+  if (todayUtc !== null && endUtc !== null) {
+    const remainingDays = Math.round((endUtc - todayUtc) / DAY_MS);
+
+    if (remainingDays > 0) {
+      dDayLabel = `D-${String(remainingDays).padStart(3, '0')}`;
+    } else if (remainingDays === 0) {
+      dDayLabel = 'D-DAY';
+      dDayState = 'today';
+    } else {
+      dDayLabel = `D+${String(Math.abs(remainingDays)).padStart(3, '0')}`;
+      dDayState = 'expired';
+    }
+  }
+
+  return {
+    ...schedule,
+    startSort:
+      startUtc === null ? Number.MAX_SAFE_INTEGER : startUtc,
+    dDayLabel,
+    dDayState,
+  };
+};
 
 const formatKoreaYYMMDD = (date = new Date()) => {
   const formatter = new Intl.DateTimeFormat('en-CA', {
@@ -192,6 +269,27 @@ function ProjectCard({ project, onOpenProject }) {
   const reportColor = project.hasTodayReport ? '#15803d' : '#dc2626';
   const rate = Number(project.progressRate) || 0;
 
+  const dDayStyle =
+    project.dDayState === 'expired'
+      ? {
+          color: '#64748b',
+          bgcolor: '#e2e8f0',
+        }
+      : project.dDayState === 'today'
+        ? {
+            color: '#b91c1c',
+            bgcolor: '#fee2e2',
+          }
+        : project.dDayState === 'unknown'
+          ? {
+              color: '#64748b',
+              bgcolor: '#f1f5f9',
+            }
+          : {
+              color: '#9a3412',
+              bgcolor: '#ffedd5',
+            };
+
   return (
     <Paper
       variant="outlined"
@@ -223,20 +321,75 @@ function ProjectCard({ project, onOpenProject }) {
           </Typography>
         </Box>
 
-        <Typography
-          fontWeight={800}
+        <Box
           sx={{
             flexShrink: 0,
-            px: 0.8,
-            py: 0.25,
-            borderRadius: 1,
-            color: reportColor,
-            bgcolor: project.hasTodayReport ? '#dcfce7' : '#fee2e2',
-            fontSize: '0.68rem',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-end',
+            gap: 0.55,
+            minWidth: 0,
           }}
         >
-          {reportLabel}
-        </Typography>
+          <Box
+            sx={{
+              mr: 0.15,
+              textAlign: 'right',
+              lineHeight: 1.2,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <Typography
+              sx={{
+                color: '#64748b',
+                fontSize: '0.61rem',
+                lineHeight: 1.35,
+              }}
+            >
+              시작일 {project.startDate}
+            </Typography>
+            <Typography
+              sx={{
+                color: '#64748b',
+                fontSize: '0.61rem',
+                lineHeight: 1.35,
+              }}
+            >
+              종료일 {project.endDate}
+            </Typography>
+          </Box>
+
+          <Typography
+            fontWeight={900}
+            sx={{
+              flexShrink: 0,
+              minWidth: project.dDayState === 'unknown' ? 66 : 52,
+              px: 0.75,
+              py: 0.28,
+              borderRadius: 1,
+              textAlign: 'center',
+              fontSize: '0.68rem',
+              ...dDayStyle,
+            }}
+          >
+            {project.dDayLabel}
+          </Typography>
+
+          <Typography
+            fontWeight={800}
+            sx={{
+              flexShrink: 0,
+              px: 0.8,
+              py: 0.28,
+              borderRadius: 1,
+              color: reportColor,
+              bgcolor: project.hasTodayReport ? '#dcfce7' : '#fee2e2',
+              fontSize: '0.68rem',
+            }}
+          >
+            {reportLabel}
+          </Typography>
+        </Box>
       </Box>
 
       <Divider sx={{ my: 1.25 }} />
@@ -428,8 +581,12 @@ export default function AdminDashboard({
       });
 
       const projectList = Array.from(projectNames)
-        .sort((a, b) => a.localeCompare(b, 'ko', { numeric: true }))
         .map((projectName) => {
+          const projectSchedule = getProjectSchedule(
+            projectName,
+            todayKey,
+          );
+
           const projectBuildings = buildingRows.filter(
             (row) => row.project_name === projectName,
           );
@@ -537,7 +694,21 @@ export default function AdminDashboard({
             fullyCompletedProcessCount,
             progressRate,
             hasTodayReport: projectReports.length > 0,
+            ...projectSchedule,
           };
+        })
+        .sort((a, b) => {
+          if (a.startSort !== b.startSort) {
+            return a.startSort - b.startSort;
+          }
+
+          return a.projectName.localeCompare(
+            b.projectName,
+            'ko',
+            {
+              numeric: true,
+            },
+          );
         });
 
       setProjects(projectList);
