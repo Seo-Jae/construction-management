@@ -804,26 +804,179 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     },
   ];
 
-  const cloneWorksheetModel = (model) => {
-    if (typeof structuredClone === 'function') {
-      return structuredClone(model);
+  const cloneWorksheetData = (value) => {
+    if (value === null || value === undefined) {
+      return value;
     }
 
-    return JSON.parse(JSON.stringify(model));
+    if (value instanceof Date) {
+      return new Date(value.getTime());
+    }
+
+    if (typeof value !== 'object') {
+      return value;
+    }
+
+    if (typeof structuredClone === 'function') {
+      return structuredClone(value);
+    }
+
+    return JSON.parse(JSON.stringify(value));
+  };
+
+  const getWorksheetMergeRanges = (worksheet) => {
+    const modelMerges = worksheet?.model?.merges;
+
+    if (Array.isArray(modelMerges)) {
+      return [...modelMerges];
+    }
+
+    /*
+      ExcelJS 버전에 따라 model.merges 대신 내부 _merges에
+      병합정보가 들어 있는 경우를 대비합니다.
+    */
+    if (worksheet?._merges) {
+      return Object.values(worksheet._merges)
+        .map((merge) => merge?.range)
+        .filter(Boolean);
+    }
+
+    return [];
   };
 
   const createWorksheetFromTemplate = (
     workbook,
-    templateModel,
+    templateWorksheet,
     sheetName,
   ) => {
-    const worksheet = workbook.addWorksheet(sheetName);
-    const clonedModel = cloneWorksheetModel(templateModel);
+    /*
+      worksheet.model을 통째로 대입하면 두 번째 시트부터
+      병합셀, 열 너비, 행 높이가 엑셀 저장 과정에서 깨질 수 있습니다.
 
-    clonedModel.id = worksheet.id;
-    clonedModel.name = sheetName;
-    clonedModel.state = 'visible';
-    worksheet.model = clonedModel;
+      시트를 새로 만든 뒤 원본 양식의 각 구성요소를 명시적으로
+      복사하여 모든 날짜 시트가 동일한 모양을 유지하도록 합니다.
+    */
+    const worksheet = workbook.addWorksheet(sheetName);
+
+    worksheet.state = 'visible';
+    worksheet.properties = cloneWorksheetData(
+      templateWorksheet.properties,
+    );
+    worksheet.pageSetup = cloneWorksheetData(
+      templateWorksheet.pageSetup,
+    );
+    worksheet.headerFooter = cloneWorksheetData(
+      templateWorksheet.headerFooter,
+    );
+    worksheet.views = cloneWorksheetData(
+      templateWorksheet.views || [],
+    );
+
+    if (templateWorksheet.autoFilter) {
+      worksheet.autoFilter = cloneWorksheetData(
+        templateWorksheet.autoFilter,
+      );
+    }
+
+    for (
+      let columnNumber = 1;
+      columnNumber <= templateWorksheet.columnCount;
+      columnNumber += 1
+    ) {
+      const sourceColumn =
+        templateWorksheet.getColumn(columnNumber);
+      const targetColumn = worksheet.getColumn(columnNumber);
+
+      targetColumn.width = sourceColumn.width;
+      targetColumn.hidden = sourceColumn.hidden;
+      targetColumn.outlineLevel = sourceColumn.outlineLevel;
+      targetColumn.style = cloneWorksheetData(
+        sourceColumn.style || {},
+      );
+    }
+
+    templateWorksheet.eachRow(
+      { includeEmpty: true },
+      (sourceRow, rowNumber) => {
+        const targetRow = worksheet.getRow(rowNumber);
+
+        targetRow.height = sourceRow.height;
+        targetRow.hidden = sourceRow.hidden;
+        targetRow.outlineLevel = sourceRow.outlineLevel;
+
+        sourceRow.eachCell(
+          { includeEmpty: true },
+          (sourceCell, columnNumber) => {
+            /*
+              병합된 보조 셀은 나중에 mergeCells()로 다시 생성합니다.
+              보조 셀의 값을 먼저 넣으면 병합 마스터 값이 덮어써질 수
+              있으므로 제외합니다.
+            */
+            if (sourceCell.type === ExcelJS.ValueType.Merge) {
+              return;
+            }
+
+            const targetCell =
+              targetRow.getCell(columnNumber);
+
+            targetCell.value = cloneWorksheetData(
+              sourceCell.value,
+            );
+            targetCell.style = cloneWorksheetData(
+              sourceCell.style || {},
+            );
+
+            if (sourceCell.dataValidation) {
+              targetCell.dataValidation =
+                cloneWorksheetData(
+                  sourceCell.dataValidation,
+                );
+            }
+
+            if (sourceCell.note) {
+              targetCell.note = cloneWorksheetData(
+                sourceCell.note,
+              );
+            }
+          },
+        );
+      },
+    );
+
+    const mergeRanges =
+      getWorksheetMergeRanges(templateWorksheet);
+
+    mergeRanges.forEach((range) => {
+      worksheet.mergeCells(range);
+    });
+
+    /*
+      병합 후 마스터 셀의 스타일과 값을 한 번 더 적용합니다.
+      mergeCells() 과정에서 병합셀 스타일이 재정리되는 ExcelJS
+      동작 때문에 테두리나 정렬이 달라지는 것을 방지합니다.
+    */
+    mergeRanges.forEach((range) => {
+      const startAddress = String(range).split(':')[0];
+      const sourceCell =
+        templateWorksheet.getCell(startAddress);
+      const targetCell =
+        worksheet.getCell(startAddress);
+
+      targetCell.value = cloneWorksheetData(
+        sourceCell.value,
+      );
+      targetCell.style = cloneWorksheetData(
+        sourceCell.style || {},
+      );
+    });
+
+    const sourceValidations =
+      templateWorksheet?.dataValidations?.model;
+
+    if (sourceValidations) {
+      worksheet.dataValidations.model =
+        cloneWorksheetData(sourceValidations);
+    }
 
     return worksheet;
   };
@@ -1008,28 +1161,34 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       const lastDay = todayMidnight.getDate();
       const workbook = await loadDailyReportTemplate();
       const templateWorksheet = workbook.worksheets[0];
-      const templateModel = cloneWorksheetModel(
-        templateWorksheet.model,
-      );
       const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+      const worksheets = [];
+
+      /*
+        원본 양식에 7월 1일 데이터를 입력하기 전에
+        2일~오늘 시트를 먼저 모두 복제합니다.
+
+        그렇지 않으면 2일 이후 시트가 이미 1일 데이터가 입력된
+        시트를 복제하게 되므로 양식 원본 상태가 유지되지 않습니다.
+      */
+      templateWorksheet.name = `${month}.1`;
+      worksheets.push(templateWorksheet);
+
+      for (let day = 2; day <= lastDay; day += 1) {
+        worksheets.push(
+          createWorksheetFromTemplate(
+            workbook,
+            templateWorksheet,
+            `${month}.${day}`,
+          ),
+        );
+      }
 
       for (let day = 1; day <= lastDay; day += 1) {
         const targetDate = new Date(year, monthIndex, day);
         const dateStr = formatYYMMDD(targetDate);
-        const sheetName = `${month}.${day}`;
         const workers = savedData[dateStr]?.workers || [];
-        const worksheet =
-          day === 1
-            ? templateWorksheet
-            : createWorksheetFromTemplate(
-                workbook,
-                templateModel,
-                sheetName,
-              );
-
-        if (day === 1) {
-          worksheet.name = sheetName;
-        }
+        const worksheet = worksheets[day - 1];
 
         fillDailyReportWorksheet({
           worksheet,
