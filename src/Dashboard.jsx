@@ -687,56 +687,181 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     }
   };
   
-  const handleDownloadExcel = async (dayObj) => {
-    const dateStr = dayObj.date;
-    const workers = savedData[dateStr]?.workers || [];
+  const parseReportDateKey = (key) => {
+    if (!key || typeof key !== 'string') return null;
 
-    if (workers.length === 0) {
-      alert(`[${dateStr}] 일자에 등록된 인원이 없습니다.`);
-      return;
+    const [yy, mm, dd] = key.split('.').map(Number);
+
+    if (
+      !Number.isFinite(yy) ||
+      !Number.isFinite(mm) ||
+      !Number.isFinite(dd)
+    ) {
+      return null;
     }
 
-    try {
-      const response = await fetch('/templates/출력일보.xlsx');
-      const arrayBuffer = await response.arrayBuffer();
-      const workbook = new ExcelJS.Workbook();
-      await workbook.xlsx.load(arrayBuffer);
-      const worksheet = workbook.worksheets[0]; 
+    return new Date(2000 + yy, mm - 1, dd).getTime();
+  };
 
-      const parts = dateStr.split('.');
-      const formattedDateForExcel = `20${parts[0]}년 ${parseInt(parts[1], 10)}월 ${parseInt(parts[2], 10)}일 ${dayObj.dayName}요일`;
+  const cumulativeCellMap = [
+    {
+      job: '소장',
+      labelCell: 'B8',
+      todayCell: 'C8',
+      previousCell: 'E8',
+      totalCell: 'F8',
+    },
+    {
+      job: '관리자',
+      labelCell: 'B9',
+      todayCell: 'C9',
+      previousCell: 'E9',
+      totalCell: 'F9',
+    },
+    {
+      job: '직영',
+      labelCell: 'B10',
+      todayCell: 'C10',
+      previousCell: 'E10',
+      totalCell: 'F10',
+    },
+    {
+      job: '먹매김',
+      labelCell: 'B11',
+      todayCell: 'C11',
+      previousCell: 'E11',
+      totalCell: 'F11',
+    },
+    {
+      job: '단열',
+      labelCell: 'B12',
+      todayCell: 'C12',
+      previousCell: 'E12',
+      totalCell: 'F12',
+    },
+    {
+      job: '합지',
+      labelCell: 'B13',
+      todayCell: 'C13',
+      previousCell: 'E13',
+      totalCell: 'F13',
+    },
+    {
+      job: '경량벽체',
+      labelCell: 'B14',
+      todayCell: 'C14',
+      previousCell: 'E14',
+      totalCell: 'F14',
+    },
+    {
+      job: '세대천정',
+      labelCell: 'H8',
+      todayCell: 'I8',
+      previousCell: 'K8',
+      totalCell: 'L8',
+    },
+    {
+      job: '공용홀천정',
+      labelCell: 'H9',
+      todayCell: 'I9',
+      previousCell: 'K9',
+      totalCell: 'L9',
+    },
+    {
+      job: '몰딩',
+      labelCell: 'H10',
+      todayCell: 'I10',
+      previousCell: 'K10',
+      totalCell: 'L10',
+    },
+    {
+      job: '걸레받이',
+      labelCell: 'H11',
+      todayCell: 'I11',
+      previousCell: 'K11',
+      totalCell: 'L11',
+    },
+    {
+      job: '수장',
+      labelCell: 'H12',
+      todayCell: 'I12',
+      previousCell: 'K12',
+      totalCell: 'L12',
+    },
+    {
+      job: '외주',
+      labelCell: 'H13',
+      todayCell: 'I13',
+      previousCell: 'K13',
+      totalCell: 'L13',
+    },
+    {
+      job: '기타',
+      labelCell: 'H14',
+      todayCell: 'I14',
+      previousCell: 'K14',
+      totalCell: 'L14',
+    },
+  ];
 
-      worksheet.getCell('C3').value =
-        activeProjectName || '현장명 미지정';
-      worksheet.getCell('C4').value = '(주)욱림건설';
-      worksheet.getCell('C5').value = formattedDateForExcel;
+  const cloneWorksheetModel = (model) => {
+    if (typeof structuredClone === 'function') {
+      return structuredClone(model);
+    }
 
-      /*
-        전일누계 계산
-        - 선택한 출력일보다 이전 날짜에 저장된 모든 공사일보를 합산합니다.
-        - 현재 일자의 금일출력(C/I열)은 기존 엑셀 양식의 수식을 그대로 사용합니다.
-        - 총누계(F/L열)는 금일출력 + 전일누계 수식으로 설정합니다.
-      */
-      const parseReportDateKey = (key) => {
-        if (!key || typeof key !== 'string') return null;
+    return JSON.parse(JSON.stringify(model));
+  };
 
-        const [yy, mm, dd] = key.split('.').map(Number);
+  const createWorksheetFromTemplate = (
+    workbook,
+    templateModel,
+    sheetName,
+  ) => {
+    const worksheet = workbook.addWorksheet(sheetName);
+    const clonedModel = cloneWorksheetModel(templateModel);
 
-        if (
-          !Number.isFinite(yy) ||
-          !Number.isFinite(mm) ||
-          !Number.isFinite(dd)
-        ) {
-          return null;
-        }
+    clonedModel.id = worksheet.id;
+    clonedModel.name = sheetName;
+    clonedModel.state = 'visible';
+    worksheet.model = clonedModel;
 
-        return new Date(2000 + yy, mm - 1, dd).getTime();
-      };
+    return worksheet;
+  };
 
-      const selectedDateTime = parseReportDateKey(dateStr);
-      const previousJobCounts = {};
+  const clearDailyWorkerRows = (worksheet) => {
+    for (let row = 18; row <= 57; row += 1) {
+      ['B', 'C', 'D', 'E', 'F', 'H', 'I', 'J', 'K', 'L'].forEach(
+        (column) => {
+          worksheet.getCell(`${column}${row}`).value = null;
+        },
+      );
+    }
+  };
 
-      Object.entries(savedData).forEach(([reportDateKey, reportData]) => {
+  const fillDailyReportWorksheet = ({
+    worksheet,
+    dateStr,
+    dayName,
+    workers = [],
+  }) => {
+    const parts = dateStr.split('.');
+    const formattedDateForExcel = `20${parts[0]}년 ${parseInt(
+      parts[1],
+      10,
+    )}월 ${parseInt(parts[2], 10)}일 ${dayName}요일`;
+
+    worksheet.getCell('C3').value =
+      activeProjectName || '현장명 미지정';
+    worksheet.getCell('C4').value = '(주)욱림건설';
+    worksheet.getCell('C5').value = formattedDateForExcel;
+
+    clearDailyWorkerRows(worksheet);
+
+    const selectedDateTime = parseReportDateKey(dateStr);
+    const previousJobCounts = {};
+
+    Object.entries(savedData).forEach(
+      ([reportDateKey, reportData]) => {
         const reportDateTime = parseReportDateKey(reportDateKey);
 
         if (
@@ -760,172 +885,172 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           previousJobCounts[job] =
             (previousJobCounts[job] || 0) + 1;
         });
+      },
+    );
+
+    cumulativeCellMap.forEach(
+      ({
+        job,
+        labelCell,
+        todayCell,
+        previousCell,
+        totalCell,
+      }) => {
+        worksheet.getCell(labelCell).value = job;
+        worksheet.getCell(previousCell).value =
+          previousJobCounts[job] || 0;
+        worksheet.getCell(totalCell).value = {
+          formula: `${todayCell}+${previousCell}`,
+        };
+      },
+    );
+
+    workers.slice(0, 80).forEach((worker, index) => {
+      if (index < 40) {
+        const row = 18 + index;
+
+        worksheet.getCell(`B${row}`).value = worker.job || '';
+        worksheet.getCell(`C${row}`).value = worker.name || '';
+        worksheet.getCell(`D${row}`).value =
+          worker.process || worker.job || '';
+        worksheet.getCell(`E${row}`).value = worker.location || '';
+        worksheet.getCell(`F${row}`).value =
+          worker.workContent || worker.work_content || '';
+      } else {
+        const row = 18 + (index - 40);
+
+        worksheet.getCell(`H${row}`).value = worker.job || '';
+        worksheet.getCell(`I${row}`).value = worker.name || '';
+        worksheet.getCell(`J${row}`).value =
+          worker.process || worker.job || '';
+        worksheet.getCell(`K${row}`).value = worker.location || '';
+        worksheet.getCell(`L${row}`).value =
+          worker.workContent || worker.work_content || '';
+      }
+    });
+  };
+
+  const downloadExcelWorkbook = async (workbook, fileName) => {
+    workbook.calcProperties.fullCalcOnLoad = true;
+    workbook.calcProperties.forceFullCalc = true;
+    workbook.calcProperties.calcMode = 'auto';
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+
+    link.setAttribute('href', url);
+    link.setAttribute('download', fileName);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const loadDailyReportTemplate = async () => {
+    const response = await fetch('/templates/출력일보.xlsx');
+
+    if (!response.ok) {
+      throw new Error('출력일보 양식 파일을 찾지 못했습니다.');
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(arrayBuffer);
+
+    if (!workbook.worksheets[0]) {
+      throw new Error('출력일보 양식에 시트가 없습니다.');
+    }
+
+    return workbook;
+  };
+
+  const handleDownloadExcel = async (dayObj) => {
+    const dateStr = dayObj.date;
+    const workers = savedData[dateStr]?.workers || [];
+
+    if (workers.length === 0) {
+      alert(`[${dateStr}] 일자에 등록된 인원이 없습니다.`);
+      return;
+    }
+
+    try {
+      const workbook = await loadDailyReportTemplate();
+      const worksheet = workbook.worksheets[0];
+
+      fillDailyReportWorksheet({
+        worksheet,
+        dateStr,
+        dayName: dayObj.dayName,
+        workers,
       });
 
-      const cumulativeCellMap = [
-        {
-          job: '소장',
-          labelCell: 'B8',
-          todayCell: 'C8',
-          previousCell: 'E8',
-          totalCell: 'F8',
-        },
-        {
-          job: '관리자',
-          labelCell: 'B9',
-          todayCell: 'C9',
-          previousCell: 'E9',
-          totalCell: 'F9',
-        },
-        {
-          job: '직영',
-          labelCell: 'B10',
-          todayCell: 'C10',
-          previousCell: 'E10',
-          totalCell: 'F10',
-        },
-        {
-          job: '먹매김',
-          labelCell: 'B11',
-          todayCell: 'C11',
-          previousCell: 'E11',
-          totalCell: 'F11',
-        },
-        {
-          job: '단열',
-          labelCell: 'B12',
-          todayCell: 'C12',
-          previousCell: 'E12',
-          totalCell: 'F12',
-        },
-        {
-          job: '합지',
-          labelCell: 'B13',
-          todayCell: 'C13',
-          previousCell: 'E13',
-          totalCell: 'F13',
-        },
-        {
-          job: '경량벽체',
-          labelCell: 'B14',
-          todayCell: 'C14',
-          previousCell: 'E14',
-          totalCell: 'F14',
-        },
-        {
-          job: '세대천정',
-          labelCell: 'H8',
-          todayCell: 'I8',
-          previousCell: 'K8',
-          totalCell: 'L8',
-        },
-        {
-          job: '공용홀천정',
-          labelCell: 'H9',
-          todayCell: 'I9',
-          previousCell: 'K9',
-          totalCell: 'L9',
-        },
-        {
-          job: '몰딩',
-          labelCell: 'H10',
-          todayCell: 'I10',
-          previousCell: 'K10',
-          totalCell: 'L10',
-        },
-        {
-          job: '걸레받이',
-          labelCell: 'H11',
-          todayCell: 'I11',
-          previousCell: 'K11',
-          totalCell: 'L11',
-        },
-        {
-          job: '수장',
-          labelCell: 'H12',
-          todayCell: 'I12',
-          previousCell: 'K12',
-          totalCell: 'L12',
-        },
-        {
-          job: '외주',
-          labelCell: 'H13',
-          todayCell: 'I13',
-          previousCell: 'K13',
-          totalCell: 'L13',
-        },
-        {
-          job: '기타',
-          labelCell: 'H14',
-          todayCell: 'I14',
-          previousCell: 'K14',
-          totalCell: 'L14',
-        },
-      ];
-
-      cumulativeCellMap.forEach(
-        ({
-          job,
-          labelCell,
-          todayCell,
-          previousCell,
-          totalCell,
-        }) => {
-          worksheet.getCell(labelCell).value = job;
-          worksheet.getCell(previousCell).value =
-            previousJobCounts[job] || 0;
-          worksheet.getCell(totalCell).value = {
-            formula: `${todayCell}+${previousCell}`,
-          };
-        },
+      await downloadExcelWorkbook(
+        workbook,
+        `출력일보_${dateStr}.xlsx`,
       );
-
-      workbook.calcProperties.fullCalcOnLoad = true;
-      workbook.calcProperties.forceFullCalc = true;
-      workbook.calcProperties.calcMode = 'auto';
-
-      workers.forEach((worker, index) => {
-        if (index < 40) {
-          const row = 18 + index;
-
-          worksheet.getCell(`B${row}`).value = worker.job || '';
-          worksheet.getCell(`C${row}`).value = worker.name || '';
-          worksheet.getCell(`D${row}`).value =
-            worker.process || worker.job || '';
-          worksheet.getCell(`E${row}`).value = worker.location || '';
-          worksheet.getCell(`F${row}`).value =
-            worker.workContent || worker.work_content || '';
-        } else if (index < 80) {
-          const row = 18 + (index - 40);
-
-          worksheet.getCell(`H${row}`).value = worker.job || '';
-          worksheet.getCell(`I${row}`).value = worker.name || '';
-          worksheet.getCell(`J${row}`).value =
-            worker.process || worker.job || '';
-
-          /*
-            오른쪽 표는 H=구분, I=성명, J=공정이므로
-            위치는 K열, 작업내용은 L열에 입력합니다.
-          */
-          worksheet.getCell(`K${row}`).value = worker.location || '';
-          worksheet.getCell(`L${row}`).value =
-            worker.workContent || worker.work_content || '';
-        }
-      });
-
-      const buffer = await workbook.xlsx.writeBuffer();
-      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      const link = document.createElement("a");
-      const url = URL.createObjectURL(blob);
-      link.setAttribute("href", url);
-      link.setAttribute("download", `출력일보_${dateStr}.xlsx`);
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-
     } catch (error) {
       console.error(error);
-      alert('양식 파일을 불러오지 못했습니다. templates 폴더를 확인해주세요.');
+      alert(
+        '양식 파일을 불러오지 못했습니다. templates 폴더를 확인해주세요.',
+      );
+    }
+  };
+
+  const handleDownloadMonthlyExcel = async () => {
+    try {
+      const year = todayMidnight.getFullYear();
+      const monthIndex = todayMidnight.getMonth();
+      const month = monthIndex + 1;
+      const lastDay = todayMidnight.getDate();
+      const workbook = await loadDailyReportTemplate();
+      const templateWorksheet = workbook.worksheets[0];
+      const templateModel = cloneWorksheetModel(
+        templateWorksheet.model,
+      );
+      const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
+
+      for (let day = 1; day <= lastDay; day += 1) {
+        const targetDate = new Date(year, monthIndex, day);
+        const dateStr = formatYYMMDD(targetDate);
+        const sheetName = `${month}.${day}`;
+        const workers = savedData[dateStr]?.workers || [];
+        const worksheet =
+          day === 1
+            ? templateWorksheet
+            : createWorksheetFromTemplate(
+                workbook,
+                templateModel,
+                sheetName,
+              );
+
+        if (day === 1) {
+          worksheet.name = sheetName;
+        }
+
+        fillDailyReportWorksheet({
+          worksheet,
+          dateStr,
+          dayName: dayNames[targetDate.getDay()],
+          workers,
+        });
+      }
+
+      await downloadExcelWorkbook(
+        workbook,
+        `출력일보_${year}년_${String(month).padStart(
+          2,
+          '0',
+        )}월_1-${lastDay}일.xlsx`,
+      );
+    } catch (error) {
+      console.error('금월 출력일보 생성 오류:', error);
+      alert(
+        '금월 출력일보를 만들지 못했습니다. 양식 파일과 데이터를 확인해주세요.',
+      );
     }
   };
 
@@ -1451,6 +1576,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               handleDayClick={handleDayClick}
               handleOpenModal={handleOpenModal}
               handleDownloadExcel={handleDownloadExcel}
+              handleDownloadMonthlyExcel={handleDownloadMonthlyExcel}
               handleToggleDeadline={handleToggleDeadline}
               handleSetNoTask={handleSetNoTask}
               todayMidnight={todayMidnight}

@@ -23,6 +23,7 @@ export default function DailyReport({
   handleDayClick,
   handleOpenModal,
   handleDownloadExcel,
+  handleDownloadMonthlyExcel,
   handleToggleDeadline,
   handleSetNoTask,
   todayMidnight,
@@ -170,11 +171,10 @@ export default function DailyReport({
             color="success"
             size="small"
             fullWidth
-            disabled={!weekDays.length}
             sx={{ py: 0.8, fontSize: '0.8rem', fontWeight: 'bold' }}
-            onClick={() => weekDays[0] && handleDownloadExcel(weekDays[0])}
+            onClick={handleDownloadMonthlyExcel}
           >
-            출력일보 주별 다운로드
+            출력일보 금월 다운로드
           </Button>
         </Box>
       </Paper>
