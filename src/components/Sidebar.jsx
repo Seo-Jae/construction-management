@@ -14,6 +14,14 @@ import AssessmentIcon from '@mui/icons-material/Assessment';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 
+const dailyMenus = [
+  { value: 'daily', label: '출력일보작성' },
+  {
+    value: 'daily-monthly-workers',
+    label: '금월 투입현황',
+  },
+];
+
 const progressMenus = [
   { value: 'progress-input', label: '공종별 현황 입력' },
   { value: 'progress-multi', label: '다중 공종 진척 현황' },
@@ -114,11 +122,20 @@ export default function Sidebar({
   userRole = '담당자',
 }) {
   const isManagementRole = ['관리자', '최고관리자'].includes(userRole);
+  const isDailyView = [
+    'daily',
+    'daily-monthly-workers',
+  ].includes(currentView);
   const isProgressView = currentView?.startsWith('progress-');
   const isReportView = currentView?.startsWith('report-');
 
+  const [dailyOpen, setDailyOpen] = useState(isDailyView);
   const [progressOpen, setProgressOpen] = useState(isProgressView);
   const [reportOpen, setReportOpen] = useState(isReportView);
+
+  useEffect(() => {
+    if (isDailyView) setDailyOpen(true);
+  }, [isDailyView]);
 
   useEffect(() => {
     if (isProgressView) setProgressOpen(true);
@@ -175,12 +192,18 @@ export default function Sidebar({
         arrow
       >
         <ListItemButton
-          selected={currentView === 'daily'}
-          onClick={() => handleViewChange('daily')}
-          sx={topMenuSx(currentView === 'daily')}
+          selected={isDailyView}
+          onClick={() =>
+            setDailyOpen((previous) => !previous)
+          }
+          sx={topMenuSx(isDailyView)}
         >
           <ListItemIcon
-            sx={{ minWidth: 34, color: 'inherit', justifyContent: 'center' }}
+            sx={{
+              minWidth: 34,
+              color: 'inherit',
+              justifyContent: 'center',
+            }}
           >
             <AssignmentIcon fontSize="small" />
           </ListItemIcon>
@@ -190,12 +213,31 @@ export default function Sidebar({
             primaryTypographyProps={{
               noWrap: true,
               fontSize: '0.8rem',
-              fontWeight: currentView === 'daily' ? 700 : 500,
+              fontWeight: isDailyView ? 700 : 500,
             }}
             sx={{ opacity: drawerOpen ? 1 : 0 }}
           />
+
+          {drawerOpen &&
+            (dailyOpen ? (
+              <ExpandLessIcon fontSize="small" />
+            ) : (
+              <ExpandMoreIcon fontSize="small" />
+            ))}
         </ListItemButton>
       </Tooltip>
+
+      <Collapse
+        in={drawerOpen && dailyOpen}
+        timeout="auto"
+        unmountOnExit
+      >
+        <SubMenuList
+          items={dailyMenus}
+          currentView={currentView}
+          onViewChange={handleViewChange}
+        />
+      </Collapse>
 
       <Tooltip
         title={drawerOpen ? '' : '공정진척관리'}

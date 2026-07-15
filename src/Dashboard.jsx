@@ -31,6 +31,7 @@ import {
 } from './utils/buildingUnits.js';
 import Sidebar from './components/Sidebar.jsx';
 import DailyReport from './page/DailyReport.jsx';
+import MonthlyWorkerStatus from './page/MonthlyWorkerStatus.jsx';
 import ProgressInput from './page/ProgressInput.jsx';
 import MultiProcessProgress from './page/MultiProcessProgress.jsx';
 import CompletionSummary from './page/CompletionSummary.jsx';
@@ -184,7 +185,8 @@ const bodyCellStyle = { borderRight: '1px solid #cbd5e1', p: 0 };
 
 const viewTitles = {
   'admin-dashboard': '욱림건설 전체 현장 Dashboard',
-  daily: '공사일보관리',
+  daily: '출력일보작성',
+  'daily-monthly-workers': '금월 투입현황',
   'progress-input': '공종별 현황 입력',
   'progress-multi': '다중 공종 진척 현황',
   'progress-weekly': '주별 완료 집계',
@@ -1744,6 +1746,18 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               canCancelDeadline={isSuperAdmin}
             />
           )}
+
+          {currentView === 'daily-monthly-workers' &&
+            activeProjectName && (
+              <MonthlyWorkerStatus
+                projectName={activeProjectName}
+                savedData={savedData}
+                viewYear={viewYear}
+                viewMonth={viewMonth}
+                handlePrevMonth={handlePrevMonth}
+                handleNextMonth={handleNextMonth}
+              />
+            )}
 
           {currentView === 'progress-input' && activeProjectName && (
             <ProgressInput
