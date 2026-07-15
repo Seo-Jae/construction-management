@@ -296,13 +296,13 @@ function FormSection({
             variant={isHighlighted ? 'contained' : 'outlined'}
             aria-label={
               isHighlighted
-                ? '차주계획 선택 해제'
-                : '차주계획으로 선택'
+                ? '주요보고 선택 해제'
+                : '주요보고로 선택'
             }
             title={
               isHighlighted
-                ? '차주계획 선택 해제'
-                : '차주계획 공종명으로 선택'
+                ? '주요보고 선택 해제'
+                : '주요보고 내용으로 선택'
             }
             onClick={() =>
               onToggleHighlight(key, index)
@@ -515,7 +515,10 @@ function WeeklyReportPreview({
           borderBottom: '1px solid #111827',
         }}
       >
-        <Box sx={{ gridRow: 'span 2', ...previewHeaderCell }}>구분</Box>
+        <Box sx={{ gridRow: 'span 2', ...previewHeaderCell }}>
+          구분
+        </Box>
+
         <Box
           sx={{
             gridColumn: 'span 3',
@@ -526,6 +529,7 @@ function WeeklyReportPreview({
         >
           금주현황
         </Box>
+
         <Box
           sx={{
             gridColumn: 'span 3',
@@ -534,11 +538,25 @@ function WeeklyReportPreview({
             color: '#111827',
           }}
         >
-          차주계획
+          주요보고
         </Box>
-        {['공종명', '진도율', '1주간 작업량', '공종명', '진도율', '1주간 작업량'].map((label) => (
-          <Box key={label} sx={previewHeaderCell}>{label}</Box>
-        ))}
+
+        {['공종명', '진도율', '1주간 작업량'].map(
+          (label) => (
+            <Box key={label} sx={previewHeaderCell}>
+              {label}
+            </Box>
+          ),
+        )}
+
+        <Box
+          sx={{
+            gridColumn: 'span 3',
+            ...previewHeaderCell,
+          }}
+        >
+          내용
+        </Box>
 
         <Box
           sx={{
@@ -580,7 +598,9 @@ function WeeklyReportPreview({
             </Box>
             <Box
               sx={{
+                gridColumn: 'span 3',
                 ...previewBodyCell,
+                minHeight: 32,
                 color: nextWeekHighlights[index]
                   ? '#92400e'
                   : '#94a3b8',
@@ -593,8 +613,6 @@ function WeeklyReportPreview({
             >
               {nextWeekHighlights[index] || ''}
             </Box>
-            <Box sx={{ ...previewBodyCell, textAlign: 'center' }} />
-            <Box sx={{ ...previewBodyCell, textAlign: 'center' }} />
           </React.Fragment>
         ))}
       </Box>
@@ -874,7 +892,7 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
         MAX_NEXT_WEEK_HIGHLIGHTS
       ) {
         window.alert(
-          '차주계획 공종명은 최대 10개까지 선택할 수 있습니다.',
+          '주요보고 내용은 최대 10개까지 선택할 수 있습니다.',
         );
         return previous;
       }
@@ -1154,7 +1172,7 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
               }}
             >
               입력칸 옆의 ☆를 누르면 선택한 순서대로
-              차주계획 공종명과 엑셀 E8:E17에 들어갑니다.
+              주요보고 내용과 엑셀 E8:E17에 들어갑니다.
               {' '}
               ({nextWeekHighlights.length}/10)
             </Typography>

@@ -676,19 +676,49 @@ function WeeklyPreview({ request }) {
           borderLeft: '1px solid #374151',
         }}
       >
-        {[
-          '구분',
-          '금주 공종명',
-          '진도율',
-          '작업량',
-          '차주 공종명',
-          '진도율',
-          '작업량',
-        ].map((label) => (
-          <Box key={label} sx={previewLabelSx}>
-            {label}
-          </Box>
-        ))}
+        <Box
+          sx={{
+            gridRow: 'span 2',
+            ...previewLabelSx,
+          }}
+        >
+          구분
+        </Box>
+
+        <Box
+          sx={{
+            gridColumn: 'span 3',
+            ...previewLabelSx,
+          }}
+        >
+          금주현황
+        </Box>
+
+        <Box
+          sx={{
+            gridColumn: 'span 3',
+            ...previewLabelSx,
+          }}
+        >
+          주요보고
+        </Box>
+
+        {['공종명', '진도율', '1주간 작업량'].map(
+          (label) => (
+            <Box key={label} sx={previewLabelSx}>
+              {label}
+            </Box>
+          ),
+        )}
+
+        <Box
+          sx={{
+            gridColumn: 'span 3',
+            ...previewLabelSx,
+          }}
+        >
+          내용
+        </Box>
 
         {workRows.map((row, index) => (
           <React.Fragment key={row.processType}>
@@ -714,7 +744,9 @@ function WeeklyPreview({ request }) {
             </Box>
             <Box
               sx={{
+                gridColumn: 'span 3',
                 ...previewValueSx,
+                minHeight: 32,
                 color: nextWeekHighlights[index]
                   ? '#92400e'
                   : '#94a3b8',
@@ -727,8 +759,6 @@ function WeeklyPreview({ request }) {
             >
               {nextWeekHighlights[index] || ''}
             </Box>
-            <Box sx={previewValueSx} />
-            <Box sx={previewValueSx} />
           </React.Fragment>
         ))}
       </Box>
