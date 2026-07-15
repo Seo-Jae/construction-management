@@ -10,6 +10,32 @@ const CELL_WIDTH = 34;
 const CELL_HEIGHT = 23;
 const CELL_GAP = 2;
 
+const formatCompletionMonthDay = (dateValue) => {
+  const value = String(dateValue || '').trim();
+
+  if (!value) {
+    return '';
+  }
+
+  /*
+    completion_date는 보통 2026-07-15 형식으로 저장됩니다.
+    날짜 객체로 변환하지 않고 문자열에서 월/일만 추출해
+    브라우저 시간대에 따른 날짜 변경을 방지합니다.
+  */
+  const matched = value.match(
+    /(?:\d{2,4})[.\/-](\d{1,2})[.\/-](\d{1,2})/,
+  );
+
+  if (!matched) {
+    return '';
+  }
+
+  const month = String(matched[1]).padStart(2, '0');
+  const day = String(matched[2]).padStart(2, '0');
+
+  return `${month}.${day}`;
+};
+
 const getStatusStyle = (status, selected) => {
   if (selected) {
     return {
@@ -179,7 +205,17 @@ export default function BuildingGrid({
                   const cellKey = getCellKey(buildingName, cell.unitCode);
                   const selected = selectedCells?.has?.(cellKey) || false;
                   const progress = unitData?.[cellKey] || {};
-                  const statusStyle = getStatusStyle(progress?.status, selected);
+                  const statusStyle = getStatusStyle(
+                    progress?.status,
+                    selected,
+                  );
+                  const completionDate =
+                    progress?.status === '작업완료'
+                      ? formatCompletionMonthDay(progress?.date)
+                      : '';
+                  const displayText =
+                    completionDate || cell.unitCode;
+
                   return (
                     <Box
                       key={visualKey}
@@ -195,7 +231,12 @@ export default function BuildingGrid({
                         boxSizing: 'border-box',
                         cursor: 'pointer',
                         fontFamily: 'inherit',
-                        fontSize: '0.57rem',
+                        fontSize: completionDate
+                          ? '0.53rem'
+                          : '0.57rem',
+                        letterSpacing: completionDate
+                          ? '-0.02em'
+                          : 'normal',
                         lineHeight: 1,
                         fontWeight: 800,
                         userSelect: 'none',
@@ -209,7 +250,7 @@ export default function BuildingGrid({
                         },
                       }}
                     >
-                      {cell.unitCode}
+                      {displayText}
                     </Box>
                   );
                 })}
