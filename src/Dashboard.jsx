@@ -508,36 +508,59 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     }
 
     /*
-      마감 취소 처리 원칙
+      마감 상태는 관리자 화면의 로컬 상태에만 저장하면 안 됩니다.
+      담당자가 다시 로그인했을 때도 같은 상태를 읽을 수 있도록
+      daily_reports에 open 또는 closed 상태가 반드시 존재해야 합니다.
 
-      1. 기존 daily_reports 행이 있으면 status만 변경합니다.
-      2. 빈 상태에서 실수로 마감한 날짜처럼 수정할 행이 없어도
-         open 상태로 간주하고 화면에서 마감 취소가 가능하도록 처리합니다.
-      3. 마감 처리(closed)는 행이 없으면 기존처럼 빈 일보 행을 생성합니다.
-      4. select() 결과 개수로 성공/실패를 판단하지 않습니다.
-         Supabase RLS 정책에 따라 update는 성공했지만 반환 행이 비어 있을 수 있습니다.
+      기존 일보 행:
+      status만 수정하여 작성자와 기존 입력내용을 보존합니다.
+
+      일보 행이 없는 날짜:
+      빈 일보 행을 새로 생성하면서 status를 저장합니다.
+      빈 행은 관리자 Dashboard에서 '일보 등록'으로 계산되지 않습니다.
     */
-    const { error } = await supabase
+    const hasExistingReport =
+      Object.prototype.hasOwnProperty.call(savedData, dateKey) ||
+      Object.prototype.hasOwnProperty.call(manualStatus, dateKey);
+
+    if (!hasExistingReport) {
+      const inserted = await syncDataToDB(
+        dateKey,
+        {
+          workers: [],
+          tasks: [],
+          todayTask: '',
+          tomorrowTask: '',
+        },
+        newStatus,
+      );
+
+      if (!inserted) {
+        throw new Error('마감 상태 행을 생성하지 못했습니다.');
+      }
+
+      return true;
+    }
+
+    const { data, error } = await supabase
       .from('daily_reports')
       .update({
         status: newStatus,
       })
       .eq('date', dateKey)
-      .eq('project_name', activeProjectName);
+      .eq('project_name', activeProjectName)
+      .select('date, status');
 
     if (error) {
       throw error;
     }
 
-    if (newStatus === 'closed') {
-      return syncDataToDB(dateKey, {}, newStatus);
+    if (!Array.isArray(data) || data.length === 0) {
+      throw new Error(
+        '마감 상태가 데이터베이스에 반영되지 않았습니다. Supabase UPDATE 권한을 확인해주세요.',
+      );
     }
 
-    /*
-      newStatus === 'open'
-      수정할 행이 없었던 경우에도 오류가 아닙니다.
-      행이 없으면 다음 조회 때 기본값이 open으로 처리되기 때문입니다.
-    */
     return true;
   };
 
@@ -1439,6 +1462,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
           {currentView === 'progress-input' && activeProjectName && (
             <ProgressInput
+              projectName={activeProjectName || ''}
               selectedCells={selectedCells}
               actionName={actionName}
               progressDate={progressDate}

@@ -7,6 +7,7 @@ import {
   Checkbox,
   Chip,
   CircularProgress,
+  IconButton,
   LinearProgress,
   Paper,
   TextField,
@@ -14,6 +15,7 @@ import {
   Typography,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import PrintIcon from '@mui/icons-material/Print';
 import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
 import CheckBoxIcon from '@mui/icons-material/CheckBox';
 import { supabase } from '../supabaseClient';
@@ -205,6 +207,7 @@ function MultiProcessBuildingGrid({
 
   return (
     <Box
+      className="multi-progress-building"
       sx={{
         flex: '0 0 auto',
         display: 'flex',
@@ -488,17 +491,144 @@ export default function MultiProcessProgress({
     setSelectedProcesses(nextValue);
   };
 
+  const handlePrint = () => {
+    window.print();
+  };
+
   return (
-    <Box
-      sx={{
-        height: '100%',
-        minHeight: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 1.5,
-      }}
-    >
+    <>
+      <style>
+        {`
+          .multi-progress-print-only {
+            display: none;
+          }
+
+          @media print {
+            @page {
+              size: A4 landscape;
+              margin: 8mm;
+            }
+
+            html,
+            body {
+              background: #ffffff !important;
+            }
+
+            body * {
+              visibility: hidden !important;
+            }
+
+            #multi-progress-print-area,
+            #multi-progress-print-area * {
+              visibility: visible !important;
+            }
+
+            #multi-progress-print-area {
+              position: absolute !important;
+              left: 0 !important;
+              top: 0 !important;
+              width: 100% !important;
+              height: auto !important;
+              min-height: 0 !important;
+              overflow: visible !important;
+              display: block !important;
+              background: #ffffff !important;
+              padding: 0 !important;
+              margin: 0 !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+
+            #multi-progress-print-area .multi-progress-no-print {
+              display: none !important;
+            }
+
+            #multi-progress-print-area .multi-progress-print-only {
+              display: flex !important;
+            }
+
+            #multi-progress-print-area .multi-progress-stats {
+              grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+              margin-bottom: 4mm !important;
+            }
+
+            #multi-progress-print-area .multi-progress-scroll {
+              height: auto !important;
+              min-height: 0 !important;
+              overflow: visible !important;
+              padding: 0 !important;
+              background: #ffffff !important;
+              border: none !important;
+            }
+
+            #multi-progress-print-area .multi-progress-buildings {
+              width: 100% !important;
+              min-width: 0 !important;
+              min-height: 0 !important;
+              display: flex !important;
+              flex-wrap: wrap !important;
+              align-items: flex-end !important;
+              justify-content: flex-start !important;
+              gap: 12mm 8mm !important;
+              padding: 0 !important;
+            }
+
+            #multi-progress-print-area .multi-progress-building {
+              break-inside: avoid !important;
+              page-break-inside: avoid !important;
+            }
+
+            #multi-progress-print-area .MuiPaper-root {
+              box-shadow: none !important;
+            }
+          }
+        `}
+      </style>
+
+      <Box
+        id="multi-progress-print-area"
+        sx={{
+          height: '100%',
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 1.5,
+        }}
+      >
+        <Box
+          className="multi-progress-print-only"
+          sx={{
+            display: 'none',
+            alignItems: 'flex-end',
+            justifyContent: 'space-between',
+            gap: 2,
+            pb: 1,
+            borderBottom: '2px solid #0f172a',
+          }}
+        >
+          <Box>
+            <Typography sx={{ fontSize: '1.05rem', fontWeight: 900 }}>
+              다중 공종 진척 현황
+            </Typography>
+            <Typography sx={{ mt: 0.2, fontSize: '0.72rem', color: '#475569' }}>
+              {projectName || '현장명 미등록'}
+            </Typography>
+          </Box>
+
+          <Typography
+            sx={{
+              maxWidth: '65%',
+              textAlign: 'right',
+              fontSize: '0.72rem',
+              fontWeight: 700,
+              color: '#334155',
+            }}
+          >
+            선택 공종: {selectedProcesses.join(', ') || '-'}
+          </Typography>
+        </Box>
       <Paper
+        className="multi-progress-no-print"
         variant="outlined"
         sx={{
           p: 1.5,
@@ -573,6 +703,30 @@ export default function MultiProcessProgress({
           )}
         />
 
+        <Tooltip title="다중 공종 진척 현황 인쇄">
+          <IconButton
+            size="small"
+            aria-label="다중 공종 진척 현황 인쇄"
+            onClick={handlePrint}
+            disabled={selectedProcesses.length === 0}
+            sx={{
+              width: 34,
+              height: 34,
+              flexShrink: 0,
+              border: '1px solid #93c5fd',
+              borderRadius: 1,
+              color: '#2563eb',
+              bgcolor: '#ffffff',
+              '&:hover': {
+                bgcolor: '#eff6ff',
+                borderColor: '#60a5fa',
+              },
+            }}
+          >
+            <PrintIcon sx={{ fontSize: 19 }} />
+          </IconButton>
+        </Tooltip>
+
         <Button
           variant="outlined"
           startIcon={<RefreshIcon />}
@@ -592,6 +746,7 @@ export default function MultiProcessProgress({
 
       {selectedProcesses.length > 0 && (
         <Box
+          className="multi-progress-stats"
           sx={{
             display: 'grid',
             gridTemplateColumns: {
@@ -660,6 +815,7 @@ export default function MultiProcessProgress({
       )}
 
       <Paper
+        className="multi-progress-scroll"
         variant="outlined"
         sx={{
           position: 'relative',
@@ -708,6 +864,7 @@ export default function MultiProcessProgress({
           </Box>
         ) : (
           <Box
+            className="multi-progress-buildings"
             sx={{
               minWidth: 'max-content',
               minHeight: '100%',
@@ -734,6 +891,7 @@ export default function MultiProcessProgress({
           </Box>
         )}
       </Paper>
-    </Box>
+      </Box>
+    </>
   );
 }
