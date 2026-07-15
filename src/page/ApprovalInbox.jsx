@@ -24,6 +24,9 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import { supabase } from '../supabaseClient';
 import { invokeApprovalFunction } from '../utils/approvalFunction.js';
 import { fetchApprovalInboxData } from '../utils/approvalQueries.js';
+import ApprovalReportViewer, {
+  downloadApprovalReportExcel,
+} from './ApprovalReportViewer.jsx';
 
 const REQUEST_STATUS = {
   pending: {
@@ -379,6 +382,10 @@ export default function ApprovalInbox() {
   const [loading, setLoading] = useState(false);
   const [actingRequestId, setActingRequestId] =
     useState('');
+  const [previewRequest, setPreviewRequest] =
+    useState(null);
+  const [downloadingRequestId, setDownloadingRequestId] =
+    useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
   const requestedId = useMemo(
@@ -449,6 +456,30 @@ export default function ApprovalInbox() {
       );
     };
   }, [loadInbox]);
+
+  const handleDownloadReport = async (request) => {
+    if (!request?.id) {
+      return;
+    }
+
+    setDownloadingRequestId(request.id);
+    setErrorMessage('');
+
+    try {
+      await downloadApprovalReportExcel(request);
+    } catch (error) {
+      console.error(
+        '결재 보고서 XLS 다운로드 실패:',
+        error,
+      );
+      setErrorMessage(
+        error?.message ||
+          '보고서 파일을 다운로드하지 못했습니다.',
+      );
+    } finally {
+      setDownloadingRequestId('');
+    }
+  };
 
   const handleAction = async (requestId, decision) => {
     const actionName =
@@ -763,29 +794,89 @@ export default function ApprovalInbox() {
                     </Typography>
                   </Box>
 
-                  <Button
-                    size="small"
-                    variant="text"
-                    endIcon={
-                      isExpanded ? (
-                        <ExpandLessIcon />
-                      ) : (
-                        <ExpandMoreIcon />
-                      )
-                    }
-                    onClick={() =>
-                      setExpandedRequestId(
-                        isExpanded ? '' : item.request_id,
-                      )
-                    }
+                  <Box
                     sx={{
                       flexShrink: 0,
-                      minWidth: 0,
-                      fontSize: '0.68rem',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 0.45,
                     }}
                   >
-                    내용 보기
-                  </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      onClick={() =>
+                        setPreviewRequest(request)
+                      }
+                      disabled={
+                        !['weekly', 'proposal'].includes(
+                          request?.report_type,
+                        )
+                      }
+                      sx={{
+                        minWidth: 68,
+                        px: 0.8,
+                        whiteSpace: 'nowrap',
+                        fontSize: '0.66rem',
+                        fontWeight: 800,
+                      }}
+                    >
+                      미리보기
+                    </Button>
+
+                    <Button
+                      size="small"
+                      variant="contained"
+                      color="success"
+                      onClick={() =>
+                        handleDownloadReport(request)
+                      }
+                      disabled={
+                        downloadingRequestId === request?.id ||
+                        !['weekly', 'proposal'].includes(
+                          request?.report_type,
+                        )
+                      }
+                      sx={{
+                        minWidth: 48,
+                        px: 0.8,
+                        whiteSpace: 'nowrap',
+                        fontSize: '0.66rem',
+                        fontWeight: 900,
+                      }}
+                    >
+                      {downloadingRequestId === request?.id
+                        ? '생성 중'
+                        : 'XLS'}
+                    </Button>
+
+                    <Button
+                      size="small"
+                      variant="text"
+                      endIcon={
+                        isExpanded ? (
+                          <ExpandLessIcon />
+                        ) : (
+                          <ExpandMoreIcon />
+                        )
+                      }
+                      onClick={() =>
+                        setExpandedRequestId(
+                          isExpanded
+                            ? ''
+                            : item.request_id,
+                        )
+                      }
+                      sx={{
+                        minWidth: 0,
+                        px: 0.6,
+                        whiteSpace: 'nowrap',
+                        fontSize: '0.66rem',
+                      }}
+                    >
+                      결재내역
+                    </Button>
+                  </Box>
                 </Box>
 
                 <Collapse in={isExpanded}>
@@ -1024,6 +1115,12 @@ export default function ApprovalInbox() {
           })
         )}
       </Box>
+
+      <ApprovalReportViewer
+        open={Boolean(previewRequest)}
+        request={previewRequest}
+        onClose={() => setPreviewRequest(null)}
+      />
     </Box>
   );
 }
