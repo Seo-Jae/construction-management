@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import {
+  Autocomplete,
   Box,
   IconButton,
   InputAdornment,
@@ -11,13 +12,11 @@ import {
   TableHead,
   TableRow,
   TextField,
-  Tooltip,
   Typography,
 } from '@mui/material';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import SearchIcon from '@mui/icons-material/Search';
-import CloseIcon from '@mui/icons-material/Close';
 
 const pad2 = (value) => String(value).padStart(2, '0');
 
@@ -31,6 +30,33 @@ const normalizeWorkerName = (name) =>
     .trim()
     .replace(/\s+/g, ' ')
     .toLowerCase();
+
+const DAILY_REPORT_JOB_ORDER = [
+  '소장',
+  '관리자',
+  '직영',
+  '먹매김',
+  '단열',
+  '합지',
+  '경량벽체',
+  '세대천정',
+  '공용홀천정',
+  '몰딩',
+  '걸레받이',
+  '수장',
+  '외주',
+  '기타',
+];
+
+const getJobOrder = (job) => {
+  const index = DAILY_REPORT_JOB_ORDER.indexOf(
+    String(job || '').trim(),
+  );
+
+  return index === -1
+    ? DAILY_REPORT_JOB_ORDER.length
+    : index;
+};
 
 const getWeekendStyle = (year, monthIndex, day) => {
   const dayOfWeek = new Date(year, monthIndex, day).getDay();
@@ -72,11 +98,6 @@ export default function MonthlyWorkerStatus({
   ).getDate();
 
   const monthNumber = viewMonth + 1;
-  const startDate = `${viewYear}-${pad2(monthNumber)}-01`;
-  const endDate = `${viewYear}-${pad2(monthNumber)}-${pad2(
-    daysInMonth,
-  )}`;
-
   const workers = useMemo(() => {
     const workerMap = new Map();
 
@@ -122,13 +143,22 @@ export default function MonthlyWorkerStatus({
     }
 
     return Array.from(workerMap.values()).sort((a, b) => {
+      const jobOrderCompare =
+        getJobOrder(a.job) - getJobOrder(b.job);
+
+      if (jobOrderCompare !== 0) {
+        return jobOrderCompare;
+      }
+
       const jobCompare = a.job.localeCompare(
         b.job,
         'ko',
         { numeric: true },
       );
 
-      if (jobCompare !== 0) return jobCompare;
+      if (jobCompare !== 0) {
+        return jobCompare;
+      }
 
       return a.name.localeCompare(
         b.name,
@@ -139,6 +169,20 @@ export default function MonthlyWorkerStatus({
   }, [daysInMonth, savedData, viewMonth, viewYear]);
 
   const normalizedSearch = normalizeWorkerName(searchName);
+
+  const workerNameOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          workers
+            .map((worker) => worker.name)
+            .filter(Boolean),
+        ),
+      ).sort((a, b) =>
+        a.localeCompare(b, 'ko', { numeric: true }),
+      ),
+    [workers],
+  );
 
   const filteredWorkers = useMemo(() => {
     if (!normalizedSearch) {
@@ -194,7 +238,7 @@ export default function MonthlyWorkerStatus({
           sx={{
             display: 'grid',
             gridTemplateColumns:
-              'minmax(220px, 1fr) minmax(260px, 1.35fr) minmax(250px, 1fr)',
+              'minmax(240px, 1fr) minmax(320px, 1.5fr)',
             alignItems: 'stretch',
             border: '1px solid #64748b',
           }}
@@ -254,7 +298,6 @@ export default function MonthlyWorkerStatus({
               alignItems: 'center',
               justifyContent: 'center',
               gap: 0.2,
-              borderRight: '1px solid #64748b',
             }}
           >
             <Typography
@@ -307,104 +350,6 @@ export default function MonthlyWorkerStatus({
             </Box>
           </Box>
 
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: '54px 1fr 44px',
-              gridTemplateRows: '1fr 1fr',
-              minHeight: 72,
-            }}
-          >
-            <Box
-              sx={{
-                gridRow: '1 / 3',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderRight: '1px solid #64748b',
-                bgcolor: '#f8fafc',
-              }}
-            >
-              <Typography
-                sx={{
-                  writingMode: 'vertical-rl',
-                  textOrientation: 'upright',
-                  fontSize: '0.67rem',
-                  fontWeight: 900,
-                  letterSpacing: '0.16em',
-                }}
-              >
-                기간
-              </Typography>
-            </Box>
-
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderRight: '1px solid #64748b',
-                borderBottom: '1px solid #64748b',
-              }}
-            >
-              <Typography
-                sx={{
-                  fontSize: '0.72rem',
-                  fontWeight: 700,
-                }}
-              >
-                {startDate}
-              </Typography>
-            </Box>
-
-            <Box
-              sx={{
-                gridRow: '1 / 3',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                bgcolor: '#f8fafc',
-              }}
-            >
-              <Typography
-                sx={{
-                  fontSize: '0.6rem',
-                  fontWeight: 800,
-                  color: '#64748b',
-                }}
-              >
-                일수
-              </Typography>
-              <Typography
-                sx={{
-                  mt: 0.2,
-                  fontSize: '0.76rem',
-                  fontWeight: 900,
-                }}
-              >
-                {daysInMonth}일
-              </Typography>
-            </Box>
-
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderRight: '1px solid #64748b',
-              }}
-            >
-              <Typography
-                sx={{
-                  fontSize: '0.72rem',
-                  fontWeight: 700,
-                }}
-              >
-                {endDate}
-              </Typography>
-            </Box>
-          </Box>
         </Box>
 
         <Box
@@ -429,18 +374,37 @@ export default function MonthlyWorkerStatus({
               : ''}
           </Typography>
 
-          <TextField
-            value={searchName}
-            onChange={(event) =>
-              setSearchName(event.target.value)
-            }
-            size="small"
-            label="근로자 조회"
-            placeholder="근로자 이름 입력"
+          <Autocomplete
+            freeSolo
+            openOnFocus
+            options={workerNameOptions}
+            inputValue={searchName}
+            onInputChange={(_event, nextValue) => {
+              setSearchName(nextValue);
+            }}
+            onChange={(_event, nextValue) => {
+              setSearchName(nextValue || '');
+            }}
+            filterOptions={(options, state) => {
+              const keyword = normalizeWorkerName(
+                state.inputValue,
+              );
+
+              if (!keyword) {
+                return options.slice(0, 8);
+              }
+
+              return options
+                .filter((name) =>
+                  normalizeWorkerName(name).includes(keyword),
+                )
+                .slice(0, 8);
+            }}
+            noOptionsText="검색된 근로자가 없습니다."
             sx={{
-              width: 260,
+              width: 280,
               '& .MuiInputBase-root': {
-                height: 34,
+                minHeight: 34,
                 bgcolor: '#ffffff',
                 fontSize: '0.78rem',
               },
@@ -448,32 +412,30 @@ export default function MonthlyWorkerStatus({
                 fontSize: '0.76rem',
               },
             }}
-            InputProps={{
-              startAdornment: (
-                <InputAdornment position="start">
-                  <SearchIcon
-                    sx={{
-                      color: '#64748b',
-                      fontSize: 18,
-                    }}
-                  />
-                </InputAdornment>
-              ),
-              endAdornment: searchName ? (
-                <InputAdornment position="end">
-                  <Tooltip title="검색어 지우기">
-                    <IconButton
-                      size="small"
-                      onClick={() => setSearchName('')}
-                      aria-label="검색어 지우기"
-                      sx={{ p: 0.2 }}
-                    >
-                      <CloseIcon sx={{ fontSize: 17 }} />
-                    </IconButton>
-                  </Tooltip>
-                </InputAdornment>
-              ) : null,
-            }}
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                size="small"
+                label="근로자 조회"
+                placeholder="근로자 이름 입력"
+                InputProps={{
+                  ...params.InputProps,
+                  startAdornment: (
+                    <>
+                      <InputAdornment position="start">
+                        <SearchIcon
+                          sx={{
+                            color: '#64748b',
+                            fontSize: 18,
+                          }}
+                        />
+                      </InputAdornment>
+                      {params.InputProps.startAdornment}
+                    </>
+                  ),
+                }}
+              />
+            )}
           />
         </Box>
       </Paper>
@@ -620,11 +582,6 @@ export default function MonthlyWorkerStatus({
                   <TableRow
                     key={worker.key}
                     hover
-                    sx={{
-                      '&:nth-of-type(even) td': {
-                        bgcolor: '#fbfdff',
-                      },
-                    }}
                   >
                     <TableCell
                       align="center"
@@ -711,7 +668,7 @@ export default function MonthlyWorkerStatus({
                             borderRight: '1px dotted #cbd5e1',
                             bgcolor:
                               weekendStyle.bgcolor === '#f8fafc'
-                                ? 'transparent'
+                                ? '#ffffff'
                                 : weekendStyle.bgcolor,
                             color: attended
                               ? '#0f172a'
