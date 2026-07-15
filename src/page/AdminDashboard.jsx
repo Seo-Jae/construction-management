@@ -326,9 +326,8 @@ function ProjectCard({ project, onOpenProject }) {
             </Typography>
             <Typography
               sx={{
-                color: '#0f172a',
+                color: '#475569',
                 fontSize: '0.66rem',
-                fontWeight: 800,
                 lineHeight: 1.35,
                 whiteSpace: 'nowrap',
               }}
@@ -337,9 +336,8 @@ function ProjectCard({ project, onOpenProject }) {
             </Typography>
             <Typography
               sx={{
-                color: '#0369a1',
+                color: '#475569',
                 fontSize: '0.66rem',
-                fontWeight: 900,
                 lineHeight: 1.35,
                 whiteSpace: 'nowrap',
               }}
