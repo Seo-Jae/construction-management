@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Box, Tooltip, Typography } from '@mui/material';
+import { Box, Typography } from '@mui/material';
 import {
   buildFloorVisualCells,
   countUniqueUnits,
@@ -43,12 +43,11 @@ const getStatusStyle = (status, selected) => {
   };
 };
 
-function PilotiCell({ span = 1, title }) {
+function PilotiCell({ span = 1 }) {
   const width = CELL_WIDTH * span + CELL_GAP * (span - 1);
 
   return (
     <Box
-      title={title}
       sx={{
         position: 'relative',
         width,
@@ -156,7 +155,6 @@ export default function BuildingGrid({
                       <PilotiCell
                         key={visualKey}
                         span={cell.span}
-                        title={`${buildingName} ${floor}층 제외호`}
                       />
                     );
                   }
@@ -182,50 +180,37 @@ export default function BuildingGrid({
                   const selected = selectedCells?.has?.(cellKey) || false;
                   const progress = unitData?.[cellKey] || {};
                   const statusStyle = getStatusStyle(progress?.status, selected);
-                  const aliasLabel =
-                    cell.span > 1
-                      ? ` (${cell.visualStart}·${cell.visualEnd}칸 통합)`
-                      : '';
-
                   return (
-                    <Tooltip
+                    <Box
                       key={visualKey}
-                      arrow
-                      placement="top"
-                      title={`${buildingName} ${cell.unitCode}호${aliasLabel}${
-                        progress?.status ? ` / ${progress.status}` : ''
-                      }${progress?.date ? ` / ${progress.date}` : ''}`}
+                      component="button"
+                      type="button"
+                      onClick={() => onCellClick?.(cellKey)}
+                      sx={{
+                        width,
+                        height: CELL_HEIGHT,
+                        flex: `0 0 ${width}px`,
+                        p: 0,
+                        border: '1px solid',
+                        boxSizing: 'border-box',
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                        fontSize: '0.57rem',
+                        lineHeight: 1,
+                        fontWeight: 800,
+                        userSelect: 'none',
+                        transition: 'filter 120ms ease, transform 120ms ease',
+                        ...statusStyle,
+                        '&:hover': {
+                          filter: 'brightness(0.96)',
+                        },
+                        '&:active': {
+                          transform: 'scale(0.98)',
+                        },
+                      }}
                     >
-                      <Box
-                        component="button"
-                        type="button"
-                        onClick={() => onCellClick?.(cellKey)}
-                        sx={{
-                          width,
-                          height: CELL_HEIGHT,
-                          flex: `0 0 ${width}px`,
-                          p: 0,
-                          border: '1px solid',
-                          boxSizing: 'border-box',
-                          cursor: 'pointer',
-                          fontFamily: 'inherit',
-                          fontSize: '0.57rem',
-                          lineHeight: 1,
-                          fontWeight: 800,
-                          userSelect: 'none',
-                          transition: 'filter 120ms ease, transform 120ms ease',
-                          ...statusStyle,
-                          '&:hover': {
-                            filter: 'brightness(0.96)',
-                          },
-                          '&:active': {
-                            transform: 'scale(0.98)',
-                          },
-                        }}
-                      >
-                        {cell.unitCode}
-                      </Box>
-                    </Tooltip>
+                      {cell.unitCode}
+                    </Box>
                   );
                 })}
               </Box>
