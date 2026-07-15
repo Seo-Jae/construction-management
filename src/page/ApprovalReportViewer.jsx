@@ -187,6 +187,16 @@ const downloadWeeklyReport = async (request) => {
   const stats = Array.isArray(payload?.stats)
     ? payload.stats
     : [];
+  const hasStoredHighlights = Array.isArray(
+    payload?.nextWeekHighlights,
+  );
+  const nextWeekHighlights = hasStoredHighlights
+    ? payload.nextWeekHighlights
+        .map((value) => String(value || '').trim())
+        .slice(0, 10)
+    : WEEKLY_REPORT_PROCESSES.map(
+        (process) => process.label,
+      );
 
   const response = await fetch(
     '/templates/주간업무보고.xlsx',
@@ -256,6 +266,11 @@ const downloadWeeklyReport = async (request) => {
     worksheet.getCell(`D${excelRow}`).value =
       Number(row?.weeklyAmount) || '';
   });
+
+  for (let index = 0; index < 10; index += 1) {
+    worksheet.getCell(`E${8 + index}`).value =
+      nextWeekHighlights[index] || '';
+  }
 
   Object.entries(WEEKLY_EXCEL_INPUT_MAP).forEach(
     ([key, addresses]) => {
@@ -549,6 +564,16 @@ function WeeklyPreview({ request }) {
   const stats = Array.isArray(payload?.stats)
     ? payload.stats
     : [];
+  const hasStoredHighlights = Array.isArray(
+    payload?.nextWeekHighlights,
+  );
+  const nextWeekHighlights = hasStoredHighlights
+    ? payload.nextWeekHighlights
+        .map((value) => String(value || '').trim())
+        .slice(0, 10)
+    : WEEKLY_REPORT_PROCESSES.map(
+        (process) => process.label,
+      );
 
   const statMap = new Map(
     stats.map((row) => [
@@ -687,7 +712,21 @@ function WeeklyPreview({ request }) {
             >
               {Number(row.weeklyAmount) || 0}세대
             </Box>
-            <Box sx={previewValueSx}>{row.label}</Box>
+            <Box
+              sx={{
+                ...previewValueSx,
+                color: nextWeekHighlights[index]
+                  ? '#92400e'
+                  : '#94a3b8',
+                fontWeight: nextWeekHighlights[index]
+                  ? 800
+                  : 400,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}
+            >
+              {nextWeekHighlights[index] || ''}
+            </Box>
             <Box sx={previewValueSx} />
             <Box sx={previewValueSx} />
           </React.Fragment>

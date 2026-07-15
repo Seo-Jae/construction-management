@@ -29,6 +29,29 @@ const REPORT_PROCESSES = [
 
 const createLines = (count) => Array.from({ length: count }, () => '');
 
+const MAX_NEXT_WEEK_HIGHLIGHTS = 10;
+
+const createHighlightId = (key, index) =>
+  `${key}:${index}`;
+
+const parseHighlightId = (id) => {
+  const separatorIndex = String(id || '').lastIndexOf(':');
+
+  if (separatorIndex === -1) {
+    return {
+      key: '',
+      index: -1,
+    };
+  }
+
+  return {
+    key: String(id).slice(0, separatorIndex),
+    index: Number(
+      String(id).slice(separatorIndex + 1),
+    ),
+  };
+};
+
 const INITIAL_FORM = {
   publicCurrent: createLines(3),
   publicNext: createLines(3),
@@ -224,10 +247,105 @@ const sectionDefinitions = [
   },
 ];
 
-function FormSection({ definition, form, onLineChange }) {
+function FormSection({
+  definition,
+  form,
+  highlightedLineIds,
+  onLineChange,
+  onToggleHighlight,
+}) {
+  const renderInputLines = (key) =>
+    form[key].map((value, index) => {
+      const lineId = createHighlightId(key, index);
+      const isHighlighted =
+        highlightedLineIds.includes(lineId);
+
+      return (
+        <Box
+          key={lineId}
+          sx={{
+            mb: 0.6,
+            display: 'grid',
+            gridTemplateColumns: 'minmax(0, 1fr) 34px',
+            gap: 0.4,
+            alignItems: 'stretch',
+          }}
+        >
+          <TextField
+            fullWidth
+            size="small"
+            placeholder={`${definition.title} ${index + 1}`}
+            value={value}
+            onChange={(event) =>
+              onLineChange(
+                key,
+                index,
+                event.target.value,
+              )
+            }
+            sx={{
+              '& .MuiInputBase-input': {
+                fontSize: '0.76rem',
+              },
+            }}
+          />
+
+          <Button
+            type="button"
+            size="small"
+            variant={isHighlighted ? 'contained' : 'outlined'}
+            aria-label={
+              isHighlighted
+                ? '차주계획 선택 해제'
+                : '차주계획으로 선택'
+            }
+            title={
+              isHighlighted
+                ? '차주계획 선택 해제'
+                : '차주계획 공종명으로 선택'
+            }
+            onClick={() =>
+              onToggleHighlight(key, index)
+            }
+            sx={{
+              minWidth: 34,
+              width: 34,
+              px: 0,
+              color: isHighlighted
+                ? '#ffffff'
+                : '#d97706',
+              borderColor: '#f59e0b',
+              bgcolor: isHighlighted
+                ? '#f59e0b'
+                : '#ffffff',
+              fontSize: '1rem',
+              lineHeight: 1,
+              '&:hover': {
+                color: isHighlighted
+                  ? '#ffffff'
+                  : '#b45309',
+                borderColor: '#d97706',
+                bgcolor: isHighlighted
+                  ? '#d97706'
+                  : '#fffbeb',
+              },
+            }}
+          >
+            {isHighlighted ? '★' : '☆'}
+          </Button>
+        </Box>
+      );
+    });
+
   return (
     <Box sx={{ mb: 2 }}>
-      <Typography fontWeight={800} sx={{ fontSize: '0.84rem', color: '#334155' }}>
+      <Typography
+        fontWeight={800}
+        sx={{
+          fontSize: '0.84rem',
+          color: '#334155',
+        }}
+      >
         {definition.title} {definition.subtitle}
       </Typography>
 
@@ -240,41 +358,29 @@ function FormSection({ definition, form, onLineChange }) {
         }}
       >
         <Box>
-          <Typography sx={{ mb: 0.5, fontSize: '0.72rem', color: '#64748b' }}>
+          <Typography
+            sx={{
+              mb: 0.5,
+              fontSize: '0.72rem',
+              color: '#64748b',
+            }}
+          >
             금주 현황
           </Typography>
-          {form[definition.currentKey].map((value, index) => (
-            <TextField
-              key={`${definition.currentKey}-${index}`}
-              fullWidth
-              size="small"
-              placeholder={`${definition.title} ${index + 1}`}
-              value={value}
-              onChange={(event) =>
-                onLineChange(definition.currentKey, index, event.target.value)
-              }
-              sx={{ mb: 0.6, '& .MuiInputBase-input': { fontSize: '0.76rem' } }}
-            />
-          ))}
+          {renderInputLines(definition.currentKey)}
         </Box>
 
         <Box>
-          <Typography sx={{ mb: 0.5, fontSize: '0.72rem', color: '#64748b' }}>
+          <Typography
+            sx={{
+              mb: 0.5,
+              fontSize: '0.72rem',
+              color: '#64748b',
+            }}
+          >
             차주 계획
           </Typography>
-          {form[definition.nextKey].map((value, index) => (
-            <TextField
-              key={`${definition.nextKey}-${index}`}
-              fullWidth
-              size="small"
-              placeholder={`${definition.title} ${index + 1}`}
-              value={value}
-              onChange={(event) =>
-                onLineChange(definition.nextKey, index, event.target.value)
-              }
-              sx={{ mb: 0.6, '& .MuiInputBase-input': { fontSize: '0.76rem' } }}
-            />
-          ))}
+          {renderInputLines(definition.nextKey)}
         </Box>
       </Box>
     </Box>
@@ -306,7 +412,14 @@ function PreviewLines({ values, minRows = 3 }) {
   );
 }
 
-function WeeklyReportPreview({ projectName, managerName, period, stats, form }) {
+function WeeklyReportPreview({
+  projectName,
+  managerName,
+  period,
+  stats,
+  form,
+  nextWeekHighlights,
+}) {
   const workRows = stats.length > 0
     ? stats
     : REPORT_PROCESSES.map((process) => ({
@@ -444,7 +557,7 @@ function WeeklyReportPreview({ projectName, managerName, period, stats, form }) 
           {'공사사항\n(작업현황)'}
         </Box>
 
-        {workRows.map((row) => (
+        {workRows.map((row, index) => (
           <React.Fragment key={row.processType}>
             <Box sx={previewBodyCell}>{row.label}</Box>
             <Box
@@ -465,7 +578,21 @@ function WeeklyReportPreview({ projectName, managerName, period, stats, form }) 
             >
               {`${row.weeklyAmount || 0}세대`}
             </Box>
-            <Box sx={previewBodyCell}>{row.label}</Box>
+            <Box
+              sx={{
+                ...previewBodyCell,
+                color: nextWeekHighlights[index]
+                  ? '#92400e'
+                  : '#94a3b8',
+                fontWeight: nextWeekHighlights[index]
+                  ? 800
+                  : 400,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+              }}
+            >
+              {nextWeekHighlights[index] || ''}
+            </Box>
             <Box sx={{ ...previewBodyCell, textAlign: 'center' }} />
             <Box sx={{ ...previewBodyCell, textAlign: 'center' }} />
           </React.Fragment>
@@ -556,6 +683,8 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
   const [approvalStatus, setApprovalStatus] = useState(null);
   const [approvalStatusLoading, setApprovalStatusLoading] =
     useState(false);
+  const [highlightedLineIds, setHighlightedLineIds] =
+    useState([]);
 
   const projectName = userProfile?.project_name || '';
   const managerName = userProfile?.manager_name || '';
@@ -574,6 +703,21 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
     [progressRows, totalUnits, period],
   );
 
+  const nextWeekHighlights = useMemo(
+    () =>
+      highlightedLineIds
+        .map((lineId) => {
+          const { key, index } =
+            parseHighlightId(lineId);
+
+          return String(
+            form?.[key]?.[index] || '',
+          ).trim();
+        })
+        .filter(Boolean)
+        .slice(0, MAX_NEXT_WEEK_HIGHLIGHTS),
+    [form, highlightedLineIds],
+  );
 
   const loadApprovalStatus = useCallback(async () => {
     if (!projectName || !approvalReportKey) {
@@ -697,6 +841,46 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
         itemIndex === index ? value : item,
       ),
     }));
+
+    if (!String(value || '').trim()) {
+      const lineId = createHighlightId(key, index);
+
+      setHighlightedLineIds((previous) =>
+        previous.filter((id) => id !== lineId),
+      );
+    }
+  };
+
+  const handleToggleHighlight = (key, index) => {
+    const lineId = createHighlightId(key, index);
+    const value = String(
+      form?.[key]?.[index] || '',
+    ).trim();
+
+    if (!value) {
+      window.alert(
+        '내용을 먼저 입력한 뒤 별표를 선택해주세요.',
+      );
+      return;
+    }
+
+    setHighlightedLineIds((previous) => {
+      if (previous.includes(lineId)) {
+        return previous.filter((id) => id !== lineId);
+      }
+
+      if (
+        previous.length >=
+        MAX_NEXT_WEEK_HIGHLIGHTS
+      ) {
+        window.alert(
+          '차주계획 공종명은 최대 10개까지 선택할 수 있습니다.',
+        );
+        return previous;
+      }
+
+      return [...previous, lineId];
+    });
   };
 
   const handleDownloadExcel = async () => {
@@ -726,6 +910,15 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
         worksheet.getCell(`C${excelRow}`).value = row.progressText;
         worksheet.getCell(`D${excelRow}`).value = row.weeklyAmount || '';
       });
+
+      for (
+        let index = 0;
+        index < MAX_NEXT_WEEK_HIGHLIGHTS;
+        index += 1
+      ) {
+        worksheet.getCell(`E${8 + index}`).value =
+          nextWeekHighlights[index] || '';
+      }
 
       Object.entries(EXCEL_INPUT_MAP).forEach(([key, cells]) => {
         cells.forEach((cellAddress, index) => {
@@ -942,12 +1135,39 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
             ))}
           </Box>
 
+          <Paper
+            variant="outlined"
+            sx={{
+              mb: 1.5,
+              px: 1.1,
+              py: 0.85,
+              borderColor: '#fde68a',
+              bgcolor: '#fffbeb',
+            }}
+          >
+            <Typography
+              sx={{
+                color: '#92400e',
+                fontSize: '0.7rem',
+                fontWeight: 800,
+                lineHeight: 1.55,
+              }}
+            >
+              입력칸 옆의 ☆를 누르면 선택한 순서대로
+              차주계획 공종명과 엑셀 E8:E17에 들어갑니다.
+              {' '}
+              ({nextWeekHighlights.length}/10)
+            </Typography>
+          </Paper>
+
           {sectionDefinitions.map((definition) => (
             <FormSection
               key={definition.currentKey}
               definition={definition}
               form={form}
+              highlightedLineIds={highlightedLineIds}
               onLineChange={handleLineChange}
+              onToggleHighlight={handleToggleHighlight}
             />
           ))}
         </Box>
@@ -970,6 +1190,7 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
           period={period}
           stats={stats}
           form={form}
+          nextWeekHighlights={nextWeekHighlights}
         />
       </Paper>
 
@@ -1003,6 +1224,7 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
           totalUnits,
           stats,
           form,
+          nextWeekHighlights,
         }}
       />
     </Box>
