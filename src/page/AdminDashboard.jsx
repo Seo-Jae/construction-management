@@ -12,6 +12,7 @@ import {
   Typography,
 } from '@mui/material';
 import { supabase } from '../supabaseClient';
+import { countUniqueUnits } from '../utils/buildingUnits.js';
 
 const PAGE_SIZE = 1000;
 
@@ -112,47 +113,12 @@ const hasMeaningfulDailyReport = (report) => {
   );
 };
 
-const isValidUnit = (config, floor, unitNumber) => {
-  const exception = config?.exceptions?.[floor];
-  const activeUnits = Array.isArray(exception?.units)
-    ? exception.units
-    : [];
-
-  const isActiveOnPiloti = Boolean(exception) && activeUnits.includes(unitNumber);
-  const isException =
-    Boolean(exception) && !activeUnits.includes(unitNumber);
-  const isPiloti =
-    Array.isArray(config?.pilotiFloors) &&
-    config.pilotiFloors.includes(floor) &&
-    !isActiveOnPiloti;
-  const isNonExistent =
-    isException &&
-    !(
-      Array.isArray(config?.pilotiFloors) &&
-      config.pilotiFloors.includes(floor)
-    );
-
-  return !isPiloti && !isNonExistent;
-};
-
 const calculateProjectUnits = (settings) =>
-  settings.reduce((total, row) => {
-    const config = row?.config_json || {};
-    const floors = Number(config?.floors) || 0;
-    const unitsPerFloor = Number(config?.unitsPerFloor) || 0;
-
-    let buildingTotal = 0;
-
-    for (let floor = 1; floor <= floors; floor += 1) {
-      for (let unitNumber = 1; unitNumber <= unitsPerFloor; unitNumber += 1) {
-        if (isValidUnit(config, floor, unitNumber)) {
-          buildingTotal += 1;
-        }
-      }
-    }
-
-    return total + buildingTotal;
-  }, 0);
+  settings.reduce(
+    (total, row) =>
+      total + countUniqueUnits(row?.config_json || {}),
+    0,
+  );
 
 const calculateWorkerCount = (workers) =>
   (Array.isArray(workers) ? workers : []).reduce((total, worker) => {
@@ -326,8 +292,9 @@ function ProjectCard({ project, onOpenProject }) {
             </Typography>
             <Typography
               sx={{
-                color: '#475569',
+                color: '#0f172a',
                 fontSize: '0.66rem',
+                fontWeight: 800,
                 lineHeight: 1.35,
                 whiteSpace: 'nowrap',
               }}
@@ -336,8 +303,9 @@ function ProjectCard({ project, onOpenProject }) {
             </Typography>
             <Typography
               sx={{
-                color: '#475569',
+                color: '#0369a1',
                 fontSize: '0.66rem',
+                fontWeight: 900,
                 lineHeight: 1.35,
                 whiteSpace: 'nowrap',
               }}

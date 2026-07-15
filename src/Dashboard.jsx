@@ -25,6 +25,10 @@ import MenuIcon from '@mui/icons-material/Menu';
 import CloseIcon from '@mui/icons-material/Close';
 import ExcelJS from 'exceljs';
 import { supabase } from './supabaseClient';
+import {
+  getFloorCellKeys,
+  getProjectCellKeys,
+} from './utils/buildingUnits.js';
 import Sidebar from './components/Sidebar.jsx';
 import DailyReport from './page/DailyReport.jsx';
 import ProgressInput from './page/ProgressInput.jsx';
@@ -1011,27 +1015,28 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const handleSelectTask = (id) => setSelectedTasks(selectedTasks.includes(id) ? selectedTasks.filter(item => item !== id) : [...selectedTasks, id]);
   const handleTaskChange = (id, field, value) => setTaskRows(prev => prev.map(row => row.id === id ? { ...row, [field]: value } : row));
 
-  // 💡 공정 진척 관리: 층수 클릭 시 해당 층 전체 선택
+  // 공정 진척 관리: 층수 클릭 시 같은 실제 세대를 중복 없이 선택합니다.
   const handleFloorClick = (buildingName, floor) => {
     const config = buildingConfigs[buildingName];
-    const units = Array.from({length: config.unitsPerFloor}, (_, i) => i + 1);
-    
-    const validCellKeys = units.map(u => {
-      const isActiveOnPiloti = config.exceptions?.[floor] && config.exceptions[floor].units.includes(u);
-      const isNonExistent = config.exceptions?.[floor] && !config.exceptions[floor].units.includes(u) && !config.pilotiFloors?.includes(floor);
-      const isPiloti = config.pilotiFloors?.includes(floor) && !isActiveOnPiloti;
-      
-      if (isNonExistent || isPiloti) return null;
-      return `${buildingName}-${floor}${String(u).padStart(2, '0')}`;
-    }).filter(Boolean);
+    if (!config) return;
 
-    setSelectedCells(prev => {
+    const validCellKeys = getFloorCellKeys(
+      buildingName,
+      config,
+      floor,
+    );
+
+    setSelectedCells((prev) => {
       const next = new Set(prev);
-      const allSelected = validCellKeys.every(k => next.has(k));
-      validCellKeys.forEach(k => {
-        if (allSelected) next.delete(k); 
-        else next.add(k); 
+      const allSelected =
+        validCellKeys.length > 0 &&
+        validCellKeys.every((key) => next.has(key));
+
+      validCellKeys.forEach((key) => {
+        if (allSelected) next.delete(key);
+        else next.add(key);
       });
+
       return next;
     });
   };
@@ -1184,25 +1189,15 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     }
   };
 
-  const calculateTotalUnits = () => {
-    let total = 0;
-    Object.entries(buildingConfigs).forEach(([bName, config]) => {
-      for(let floor=1; floor<=config.floors; floor++) {
-        for(let u=1; u<=config.unitsPerFloor; u++) {
-          const isActiveOnPiloti = config.exceptions?.[floor]?.units.includes(u);
-          const isException = config.exceptions?.[floor] && !config.exceptions[floor].units.includes(u);
-          const isPiloti = config.pilotiFloors?.includes(floor) && !isActiveOnPiloti;
-          const isNonExistent = isException && (!config.pilotiFloors || !config.pilotiFloors.includes(floor));
-          if(!isNonExistent && !isPiloti) total++;
-        }
-      }
-    });
-    return total;
-  };
-  
-  const totalUnits = calculateTotalUnits();
-  const completedUnits = Object.values(unitProgressData).filter(d => d.status === '작업완료').length;
-  const progressPercentage = totalUnits === 0 ? 0 : ((completedUnits / totalUnits) * 100).toFixed(2);
+  const validProjectCellKeys = getProjectCellKeys(buildingConfigs);
+  const totalUnits = validProjectCellKeys.size;
+  const completedUnits = Array.from(validProjectCellKeys).filter(
+    (cellKey) => unitProgressData[cellKey]?.status === '작업완료',
+  ).length;
+  const progressPercentage =
+    totalUnits === 0
+      ? 0
+      : ((completedUnits / totalUnits) * 100).toFixed(2);
 
   const actionName = selectedStatusAction === '작업완료' ? '완료' : selectedStatusAction;
 

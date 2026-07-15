@@ -20,38 +20,12 @@ import DownloadIcon from '@mui/icons-material/Download';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
+import {
+  getCellKey,
+  getProjectCellKeys,
+} from '../utils/buildingUnits.js';
 
 const PAGE_SIZE = 1000;
-
-const normalizeNumberArray = (value) =>
-  Array.isArray(value)
-    ? value.map((item) => Number(item)).filter((item) => Number.isFinite(item))
-    : [];
-
-const getFloorException = (exceptions, floor) =>
-  exceptions?.[floor] || exceptions?.[String(floor)] || null;
-
-const isValidUnit = (config, floor, unitNumber) => {
-  const pilotiFloors = normalizeNumberArray(config?.pilotiFloors);
-  const floorException = getFloorException(config?.exceptions, floor);
-  const exceptionUnits = normalizeNumberArray(floorException?.units);
-
-  const isActiveOnPiloti =
-    Boolean(floorException) && exceptionUnits.includes(unitNumber);
-  const isPiloti = pilotiFloors.includes(floor) && !isActiveOnPiloti;
-  const isNonExistent =
-    Boolean(floorException) &&
-    !exceptionUnits.includes(unitNumber) &&
-    !pilotiFloors.includes(floor);
-
-  return !isPiloti && !isNonExistent;
-};
-
-const getUnitCode = (floor, unitNumber) =>
-  `${floor}${String(unitNumber).padStart(2, '0')}`;
-
-const getCellKey = (buildingName, unitCode) =>
-  `${String(buildingName)}-${String(unitCode)}`;
 
 const parseDateValue = (value) => {
   if (!value) return null;
@@ -224,23 +198,10 @@ export default function CompletionSummary({
     };
   }, [projectName, refreshKey, safeProcessOptions]);
 
-  const validCellKeys = useMemo(() => {
-    const keys = new Set();
-
-    Object.entries(safeBuildingConfigs).forEach(([buildingName, config]) => {
-      const floors = Number(config?.floors) || 0;
-      const unitsPerFloor = Number(config?.unitsPerFloor) || 0;
-
-      for (let floor = 1; floor <= floors; floor += 1) {
-        for (let unitNumber = 1; unitNumber <= unitsPerFloor; unitNumber += 1) {
-          if (!isValidUnit(config, floor, unitNumber)) continue;
-          keys.add(getCellKey(buildingName, getUnitCode(floor, unitNumber)));
-        }
-      }
-    });
-
-    return keys;
-  }, [safeBuildingConfigs]);
+  const validCellKeys = useMemo(
+    () => getProjectCellKeys(safeBuildingConfigs),
+    [safeBuildingConfigs],
+  );
 
   const periods = useMemo(
     () => makePeriods(mode, periodCount),

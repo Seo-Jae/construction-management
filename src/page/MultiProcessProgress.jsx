@@ -17,6 +17,12 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
 import CheckBoxIcon from '@mui/icons-material/CheckBox';
 import { supabase } from '../supabaseClient';
+import {
+  buildFloorVisualCells,
+  countUniqueUnits,
+  getCellKey,
+  getProjectCellKeys,
+} from '../utils/buildingUnits.js';
 
 const PAGE_SIZE = 1000;
 
@@ -34,64 +40,6 @@ const PROCESS_COLORS = [
   '#14b8a6',
   '#e11d48',
 ];
-
-const normalizeNumberArray = (value) =>
-  Array.isArray(value)
-    ? value.map((item) => Number(item)).filter((item) => Number.isFinite(item))
-    : [];
-
-const getFloorException = (exceptions, floor) =>
-  exceptions?.[floor] || exceptions?.[String(floor)] || null;
-
-const getUnitCellType = (config, floor, unitNumber) => {
-  const pilotiFloors = normalizeNumberArray(config?.pilotiFloors);
-  const floorException = getFloorException(config?.exceptions, floor);
-  const exceptionUnits = normalizeNumberArray(floorException?.units);
-
-  const isActiveUnit =
-    Boolean(floorException) && exceptionUnits.includes(unitNumber);
-  const isConfiguredPiloti =
-    pilotiFloors.includes(floor) && !isActiveUnit;
-  const isNonExistent =
-    Boolean(floorException) &&
-    !exceptionUnits.includes(unitNumber) &&
-    !pilotiFloors.includes(floor);
-
-  // 필로티 대각선 표시는 1층과 2층에서만 사용합니다.
-  // 그보다 높은 층의 미존재 세대는 건물 외형을 유지하기 위한 빈 공간입니다.
-  if (floor <= 2 && (isConfiguredPiloti || isNonExistent)) {
-    return 'piloti';
-  }
-
-  if (isConfiguredPiloti || isNonExistent) {
-    return 'empty';
-  }
-
-  return 'valid';
-};
-
-const isValidUnit = (config, floor, unitNumber) =>
-  getUnitCellType(config, floor, unitNumber) === 'valid';
-
-const countValidUnits = (config) => {
-  const floors = Number(config?.floors) || 0;
-  const unitsPerFloor = Number(config?.unitsPerFloor) || 0;
-  let total = 0;
-
-  for (let floor = 1; floor <= floors; floor += 1) {
-    for (let unitNumber = 1; unitNumber <= unitsPerFloor; unitNumber += 1) {
-      if (isValidUnit(config, floor, unitNumber)) total += 1;
-    }
-  }
-
-  return total;
-};
-
-const getUnitCode = (floor, unitNumber) =>
-  `${floor}${String(unitNumber).padStart(2, '0')}`;
-
-const getCellKey = (buildingName, unitCode) =>
-  `${buildingName}-${unitCode}`;
 
 const getProcessColor = (processName, processOptions) => {
   const processIndex = processOptions.indexOf(processName);
@@ -117,6 +65,7 @@ function MultiStatusCell({
   selectedProcesses,
   processOptions,
   progressMap,
+  cellWidth = 34,
 }) {
   const cellKey = getCellKey(buildingName, unitCode);
   const cellProgress = progressMap[cellKey] || {};
@@ -172,8 +121,9 @@ function MultiStatusCell({
       <Box
         sx={{
           position: 'relative',
-          width: 34,
+          width: cellWidth,
           height: 23,
+          flex: `0 0 ${cellWidth}px`,
           border: '1px solid #cbd5e1',
           bgcolor: '#ffffff',
           overflow: 'hidden',
@@ -246,16 +196,11 @@ function MultiProcessBuildingGrid({
   progressMap,
 }) {
   const floors = Number(config?.floors) || 0;
-  const unitsPerFloor = Number(config?.unitsPerFloor) || 0;
-  const buildingTotalUnits = countValidUnits(config);
+  const buildingTotalUnits = countUniqueUnits(config);
 
   const floorNumbers = Array.from(
     { length: floors },
     (_, index) => floors - index,
-  );
-  const unitNumbers = Array.from(
-    { length: unitsPerFloor },
-    (_, index) => index + 1,
   );
 
   return (
@@ -277,7 +222,10 @@ function MultiProcessBuildingGrid({
         }}
       >
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          {floorNumbers.map((floor) => (
+          {floorNumbers.map((floor) => {
+            const floorCells = buildFloorVisualCells(config, floor);
+
+            return (
             <Box
               key={floor}
               sx={{ display: 'flex', alignItems: 'center', gap: '2px' }}
@@ -296,24 +244,20 @@ function MultiProcessBuildingGrid({
                 {floor}F
               </Typography>
 
-              {unitNumbers.map((unitNumber) => {
-                const cellType = getUnitCellType(
-                  config,
-                  floor,
-                  unitNumber,
-                );
-                const unitCode = getUnitCode(floor, unitNumber);
+              {floorCells.map((cell) => {
+                const cellWidth = 34 * cell.span + 2 * (cell.span - 1);
+                const visualKey = `${floor}-${cell.visualStart}-${cell.visualEnd}`;
 
-                if (cellType === 'piloti') {
+                if (cell.type === 'piloti') {
                   return (
                     <Box
-                      key={unitNumber}
-                      title={`${buildingName} ${unitCode}호 - 필로티`}
+                      key={visualKey}
+                      title={`${buildingName} ${floor}층 제외호`}
                       sx={{
                         position: 'relative',
-                        width: 34,
+                        width: cellWidth,
                         height: 23,
-                        flex: '0 0 34px',
+                        flex: `0 0 ${cellWidth}px`,
                         border: '1px solid #cbd5e1',
                         bgcolor: '#f8fafc',
                         boxSizing: 'border-box',
@@ -340,15 +284,15 @@ function MultiProcessBuildingGrid({
                   );
                 }
 
-                if (cellType === 'empty') {
+                if (cell.type === 'empty') {
                   return (
                     <Box
-                      key={unitNumber}
+                      key={visualKey}
                       aria-hidden="true"
                       sx={{
-                        width: 34,
+                        width: cellWidth,
                         height: 23,
-                        flex: '0 0 34px',
+                        flex: `0 0 ${cellWidth}px`,
                         border: 'none',
                         bgcolor: 'transparent',
                         boxSizing: 'border-box',
@@ -359,17 +303,19 @@ function MultiProcessBuildingGrid({
 
                 return (
                   <MultiStatusCell
-                    key={unitNumber}
+                    key={visualKey}
                     buildingName={buildingName}
-                    unitCode={unitCode}
+                    unitCode={cell.unitCode}
                     selectedProcesses={selectedProcesses}
                     processOptions={processOptions}
                     progressMap={progressMap}
+                    cellWidth={cellWidth}
                   />
                 );
               })}
             </Box>
-          ))}
+          );
+          })}
         </Box>
       </Paper>
 
@@ -511,28 +457,10 @@ export default function MultiProcessProgress({
     return mapped;
   }, [progressRows]);
 
-  const validCellKeys = useMemo(() => {
-    const keys = new Set();
-
-    Object.entries(safeBuildingConfigs).forEach(([buildingName, config]) => {
-      const floors = Number(config?.floors) || 0;
-      const unitsPerFloor = Number(config?.unitsPerFloor) || 0;
-
-      for (let floor = 1; floor <= floors; floor += 1) {
-        for (let unitNumber = 1; unitNumber <= unitsPerFloor; unitNumber += 1) {
-          if (!isValidUnit(config, floor, unitNumber)) continue;
-          keys.add(
-            getCellKey(
-              buildingName,
-              getUnitCode(floor, unitNumber),
-            ),
-          );
-        }
-      }
-    });
-
-    return keys;
-  }, [safeBuildingConfigs]);
+  const validCellKeys = useMemo(
+    () => getProjectCellKeys(safeBuildingConfigs),
+    [safeBuildingConfigs],
+  );
 
   const processStats = useMemo(
     () =>
