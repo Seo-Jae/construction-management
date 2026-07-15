@@ -11,9 +11,10 @@ import {
 } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import SendOutlinedIcon from '@mui/icons-material/SendOutlined';
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
-import { getProjectCellKeys } from '../utils/buildingUnits.js';
+import ApprovalRequestDialog from './ApprovalRequestDialog.jsx';
 
 const REPORT_PROCESSES = [
   { label: '바닥먹매김', processType: '바닥먹' },
@@ -101,8 +102,34 @@ const getReportPeriod = (baseDate = new Date()) => {
   };
 };
 
-const calculateTotalUnits = (buildingConfigs) =>
-  getProjectCellKeys(buildingConfigs || {}).size;
+const isValidUnit = (config, floor, unitIndex) => {
+  const exceptionUnits = config?.exceptions?.[floor]?.units || [];
+  const isExceptionFloor = Boolean(config?.exceptions?.[floor]);
+  const isPilotiFloor = config?.pilotiFloors?.includes(floor) || false;
+  const isActiveOnPiloti = isExceptionFloor && exceptionUnits.includes(unitIndex);
+  const isPiloti = isPilotiFloor && !isActiveOnPiloti;
+  const isNonExistent =
+    isExceptionFloor && !exceptionUnits.includes(unitIndex) && !isPilotiFloor;
+
+  return !isPiloti && !isNonExistent;
+};
+
+const calculateTotalUnits = (buildingConfigs) => {
+  let total = 0;
+
+  Object.values(buildingConfigs || {}).forEach((config) => {
+    const floors = Number(config?.floors) || 0;
+    const unitsPerFloor = Number(config?.unitsPerFloor) || 0;
+
+    for (let floor = 1; floor <= floors; floor += 1) {
+      for (let unit = 1; unit <= unitsPerFloor; unit += 1) {
+        if (isValidUnit(config, floor, unit)) total += 1;
+      }
+    }
+  });
+
+  return total;
+};
 
 const parseCompletionDate = (value) => {
   if (!value) return null;
@@ -527,6 +554,7 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
   const [progressRows, setProgressRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [approvalOpen, setApprovalOpen] = useState(false);
 
   const projectName = userProfile?.project_name || '';
   const managerName = userProfile?.manager_name || '';
@@ -679,6 +707,19 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
 
           <Button
             size="small"
+            variant="contained"
+            startIcon={<SendOutlinedIcon />}
+            onClick={() => setApprovalOpen(true)}
+            sx={{
+              bgcolor: '#2563eb',
+              '&:hover': { bgcolor: '#1d4ed8' },
+            }}
+          >
+            결재요청
+          </Button>
+
+          <Button
+            size="small"
             variant="outlined"
             startIcon={loading ? <CircularProgress size={14} /> : <RefreshIcon />}
             onClick={fetchProgressRows}
@@ -792,6 +833,33 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
           form={form}
         />
       </Paper>
+
+      <ApprovalRequestDialog
+        open={approvalOpen}
+        onClose={() => setApprovalOpen(false)}
+        reportType="weekly"
+        reportTitle={`주간 업무 보고 ${period.display}`}
+        reportKey={`weekly:${toDateKey(period.currentWeekStart)}`}
+        projectName={projectName}
+        requesterName={managerName}
+        payload={{
+          projectName,
+          managerName,
+          period: {
+            display: period.display,
+            currentWeekStart: toDateKey(
+              period.currentWeekStart,
+            ),
+            currentWeekEnd: toDateKey(
+              period.currentWeekEnd,
+            ),
+            nextWeekEnd: toDateKey(period.nextWeekEnd),
+          },
+          totalUnits,
+          stats,
+          form,
+        }}
+      />
     </Box>
   );
 }

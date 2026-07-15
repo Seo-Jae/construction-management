@@ -10,7 +10,9 @@ import {
 } from '@mui/material';
 import DownloadIcon from '@mui/icons-material/Download';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import SendOutlinedIcon from '@mui/icons-material/SendOutlined';
 import ExcelJS from 'exceljs';
+import ApprovalRequestDialog from './ApprovalRequestDialog.jsx';
 
 const MIN_REPORT_LINES = 5;
 const MAX_REPORT_LINES = 16;
@@ -122,6 +124,27 @@ function ReportContentInputs({
           마지막 항목 삭제
         </Button>
       </Box>
+
+      <ApprovalRequestDialog
+        open={approvalOpen}
+        onClose={() => setApprovalOpen(false)}
+        reportType="proposal"
+        reportTitle={`품의 보고 - ${title || '제목 미작성'}`}
+        reportKey={`proposal:${reportDate}:${title.trim()}`}
+        projectName={projectName}
+        requesterName={authorName}
+        payload={{
+          projectName,
+          authorName,
+          title,
+          reportDate,
+          reportLines,
+          itemName,
+          amount,
+          note,
+          narrative,
+        }}
+      />
     </Box>
   );
 }
@@ -472,6 +495,7 @@ export default function ProposalReport({ userProfile }) {
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [downloadError, setDownloadError] = useState('');
+  const [approvalOpen, setApprovalOpen] = useState(false);
 
   const narrative = useMemo(
     () =>
@@ -520,6 +544,24 @@ export default function ProposalReport({ userProfile }) {
     setAmount('');
     setNote('');
     setDownloadError('');
+  };
+
+  const handleOpenApproval = () => {
+    const hasReportContent = reportLines.some((line) =>
+      String(line || '').trim(),
+    );
+
+    if (!title.trim()) {
+      window.alert('품의 보고 제목을 입력해주세요.');
+      return;
+    }
+
+    if (!hasReportContent) {
+      window.alert('품의 보고 내용을 한 줄 이상 입력해주세요.');
+      return;
+    }
+
+    setApprovalOpen(true);
   };
 
   const handleDownloadExcel = async () => {
@@ -686,6 +728,19 @@ export default function ProposalReport({ userProfile }) {
               입력한 내용은 오른쪽 미리보기에 즉시 반영됩니다.
             </Typography>
           </Box>
+
+          <Button
+            size="small"
+            variant="contained"
+            startIcon={<SendOutlinedIcon />}
+            onClick={handleOpenApproval}
+            sx={{
+              bgcolor: '#2563eb',
+              '&:hover': { bgcolor: '#1d4ed8' },
+            }}
+          >
+            결재요청
+          </Button>
 
           <Button
             size="small"
