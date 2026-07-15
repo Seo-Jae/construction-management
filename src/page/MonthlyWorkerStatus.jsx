@@ -3,7 +3,6 @@ import {
   Autocomplete,
   Box,
   IconButton,
-  InputAdornment,
   Paper,
   Table,
   TableBody,
@@ -16,7 +15,6 @@ import {
 } from '@mui/material';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
-import SearchIcon from '@mui/icons-material/Search';
 
 const pad2 = (value) => String(value).padStart(2, '0');
 
@@ -418,22 +416,6 @@ export default function MonthlyWorkerStatus({
                 size="small"
                 label="근로자 조회"
                 placeholder="근로자 이름 입력"
-                InputProps={{
-                  ...params.InputProps,
-                  startAdornment: (
-                    <>
-                      <InputAdornment position="start">
-                        <SearchIcon
-                          sx={{
-                            color: '#64748b',
-                            fontSize: 18,
-                          }}
-                        />
-                      </InputAdornment>
-                      {params.InputProps.startAdornment}
-                    </>
-                  ),
-                }}
               />
             )}
           />
