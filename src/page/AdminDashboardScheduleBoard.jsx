@@ -37,9 +37,6 @@ const toDateKey = (date) =>
     pad2(date.getDate()),
   ].join('-');
 
-const SITE_SCHEDULE_ROW_COUNT = 7;
-const MEETING_ROW_COUNT = 4;
-
 const createId = () =>
   `${Date.now()}-${Math.random()
     .toString(36)
@@ -65,6 +62,22 @@ const createEmptyMeeting = () => ({
   attendees: '',
 });
 
+const hasSiteScheduleContent = (
+  schedule,
+) =>
+  [
+    schedule?.constructionCompany,
+    schedule?.siteName,
+    schedule?.trade,
+    schedule?.briefingAt,
+    schedule?.bidAt,
+    schedule?.attendees,
+    schedule?.note,
+  ].some(
+    (value) =>
+      String(value || '').trim(),
+  );
+
 const normalizeSiteSchedules = (
   savedSchedules,
 ) => {
@@ -74,8 +87,8 @@ const normalizeSiteSchedules = (
     ? savedSchedules
     : [];
 
-  const normalized = savedRows.map(
-    (schedule) => {
+  return savedRows
+    .map((schedule) => {
       const isLegacyAutoProjectRow =
         !Object.prototype.hasOwnProperty.call(
           schedule || {},
@@ -99,10 +112,6 @@ const normalizeSiteSchedules = (
             schedule?.constructionCompany ||
               '',
           ),
-        /*
-          이전 버전에서 진행 중 현장명이 자동으로 저장된
-          projectName 값은 새 현장명으로 가져오지 않습니다.
-        */
         siteName: isLegacyAutoProjectRow
           ? ''
           : String(
@@ -125,28 +134,31 @@ const normalizeSiteSchedules = (
         note:
           String(schedule?.note || ''),
       };
-    },
-  );
-
-  while (
-    normalized.length <
-    SITE_SCHEDULE_ROW_COUNT
-  ) {
-    normalized.push(
-      createEmptySiteSchedule(),
-    );
-  }
-
-  return normalized;
+    })
+    .filter(hasSiteScheduleContent);
 };
+
+const hasMeetingContent = (
+  meeting,
+) =>
+  [
+    meeting?.dateTime,
+    meeting?.siteName,
+    meeting?.meetingName,
+    meeting?.meetingContent,
+    meeting?.attendees,
+  ].some(
+    (value) =>
+      String(value || '').trim(),
+  );
 
 const normalizeMeetings = (meetings) => {
   const savedRows = Array.isArray(meetings)
     ? meetings
     : [];
 
-  const normalized = savedRows.map(
-    (meeting) => ({
+  return savedRows
+    .map((meeting) => ({
       id:
         String(meeting?.id || '') ||
         createId(),
@@ -162,10 +174,6 @@ const normalizeMeetings = (meetings) => {
         String(
           meeting?.meetingName || '',
         ),
-      /*
-        이전 버전의 title은 회의내용 칸이었으므로
-        새 회의내용으로 옮깁니다.
-      */
       meetingContent:
         String(
           meeting?.meetingContent ||
@@ -176,19 +184,8 @@ const normalizeMeetings = (meetings) => {
         String(
           meeting?.attendees || '',
         ),
-    }),
-  );
-
-  while (
-    normalized.length <
-    MEETING_ROW_COUNT
-  ) {
-    normalized.push(
-      createEmptyMeeting(),
-    );
-  }
-
-  return normalized;
+    }))
+    .filter(hasMeetingContent);
 };
 
 const getDatePart = (dateTime) =>
@@ -424,25 +421,441 @@ function PanelHeader({
 
 function SiteSchedulePanel({
   siteSchedules,
+  selectedId,
   saving,
   onChange,
+  onSelect,
+  onAdd,
+  onDelete,
   onSave,
 }) {
-  const columns = [
+  const textColumns = [
     {
       key: 'constructionCompany',
-      label: '건설사명',
-      placeholder: '건설사명',
+      placeholder: '건설사',
     },
     {
       key: 'siteName',
-      label: '현장명',
       placeholder: '현장명',
     },
     {
       key: 'trade',
-      label: '공종',
       placeholder: '공종',
+    },
+  ];
+
+  const getCellSx = (isSelected) => ({
+    minWidth: 0,
+    p: 0.28,
+    borderRight:
+      '1px solid #dbe3ee',
+    borderBottom:
+      '1px solid #dbe3ee',
+    bgcolor: isSelected
+      ? '#eff6ff'
+      : '#ffffff',
+    cursor: 'text',
+  });
+
+  return (
+    <Paper
+      variant="outlined"
+      sx={{
+        height: '100%',
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        borderColor: '#cbd5e1',
+        boxShadow: 'none',
+        overflow: 'hidden',
+      }}
+    >
+      <PanelHeader
+        title="현장설명·입찰 현황"
+        subtitle="현설은 빨간색, 입찰은 파란색으로 캘린더에 표시됩니다."
+        saving={saving}
+        onSave={onSave}
+        rightContent={
+          <>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={onAdd}
+              sx={{
+                minWidth: 54,
+                px: 0.65,
+                whiteSpace: 'nowrap',
+                fontSize: '0.61rem',
+                fontWeight: 900,
+              }}
+            >
+              행 추가
+            </Button>
+
+            <Button
+              size="small"
+              variant="outlined"
+              color="error"
+              onClick={onDelete}
+              disabled={
+                siteSchedules.length === 0
+              }
+              sx={{
+                minWidth: 44,
+                px: 0.65,
+                whiteSpace: 'nowrap',
+                fontSize: '0.61rem',
+                fontWeight: 900,
+              }}
+            >
+              삭제
+            </Button>
+          </>
+        }
+      />
+
+      <Box
+        sx={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+        }}
+      >
+        <Box
+          sx={{
+            width: '100%',
+            minWidth: 0,
+            display: 'grid',
+            gridTemplateColumns:
+              'minmax(0, 0.82fr) minmax(0, 1fr) minmax(0, 0.58fr) minmax(0, 1.34fr) minmax(0, 1.34fr) 52px minmax(0, 0.72fr)',
+            borderLeft:
+              '1px solid #cbd5e1',
+          }}
+        >
+          {[
+            '건설사명',
+            '현장명',
+            '공종',
+            '현설일시',
+            '입찰일시',
+            '참석자',
+            '비고',
+          ].map((label) => (
+            <Box
+              key={label}
+              sx={{
+                minWidth: 0,
+                px: 0.3,
+                py: 0.48,
+                borderRight:
+                  '1px solid #cbd5e1',
+                borderBottom:
+                  '1px solid #cbd5e1',
+                bgcolor: '#eef2f7',
+                color: '#334155',
+                textAlign: 'center',
+                fontSize: '0.61rem',
+                fontWeight: 900,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+              }}
+            >
+              {label}
+            </Box>
+          ))}
+
+          {siteSchedules.map(
+            (schedule, index) => {
+              const isSelected =
+                schedule.id === selectedId;
+
+              return (
+                <React.Fragment
+                  key={schedule.id}
+                >
+                  {textColumns.map(
+                    (column) => (
+                      <Box
+                        key={column.key}
+                        onMouseDown={() =>
+                          onSelect(
+                            schedule.id,
+                          )
+                        }
+                        sx={getCellSx(
+                          isSelected,
+                        )}
+                      >
+                        <TextField
+                          fullWidth
+                          size="small"
+                          value={
+                            schedule[
+                              column.key
+                            ] || ''
+                          }
+                          placeholder={
+                            column.placeholder
+                          }
+                          onFocus={() =>
+                            onSelect(
+                              schedule.id,
+                            )
+                          }
+                          onChange={(
+                            event,
+                          ) =>
+                            onChange(
+                              index,
+                              column.key,
+                              event.target
+                                .value,
+                            )
+                          }
+                          sx={{
+                            minWidth: 0,
+                            '& .MuiInputBase-root':
+                              {
+                                minWidth: 0,
+                                minHeight: 29,
+                              },
+                            '& .MuiInputBase-input':
+                              {
+                                minWidth: 0,
+                                py: 0.48,
+                                px: 0.45,
+                                fontSize:
+                                  '0.59rem',
+                              },
+                          }}
+                        />
+                      </Box>
+                    ),
+                  )}
+
+                  <Box
+                    onMouseDown={() =>
+                      onSelect(schedule.id)
+                    }
+                    sx={getCellSx(
+                      isSelected,
+                    )}
+                  >
+                    <TextField
+                      fullWidth
+                      type="datetime-local"
+                      size="small"
+                      value={
+                        schedule.briefingAt
+                      }
+                      onFocus={() =>
+                        onSelect(schedule.id)
+                      }
+                      onChange={(event) =>
+                        onChange(
+                          index,
+                          'briefingAt',
+                          event.target.value,
+                        )
+                      }
+                      InputLabelProps={{
+                        shrink: true,
+                      }}
+                      sx={{
+                        minWidth: 0,
+                        '& .MuiInputBase-root':
+                          {
+                            minWidth: 0,
+                            minHeight: 29,
+                          },
+                        '& .MuiInputBase-input':
+                          {
+                            minWidth: 0,
+                            py: 0.48,
+                            px: 0.25,
+                            color: '#b91c1c',
+                            fontSize:
+                              '0.53rem',
+                            fontWeight: 700,
+                          },
+                      }}
+                    />
+                  </Box>
+
+                  <Box
+                    onMouseDown={() =>
+                      onSelect(schedule.id)
+                    }
+                    sx={getCellSx(
+                      isSelected,
+                    )}
+                  >
+                    <TextField
+                      fullWidth
+                      type="datetime-local"
+                      size="small"
+                      value={schedule.bidAt}
+                      onFocus={() =>
+                        onSelect(schedule.id)
+                      }
+                      onChange={(event) =>
+                        onChange(
+                          index,
+                          'bidAt',
+                          event.target.value,
+                        )
+                      }
+                      InputLabelProps={{
+                        shrink: true,
+                      }}
+                      sx={{
+                        minWidth: 0,
+                        '& .MuiInputBase-root':
+                          {
+                            minWidth: 0,
+                            minHeight: 29,
+                          },
+                        '& .MuiInputBase-input':
+                          {
+                            minWidth: 0,
+                            py: 0.48,
+                            px: 0.25,
+                            color: '#1d4ed8',
+                            fontSize:
+                              '0.53rem',
+                            fontWeight: 700,
+                          },
+                      }}
+                    />
+                  </Box>
+
+                  <Box
+                    onMouseDown={() =>
+                      onSelect(schedule.id)
+                    }
+                    sx={getCellSx(
+                      isSelected,
+                    )}
+                  >
+                    <TextField
+                      fullWidth
+                      size="small"
+                      value={
+                        schedule.attendees
+                      }
+                      placeholder="참석"
+                      onFocus={() =>
+                        onSelect(schedule.id)
+                      }
+                      onChange={(event) =>
+                        onChange(
+                          index,
+                          'attendees',
+                          event.target.value,
+                        )
+                      }
+                      inputProps={{
+                        maxLength: 12,
+                      }}
+                      sx={{
+                        minWidth: 0,
+                        '& .MuiInputBase-root':
+                          {
+                            minWidth: 0,
+                            minHeight: 29,
+                          },
+                        '& .MuiInputBase-input':
+                          {
+                            minWidth: 0,
+                            py: 0.48,
+                            px: 0.25,
+                            textAlign:
+                              'center',
+                            fontSize:
+                              '0.56rem',
+                          },
+                      }}
+                    />
+                  </Box>
+
+                  <Box
+                    onMouseDown={() =>
+                      onSelect(schedule.id)
+                    }
+                    sx={getCellSx(
+                      isSelected,
+                    )}
+                  >
+                    <TextField
+                      fullWidth
+                      size="small"
+                      value={schedule.note}
+                      placeholder="비고"
+                      onFocus={() =>
+                        onSelect(schedule.id)
+                      }
+                      onChange={(event) =>
+                        onChange(
+                          index,
+                          'note',
+                          event.target.value,
+                        )
+                      }
+                      sx={{
+                        minWidth: 0,
+                        '& .MuiInputBase-root':
+                          {
+                            minWidth: 0,
+                            minHeight: 29,
+                          },
+                        '& .MuiInputBase-input':
+                          {
+                            minWidth: 0,
+                            py: 0.48,
+                            px: 0.4,
+                            fontSize:
+                              '0.58rem',
+                          },
+                      }}
+                    />
+                  </Box>
+                </React.Fragment>
+              );
+            },
+          )}
+        </Box>
+      </Box>
+    </Paper>
+  );
+}
+
+function MeetingSchedulePanel({
+  meetings,
+  selectedId,
+  saving,
+  onChange,
+  onSelect,
+  onAdd,
+  onDelete,
+  onSave,
+}) {
+  const columns = [
+    {
+      key: 'siteName',
+      placeholder: '현장',
+    },
+    {
+      key: 'meetingName',
+      placeholder: '회의명',
+    },
+    {
+      key: 'meetingContent',
+      placeholder: '회의내용',
+    },
+    {
+      key: 'attendees',
+      placeholder: '참석자',
     },
   ];
 
@@ -460,321 +873,46 @@ function SiteSchedulePanel({
       }}
     >
       <PanelHeader
-        title="현장설명·입찰 현황"
-        subtitle="진행 중 프로젝트와 연결되지 않는 독립 입력표입니다. 현설은 빨간색, 입찰은 파란색으로 캘린더에 표시됩니다."
-        saving={saving}
-        onSave={onSave}
-      />
-
-      <Box
-        sx={{
-          flex: 1,
-          minHeight: 0,
-          overflow: 'auto',
-        }}
-      >
-        <Box
-          sx={{
-            minWidth: 1120,
-            display: 'grid',
-            gridTemplateColumns:
-              '125px 150px 105px 170px 170px 135px minmax(100px, 0.8fr)',
-            borderLeft:
-              '1px solid #cbd5e1',
-          }}
-        >
-          {[
-            '건설사명',
-            '현장명',
-            '공종',
-            '현설일시',
-            '입찰일시',
-            '참석자',
-            '비고',
-          ].map((label) => (
-            <Box
-              key={label}
-              sx={{
-                px: 0.55,
-                py: 0.48,
-                borderRight:
-                  '1px solid #cbd5e1',
-                borderBottom:
-                  '1px solid #cbd5e1',
-                bgcolor: '#eef2f7',
-                color: '#334155',
-                textAlign: 'center',
-                fontSize: '0.64rem',
-                fontWeight: 900,
-              }}
-            >
-              {label}
-            </Box>
-          ))}
-
-          {siteSchedules.map(
-            (schedule, index) => (
-              <React.Fragment
-                key={schedule.id}
-              >
-                {columns.map(
-                  (column) => (
-                    <Box
-                      key={column.key}
-                      sx={{
-                        p: 0.32,
-                        borderRight:
-                          '1px solid #dbe3ee',
-                        borderBottom:
-                          '1px solid #dbe3ee',
-                      }}
-                    >
-                      <TextField
-                        fullWidth
-                        size="small"
-                        value={
-                          schedule[
-                            column.key
-                          ] || ''
-                        }
-                        placeholder={
-                          column.placeholder
-                        }
-                        onChange={(event) =>
-                          onChange(
-                            index,
-                            column.key,
-                            event.target.value,
-                          )
-                        }
-                        sx={{
-                          '& .MuiInputBase-root':
-                            {
-                              minHeight: 29,
-                            },
-                          '& .MuiInputBase-input':
-                            {
-                              py: 0.48,
-                              px: 0.65,
-                              fontSize:
-                                '0.63rem',
-                            },
-                        }}
-                      />
-                    </Box>
-                  ),
-                )}
-
-                <Box
-                  sx={{
-                    p: 0.32,
-                    borderRight:
-                      '1px solid #dbe3ee',
-                    borderBottom:
-                      '1px solid #dbe3ee',
-                  }}
-                >
-                  <TextField
-                    fullWidth
-                    type="datetime-local"
-                    size="small"
-                    value={
-                      schedule.briefingAt
-                    }
-                    onChange={(event) =>
-                      onChange(
-                        index,
-                        'briefingAt',
-                        event.target.value,
-                      )
-                    }
-                    InputLabelProps={{
-                      shrink: true,
-                    }}
-                    sx={{
-                      '& .MuiInputBase-root':
-                        {
-                          minHeight: 29,
-                        },
-                      '& .MuiInputBase-input':
-                        {
-                          py: 0.48,
-                          px: 0.55,
-                          color: '#b91c1c',
-                          fontSize:
-                            '0.61rem',
-                          fontWeight: 700,
-                        },
-                    }}
-                  />
-                </Box>
-
-                <Box
-                  sx={{
-                    p: 0.32,
-                    borderRight:
-                      '1px solid #dbe3ee',
-                    borderBottom:
-                      '1px solid #dbe3ee',
-                  }}
-                >
-                  <TextField
-                    fullWidth
-                    type="datetime-local"
-                    size="small"
-                    value={schedule.bidAt}
-                    onChange={(event) =>
-                      onChange(
-                        index,
-                        'bidAt',
-                        event.target.value,
-                      )
-                    }
-                    InputLabelProps={{
-                      shrink: true,
-                    }}
-                    sx={{
-                      '& .MuiInputBase-root':
-                        {
-                          minHeight: 29,
-                        },
-                      '& .MuiInputBase-input':
-                        {
-                          py: 0.48,
-                          px: 0.55,
-                          color: '#1d4ed8',
-                          fontSize:
-                            '0.61rem',
-                          fontWeight: 700,
-                        },
-                    }}
-                  />
-                </Box>
-
-                <Box
-                  sx={{
-                    p: 0.32,
-                    borderRight:
-                      '1px solid #dbe3ee',
-                    borderBottom:
-                      '1px solid #dbe3ee',
-                  }}
-                >
-                  <TextField
-                    fullWidth
-                    size="small"
-                    value={
-                      schedule.attendees
-                    }
-                    placeholder="참석자"
-                    onChange={(event) =>
-                      onChange(
-                        index,
-                        'attendees',
-                        event.target.value,
-                      )
-                    }
-                    sx={{
-                      '& .MuiInputBase-root':
-                        {
-                          minHeight: 29,
-                        },
-                      '& .MuiInputBase-input':
-                        {
-                          py: 0.48,
-                          px: 0.65,
-                          fontSize:
-                            '0.63rem',
-                        },
-                    }}
-                  />
-                </Box>
-
-                <Box
-                  sx={{
-                    p: 0.32,
-                    borderRight:
-                      '1px solid #dbe3ee',
-                    borderBottom:
-                      '1px solid #dbe3ee',
-                  }}
-                >
-                  <TextField
-                    fullWidth
-                    size="small"
-                    value={schedule.note}
-                    placeholder="비고"
-                    onChange={(event) =>
-                      onChange(
-                        index,
-                        'note',
-                        event.target.value,
-                      )
-                    }
-                    sx={{
-                      '& .MuiInputBase-root':
-                        {
-                          minHeight: 29,
-                        },
-                      '& .MuiInputBase-input':
-                        {
-                          py: 0.48,
-                          px: 0.65,
-                          fontSize:
-                            '0.63rem',
-                        },
-                    }}
-                  />
-                </Box>
-              </React.Fragment>
-            ),
-          )}
-        </Box>
-      </Box>
-    </Paper>
-  );
-}
-
-function MeetingSchedulePanel({
-  meetings,
-  saving,
-  onChange,
-  onAdd,
-  onSave,
-}) {
-  return (
-    <Paper
-      variant="outlined"
-      sx={{
-        height: '100%',
-        minHeight: 0,
-        display: 'flex',
-        flexDirection: 'column',
-        borderColor: '#cbd5e1',
-        boxShadow: 'none',
-        overflow: 'hidden',
-      }}
-    >
-      <PanelHeader
         title="현장회의일정"
-        subtitle="현장명은 목록 선택이 아닌 직접입력 방식입니다."
+        subtitle="행 추가 후 현장과 회의내용을 직접 입력합니다."
         saving={saving}
         onSave={onSave}
         rightContent={
-          <Button
-            size="small"
-            variant="outlined"
-            onClick={onAdd}
-            sx={{
-              minWidth: 58,
-              px: 0.7,
-              whiteSpace: 'nowrap',
-              fontSize: '0.62rem',
-              fontWeight: 900,
-            }}
-          >
-            일정 추가
-          </Button>
+          <>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={onAdd}
+              sx={{
+                minWidth: 54,
+                px: 0.65,
+                whiteSpace: 'nowrap',
+                fontSize: '0.61rem',
+                fontWeight: 900,
+              }}
+            >
+              행 추가
+            </Button>
+
+            <Button
+              size="small"
+              variant="outlined"
+              color="error"
+              onClick={onDelete}
+              disabled={
+                meetings.length === 0
+              }
+              sx={{
+                minWidth: 44,
+                px: 0.65,
+                whiteSpace: 'nowrap',
+                fontSize: '0.61rem',
+                fontWeight: 900,
+              }}
+            >
+              삭제
+            </Button>
+          </>
         }
       />
 
@@ -782,15 +920,17 @@ function MeetingSchedulePanel({
         sx={{
           flex: 1,
           minHeight: 0,
-          overflow: 'auto',
+          overflowY: 'auto',
+          overflowX: 'hidden',
         }}
       >
         <Box
           sx={{
-            minWidth: 920,
+            width: '100%',
+            minWidth: 0,
             display: 'grid',
             gridTemplateColumns:
-              '170px 150px 150px minmax(250px, 1fr) 150px',
+              'minmax(0, 1.12fr) minmax(0, 0.82fr) minmax(0, 0.85fr) minmax(0, 1.55fr) 62px',
             borderLeft:
               '1px solid #cbd5e1',
           }}
@@ -805,7 +945,8 @@ function MeetingSchedulePanel({
             <Box
               key={label}
               sx={{
-                px: 0.65,
+                minWidth: 0,
+                px: 0.3,
                 py: 0.5,
                 borderRight:
                   '1px solid #cbd5e1',
@@ -814,8 +955,10 @@ function MeetingSchedulePanel({
                 bgcolor: '#eef2f7',
                 color: '#334155',
                 textAlign: 'center',
-                fontSize: '0.64rem',
+                fontSize: '0.61rem',
                 fontWeight: 900,
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
               }}
             >
               {label}
@@ -823,209 +966,139 @@ function MeetingSchedulePanel({
           ))}
 
           {meetings.map(
-            (meeting, index) => (
-              <React.Fragment
-                key={meeting.id}
-              >
-                <Box
-                  sx={{
-                    p: 0.34,
-                    borderRight:
-                      '1px solid #dbe3ee',
-                    borderBottom:
-                      '1px solid #dbe3ee',
-                  }}
-                >
-                  <TextField
-                    fullWidth
-                    type="datetime-local"
-                    size="small"
-                    value={
-                      meeting.dateTime
-                    }
-                    onChange={(event) =>
-                      onChange(
-                        index,
-                        'dateTime',
-                        event.target.value,
-                      )
-                    }
-                    InputLabelProps={{
-                      shrink: true,
-                    }}
-                    sx={{
-                      '& .MuiInputBase-root':
-                        {
-                          minHeight: 30,
-                        },
-                      '& .MuiInputBase-input':
-                        {
-                          py: 0.5,
-                          px: 0.55,
-                          fontSize:
-                            '0.62rem',
-                        },
-                    }}
-                  />
-                </Box>
+            (meeting, index) => {
+              const isSelected =
+                meeting.id === selectedId;
 
-                <Box
-                  sx={{
-                    p: 0.34,
-                    borderRight:
-                      '1px solid #dbe3ee',
-                    borderBottom:
-                      '1px solid #dbe3ee',
-                  }}
-                >
-                  <TextField
-                    fullWidth
-                    size="small"
-                    value={
-                      meeting.siteName
-                    }
-                    placeholder="현장 직접입력"
-                    onChange={(event) =>
-                      onChange(
-                        index,
-                        'siteName',
-                        event.target.value,
-                      )
-                    }
-                    sx={{
-                      '& .MuiInputBase-root':
-                        {
-                          minHeight: 30,
-                        },
-                      '& .MuiInputBase-input':
-                        {
-                          py: 0.5,
-                          px: 0.65,
-                          fontSize:
-                            '0.63rem',
-                        },
-                    }}
-                  />
-                </Box>
+              const cellSx = {
+                minWidth: 0,
+                p: 0.3,
+                borderRight:
+                  '1px solid #dbe3ee',
+                borderBottom:
+                  '1px solid #dbe3ee',
+                bgcolor: isSelected
+                  ? '#eff6ff'
+                  : '#ffffff',
+              };
 
-                <Box
-                  sx={{
-                    p: 0.34,
-                    borderRight:
-                      '1px solid #dbe3ee',
-                    borderBottom:
-                      '1px solid #dbe3ee',
-                  }}
+              return (
+                <React.Fragment
+                  key={meeting.id}
                 >
-                  <TextField
-                    fullWidth
-                    size="small"
-                    value={
-                      meeting.meetingName
+                  <Box
+                    onMouseDown={() =>
+                      onSelect(meeting.id)
                     }
-                    placeholder="회의명"
-                    onChange={(event) =>
-                      onChange(
-                        index,
-                        'meetingName',
-                        event.target.value,
-                      )
-                    }
-                    sx={{
-                      '& .MuiInputBase-root':
-                        {
-                          minHeight: 30,
-                        },
-                      '& .MuiInputBase-input':
-                        {
-                          py: 0.5,
-                          px: 0.65,
-                          fontSize:
-                            '0.63rem',
-                        },
-                    }}
-                  />
-                </Box>
+                    sx={cellSx}
+                  >
+                    <TextField
+                      fullWidth
+                      type="datetime-local"
+                      size="small"
+                      value={
+                        meeting.dateTime
+                      }
+                      onFocus={() =>
+                        onSelect(meeting.id)
+                      }
+                      onChange={(event) =>
+                        onChange(
+                          index,
+                          'dateTime',
+                          event.target.value,
+                        )
+                      }
+                      InputLabelProps={{
+                        shrink: true,
+                      }}
+                      sx={{
+                        minWidth: 0,
+                        '& .MuiInputBase-root':
+                          {
+                            minWidth: 0,
+                            minHeight: 30,
+                          },
+                        '& .MuiInputBase-input':
+                          {
+                            minWidth: 0,
+                            py: 0.5,
+                            px: 0.3,
+                            fontSize:
+                              '0.55rem',
+                          },
+                      }}
+                    />
+                  </Box>
 
-                <Box
-                  sx={{
-                    p: 0.34,
-                    borderRight:
-                      '1px solid #dbe3ee',
-                    borderBottom:
-                      '1px solid #dbe3ee',
-                  }}
-                >
-                  <TextField
-                    fullWidth
-                    size="small"
-                    value={
-                      meeting.meetingContent
-                    }
-                    placeholder="회의내용"
-                    onChange={(event) =>
-                      onChange(
-                        index,
-                        'meetingContent',
-                        event.target.value,
-                      )
-                    }
-                    sx={{
-                      '& .MuiInputBase-root':
-                        {
-                          minHeight: 30,
-                        },
-                      '& .MuiInputBase-input':
-                        {
-                          py: 0.5,
-                          px: 0.65,
-                          fontSize:
-                            '0.63rem',
-                        },
-                    }}
-                  />
-                </Box>
-
-                <Box
-                  sx={{
-                    p: 0.34,
-                    borderRight:
-                      '1px solid #dbe3ee',
-                    borderBottom:
-                      '1px solid #dbe3ee',
-                  }}
-                >
-                  <TextField
-                    fullWidth
-                    size="small"
-                    value={
-                      meeting.attendees
-                    }
-                    placeholder="참석자"
-                    onChange={(event) =>
-                      onChange(
-                        index,
-                        'attendees',
-                        event.target.value,
-                      )
-                    }
-                    sx={{
-                      '& .MuiInputBase-root':
-                        {
-                          minHeight: 30,
-                        },
-                      '& .MuiInputBase-input':
-                        {
-                          py: 0.5,
-                          px: 0.65,
-                          fontSize:
-                            '0.63rem',
-                        },
-                    }}
-                  />
-                </Box>
-              </React.Fragment>
-            ),
+                  {columns.map(
+                    (column) => (
+                      <Box
+                        key={column.key}
+                        onMouseDown={() =>
+                          onSelect(
+                            meeting.id,
+                          )
+                        }
+                        sx={cellSx}
+                      >
+                        <TextField
+                          fullWidth
+                          size="small"
+                          value={
+                            meeting[
+                              column.key
+                            ] || ''
+                          }
+                          placeholder={
+                            column.placeholder
+                          }
+                          onFocus={() =>
+                            onSelect(
+                              meeting.id,
+                            )
+                          }
+                          onChange={(
+                            event,
+                          ) =>
+                            onChange(
+                              index,
+                              column.key,
+                              event.target
+                                .value,
+                            )
+                          }
+                          sx={{
+                            minWidth: 0,
+                            '& .MuiInputBase-root':
+                              {
+                                minWidth: 0,
+                                minHeight: 30,
+                              },
+                            '& .MuiInputBase-input':
+                              {
+                                minWidth: 0,
+                                py: 0.5,
+                                px: 0.45,
+                                textAlign:
+                                  column.key ===
+                                  'attendees'
+                                    ? 'center'
+                                    : 'left',
+                                fontSize:
+                                  column.key ===
+                                  'attendees'
+                                    ? '0.56rem'
+                                    : '0.59rem',
+                              },
+                          }}
+                        />
+                      </Box>
+                    ),
+                  )}
+                </React.Fragment>
+              );
+            },
           )}
         </Box>
       </Box>
@@ -1335,6 +1408,16 @@ export default function AdminDashboardScheduleBoard() {
   const [successMessage, setSuccessMessage] =
     useState('');
 
+  const [
+    selectedSiteScheduleId,
+    setSelectedSiteScheduleId,
+  ] = useState('');
+
+  const [
+    selectedMeetingId,
+    setSelectedMeetingId,
+  ] = useState('');
+
   const loadScheduleBoard =
     useCallback(async () => {
       setLoading(true);
@@ -1374,6 +1457,9 @@ export default function AdminDashboardScheduleBoard() {
             data?.meeting_schedules,
           ),
         );
+
+        setSelectedSiteScheduleId('');
+        setSelectedMeetingId('');
       } catch (error) {
         console.error(
           'Dashboard 일정 조회 실패:',
@@ -1450,15 +1536,82 @@ export default function AdminDashboardScheduleBoard() {
     setSuccessMessage('');
   };
 
-  const handleAddMeeting = () => {
-    setMeetings((previous) => [
+  const handleAddSiteSchedule = () => {
+    const row =
+      createEmptySiteSchedule();
+
+    setSiteSchedules((previous) => [
       ...previous,
-      createEmptyMeeting(),
+      row,
     ]);
+
+    setSelectedSiteScheduleId(
+      row.id,
+    );
 
     setSuccessMessage('');
   };
 
+  const handleDeleteSiteSchedule = () => {
+    setSiteSchedules((previous) => {
+      if (previous.length === 0) {
+        return previous;
+      }
+
+      const targetId =
+        selectedSiteScheduleId ||
+        previous[
+          previous.length - 1
+        ].id;
+
+      const next = previous.filter(
+        (row) => row.id !== targetId,
+      );
+
+      setSelectedSiteScheduleId('');
+
+      return next;
+    });
+
+    setSuccessMessage('');
+  };
+
+  const handleAddMeeting = () => {
+    const row =
+      createEmptyMeeting();
+
+    setMeetings((previous) => [
+      ...previous,
+      row,
+    ]);
+
+    setSelectedMeetingId(row.id);
+    setSuccessMessage('');
+  };
+
+  const handleDeleteMeeting = () => {
+    setMeetings((previous) => {
+      if (previous.length === 0) {
+        return previous;
+      }
+
+      const targetId =
+        selectedMeetingId ||
+        previous[
+          previous.length - 1
+        ].id;
+
+      const next = previous.filter(
+        (row) => row.id !== targetId,
+      );
+
+      setSelectedMeetingId('');
+
+      return next;
+    });
+
+    setSuccessMessage('');
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -1608,9 +1761,21 @@ export default function AdminDashboardScheduleBoard() {
           siteSchedules={
             siteSchedules
           }
+          selectedId={
+            selectedSiteScheduleId
+          }
           saving={saving}
           onChange={
             handleSiteScheduleChange
+          }
+          onSelect={
+            setSelectedSiteScheduleId
+          }
+          onAdd={
+            handleAddSiteSchedule
+          }
+          onDelete={
+            handleDeleteSiteSchedule
           }
           onSave={handleSave}
         />
@@ -1671,11 +1836,20 @@ export default function AdminDashboardScheduleBoard() {
 
         <MeetingSchedulePanel
           meetings={meetings}
+          selectedId={
+            selectedMeetingId
+          }
           saving={saving}
           onChange={
             handleMeetingChange
           }
+          onSelect={
+            setSelectedMeetingId
+          }
           onAdd={handleAddMeeting}
+          onDelete={
+            handleDeleteMeeting
+          }
           onSave={handleSave}
         />
       </Box>
