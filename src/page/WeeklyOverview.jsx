@@ -69,12 +69,13 @@ const TEMPLATE_PROJECT_NAMES =
     (project) => project.projectName,
   );
 
-const EMPTY_CELL_VALUES = Object.fromEntries(
-  TEMPLATE_PROJECTS.flatMap((project) => [
-    [project.processCell, ''],
-    [project.specialCell, ''],
-  ]),
-);
+const TEMPLATE_CELL_ADDRESSES =
+  TEMPLATE_PROJECTS.flatMap(
+    (project) => [
+      project.processCell,
+      project.specialCell,
+    ],
+  );
 
 const PROCESS_FORM_KEYS = [
   'progressCurrent',
@@ -94,30 +95,56 @@ const SPECIAL_FORM_KEYS = [
   'specialNext',
 ];
 
-const CELL_OVERLAYS = [
-  { cell: 'C7', top: 9.113001 },
-  { cell: 'C9', top: 11.786148 },
-  { cell: 'C11', top: 14.459295 },
-  { cell: 'C13', top: 17.132442 },
-  { cell: 'C15', top: 19.805589 },
-  { cell: 'C17', top: 22.478736 },
-  { cell: 'C19', top: 25.151883 },
-  { cell: 'C21', top: 27.82503 },
-  { cell: 'C23', top: 30.498177 },
-  { cell: 'C25', top: 33.171324 },
-  { cell: 'C27', top: 35.844471 },
-  { cell: 'C29', top: 38.517618 },
-  { cell: 'C31', top: 41.190765 },
-  { cell: 'C33', top: 43.863913 },
-  { cell: 'C35', top: 46.53706 },
-  { cell: 'C37', top: 49.210207 },
-  { cell: 'C39', top: 51.883354 },
-  { cell: 'C41', top: 54.556501 },
+const OFFICE_GROUPS = [
+  {
+    label: '공무',
+    rows: [
+      '[입찰]',
+      '1. 제출',
+      '',
+      '',
+      '2. 제출예정',
+      '',
+      '',
+      '[예가 및 견적]',
+      '1. 제출',
+      '',
+      '',
+      '2. 제출예정',
+      '',
+      '',
+      '',
+      '[하자보수]',
+      '',
+      '',
+      '',
+      '1. 특이사항',
+      '',
+      '',
+    ],
+  },
+  {
+    label: '관리',
+    rows: [
+      '[노무, 세무]',
+      '',
+      '',
+      '[회계, 경리]',
+      '',
+      '',
+    ],
+  },
+  {
+    label: '안전',
+    rows: [
+      '',
+      '',
+      '',
+      '',
+      '',
+    ],
+  },
 ];
-
-const CELL_LEFT_PERCENT = 23.753666;
-const CELL_WIDTH_PERCENT = 76.246334;
-const CELL_HEIGHT_PERCENT = 1.336574;
 
 const pad2 = (value) =>
   String(value).padStart(2, '0');
@@ -212,34 +239,6 @@ const formatDisplayDate = (dateKey) => {
   return `${year}.${month}.${day}`;
 };
 
-const saveWorkbook = async (
-  workbook,
-  filename,
-) => {
-  const buffer =
-    await workbook.xlsx.writeBuffer();
-
-  const blob = new Blob(
-    [buffer],
-    {
-      type:
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    },
-  );
-
-  const url =
-    URL.createObjectURL(blob);
-  const link =
-    document.createElement('a');
-
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-};
-
 const normalizeText = (value) =>
   String(value || '').trim();
 
@@ -258,100 +257,164 @@ const createTextSet = (
     ),
   );
 
-const getReportCellValues = (report) => {
+const textToRows = (value) => {
+  const rows = String(value || '')
+    .replace(/\r/g, '')
+    .split('\n');
+
+  return rows.length > 0
+    ? rows
+    : [''];
+};
+
+const normalizeRows = (rows) => {
+  if (Array.isArray(rows)) {
+    return rows.length > 0
+      ? rows.map((value) =>
+          String(value || ''),
+        )
+      : [''];
+  }
+
+  return textToRows(rows);
+};
+
+const rowsToText = (rows) =>
+  normalizeRows(rows).join('\n');
+
+const createEmptyCellRows = () =>
+  Object.fromEntries(
+    TEMPLATE_CELL_ADDRESSES.map(
+      (address) => [address, ['']],
+    ),
+  );
+
+const getReportCellRows = (report) => {
   const payload = report?.payload || {};
+
   const highlights = normalizeTextList(
     payload?.nextWeekHighlights,
   );
+
   const form = payload?.form || {};
 
   const processSet = createTextSet(
     form,
     PROCESS_FORM_KEYS,
   );
+
   const specialSet = createTextSet(
     form,
     SPECIAL_FORM_KEYS,
   );
 
-  const processLines = [];
-  const specialLines = [];
+  const processRows = [];
+  const specialRows = [];
 
   highlights.forEach((text) => {
     if (
       specialSet.has(text) &&
       !processSet.has(text)
     ) {
-      specialLines.push(text);
+      specialRows.push(text);
       return;
     }
 
-    processLines.push(text);
+    processRows.push(text);
   });
 
-  /*
-    과거 데이터처럼 입력 분류를 판단할 수 없는 경우에도
-    주요보고가 누락되지 않도록 공정 칸에 우선 배치합니다.
-  */
   return {
-    processText: processLines.join('\n'),
-    specialText: specialLines.join('\n'),
+    processRows:
+      processRows.length > 0
+        ? processRows
+        : [''],
+    specialRows:
+      specialRows.length > 0
+        ? specialRows
+        : [''],
   };
 };
 
-const createSourceCellValues = (
+const createSourceCellRows = (
   weeklyReports,
 ) => {
-  const values = {
-    ...EMPTY_CELL_VALUES,
-  };
+  const rowsByCell =
+    createEmptyCellRows();
 
   const reportMap = new Map(
-    (weeklyReports || []).map((report) => [
-      report.project_name,
-      report,
-    ]),
+    (weeklyReports || []).map(
+      (report) => [
+        report.project_name,
+        report,
+      ],
+    ),
   );
 
-  TEMPLATE_PROJECTS.forEach((project) => {
-    const report = reportMap.get(
-      project.projectName,
-    );
+  TEMPLATE_PROJECTS.forEach(
+    (project) => {
+      const report = reportMap.get(
+        project.projectName,
+      );
 
-    if (!report) {
-      return;
-    }
+      if (!report) {
+        return;
+      }
 
-    const {
-      processText,
-      specialText,
-    } = getReportCellValues(report);
+      const {
+        processRows,
+        specialRows,
+      } = getReportCellRows(report);
 
-    values[project.processCell] =
-      processText;
-    values[project.specialCell] =
-      specialText;
-  });
+      rowsByCell[
+        project.processCell
+      ] = processRows;
 
-  return values;
+      rowsByCell[
+        project.specialCell
+      ] = specialRows;
+    },
+  );
+
+  return rowsByCell;
 };
 
-const migrateOldSavedPayload = (
+const migrateSavedPayload = (
   payload,
 ) => {
+  const result =
+    createEmptyCellRows();
+
+  if (
+    payload?.cellRows &&
+    typeof payload.cellRows === 'object'
+  ) {
+    TEMPLATE_CELL_ADDRESSES.forEach(
+      (address) => {
+        result[address] =
+          normalizeRows(
+            payload.cellRows[address],
+          );
+      },
+    );
+
+    return result;
+  }
+
   if (
     payload?.cellValues &&
     typeof payload.cellValues === 'object'
   ) {
-    return {
-      ...EMPTY_CELL_VALUES,
-      ...payload.cellValues,
-    };
-  }
+    TEMPLATE_CELL_ADDRESSES.forEach(
+      (address) => {
+        result[address] =
+          textToRows(
+            payload.cellValues[address],
+          );
+      },
+    );
 
-  const values = {
-    ...EMPTY_CELL_VALUES,
-  };
+    return result;
+  }
 
   const oldProjects = Array.isArray(
     payload?.projects,
@@ -359,40 +422,228 @@ const migrateOldSavedPayload = (
     ? payload.projects
     : [];
 
-  oldProjects.forEach((savedProject) => {
-    const templateProject =
-      TEMPLATE_PROJECTS.find(
-        (project) =>
-          project.projectName ===
-          savedProject.projectName,
-      );
+  oldProjects.forEach(
+    (savedProject) => {
+      const templateProject =
+        TEMPLATE_PROJECTS.find(
+          (project) =>
+            project.projectName ===
+            savedProject.projectName,
+        );
 
-    if (!templateProject) {
-      return;
-    }
+      if (!templateProject) {
+        return;
+      }
 
-    const lines =
-      normalizeTextList(
-        savedProject.lines,
-      );
+      const lines =
+        normalizeTextList(
+          savedProject.lines,
+        );
 
-    values[
-      templateProject.processCell
-    ] = lines.slice(0, 5).join('\n');
+      result[
+        templateProject.processCell
+      ] =
+        lines.slice(0, 5).length > 0
+          ? lines.slice(0, 5)
+          : [''];
 
-    values[
-      templateProject.specialCell
-    ] = lines.slice(5).join('\n');
-  });
+      result[
+        templateProject.specialCell
+      ] =
+        lines.slice(5).length > 0
+          ? lines.slice(5)
+          : [''];
+    },
+  );
 
-  return values;
+  return result;
 };
+
+const saveWorkbook = async (
+  workbook,
+  filename,
+) => {
+  const buffer =
+    await workbook.xlsx.writeBuffer();
+
+  const blob = new Blob(
+    [buffer],
+    {
+      type:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    },
+  );
+
+  const url =
+    URL.createObjectURL(blob);
+
+  const link =
+    document.createElement('a');
+
+  link.href = url;
+  link.download = filename;
+
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  URL.revokeObjectURL(url);
+};
+
+const getExcelRowNumber = (address) =>
+  Number(
+    String(address).replace(
+      /[^0-9]/g,
+      '',
+    ),
+  );
+
+const previewCellSx = {
+  borderRight: '1px solid #111827',
+  borderBottom: '1px solid #111827',
+  bgcolor: '#ffffff',
+  color: '#111827',
+  fontFamily:
+    '"Malgun Gothic", "맑은 고딕", sans-serif',
+};
+
+function LineEditor({
+  title,
+  cellAddress,
+  rows,
+  onChange,
+  onAdd,
+  onDelete,
+}) {
+  return (
+    <Box>
+      <Box
+        sx={{
+          mb: 0.45,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent:
+            'space-between',
+          gap: 1,
+        }}
+      >
+        <Typography
+          sx={{
+            color: '#334155',
+            fontSize: '0.7rem',
+            fontWeight: 900,
+          }}
+        >
+          {title} · {cellAddress}
+        </Typography>
+
+        <Button
+          size="small"
+          variant="outlined"
+          onClick={onAdd}
+          sx={{
+            minWidth: 58,
+            px: 0.65,
+            whiteSpace: 'nowrap',
+            fontSize: '0.61rem',
+            fontWeight: 900,
+          }}
+        >
+          행 추가
+        </Button>
+      </Box>
+
+      <Box
+        sx={{
+          display: 'grid',
+          gap: 0.45,
+        }}
+      >
+        {normalizeRows(rows).map(
+          (value, index) => (
+            <Box
+              key={`${cellAddress}-${index}`}
+              sx={{
+                display: 'grid',
+                gridTemplateColumns:
+                  '26px minmax(0, 1fr) 38px',
+                gap: 0.4,
+                alignItems: 'stretch',
+              }}
+            >
+              <Box
+                sx={{
+                  borderRadius: 0.8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#475569',
+                  bgcolor: '#f1f5f9',
+                  fontSize: '0.62rem',
+                  fontWeight: 900,
+                }}
+              >
+                {index + 1}
+              </Box>
+
+              <TextField
+                fullWidth
+                size="small"
+                value={value}
+                placeholder={`${title} 내용`}
+                onChange={(event) =>
+                  onChange(
+                    index,
+                    event.target.value,
+                  )
+                }
+                sx={{
+                  '& .MuiInputBase-root': {
+                    minHeight: 34,
+                  },
+                  '& .MuiInputBase-input': {
+                    py: 0.7,
+                    fontSize: '0.69rem',
+                  },
+                }}
+              />
+
+              <Button
+                size="small"
+                variant="outlined"
+                color="error"
+                onClick={() =>
+                  onDelete(index)
+                }
+                disabled={
+                  rows.length === 1 &&
+                  !value
+                }
+                sx={{
+                  minWidth: 38,
+                  width: 38,
+                  px: 0,
+                  fontSize: '0.78rem',
+                  fontWeight: 900,
+                }}
+              >
+                ×
+              </Button>
+            </Box>
+          ),
+        )}
+      </Box>
+    </Box>
+  );
+}
 
 function ProjectEditor({
   project,
-  cellValues,
+  cellRows,
   registered,
-  onChange,
+  onRowChange,
+  onAddRow,
+  onDeleteRow,
   onRestore,
   onClear,
 }) {
@@ -495,174 +746,473 @@ function ProjectEditor({
         sx={{
           p: 0.9,
           display: 'grid',
-          gap: 0.75,
+          gap: 1.05,
         }}
       >
-        <TextField
-          fullWidth
-          multiline
-          minRows={2}
-          maxRows={6}
-          size="small"
-          label={`공정 · ${project.processCell}`}
-          value={
-            cellValues[
-              project.processCell
-            ] || ''
+        <LineEditor
+          title="공정"
+          cellAddress={
+            project.processCell
           }
-          onChange={(event) =>
-            onChange(
+          rows={
+            cellRows[
+              project.processCell
+            ] || ['']
+          }
+          onChange={(index, value) =>
+            onRowChange(
               project.processCell,
-              event.target.value,
+              index,
+              value,
             )
           }
-          sx={{
-            '& .MuiInputBase-input': {
-              fontSize: '0.7rem',
-              lineHeight: 1.45,
-            },
-            '& .MuiInputLabel-root': {
-              fontSize: '0.7rem',
-            },
-          }}
+          onAdd={() =>
+            onAddRow(
+              project.processCell,
+            )
+          }
+          onDelete={(index) =>
+            onDeleteRow(
+              project.processCell,
+              index,
+            )
+          }
         />
 
-        <TextField
-          fullWidth
-          multiline
-          minRows={2}
-          maxRows={6}
-          size="small"
-          label={`특이사항 · ${project.specialCell}`}
-          value={
-            cellValues[
-              project.specialCell
-            ] || ''
+        <LineEditor
+          title="특이사항"
+          cellAddress={
+            project.specialCell
           }
-          onChange={(event) =>
-            onChange(
+          rows={
+            cellRows[
+              project.specialCell
+            ] || ['']
+          }
+          onChange={(index, value) =>
+            onRowChange(
               project.specialCell,
-              event.target.value,
+              index,
+              value,
             )
           }
-          sx={{
-            '& .MuiInputBase-input': {
-              fontSize: '0.7rem',
-              lineHeight: 1.45,
-            },
-            '& .MuiInputLabel-root': {
-              fontSize: '0.7rem',
-            },
-          }}
+          onAdd={() =>
+            onAddRow(
+              project.specialCell,
+            )
+          }
+          onDelete={(index) =>
+            onDeleteRow(
+              project.specialCell,
+              index,
+            )
+          }
         />
       </Box>
     </Paper>
   );
 }
 
+function PreviewInputLines({
+  rows,
+}) {
+  const normalizedRows =
+    normalizeRows(rows);
+
+  return (
+    <Box
+      sx={{
+        px: 0.75,
+        py: 0.35,
+        minHeight: 27,
+        ...previewCellSx,
+        display: 'grid',
+        alignContent: 'center',
+      }}
+    >
+      {normalizedRows.map(
+        (line, index) => (
+          <Box
+            key={index}
+            sx={{
+              minHeight: 20,
+              display: 'flex',
+              alignItems: 'center',
+              color: line
+                ? '#111827'
+                : '#cbd5e1',
+              fontSize: '0.67rem',
+              lineHeight: 1.35,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+            }}
+          >
+            {line || ''}
+          </Box>
+        ),
+      )}
+    </Box>
+  );
+}
+
+function PreviewProjectRows({
+  project,
+  cellRows,
+}) {
+  const processRows =
+    cellRows[
+      project.processCell
+    ] || [''];
+
+  const specialRows =
+    cellRows[
+      project.specialCell
+    ] || [''];
+
+  return (
+    <Box
+      sx={{
+        display: 'grid',
+        gridTemplateColumns:
+          '18.9% 81.1%',
+      }}
+    >
+      <Box
+        sx={{
+          ...previewCellSx,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          px: 0.5,
+          textAlign: 'center',
+          fontSize: '0.69rem',
+          fontWeight: 800,
+        }}
+      >
+        {project.projectName}
+      </Box>
+
+      <Box>
+        <Box
+          sx={{
+            px: 0.75,
+            minHeight: 27,
+            ...previewCellSx,
+            display: 'flex',
+            alignItems: 'center',
+            fontSize: '0.67rem',
+            fontWeight: 900,
+          }}
+        >
+          1. 공정
+        </Box>
+
+        <PreviewInputLines
+          rows={processRows}
+        />
+
+        <Box
+          sx={{
+            px: 0.75,
+            minHeight: 27,
+            ...previewCellSx,
+            display: 'flex',
+            alignItems: 'center',
+            fontSize: '0.67rem',
+            fontWeight: 900,
+          }}
+        >
+          2. 특이사항
+        </Box>
+
+        <PreviewInputLines
+          rows={specialRows}
+        />
+      </Box>
+    </Box>
+  );
+}
+
+function OfficePreviewRows() {
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        borderLeft: '1px solid #111827',
+      }}
+    >
+      <Box
+        sx={{
+          width: '5.99%',
+          ...previewCellSx,
+          borderLeft: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: '0.68rem',
+          fontWeight: 900,
+        }}
+      >
+        본사
+      </Box>
+
+      <Box sx={{ width: '94.01%' }}>
+        {OFFICE_GROUPS.map((group) => (
+          <Box
+            key={group.label}
+            sx={{
+              display: 'grid',
+              gridTemplateColumns:
+                '18.9% 81.1%',
+            }}
+          >
+            <Box
+              sx={{
+                ...previewCellSx,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent:
+                  'center',
+                fontSize: '0.69rem',
+                fontWeight: 900,
+              }}
+            >
+              {group.label}
+            </Box>
+
+            <Box>
+              {group.rows.map(
+                (line, index) => (
+                  <Box
+                    key={index}
+                    sx={{
+                      px: 0.75,
+                      minHeight: 27,
+                      ...previewCellSx,
+                      display: 'flex',
+                      alignItems: 'center',
+                      color: '#111827',
+                      fontSize: '0.66rem',
+                      fontWeight:
+                        line.startsWith('[')
+                          ? 900
+                          : 500,
+                    }}
+                  >
+                    {line}
+                  </Box>
+                ),
+              )}
+            </Box>
+          </Box>
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
 function ExcelTemplatePreview({
-  cellValues,
+  cellRows,
   nextMondayKey,
 }) {
   return (
     <Box
       sx={{
-        position: 'relative',
-        width: '100%',
-        minWidth: 720,
-        aspectRatio: '1543 / 2457',
+        width: 860,
+        minWidth: 760,
+        mx: 'auto',
         bgcolor: '#ffffff',
+        borderTop: '1px solid #111827',
+        borderLeft: '1px solid #111827',
         boxShadow:
           '0 7px 24px rgba(15,23,42,0.18)',
+        fontFamily:
+          '"Malgun Gothic", "맑은 고딕", sans-serif',
       }}
     >
       <Box
-        component="img"
-        src={
-          '/templates/' +
-          '주간업무총괄_무채색_미리보기.png'
-        }
-        alt="주간업무총괄 미리보기"
         sx={{
-          position: 'absolute',
-          inset: 0,
-          width: '100%',
-          height: '100%',
-          display: 'block',
-          objectFit: 'fill',
-          userSelect: 'none',
-          pointerEvents: 'none',
-        }}
-      />
-
-      <Box
-        title="C3"
-        sx={{
-          position: 'absolute',
-          left: '23.763021%',
-          top: '3.766707%',
-          width: '55.143229%',
-          height: '2.673147%',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          overflow: 'hidden',
-          color: '#111827',
-          fontFamily:
-            '"Malgun Gothic",' +
-            ' "맑은 고딕",' +
-            ' sans-serif',
-          fontSize:
-            'clamp(11px, 1.05vw, 18px)',
-          fontWeight: 900,
-          lineHeight: 1,
-          whiteSpace: 'nowrap',
-          pointerEvents: 'none',
+          display: 'grid',
+          gridTemplateColumns:
+            '23.76% 55.14% 2.86% 9.05% 9.19%',
+          gridTemplateRows:
+            '28px 28px 28px 28px',
         }}
       >
-        {nextMondayKey}
+        <Box
+          sx={{
+            gridColumn: '1',
+            gridRow: '1 / 5',
+            ...previewCellSx,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '1.12rem',
+            fontWeight: 900,
+            letterSpacing: '0.34em',
+          }}
+        >
+          업 무 보 고
+        </Box>
+
+        <Box
+          sx={{
+            gridColumn: '2',
+            gridRow: '1 / 3',
+            ...previewCellSx,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '0.86rem',
+            fontWeight: 900,
+            letterSpacing: '0.12em',
+          }}
+        >
+          주 요 현 황 (주 간)
+        </Box>
+
+        <Box
+          sx={{
+            gridColumn: '2',
+            gridRow: '3 / 5',
+            ...previewCellSx,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '0.88rem',
+            fontWeight: 900,
+          }}
+        >
+          {nextMondayKey}
+        </Box>
+
+        <Box
+          sx={{
+            gridColumn: '3',
+            gridRow: '1 / 5',
+            ...previewCellSx,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '0.62rem',
+            fontWeight: 900,
+            writingMode: 'vertical-rl',
+          }}
+        >
+          결재
+        </Box>
+
+        <Box
+          sx={{
+            gridColumn: '4',
+            gridRow: '1',
+            ...previewCellSx,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '0.64rem',
+            fontWeight: 900,
+          }}
+        >
+          담당
+        </Box>
+
+        <Box
+          sx={{
+            gridColumn: '4',
+            gridRow: '2 / 5',
+            ...previewCellSx,
+          }}
+        />
+
+        <Box
+          sx={{
+            gridColumn: '5',
+            gridRow: '1',
+            ...previewCellSx,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '0.64rem',
+            fontWeight: 900,
+          }}
+        >
+          대표이사
+        </Box>
+
+        <Box
+          sx={{
+            gridColumn: '5',
+            gridRow: '2 / 5',
+            ...previewCellSx,
+          }}
+        />
       </Box>
 
-      {CELL_OVERLAYS.map((overlay) => {
-        const value =
-          cellValues[overlay.cell] || '';
-
-        return (
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns:
+            '5.99% 17.77% 76.24%',
+        }}
+      >
+        {[
+          '구분',
+          '현장명',
+          '특기사항',
+        ].map((label) => (
           <Box
-            key={overlay.cell}
-            title={overlay.cell}
+            key={label}
             sx={{
-              position: 'absolute',
-              left:
-                `${CELL_LEFT_PERCENT}%`,
-              top: `${overlay.top}%`,
-              width:
-                `${CELL_WIDTH_PERCENT}%`,
-              height:
-                `${CELL_HEIGHT_PERCENT}%`,
-              px: '0.5%',
-              py: '0.05%',
+              minHeight: 27,
+              ...previewCellSx,
               display: 'flex',
               alignItems: 'center',
-              overflow: 'hidden',
-              color: '#111827',
-              fontFamily:
-                '"Malgun Gothic",' +
-                ' "맑은 고딕",' +
-                ' sans-serif',
-              fontSize:
-                'clamp(7px, 0.68vw, 11px)',
-              fontWeight: 500,
-              lineHeight: 1.2,
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-              pointerEvents: 'none',
+              justifyContent: 'center',
+              fontSize: '0.67rem',
+              fontWeight: 900,
             }}
           >
-            {value}
+            {label}
           </Box>
-        );
-      })}
+        ))}
+      </Box>
+
+      <Box
+        sx={{
+          display: 'flex',
+          borderLeft: '1px solid #111827',
+        }}
+      >
+        <Box
+          sx={{
+            width: '5.99%',
+            ...previewCellSx,
+            borderLeft: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '0.68rem',
+            fontWeight: 900,
+          }}
+        >
+          현장
+        </Box>
+
+        <Box sx={{ width: '94.01%' }}>
+          {TEMPLATE_PROJECTS.map(
+            (project) => (
+              <PreviewProjectRows
+                key={project.projectName}
+                project={project}
+                cellRows={cellRows}
+              />
+            ),
+          )}
+        </Box>
+      </Box>
+
+      <OfficePreviewRows />
     </Box>
   );
 }
@@ -675,17 +1225,17 @@ export default function WeeklyOverview({
     [],
   );
 
-  const [cellValues, setCellValues] =
-    useState({
-      ...EMPTY_CELL_VALUES,
-    });
+  const [cellRows, setCellRows] =
+    useState(
+      createEmptyCellRows(),
+    );
 
   const [
-    sourceCellValues,
-    setSourceCellValues,
-  ] = useState({
-    ...EMPTY_CELL_VALUES,
-  });
+    sourceCellRows,
+    setSourceCellRows,
+  ] = useState(
+    createEmptyCellRows(),
+  );
 
   const [
     registeredProjects,
@@ -694,16 +1244,21 @@ export default function WeeklyOverview({
 
   const [loading, setLoading] =
     useState(true);
+
   const [saving, setSaving] =
     useState(false);
+
   const [downloading, setDownloading] =
     useState(false);
+
   const [errorMessage, setErrorMessage] =
     useState('');
+
   const [
     warningMessage,
     setWarningMessage,
   ] = useState('');
+
   const [
     successMessage,
     setSuccessMessage,
@@ -760,11 +1315,11 @@ export default function WeeklyOverview({
       );
     }
 
-    const nextSourceValues =
-      createSourceCellValues(reports);
+    const nextSourceRows =
+      createSourceCellRows(reports);
 
-    setSourceCellValues(
-      nextSourceValues,
+    setSourceCellRows(
+      nextSourceRows,
     );
 
     setRegisteredProjects(
@@ -776,7 +1331,7 @@ export default function WeeklyOverview({
       ),
     );
 
-    let savedValues = null;
+    let savedRows = null;
 
     try {
       const {
@@ -803,8 +1358,8 @@ export default function WeeklyOverview({
       }
 
       if (data) {
-        savedValues =
-          migrateOldSavedPayload(
+        savedRows =
+          migrateSavedPayload(
             data.payload,
           );
       }
@@ -822,9 +1377,9 @@ export default function WeeklyOverview({
       );
     }
 
-    setCellValues(
-      savedValues ||
-        nextSourceValues,
+    setCellRows(
+      savedRows ||
+        nextSourceRows,
     );
 
     setLoading(false);
@@ -864,14 +1419,67 @@ export default function WeeklyOverview({
     };
   }, [loadData]);
 
-  const handleCellChange = (
-    cell,
+  const handleRowChange = (
+    cellAddress,
+    index,
     value,
   ) => {
-    setCellValues((previous) => ({
+    setCellRows((previous) => ({
       ...previous,
-      [cell]: value,
+      [cellAddress]:
+        normalizeRows(
+          previous[cellAddress],
+        ).map(
+          (row, rowIndex) =>
+            rowIndex === index
+              ? value
+              : row,
+        ),
     }));
+
+    setSuccessMessage('');
+  };
+
+  const handleAddRow = (
+    cellAddress,
+  ) => {
+    setCellRows((previous) => ({
+      ...previous,
+      [cellAddress]: [
+        ...normalizeRows(
+          previous[cellAddress],
+        ),
+        '',
+      ],
+    }));
+
+    setSuccessMessage('');
+  };
+
+  const handleDeleteRow = (
+    cellAddress,
+    index,
+  ) => {
+    setCellRows((previous) => {
+      const currentRows =
+        normalizeRows(
+          previous[cellAddress],
+        );
+
+      const nextRows =
+        currentRows.filter(
+          (_, rowIndex) =>
+            rowIndex !== index,
+        );
+
+      return {
+        ...previous,
+        [cellAddress]:
+          nextRows.length > 0
+            ? nextRows
+            : [''],
+      };
+    });
 
     setSuccessMessage('');
   };
@@ -879,16 +1487,20 @@ export default function WeeklyOverview({
   const handleRestoreProject = (
     project,
   ) => {
-    setCellValues((previous) => ({
+    setCellRows((previous) => ({
       ...previous,
       [project.processCell]:
-        sourceCellValues[
-          project.processCell
-        ] || '',
+        normalizeRows(
+          sourceCellRows[
+            project.processCell
+          ],
+        ),
       [project.specialCell]:
-        sourceCellValues[
-          project.specialCell
-        ] || '',
+        normalizeRows(
+          sourceCellRows[
+            project.specialCell
+          ],
+        ),
     }));
 
     setSuccessMessage('');
@@ -897,10 +1509,10 @@ export default function WeeklyOverview({
   const handleClearProject = (
     project,
   ) => {
-    setCellValues((previous) => ({
+    setCellRows((previous) => ({
       ...previous,
-      [project.processCell]: '',
-      [project.specialCell]: '',
+      [project.processCell]: [''],
+      [project.specialCell]: [''],
     }));
 
     setSuccessMessage('');
@@ -915,9 +1527,18 @@ export default function WeeklyOverview({
       return;
     }
 
-    setCellValues({
-      ...sourceCellValues,
-    });
+    setCellRows(
+      Object.fromEntries(
+        Object.entries(
+          sourceCellRows,
+        ).map(
+          ([address, rows]) => [
+            address,
+            normalizeRows(rows),
+          ],
+        ),
+      ),
+    );
 
     setSuccessMessage('');
   };
@@ -927,24 +1548,49 @@ export default function WeeklyOverview({
     setErrorMessage('');
 
     try {
+      const templateUrl =
+        '/templates/' +
+        '주간업무총괄.xlsx' +
+        `?v=${Date.now()}`;
+
       const response = await fetch(
-        '/templates/주간업무총괄.xlsx',
+        templateUrl,
+        {
+          cache: 'no-store',
+        },
       );
 
       if (!response.ok) {
         throw new Error(
-          'public/templates/주간업무총괄.xlsx 파일을 찾을 수 없습니다.',
+          'public/templates/주간업무총괄.xlsx 원본 파일을 찾을 수 없습니다.',
+        );
+      }
+
+      const arrayBuffer =
+        await response.arrayBuffer();
+
+      const bytes =
+        new Uint8Array(arrayBuffer);
+
+      if (
+        bytes.length < 4 ||
+        bytes[0] !== 0x50 ||
+        bytes[1] !== 0x4b
+      ) {
+        throw new Error(
+          '주간업무총괄.xlsx가 올바른 엑셀 파일이 아닙니다.',
         );
       }
 
       const workbook =
         new ExcelJS.Workbook();
 
-      await workbook.xlsx.load(
-        await response.arrayBuffer(),
-      );
+      await workbook.xlsx.load(bytes);
 
       const worksheet =
+        workbook.getWorksheet(
+          '주간업무총괄',
+        ) ||
         workbook.worksheets[0];
 
       if (!worksheet) {
@@ -958,8 +1604,9 @@ export default function WeeklyOverview({
 
       dateCell.value =
         weekRange.nextMonday;
-      dateCell.numFmt =
-        'yyyy-mm-dd';
+
+      dateCell.numFmt = '@';
+
       dateCell.font = {
         ...(dateCell.font || {}),
         name: '맑은 고딕',
@@ -967,6 +1614,7 @@ export default function WeeklyOverview({
         bold: true,
         italic: false,
       };
+
       dateCell.alignment = {
         ...(dateCell.alignment || {}),
         horizontal: 'center',
@@ -974,20 +1622,44 @@ export default function WeeklyOverview({
         wrapText: false,
       };
 
-      Object.entries(
-        cellValues,
-      ).forEach(([address, value]) => {
-        const cell =
-          worksheet.getCell(address);
+      TEMPLATE_CELL_ADDRESSES.forEach(
+        (address) => {
+          const rows =
+            normalizeRows(
+              cellRows[address],
+            );
 
-        cell.value =
-          String(value || '');
-        cell.alignment = {
-          ...(cell.alignment || {}),
-          vertical: 'center',
-          wrapText: true,
-        };
-      });
+          const cell =
+            worksheet.getCell(address);
+
+          cell.value =
+            rowsToText(rows);
+
+          cell.alignment = {
+            ...(cell.alignment || {}),
+            horizontal: 'left',
+            vertical: 'middle',
+            wrapText: true,
+          };
+
+          const rowNumber =
+            getExcelRowNumber(address);
+
+          const worksheetRow =
+            worksheet.getRow(rowNumber);
+
+          const baseHeight =
+            Number(
+              worksheetRow.height,
+            ) || 16.5;
+
+          worksheetRow.height =
+            Math.max(
+              baseHeight,
+              rows.length * 17 + 4,
+            );
+        },
+      );
 
       await saveWorkbook(
         workbook,
@@ -1038,6 +1710,18 @@ export default function WeeklyOverview({
       const now =
         new Date().toISOString();
 
+      const cellValues =
+        Object.fromEntries(
+          TEMPLATE_CELL_ADDRESSES.map(
+            (address) => [
+              address,
+              rowsToText(
+                cellRows[address],
+              ),
+            ],
+          ),
+        );
+
       const { error } = await supabase
         .from('weekly_overviews')
         .upsert(
@@ -1053,6 +1737,7 @@ export default function WeeklyOverview({
                 weekRange.weekEnd,
               )}`,
             payload: {
+              cellRows,
               cellValues,
             },
             updated_by: user.id,
@@ -1126,8 +1811,8 @@ export default function WeeklyOverview({
         gridTemplateColumns: {
           xs: '1fr',
           xl:
-            'minmax(420px, 0.8fr) ' +
-            'minmax(680px, 1.2fr)',
+            'minmax(430px, 0.8fr) ' +
+            'minmax(720px, 1.2fr)',
         },
         gap: 1.2,
         alignItems: 'stretch',
@@ -1177,8 +1862,8 @@ export default function WeeklyOverview({
                 lineHeight: 1.45,
               }}
             >
-              엑셀 양식의 C7, C9 형태 빈칸에
-              대응합니다.
+              행 추가 내용은 미리보기와 XLS에
+              줄 단위로 반영됩니다.
             </Typography>
           </Box>
 
@@ -1186,6 +1871,8 @@ export default function WeeklyOverview({
             sx={{
               flexShrink: 0,
               display: 'flex',
+              flexWrap: 'wrap',
+              justifyContent: 'flex-end',
               gap: 0.45,
             }}
           >
@@ -1193,19 +1880,21 @@ export default function WeeklyOverview({
               size="small"
               variant="contained"
               color="success"
-              onClick={handleDownloadExcel}
+              onClick={
+                handleDownloadExcel
+              }
               disabled={downloading}
               sx={{
-                minWidth: 84,
-                px: 0.7,
+                minWidth: 54,
+                px: 0.8,
                 whiteSpace: 'nowrap',
-                fontSize: '0.62rem',
+                fontSize: '0.64rem',
                 fontWeight: 900,
               }}
             >
               {downloading
                 ? '생성중'
-                : 'XLS 다운로드'}
+                : 'XLS'}
             </Button>
 
             <Button
@@ -1301,7 +1990,9 @@ export default function WeeklyOverview({
           {warningMessage && (
             <Alert
               severity="warning"
-              sx={{ fontSize: '0.68rem' }}
+              sx={{
+                fontSize: '0.68rem',
+              }}
             >
               {warningMessage}
             </Alert>
@@ -1310,7 +2001,9 @@ export default function WeeklyOverview({
           {errorMessage && (
             <Alert
               severity="error"
-              sx={{ fontSize: '0.68rem' }}
+              sx={{
+                fontSize: '0.68rem',
+              }}
             >
               {errorMessage}
             </Alert>
@@ -1319,7 +2012,9 @@ export default function WeeklyOverview({
           {successMessage && (
             <Alert
               severity="success"
-              sx={{ fontSize: '0.68rem' }}
+              sx={{
+                fontSize: '0.68rem',
+              }}
             >
               {successMessage}
             </Alert>
@@ -1339,16 +2034,22 @@ export default function WeeklyOverview({
           {TEMPLATE_PROJECTS.map(
             (project) => (
               <ProjectEditor
-                key={project.projectName}
+                key={
+                  project.projectName
+                }
                 project={project}
-                cellValues={cellValues}
+                cellRows={cellRows}
                 registered={
                   registeredProjects.has(
                     project.projectName,
                   )
                 }
-                onChange={
-                  handleCellChange
+                onRowChange={
+                  handleRowChange
+                }
+                onAddRow={handleAddRow}
+                onDeleteRow={
+                  handleDeleteRow
                 }
                 onRestore={
                   handleRestoreProject
@@ -1399,8 +2100,8 @@ export default function WeeklyOverview({
               fontSize: '0.66rem',
             }}
           >
-            업로드한 엑셀 양식과 같은 위치에
-            입력값이 즉시 반영됩니다.
+            입력행 수에 맞춰 셀 높이가 자동으로
+            늘어납니다.
           </Typography>
         </Box>
 
@@ -1414,7 +2115,7 @@ export default function WeeklyOverview({
           }}
         >
           <ExcelTemplatePreview
-            cellValues={cellValues}
+            cellRows={cellRows}
             nextMondayKey={
               weekRange.nextMonday
             }
