@@ -1443,12 +1443,16 @@ function SchedulePreviewRow({
   inputRow = false,
   strongBottom = false,
 }) {
+  const values = inputRow
+    ? scheduleValues
+    : scheduleDates;
+
   return (
     <Box
       sx={{
         minHeight: inputRow
-          ? 54
-          : 27,
+          ? 58
+          : 30,
         borderRight:
           STRONG_BORDER,
         borderBottom:
@@ -1458,57 +1462,40 @@ function SchedulePreviewRow({
         ...previewBaseSx,
         display: 'grid',
         gridTemplateColumns:
-          '56.7% 43.3%',
+          'repeat(7, minmax(0, 1fr))',
       }}
     >
-      <Box
-        sx={{
-          borderRight:
-            LIGHT_BORDER,
-        }}
-      />
-
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns:
-            'repeat(7, minmax(0, 1fr))',
-        }}
-      >
-        {(inputRow
-          ? scheduleValues
-          : scheduleDates
-        ).map((value, index) => (
-          <Box
-            key={index}
-            sx={{
-              minWidth: 0,
-              px: 0.22,
-              borderLeft:
-                index === 0
-                  ? 0
-                  : LIGHT_BORDER,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent:
-                'center',
-              textAlign: 'center',
-              fontSize: inputRow
-                ? '0.61rem'
-                : '0.62rem',
-              fontWeight: inputRow
-                ? 500
-                : 900,
-              lineHeight: 1.25,
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-              overflow: 'hidden',
-            }}
-          >
-            {value || ''}
-          </Box>
-        ))}
-      </Box>
+      {values.map((value, index) => (
+        <Box
+          key={index}
+          sx={{
+            minWidth: 0,
+            px: 0.35,
+            py: inputRow ? 0.45 : 0.3,
+            borderLeft:
+              index === 0
+                ? 0
+                : LIGHT_BORDER,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            textAlign: 'center',
+            color: '#111827',
+            fontSize: inputRow
+              ? '0.64rem'
+              : '0.66rem',
+            fontWeight: inputRow
+              ? 500
+              : 900,
+            lineHeight: 1.3,
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-word',
+            overflow: 'hidden',
+          }}
+        >
+          {value || ''}
+        </Box>
+      ))}
     </Box>
   );
 }
@@ -3194,8 +3181,8 @@ export default function WeeklyOverview({
               fontSize: '0.66rem',
             }}
           >
-            입력행 수에 맞춰 셀 높이가 자동으로
-            늘어납니다.
+            하자보수 일정은 전체 폭을 7등분하고,
+            입력행 수에 맞춰 셀 높이가 자동으로 늘어납니다.
           </Typography>
         </Box>
 
