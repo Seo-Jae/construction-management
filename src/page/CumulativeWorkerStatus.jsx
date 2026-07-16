@@ -26,6 +26,18 @@ import { supabase } from '../supabaseClient';
 const SUPABASE_PAGE_SIZE = 1000;
 const ALL_PROJECTS_OPTION = '전체현장';
 
+/*
+  현재 월을 포함한 최근 19개월을 표시합니다.
+
+  예:
+  현재 월이 2026-07이면
+  2025-01 ~ 2026-07
+
+  다음 달이 2026-08이면
+  2025-02 ~ 2026-08
+*/
+const DISPLAY_MONTH_COUNT = 19;
+
 const DAILY_REPORT_JOB_ORDER = [
   '소장',
   '관리자',
@@ -165,57 +177,37 @@ const compareMonthKeys = (
     String(second),
   );
 
-const buildContinuousMonthKeys = (
-  reportMonthKeys,
+const buildRecentMonthKeys = (
+  currentMonthKey =
+    getKoreaCurrentMonthKey(),
+  monthCount =
+    DISPLAY_MONTH_COUNT,
 ) => {
-  const validKeys = Array.from(
-    new Set(
-      reportMonthKeys.filter(Boolean),
-    ),
-  ).sort(compareMonthKeys);
-
-  const currentMonthKey =
-    getKoreaCurrentMonthKey();
-
-  if (validKeys.length === 0) {
-    return [currentMonthKey];
-  }
-
-  const firstKey = validKeys[0];
-  const lastKey = [
-    validKeys[
-      validKeys.length - 1
-    ],
-    currentMonthKey,
-  ].sort(compareMonthKeys)[1];
-
-  const first =
-    parseMonthKey(firstKey);
-  const last =
-    parseMonthKey(lastKey);
+  const current =
+    parseMonthKey(currentMonthKey);
 
   const result = [];
 
-  let year = first.year;
-  let month = first.month;
-
-  while (
-    year < last.year ||
-    (
-      year === last.year &&
-      month <= last.month
-    )
+  for (
+    let offset =
+      monthCount - 1;
+    offset >= 0;
+    offset -= 1
   ) {
-    result.push(
-      createMonthKey(year, month),
+    const date = new Date(
+      Date.UTC(
+        current.year,
+        current.month - 1 - offset,
+        1,
+      ),
     );
 
-    month += 1;
-
-    if (month > 12) {
-      year += 1;
-      month = 1;
-    }
+    result.push(
+      createMonthKey(
+        date.getUTCFullYear(),
+        date.getUTCMonth() + 1,
+      ),
+    );
   }
 
   return result;
@@ -338,7 +330,6 @@ const buildCumulativeWorkers = (
   reportRows,
 ) => {
   const workerMap = new Map();
-  const reportMonthKeys = [];
 
   reportRows.forEach((report) => {
     const parsedDate =
@@ -353,8 +344,6 @@ const buildCumulativeWorkers = (
         parsedDate.year,
         parsedDate.month,
       );
-
-    reportMonthKeys.push(monthKey);
 
     const projectName =
       normalizeText(
@@ -474,9 +463,7 @@ const buildCumulativeWorkers = (
   return {
     workers,
     monthKeys:
-      buildContinuousMonthKeys(
-        reportMonthKeys,
-      ),
+      buildRecentMonthKeys(),
   };
 };
 
@@ -590,9 +577,9 @@ export default function CumulativeWorkerStatus({
     useState([]);
 
   const [monthKeys, setMonthKeys] =
-    useState([
-      getKoreaCurrentMonthKey(),
-    ]);
+    useState(() =>
+      buildRecentMonthKeys(),
+    );
 
   const [searchName, setSearchName] =
     useState('');
@@ -641,9 +628,9 @@ export default function CumulativeWorkerStatus({
       );
 
       setWorkers([]);
-      setMonthKeys([
-        getKoreaCurrentMonthKey(),
-      ]);
+      setMonthKeys(
+        buildRecentMonthKeys(),
+      );
 
       setErrorMessage(
         error?.message ||
@@ -938,7 +925,7 @@ export default function CumulativeWorkerStatus({
                 fontWeight: 700,
               }}
             >
-              해당 년·월에 1일 이상 출력 시 1개월로 집계
+              최근 19개월 표시 · 해당 월에 1일 이상 출력 시 1로 집계
             </Typography>
           </Box>
         </Box>
