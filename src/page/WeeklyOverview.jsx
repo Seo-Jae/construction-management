@@ -730,17 +730,27 @@ function LineEditor({
     normalizeRows(rows);
 
   return (
-    <Box>
+    <Box
+      sx={{
+        width: '100%',
+        minWidth: 0,
+        maxWidth: '100%',
+        overflow: 'hidden',
+        boxSizing: 'border-box',
+      }}
+    >
       <Box
         sx={{
-          mb: 0.45,
+          position: 'relative',
           width: '100%',
           minWidth: 0,
-          display: 'grid',
-          gridTemplateColumns:
-            'minmax(0, 1fr) auto',
+          maxWidth: '100%',
+          minHeight: 30,
+          mb: 0.45,
+          pr: '66px',
+          boxSizing: 'border-box',
+          display: 'flex',
           alignItems: 'center',
-          columnGap: 0.6,
         }}
       >
         <Typography
@@ -762,8 +772,11 @@ function LineEditor({
           variant="outlined"
           onClick={onAdd}
           sx={{
-            flexShrink: 0,
+            position: 'absolute',
+            top: 0,
+            right: 0,
             minWidth: 58,
+            height: 28,
             px: 0.65,
             whiteSpace: 'nowrap',
             fontSize: '0.61rem',
@@ -776,6 +789,10 @@ function LineEditor({
 
       <Box
         sx={{
+          width: '100%',
+          minWidth: 0,
+          maxWidth: '100%',
+          overflow: 'hidden',
           display: 'grid',
           gap: 0.45,
         }}
@@ -783,19 +800,25 @@ function LineEditor({
         {normalizedRows.map(
           (value, index) => (
             <Box
-              key={`${title}-${index}`}
+              key={
+                title + '-' + index
+              }
               sx={{
                 width: '100%',
                 minWidth: 0,
+                maxWidth: '100%',
+                boxSizing: 'border-box',
+                overflow: 'hidden',
                 display: 'grid',
                 gridTemplateColumns:
-                  '26px minmax(0, 1fr) 38px',
+                  '26px minmax(0, 1fr) 34px',
                 gap: 0.4,
                 alignItems: 'stretch',
               }}
             >
               <Box
                 sx={{
+                  minWidth: 0,
                   borderRadius: 0.8,
                   display: 'flex',
                   alignItems: 'center',
@@ -814,7 +837,9 @@ function LineEditor({
                 fullWidth
                 size="small"
                 value={value}
-                placeholder={`${title} 내용`}
+                placeholder={
+                  title + ' 내용'
+                }
                 onChange={(event) =>
                   onChange(
                     index,
@@ -822,17 +847,25 @@ function LineEditor({
                   )
                 }
                 sx={{
+                  width: '100%',
                   minWidth: 0,
+                  maxWidth: '100%',
+                  overflow: 'hidden',
                   '& .MuiInputBase-root':
                     {
+                      width: '100%',
                       minWidth: 0,
+                      maxWidth: '100%',
                       minHeight: 34,
+                      boxSizing:
+                        'border-box',
                     },
                   '& .MuiInputBase-input':
                     {
                       minWidth: 0,
                       py: 0.7,
-                      fontSize: '0.69rem',
+                      fontSize:
+                        '0.69rem',
                     },
                 }}
               />
@@ -849,8 +882,9 @@ function LineEditor({
                   !value
                 }
                 sx={{
-                  minWidth: 38,
-                  width: 38,
+                  minWidth: 34,
+                  width: 34,
+                  maxWidth: 34,
                   px: 0,
                   fontSize: '0.78rem',
                   fontWeight: 900,
@@ -1043,10 +1077,20 @@ function ScheduleEditor({
   onClear,
 }) {
   return (
-    <Box>
+    <Box
+      sx={{
+        width: '100%',
+        minWidth: 0,
+        maxWidth: '100%',
+        overflow: 'hidden',
+        boxSizing: 'border-box',
+      }}
+    >
       <Box
         sx={{
           mb: 0.55,
+          width: '100%',
+          minWidth: 0,
           display: 'flex',
           alignItems: 'center',
           justifyContent:
@@ -1054,19 +1098,16 @@ function ScheduleEditor({
           gap: 1,
         }}
       >
-        <Box>
-          <Typography
-            sx={{
-              color: '#334155',
-              fontSize: '0.72rem',
-              fontWeight: 900,
-            }}
-          >
-            [하자보수]
-          </Typography>
-
-
-        </Box>
+        <Typography
+          sx={{
+            minWidth: 0,
+            color: '#334155',
+            fontSize: '0.72rem',
+            fontWeight: 900,
+          }}
+        >
+          [하자보수]
+        </Typography>
 
         <Button
           size="small"
@@ -1074,6 +1115,7 @@ function ScheduleEditor({
           color="error"
           onClick={onClear}
           sx={{
+            flexShrink: 0,
             minWidth: 54,
             px: 0.65,
             whiteSpace: 'nowrap',
@@ -1087,11 +1129,18 @@ function ScheduleEditor({
 
       <Box
         sx={{
+          width: '100%',
+          minWidth: 0,
+          maxWidth: '100%',
           overflowX: 'auto',
+          overflowY: 'hidden',
+          WebkitOverflowScrolling:
+            'touch',
         }}
       >
         <Box
           sx={{
+            width: 'max-content',
             minWidth: 700,
             display: 'grid',
             gridTemplateColumns:
@@ -1141,6 +1190,7 @@ function ScheduleEditor({
                     )
                   }
                   sx={{
+                    minWidth: 0,
                     '& .MuiInputBase-root':
                       {
                         minHeight: 54,
@@ -1183,7 +1233,11 @@ function OfficeInputCard({
     <Paper
       variant="outlined"
       sx={{
+        width: '100%',
+        minWidth: 0,
+        maxWidth: '100%',
         mb: 1,
+        boxSizing: 'border-box',
         overflow: 'hidden',
         borderColor: '#94a3b8',
         boxShadow: 'none',
@@ -1191,6 +1245,10 @@ function OfficeInputCard({
     >
       <Box
         sx={{
+          width: '100%',
+          minWidth: 0,
+          maxWidth: '100%',
+          boxSizing: 'border-box',
           px: 1,
           py: 0.8,
           display: 'flex',
@@ -1203,31 +1261,27 @@ function OfficeInputCard({
             '1px solid #94a3b8',
         }}
       >
-        <Box>
-          <Box>
-            <Typography
-              sx={{
-                color: '#0f172a',
-                fontSize: '0.8rem',
-                fontWeight: 900,
-              }}
-            >
-              본사 · 공무
-            </Typography>
+        <Box sx={{ minWidth: 0 }}>
+          <Typography
+            sx={{
+              color: '#0f172a',
+              fontSize: '0.8rem',
+              fontWeight: 900,
+            }}
+          >
+            본사 · 공무
+          </Typography>
 
-            <Typography
-              sx={{
-                mt: 0.15,
-                color: '#64748b',
-                fontSize: '0.61rem',
-                fontWeight: 700,
-              }}
-            >
-              제출·제출예정 항목별 행 추가 가능
-            </Typography>
-          </Box>
-
-
+          <Typography
+            sx={{
+              mt: 0.15,
+              color: '#64748b',
+              fontSize: '0.61rem',
+              fontWeight: 700,
+            }}
+          >
+            제출·제출예정 항목별 행 추가 가능
+          </Typography>
         </Box>
 
         <Button
@@ -1236,6 +1290,7 @@ function OfficeInputCard({
           color="error"
           onClick={onClearOffice}
           sx={{
+            flexShrink: 0,
             minWidth: 64,
             px: 0.65,
             whiteSpace: 'nowrap',
@@ -1249,9 +1304,18 @@ function OfficeInputCard({
 
       <Box
         sx={{
+          width: '100%',
+          minWidth: 0,
+          maxWidth: '100%',
+          boxSizing: 'border-box',
+          overflow: 'hidden',
           p: 0.95,
           display: 'grid',
           gap: 1.25,
+          '& > *': {
+            minWidth: 0,
+            maxWidth: '100%',
+          },
         }}
       >
         {OFFICE_INPUT_SECTIONS.map(
@@ -1261,11 +1325,14 @@ function OfficeInputCard({
               sx={{
                 width: '100%',
                 minWidth: 0,
+                maxWidth: '100%',
+                boxSizing:
+                  'border-box',
+                overflow: 'hidden',
                 p: 0.85,
                 border: SOFT_BORDER,
                 borderRadius: 1,
                 bgcolor: '#ffffff',
-                overflow: 'hidden',
               }}
             >
               <Typography
@@ -1283,6 +1350,8 @@ function OfficeInputCard({
                 sx={{
                   width: '100%',
                   minWidth: 0,
+                  maxWidth: '100%',
+                  overflow: 'hidden',
                   display: 'grid',
                   gap: 1.05,
                 }}
@@ -1328,6 +1397,11 @@ function OfficeInputCard({
 
         <Box
           sx={{
+            width: '100%',
+            minWidth: 0,
+            maxWidth: '100%',
+            boxSizing: 'border-box',
+            overflow: 'hidden',
             p: 0.85,
             border: SOFT_BORDER,
             borderRadius: 1,
