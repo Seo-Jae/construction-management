@@ -9,7 +9,6 @@ import {
   Box,
   Button,
   CircularProgress,
-  MenuItem,
   Paper,
   TextField,
   Typography,
@@ -38,74 +37,158 @@ const toDateKey = (date) =>
     pad2(date.getDate()),
   ].join('-');
 
+const SITE_SCHEDULE_ROW_COUNT = 7;
+const MEETING_ROW_COUNT = 4;
+
 const createId = () =>
   `${Date.now()}-${Math.random()
     .toString(36)
     .slice(2, 9)}`;
 
+const createEmptySiteSchedule = () => ({
+  id: createId(),
+  constructionCompany: '',
+  siteName: '',
+  trade: '',
+  briefingAt: '',
+  bidAt: '',
+  attendees: '',
+  note: '',
+});
+
 const createEmptyMeeting = () => ({
   id: createId(),
   dateTime: '',
-  projectName: '',
-  title: '',
-  location: '',
+  siteName: '',
+  meetingName: '',
+  meetingContent: '',
+  attendees: '',
 });
 
-const normalizeProjectSchedules = (
-  projectNames,
+const normalizeSiteSchedules = (
   savedSchedules,
 ) => {
-  const savedMap = new Map(
-    (
-      Array.isArray(savedSchedules)
-        ? savedSchedules
-        : []
-    ).map((schedule) => [
-      schedule.projectName,
-      schedule,
-    ]),
+  const savedRows = Array.isArray(
+    savedSchedules,
+  )
+    ? savedSchedules
+    : [];
+
+  const normalized = savedRows.map(
+    (schedule) => {
+      const isLegacyAutoProjectRow =
+        !Object.prototype.hasOwnProperty.call(
+          schedule || {},
+          'constructionCompany',
+        ) &&
+        !Object.prototype.hasOwnProperty.call(
+          schedule || {},
+          'siteName',
+        ) &&
+        Object.prototype.hasOwnProperty.call(
+          schedule || {},
+          'projectName',
+        );
+
+      return {
+        id:
+          String(schedule?.id || '') ||
+          createId(),
+        constructionCompany:
+          String(
+            schedule?.constructionCompany ||
+              '',
+          ),
+        /*
+          이전 버전에서 진행 중 현장명이 자동으로 저장된
+          projectName 값은 새 현장명으로 가져오지 않습니다.
+        */
+        siteName: isLegacyAutoProjectRow
+          ? ''
+          : String(
+              schedule?.siteName ||
+                schedule?.projectName ||
+                '',
+            ),
+        trade:
+          String(schedule?.trade || ''),
+        briefingAt:
+          String(
+            schedule?.briefingAt || '',
+          ),
+        bidAt:
+          String(schedule?.bidAt || ''),
+        attendees:
+          String(
+            schedule?.attendees || '',
+          ),
+        note:
+          String(schedule?.note || ''),
+      };
+    },
   );
 
-  return projectNames.map((projectName) => {
-    const saved =
-      savedMap.get(projectName) || {};
+  while (
+    normalized.length <
+    SITE_SCHEDULE_ROW_COUNT
+  ) {
+    normalized.push(
+      createEmptySiteSchedule(),
+    );
+  }
 
-    return {
-      projectName,
-      briefingAt:
-        String(saved.briefingAt || ''),
-      bidAt:
-        String(saved.bidAt || ''),
-      note:
-        String(saved.note || ''),
-    };
-  });
+  return normalized;
 };
 
 const normalizeMeetings = (meetings) => {
-  const rows = Array.isArray(meetings)
+  const savedRows = Array.isArray(meetings)
     ? meetings
     : [];
 
-  if (rows.length === 0) {
-    return [createEmptyMeeting()];
+  const normalized = savedRows.map(
+    (meeting) => ({
+      id:
+        String(meeting?.id || '') ||
+        createId(),
+      dateTime:
+        String(meeting?.dateTime || ''),
+      siteName:
+        String(
+          meeting?.siteName ||
+            meeting?.projectName ||
+            '',
+        ),
+      meetingName:
+        String(
+          meeting?.meetingName || '',
+        ),
+      /*
+        이전 버전의 title은 회의내용 칸이었으므로
+        새 회의내용으로 옮깁니다.
+      */
+      meetingContent:
+        String(
+          meeting?.meetingContent ||
+            meeting?.title ||
+            '',
+        ),
+      attendees:
+        String(
+          meeting?.attendees || '',
+        ),
+    }),
+  );
+
+  while (
+    normalized.length <
+    MEETING_ROW_COUNT
+  ) {
+    normalized.push(
+      createEmptyMeeting(),
+    );
   }
 
-  return rows.map((meeting) => ({
-    id:
-      String(meeting?.id || '') ||
-      createId(),
-    dateTime:
-      String(meeting?.dateTime || ''),
-    projectName:
-      String(
-        meeting?.projectName || '',
-      ),
-    title:
-      String(meeting?.title || ''),
-    location:
-      String(meeting?.location || ''),
-  }));
+  return normalized;
 };
 
 const getDatePart = (dateTime) =>
@@ -158,6 +241,15 @@ const buildCalendarDays = (
   );
 };
 
+const getScheduleDisplayName = (
+  schedule,
+) =>
+  String(
+    schedule?.siteName ||
+      schedule?.constructionCompany ||
+      '미지정',
+  ).trim();
+
 const buildCalendarEvents = (
   siteSchedules,
   meetings,
@@ -180,10 +272,8 @@ const buildCalendarEvents = (
   };
 
   siteSchedules.forEach((schedule) => {
-    const project =
-      getProjectShortName(
-        schedule.projectName,
-      );
+    const displayName =
+      getScheduleDisplayName(schedule);
 
     pushEvent(
       getDatePart(
@@ -191,10 +281,10 @@ const buildCalendarEvents = (
       ),
       {
         id:
-          `briefing-${schedule.projectName}`,
+          `briefing-${schedule.id}`,
         type: 'briefing',
         label:
-          `현설 ${project}`,
+          `현설 ${displayName}`,
         time:
           getTimePart(
             schedule.briefingAt,
@@ -208,10 +298,10 @@ const buildCalendarEvents = (
       ),
       {
         id:
-          `bid-${schedule.projectName}`,
+          `bid-${schedule.id}`,
         type: 'bid',
         label:
-          `입찰 ${project}`,
+          `입찰 ${displayName}`,
         time:
           getTimePart(
             schedule.bidAt,
@@ -221,12 +311,16 @@ const buildCalendarEvents = (
   });
 
   meetings.forEach((meeting) => {
-    if (
-      !meeting.dateTime ||
-      !meeting.title
-    ) {
+    if (!meeting.dateTime) {
       return;
     }
+
+    const meetingLabel =
+      String(
+        meeting.meetingName ||
+          meeting.siteName ||
+          '미지정',
+      ).trim();
 
     pushEvent(
       getDatePart(
@@ -237,7 +331,7 @@ const buildCalendarEvents = (
           `meeting-${meeting.id}`,
         type: 'meeting',
         label:
-          `회의 ${meeting.title}`,
+          `회의 ${meetingLabel}`,
         time:
           getTimePart(
             meeting.dateTime,
@@ -334,6 +428,24 @@ function SiteSchedulePanel({
   onChange,
   onSave,
 }) {
+  const columns = [
+    {
+      key: 'constructionCompany',
+      label: '건설사명',
+      placeholder: '건설사명',
+    },
+    {
+      key: 'siteName',
+      label: '현장명',
+      placeholder: '현장명',
+    },
+    {
+      key: 'trade',
+      label: '공종',
+      placeholder: '공종',
+    },
+  ];
+
   return (
     <Paper
       variant="outlined"
@@ -349,7 +461,7 @@ function SiteSchedulePanel({
     >
       <PanelHeader
         title="현장설명·입찰 현황"
-        subtitle="현설일시는 빨간색, 입찰일시는 파란색으로 캘린더에 표시됩니다."
+        subtitle="진행 중 프로젝트와 연결되지 않는 독립 입력표입니다. 현설은 빨간색, 입찰은 파란색으로 캘린더에 표시됩니다."
         saving={saving}
         onSave={onSave}
       />
@@ -363,25 +475,28 @@ function SiteSchedulePanel({
       >
         <Box
           sx={{
-            minWidth: 760,
+            minWidth: 1120,
             display: 'grid',
             gridTemplateColumns:
-              '190px 180px 180px minmax(180px, 1fr)',
+              '125px 150px 105px 170px 170px 135px minmax(100px, 0.8fr)',
             borderLeft:
               '1px solid #cbd5e1',
           }}
         >
           {[
+            '건설사명',
             '현장명',
+            '공종',
             '현설일시',
             '입찰일시',
+            '참석자',
             '비고',
           ].map((label) => (
             <Box
               key={label}
               sx={{
-                px: 0.65,
-                py: 0.55,
+                px: 0.55,
+                py: 0.48,
                 borderRight:
                   '1px solid #cbd5e1',
                 borderBottom:
@@ -389,7 +504,7 @@ function SiteSchedulePanel({
                 bgcolor: '#eef2f7',
                 color: '#334155',
                 textAlign: 'center',
-                fontSize: '0.65rem',
+                fontSize: '0.64rem',
                 fontWeight: 900,
               }}
             >
@@ -400,31 +515,59 @@ function SiteSchedulePanel({
           {siteSchedules.map(
             (schedule, index) => (
               <React.Fragment
-                key={
-                  schedule.projectName
-                }
+                key={schedule.id}
               >
-                <Box
-                  sx={{
-                    px: 0.75,
-                    py: 0.65,
-                    borderRight:
-                      '1px solid #dbe3ee',
-                    borderBottom:
-                      '1px solid #dbe3ee',
-                    display: 'flex',
-                    alignItems: 'center',
-                    color: '#1e293b',
-                    fontSize: '0.67rem',
-                    fontWeight: 800,
-                  }}
-                >
-                  {schedule.projectName}
-                </Box>
+                {columns.map(
+                  (column) => (
+                    <Box
+                      key={column.key}
+                      sx={{
+                        p: 0.32,
+                        borderRight:
+                          '1px solid #dbe3ee',
+                        borderBottom:
+                          '1px solid #dbe3ee',
+                      }}
+                    >
+                      <TextField
+                        fullWidth
+                        size="small"
+                        value={
+                          schedule[
+                            column.key
+                          ] || ''
+                        }
+                        placeholder={
+                          column.placeholder
+                        }
+                        onChange={(event) =>
+                          onChange(
+                            index,
+                            column.key,
+                            event.target.value,
+                          )
+                        }
+                        sx={{
+                          '& .MuiInputBase-root':
+                            {
+                              minHeight: 29,
+                            },
+                          '& .MuiInputBase-input':
+                            {
+                              py: 0.48,
+                              px: 0.65,
+                              fontSize:
+                                '0.63rem',
+                            },
+                        }}
+                      />
+                    </Box>
+                  ),
+                )}
 
                 <Box
                   sx={{
-                    p: 0.4,
+                    p: 0.32,
                     borderRight:
                       '1px solid #dbe3ee',
                     borderBottom:
@@ -449,11 +592,17 @@ function SiteSchedulePanel({
                       shrink: true,
                     }}
                     sx={{
+                      '& .MuiInputBase-root':
+                        {
+                          minHeight: 29,
+                        },
                       '& .MuiInputBase-input':
                         {
-                          py: 0.65,
+                          py: 0.48,
+                          px: 0.55,
                           color: '#b91c1c',
-                          fontSize: '0.65rem',
+                          fontSize:
+                            '0.61rem',
                           fontWeight: 700,
                         },
                     }}
@@ -462,7 +611,7 @@ function SiteSchedulePanel({
 
                 <Box
                   sx={{
-                    p: 0.4,
+                    p: 0.32,
                     borderRight:
                       '1px solid #dbe3ee',
                     borderBottom:
@@ -485,11 +634,17 @@ function SiteSchedulePanel({
                       shrink: true,
                     }}
                     sx={{
+                      '& .MuiInputBase-root':
+                        {
+                          minHeight: 29,
+                        },
                       '& .MuiInputBase-input':
                         {
-                          py: 0.65,
+                          py: 0.48,
+                          px: 0.55,
                           color: '#1d4ed8',
-                          fontSize: '0.65rem',
+                          fontSize:
+                            '0.61rem',
                           fontWeight: 700,
                         },
                     }}
@@ -498,7 +653,46 @@ function SiteSchedulePanel({
 
                 <Box
                   sx={{
-                    p: 0.4,
+                    p: 0.32,
+                    borderRight:
+                      '1px solid #dbe3ee',
+                    borderBottom:
+                      '1px solid #dbe3ee',
+                  }}
+                >
+                  <TextField
+                    fullWidth
+                    size="small"
+                    value={
+                      schedule.attendees
+                    }
+                    placeholder="참석자"
+                    onChange={(event) =>
+                      onChange(
+                        index,
+                        'attendees',
+                        event.target.value,
+                      )
+                    }
+                    sx={{
+                      '& .MuiInputBase-root':
+                        {
+                          minHeight: 29,
+                        },
+                      '& .MuiInputBase-input':
+                        {
+                          py: 0.48,
+                          px: 0.65,
+                          fontSize:
+                            '0.63rem',
+                        },
+                    }}
+                  />
+                </Box>
+
+                <Box
+                  sx={{
+                    p: 0.32,
                     borderRight:
                       '1px solid #dbe3ee',
                     borderBottom:
@@ -509,7 +703,7 @@ function SiteSchedulePanel({
                     fullWidth
                     size="small"
                     value={schedule.note}
-                    placeholder="장소 또는 비고"
+                    placeholder="비고"
                     onChange={(event) =>
                       onChange(
                         index,
@@ -518,10 +712,16 @@ function SiteSchedulePanel({
                       )
                     }
                     sx={{
+                      '& .MuiInputBase-root':
+                        {
+                          minHeight: 29,
+                        },
                       '& .MuiInputBase-input':
                         {
-                          py: 0.65,
-                          fontSize: '0.65rem',
+                          py: 0.48,
+                          px: 0.65,
+                          fontSize:
+                            '0.63rem',
                         },
                     }}
                   />
@@ -536,12 +736,10 @@ function SiteSchedulePanel({
 }
 
 function MeetingSchedulePanel({
-  projectNames,
   meetings,
   saving,
   onChange,
   onAdd,
-  onDelete,
   onSave,
 }) {
   return (
@@ -559,7 +757,7 @@ function MeetingSchedulePanel({
     >
       <PanelHeader
         title="현장회의일정"
-        subtitle="위 현장설명 현황과 동일한 높이로 표시됩니다."
+        subtitle="현장명은 목록 선택이 아닌 직접입력 방식입니다."
         saving={saving}
         onSave={onSave}
         rightContent={
@@ -589,10 +787,10 @@ function MeetingSchedulePanel({
       >
         <Box
           sx={{
-            minWidth: 820,
+            minWidth: 920,
             display: 'grid',
             gridTemplateColumns:
-              '170px 190px minmax(180px, 1fr) 150px 44px',
+              '170px 150px 150px minmax(250px, 1fr) 150px',
             borderLeft:
               '1px solid #cbd5e1',
           }}
@@ -600,15 +798,15 @@ function MeetingSchedulePanel({
           {[
             '회의일시',
             '현장',
+            '회의명',
             '회의내용',
-            '장소',
-            '',
-          ].map((label, index) => (
+            '참석자',
+          ].map((label) => (
             <Box
-              key={`${label}-${index}`}
+              key={label}
               sx={{
                 px: 0.65,
-                py: 0.55,
+                py: 0.5,
                 borderRight:
                   '1px solid #cbd5e1',
                 borderBottom:
@@ -616,7 +814,7 @@ function MeetingSchedulePanel({
                 bgcolor: '#eef2f7',
                 color: '#334155',
                 textAlign: 'center',
-                fontSize: '0.65rem',
+                fontSize: '0.64rem',
                 fontWeight: 900,
               }}
             >
@@ -631,7 +829,7 @@ function MeetingSchedulePanel({
               >
                 <Box
                   sx={{
-                    p: 0.4,
+                    p: 0.34,
                     borderRight:
                       '1px solid #dbe3ee',
                     borderBottom:
@@ -656,10 +854,16 @@ function MeetingSchedulePanel({
                       shrink: true,
                     }}
                     sx={{
+                      '& .MuiInputBase-root':
+                        {
+                          minHeight: 30,
+                        },
                       '& .MuiInputBase-input':
                         {
-                          py: 0.65,
-                          fontSize: '0.64rem',
+                          py: 0.5,
+                          px: 0.55,
+                          fontSize:
+                            '0.62rem',
                         },
                     }}
                   />
@@ -667,7 +871,7 @@ function MeetingSchedulePanel({
 
                 <Box
                   sx={{
-                    p: 0.4,
+                    p: 0.34,
                     borderRight:
                       '1px solid #dbe3ee',
                     borderBottom:
@@ -675,47 +879,38 @@ function MeetingSchedulePanel({
                   }}
                 >
                   <TextField
-                    select
                     fullWidth
                     size="small"
                     value={
-                      meeting.projectName
+                      meeting.siteName
                     }
+                    placeholder="현장 직접입력"
                     onChange={(event) =>
                       onChange(
                         index,
-                        'projectName',
+                        'siteName',
                         event.target.value,
                       )
                     }
                     sx={{
-                      '& .MuiSelect-select':
+                      '& .MuiInputBase-root':
                         {
-                          py: 0.65,
-                          fontSize: '0.64rem',
+                          minHeight: 30,
+                        },
+                      '& .MuiInputBase-input':
+                        {
+                          py: 0.5,
+                          px: 0.65,
+                          fontSize:
+                            '0.63rem',
                         },
                     }}
-                  >
-                    <MenuItem value="">
-                      전체 또는 본사
-                    </MenuItem>
-
-                    {projectNames.map(
-                      (projectName) => (
-                        <MenuItem
-                          key={projectName}
-                          value={projectName}
-                        >
-                          {projectName}
-                        </MenuItem>
-                      ),
-                    )}
-                  </TextField>
+                  />
                 </Box>
 
                 <Box
                   sx={{
-                    p: 0.4,
+                    p: 0.34,
                     borderRight:
                       '1px solid #dbe3ee',
                     borderBottom:
@@ -725,20 +920,67 @@ function MeetingSchedulePanel({
                   <TextField
                     fullWidth
                     size="small"
-                    value={meeting.title}
+                    value={
+                      meeting.meetingName
+                    }
+                    placeholder="회의명"
+                    onChange={(event) =>
+                      onChange(
+                        index,
+                        'meetingName',
+                        event.target.value,
+                      )
+                    }
+                    sx={{
+                      '& .MuiInputBase-root':
+                        {
+                          minHeight: 30,
+                        },
+                      '& .MuiInputBase-input':
+                        {
+                          py: 0.5,
+                          px: 0.65,
+                          fontSize:
+                            '0.63rem',
+                        },
+                    }}
+                  />
+                </Box>
+
+                <Box
+                  sx={{
+                    p: 0.34,
+                    borderRight:
+                      '1px solid #dbe3ee',
+                    borderBottom:
+                      '1px solid #dbe3ee',
+                  }}
+                >
+                  <TextField
+                    fullWidth
+                    size="small"
+                    value={
+                      meeting.meetingContent
+                    }
                     placeholder="회의내용"
                     onChange={(event) =>
                       onChange(
                         index,
-                        'title',
+                        'meetingContent',
                         event.target.value,
                       )
                     }
                     sx={{
+                      '& .MuiInputBase-root':
+                        {
+                          minHeight: 30,
+                        },
                       '& .MuiInputBase-input':
                         {
-                          py: 0.65,
-                          fontSize: '0.64rem',
+                          py: 0.5,
+                          px: 0.65,
+                          fontSize:
+                            '0.63rem',
                         },
                     }}
                   />
@@ -746,7 +988,7 @@ function MeetingSchedulePanel({
 
                 <Box
                   sx={{
-                    p: 0.4,
+                    p: 0.34,
                     borderRight:
                       '1px solid #dbe3ee',
                     borderBottom:
@@ -757,55 +999,30 @@ function MeetingSchedulePanel({
                     fullWidth
                     size="small"
                     value={
-                      meeting.location
+                      meeting.attendees
                     }
-                    placeholder="장소"
+                    placeholder="참석자"
                     onChange={(event) =>
                       onChange(
                         index,
-                        'location',
+                        'attendees',
                         event.target.value,
                       )
                     }
                     sx={{
+                      '& .MuiInputBase-root':
+                        {
+                          minHeight: 30,
+                        },
                       '& .MuiInputBase-input':
                         {
-                          py: 0.65,
-                          fontSize: '0.64rem',
+                          py: 0.5,
+                          px: 0.65,
+                          fontSize:
+                            '0.63rem',
                         },
                     }}
                   />
-                </Box>
-
-                <Box
-                  sx={{
-                    p: 0.35,
-                    borderRight:
-                      '1px solid #dbe3ee',
-                    borderBottom:
-                      '1px solid #dbe3ee',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent:
-                      'center',
-                  }}
-                >
-                  <Button
-                    size="small"
-                    color="error"
-                    variant="outlined"
-                    onClick={() =>
-                      onDelete(index)
-                    }
-                    sx={{
-                      minWidth: 32,
-                      width: 32,
-                      px: 0,
-                      fontWeight: 900,
-                    }}
-                  >
-                    ×
-                  </Button>
                 </Box>
               </React.Fragment>
             ),
@@ -1084,29 +1301,16 @@ function CalendarPanel({
   );
 }
 
-export default function AdminDashboardScheduleBoard({
-  projectNames = [],
-}) {
-  const normalizedProjectNames =
-    useMemo(
-      () =>
-        Array.from(
-          new Set(
-            projectNames.filter(
-              Boolean,
-            ),
-          ),
-        ),
-      [projectNames],
+export default function AdminDashboardScheduleBoard() {
+  const [siteSchedules, setSiteSchedules] =
+    useState(() =>
+      normalizeSiteSchedules([]),
     );
 
-  const [siteSchedules, setSiteSchedules] =
-    useState([]);
-
   const [meetings, setMeetings] =
-    useState([
-      createEmptyMeeting(),
-    ]);
+    useState(() =>
+      normalizeMeetings([]),
+    );
 
   const [calendarCursor, setCalendarCursor] =
     useState(() => {
@@ -1160,8 +1364,7 @@ export default function AdminDashboardScheduleBoard({
         }
 
         setSiteSchedules(
-          normalizeProjectSchedules(
-            normalizedProjectNames,
+          normalizeSiteSchedules(
             data?.site_schedules,
           ),
         );
@@ -1178,15 +1381,12 @@ export default function AdminDashboardScheduleBoard({
         );
 
         setSiteSchedules(
-          normalizeProjectSchedules(
-            normalizedProjectNames,
-            [],
-          ),
+          normalizeSiteSchedules([]),
         );
 
-        setMeetings([
-          createEmptyMeeting(),
-        ]);
+        setMeetings(
+          normalizeMeetings([]),
+        );
 
         setErrorMessage(
           error?.message ||
@@ -1195,21 +1395,11 @@ export default function AdminDashboardScheduleBoard({
       } finally {
         setLoading(false);
       }
-    }, [normalizedProjectNames]);
+    }, []);
 
   useEffect(() => {
     loadScheduleBoard();
   }, [loadScheduleBoard]);
-
-  useEffect(() => {
-    setSiteSchedules(
-      (previous) =>
-        normalizeProjectSchedules(
-          normalizedProjectNames,
-          previous,
-        ),
-    );
-  }, [normalizedProjectNames]);
 
   const events = useMemo(
     () =>
@@ -1269,22 +1459,6 @@ export default function AdminDashboardScheduleBoard({
     setSuccessMessage('');
   };
 
-  const handleDeleteMeeting = (
-    index,
-  ) => {
-    setMeetings((previous) => {
-      const next = previous.filter(
-        (_, meetingIndex) =>
-          meetingIndex !== index,
-      );
-
-      return next.length > 0
-        ? next
-        : [createEmptyMeeting()];
-    });
-
-    setSuccessMessage('');
-  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -1496,18 +1670,12 @@ export default function AdminDashboardScheduleBoard({
         </Box>
 
         <MeetingSchedulePanel
-          projectNames={
-            normalizedProjectNames
-          }
           meetings={meetings}
           saving={saving}
           onChange={
             handleMeetingChange
           }
           onAdd={handleAddMeeting}
-          onDelete={
-            handleDeleteMeeting
-          }
           onSave={handleSave}
         />
       </Box>
