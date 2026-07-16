@@ -583,6 +583,74 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     setCurrentView('main');
   };
 
+  const handleHistoricalUploadComplete = async (
+    uploadedRows,
+  ) => {
+    if (
+      !Array.isArray(uploadedRows) ||
+      uploadedRows.length === 0
+    ) {
+      return;
+    }
+
+    setSavedData((previous) => {
+      const next = {
+        ...previous,
+      };
+
+      uploadedRows.forEach((row) => {
+        next[row.date] = {
+          workers:
+            row.workers || [],
+          tasks:
+            row.tasks || [],
+          todayTask:
+            row.today_task || '',
+          tomorrowTask:
+            row.tomorrow_task || '',
+        };
+      });
+
+      return next;
+    });
+
+    setManualStatus((previous) => {
+      const next = {
+        ...previous,
+      };
+
+      uploadedRows.forEach((row) => {
+        next[row.date] =
+          row.status || 'closed';
+      });
+
+      return next;
+    });
+
+    const firstDate =
+      String(
+        uploadedRows[0]?.date || '',
+      ).split('.');
+
+    if (
+      firstDate.length === 3
+    ) {
+      const year =
+        2000 +
+        Number(firstDate[0]);
+      const month =
+        Number(firstDate[1]) - 1;
+
+      if (
+        Number.isInteger(year) &&
+        Number.isInteger(month)
+      ) {
+        setViewYear(year);
+        setViewMonth(month);
+      }
+    }
+  };
+
   const handleSidebarViewChange = (nextView) => {
     if (
       nextView === 'weekly-overview'
@@ -2153,6 +2221,9 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               formatYYMMDD={formatYYMMDD}
               userProfile={activeUserProfile}
               canCancelDeadline={isSuperAdmin}
+              onHistoricalUploadComplete={
+                handleHistoricalUploadComplete
+              }
             />
           )}
 

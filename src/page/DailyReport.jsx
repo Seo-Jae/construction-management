@@ -9,6 +9,7 @@ import {
 } from '@mui/material';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import HistoricalDailyReportUpload from './HistoricalDailyReportUpload.jsx';
 
 export default function DailyReport({
   weekDays,
@@ -30,6 +31,7 @@ export default function DailyReport({
   formatYYMMDD,
   userProfile,
   canCancelDeadline = false,
+  onHistoricalUploadComplete,
 }) {
   return (
     <Box
@@ -165,17 +167,45 @@ export default function DailyReport({
           })}
         </Box>
 
-        <Box sx={{ mt: 'auto', textAlign: 'center' }}>
+        <Box
+          sx={{
+            mt: 'auto',
+            display: 'grid',
+            gridTemplateColumns:
+              'repeat(2, minmax(0, 1fr))',
+            gap: 0.65,
+          }}
+        >
           <Button
             variant="contained"
             color="success"
             size="small"
             fullWidth
-            sx={{ py: 0.8, fontSize: '0.8rem', fontWeight: 'bold' }}
+            sx={{
+              minHeight: 35,
+              px: 0.45,
+              py: 0.55,
+              fontSize: '0.68rem',
+              fontWeight: 900,
+              lineHeight: 1.2,
+              whiteSpace: 'normal',
+            }}
             onClick={handleDownloadMonthlyExcel}
           >
             출력일보 금월 다운로드
           </Button>
+
+          <HistoricalDailyReportUpload
+            projectName={
+              userProfile?.project_name || ''
+            }
+            companyName={
+              userProfile?.company || ''
+            }
+            onUploadComplete={
+              onHistoricalUploadComplete
+            }
+          />
         </Box>
       </Paper>
 
