@@ -2,6 +2,7 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -606,6 +607,63 @@ const migrateSavedPayload = (
   return result;
 };
 
+const createDraftStorageKey = (
+  weekStart,
+) =>
+  `weekly-overview-draft:${weekStart}`;
+
+const readDraft = (storageKey) => {
+  try {
+    const raw =
+      window.localStorage.getItem(
+        storageKey,
+      );
+
+    if (!raw) {
+      return null;
+    }
+
+    return JSON.parse(raw);
+  } catch (error) {
+    console.error(
+      '주간업무총괄 임시저장 읽기 실패:',
+      error,
+    );
+
+    return null;
+  }
+};
+
+const writeDraft = (
+  storageKey,
+  draft,
+) => {
+  try {
+    window.localStorage.setItem(
+      storageKey,
+      JSON.stringify(draft),
+    );
+  } catch (error) {
+    console.error(
+      '주간업무총괄 임시저장 실패:',
+      error,
+    );
+  }
+};
+
+const removeDraft = (storageKey) => {
+  try {
+    window.localStorage.removeItem(
+      storageKey,
+    );
+  } catch (error) {
+    console.error(
+      '주간업무총괄 임시저장 삭제 실패:',
+      error,
+    );
+  }
+};
+
 const saveWorkbook = async (
   workbook,
   filename,
@@ -1005,16 +1063,7 @@ function ScheduleEditor({
             [하자보수]
           </Typography>
 
-          <Typography
-            sx={{
-              mt: 0.15,
-              color: '#64748b',
-              fontSize: '0.61rem',
-              fontWeight: 700,
-            }}
-          >
-            날짜 H58:N58 · 입력 H59:N59
-          </Typography>
+
         </Box>
 
         <Button
@@ -1153,26 +1202,30 @@ function OfficeInputCard({
         }}
       >
         <Box>
-          <Typography
-            sx={{
-              color: '#0f172a',
-              fontSize: '0.8rem',
-              fontWeight: 900,
-            }}
-          >
-            본사 · 공무
-          </Typography>
+          <Box>
+            <Typography
+              sx={{
+                color: '#0f172a',
+                fontSize: '0.8rem',
+                fontWeight: 900,
+              }}
+            >
+              본사 · 공무
+            </Typography>
 
-          <Typography
-            sx={{
-              mt: 0.15,
-              color: '#475569',
-              fontSize: '0.62rem',
-              fontWeight: 700,
-            }}
-          >
-            대우건설 용인현장 아래의 본사 입력영역
-          </Typography>
+            <Typography
+              sx={{
+                mt: 0.15,
+                color: '#64748b',
+                fontSize: '0.61rem',
+                fontWeight: 700,
+              }}
+            >
+              제출·제출예정 항목별 행 추가 가능
+            </Typography>
+          </Box>
+
+
         </Box>
 
         <Button
@@ -2011,6 +2064,14 @@ export default function WeeklyOverview({
     [],
   );
 
+  const draftStorageKey = useMemo(
+    () =>
+      createDraftStorageKey(
+        weekRange.weekStart,
+      ),
+    [weekRange.weekStart],
+  );
+
   const scheduleDates = useMemo(
     () =>
       Array.from(
@@ -2077,7 +2138,17 @@ export default function WeeklyOverview({
     setSuccessMessage,
   ] = useState('');
 
+  const isHydratedRef = useRef(false);
+  const isDirtyRef = useRef(false);
+
+  const markDirty = () => {
+    isDirtyRef.current = true;
+    setSuccessMessage('');
+  };
+
   const loadData = useCallback(async () => {
+    isHydratedRef.current = false;
+
     setLoading(true);
     setErrorMessage('');
     setWarningMessage('');
@@ -2208,39 +2279,77 @@ export default function WeeklyOverview({
       );
     }
 
-    setCellRows(
-      savedRows ||
-        nextSourceRows,
-    );
+    const draft =
+      readDraft(draftStorageKey);
 
+    const nextCellRows =
+      draft?.cellRows
+        ? migrateSavedPayload({
+            cellRows:
+              draft.cellRows,
+          })
+        : savedRows ||
+          nextSourceRows;
+
+    const nextScheduleValues =
+      Array.isArray(
+        draft?.scheduleValues,
+      )
+        ? Array.from(
+            { length: 7 },
+            (_, index) =>
+              String(
+                draft.scheduleValues[
+                  index
+                ] || '',
+              ),
+          )
+        : savedScheduleValues ||
+          createEmptyScheduleValues();
+
+    const nextOfficeRows =
+      draft?.officeRows
+        ? migrateSavedOfficeRows({
+            officeRows:
+              draft.officeRows,
+          })
+        : savedOfficeRows ||
+          createEmptyOfficeRows();
+
+    setCellRows(nextCellRows);
     setScheduleValues(
-      savedScheduleValues ||
-        createEmptyScheduleValues(),
+      nextScheduleValues,
     );
+    setOfficeRows(nextOfficeRows);
 
-    setOfficeRows(
-      savedOfficeRows ||
-        createEmptyOfficeRows(),
-    );
+    isDirtyRef.current =
+      Boolean(draft);
 
+    if (draft) {
+      setWarningMessage(
+        '저장하지 않은 작성 내용이 임시저장에서 복원되었습니다.',
+      );
+    }
+
+    isHydratedRef.current = true;
     setLoading(false);
-  }, [weekRange.weekStart]);
+  }, [
+    draftStorageKey,
+    weekRange.weekStart,
+  ]);
 
   useEffect(() => {
     loadData();
 
-    const handleFocus = () => {
-      loadData();
-    };
-
     const handleWeeklyChanged = () => {
-      loadData();
+      /*
+        작성 중인 내용이 있으면 외부 이벤트로
+        현재 화면을 다시 불러오지 않습니다.
+      */
+      if (!isDirtyRef.current) {
+        loadData();
+      }
     };
-
-    window.addEventListener(
-      'focus',
-      handleFocus,
-    );
 
     window.addEventListener(
       'weekly-report-completed',
@@ -2249,16 +2358,33 @@ export default function WeeklyOverview({
 
     return () => {
       window.removeEventListener(
-        'focus',
-        handleFocus,
-      );
-
-      window.removeEventListener(
         'weekly-report-completed',
         handleWeeklyChanged,
       );
     };
   }, [loadData]);
+
+  useEffect(() => {
+    if (!isHydratedRef.current) {
+      return;
+    }
+
+    writeDraft(
+      draftStorageKey,
+      {
+        cellRows,
+        officeRows,
+        scheduleValues,
+        savedAt:
+          new Date().toISOString(),
+      },
+    );
+  }, [
+    cellRows,
+    draftStorageKey,
+    officeRows,
+    scheduleValues,
+  ]);
 
   const handleOfficeRowChange = (
     fieldKey,
@@ -2278,7 +2404,7 @@ export default function WeeklyOverview({
         ),
     }));
 
-    setSuccessMessage('');
+    markDirty();
   };
 
   const handleAddOfficeRow = (
@@ -2294,7 +2420,7 @@ export default function WeeklyOverview({
       ],
     }));
 
-    setSuccessMessage('');
+    markDirty();
   };
 
   const handleDeleteOfficeRow = (
@@ -2322,7 +2448,7 @@ export default function WeeklyOverview({
       };
     });
 
-    setSuccessMessage('');
+    markDirty();
   };
 
   const handleClearOffice = () => {
@@ -2330,7 +2456,7 @@ export default function WeeklyOverview({
       createEmptyOfficeRows(),
     );
 
-    setSuccessMessage('');
+    markDirty();
   };
 
   const handleScheduleValueChange = (
@@ -2346,7 +2472,7 @@ export default function WeeklyOverview({
       ),
     );
 
-    setSuccessMessage('');
+    markDirty();
   };
 
   const handleClearSchedule = () => {
@@ -2354,7 +2480,7 @@ export default function WeeklyOverview({
       createEmptyScheduleValues(),
     );
 
-    setSuccessMessage('');
+    markDirty();
   };
 
   const handleRowChange = (
@@ -2375,7 +2501,7 @@ export default function WeeklyOverview({
         ),
     }));
 
-    setSuccessMessage('');
+    markDirty();
   };
 
   const handleAddRow = (
@@ -2391,7 +2517,7 @@ export default function WeeklyOverview({
       ],
     }));
 
-    setSuccessMessage('');
+    markDirty();
   };
 
   const handleDeleteRow = (
@@ -2419,7 +2545,7 @@ export default function WeeklyOverview({
       };
     });
 
-    setSuccessMessage('');
+    markDirty();
   };
 
   const handleRestoreProject = (
@@ -2441,7 +2567,7 @@ export default function WeeklyOverview({
         ),
     }));
 
-    setSuccessMessage('');
+    markDirty();
   };
 
   const handleClearProject = (
@@ -2453,7 +2579,7 @@ export default function WeeklyOverview({
       [project.specialCell]: [''],
     }));
 
-    setSuccessMessage('');
+    markDirty();
   };
 
   const handleRestoreAll = () => {
@@ -2478,7 +2604,25 @@ export default function WeeklyOverview({
       ),
     );
 
-    setSuccessMessage('');
+    markDirty();
+  };
+
+  const handleManualReload = () => {
+    if (
+      isDirtyRef.current &&
+      !window.confirm(
+        '저장하지 않은 작성 내용이 있습니다. 원본과 저장본을 다시 불러오시겠습니까?',
+      )
+    ) {
+      return;
+    }
+
+    removeDraft(
+      draftStorageKey,
+    );
+
+    isDirtyRef.current = false;
+    loadData();
   };
 
   const handleDownloadExcel = async () => {
@@ -2806,6 +2950,12 @@ export default function WeeklyOverview({
         throw error;
       }
 
+      removeDraft(
+        draftStorageKey,
+      );
+
+      isDirtyRef.current = false;
+
       setSuccessMessage(
         '주간업무총괄이 저장되었습니다.',
       );
@@ -2968,7 +3118,9 @@ export default function WeeklyOverview({
             <Button
               size="small"
               variant="outlined"
-              onClick={loadData}
+              onClick={
+                handleManualReload
+              }
               disabled={saving}
               sx={{
                 minWidth: 58,
