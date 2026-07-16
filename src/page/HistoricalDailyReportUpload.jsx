@@ -36,6 +36,25 @@ const LEGACY_JOB_MAP = {
 
 const UPLOAD_CHUNK_SIZE = 50;
 
+/*
+  월별 과거 출력일보에서 하루 최대 200명까지 읽습니다.
+
+  좌측 명단:
+  B:F
+
+  우측 명단:
+  H:L
+
+  각 명단은 100명까지 탐색합니다.
+*/
+const MAX_HISTORICAL_WORKERS = 200;
+const WORKER_START_ROW = 18;
+const WORKER_ROWS_PER_SIDE = 100;
+const WORKER_END_ROW =
+  WORKER_START_ROW +
+  WORKER_ROWS_PER_SIDE -
+  1;
+
 const normalizeText = (value) =>
   String(value ?? '')
     .replace(/\u00a0/g, ' ')
@@ -392,6 +411,7 @@ const getNumericCellValue = (cell) => {
 const readWorkerRow = ({
   worksheet,
   rowNumber,
+  numberColumn,
   columns,
   sheetName,
 }) => {
@@ -402,6 +422,16 @@ const readWorkerRow = ({
     locationColumn,
     contentColumn,
   ] = columns;
+
+  const sequenceValue =
+    getCellRawValue(
+      worksheet.getCell(
+        `${numberColumn}${rowNumber}`,
+      ),
+    );
+
+  const sequenceNumber =
+    Number(sequenceValue);
 
   const sourceJob = getCellText(
     worksheet.getCell(
@@ -437,6 +467,24 @@ const readWorkerRow = ({
     return null;
   }
 
+  /*
+    명단 아래쪽의 서명·비고 등에 적힌 이름을
+    근로자로 잘못 읽지 않도록 순번 또는 작업정보가
+    존재하는 행만 근로자 행으로 인정합니다.
+  */
+  const hasWorkerEvidence =
+    Number.isFinite(sequenceNumber) ||
+    Boolean(
+      sourceJob ||
+      sourceProcess ||
+      location ||
+      workContent,
+    );
+
+  if (!hasWorkerEvidence) {
+    return null;
+  }
+
   const job = mapLegacyJob(
     sourceJob || sourceProcess,
   );
@@ -448,6 +496,10 @@ const readWorkerRow = ({
   return {
     id:
       `historical-${sheetName}-${rowNumber}-${nameColumn}`,
+    sequence:
+      Number.isFinite(sequenceNumber)
+        ? sequenceNumber
+        : null,
     job: job || null,
     name,
     process:
@@ -464,17 +516,27 @@ const readWorkerRow = ({
 const readWorksheetWorkers = (
   worksheet,
 ) => {
-  const workers = [];
+  const detectedWorkers = [];
 
+  /*
+    기존 양식은 좌측 30명 + 우측 30명이었지만,
+    확장 양식에서는 동일한 열 구조로 아래쪽 행이
+    계속 늘어날 수 있으므로 각 영역을 100행까지 읽습니다.
+
+    좌측 최대 100명 + 우측 최대 100명 = 총 200명
+  */
   for (
-    let rowNumber = 18;
-    rowNumber <= 47;
+    let rowNumber =
+      WORKER_START_ROW;
+    rowNumber <=
+      WORKER_END_ROW;
     rowNumber += 1
   ) {
     const leftWorker =
       readWorkerRow({
         worksheet,
         rowNumber,
+        numberColumn: 'A',
         columns: [
           'B',
           'C',
@@ -489,6 +551,7 @@ const readWorksheetWorkers = (
       readWorkerRow({
         worksheet,
         rowNumber,
+        numberColumn: 'G',
         columns: [
           'H',
           'I',
@@ -500,15 +563,95 @@ const readWorksheetWorkers = (
       });
 
     if (leftWorker) {
-      workers.push(leftWorker);
+      detectedWorkers.push(
+        leftWorker,
+      );
     }
 
     if (rightWorker) {
-      workers.push(rightWorker);
+      detectedWorkers.push(
+        rightWorker,
+      );
     }
   }
 
-  return workers;
+  /*
+    혹시 200명 범위를 넘겨 명단이 이어지는 경우를
+    탐지하여 일부만 잘린 상태로 업로드되지 않게 합니다.
+  */
+  let overflowCount = 0;
+
+  const actualLastRow = Math.min(
+    Number(
+      worksheet.actualRowCount ||
+      worksheet.rowCount ||
+      WORKER_END_ROW,
+    ),
+    WORKER_END_ROW + 300,
+  );
+
+  for (
+    let rowNumber =
+      WORKER_END_ROW + 1;
+    rowNumber <= actualLastRow;
+    rowNumber += 1
+  ) {
+    const leftWorker =
+      readWorkerRow({
+        worksheet,
+        rowNumber,
+        numberColumn: 'A',
+        columns: [
+          'B',
+          'C',
+          'D',
+          'E',
+          'F',
+        ],
+        sheetName: worksheet.name,
+      });
+
+    const rightWorker =
+      readWorkerRow({
+        worksheet,
+        rowNumber,
+        numberColumn: 'G',
+        columns: [
+          'H',
+          'I',
+          'J',
+          'K',
+          'L',
+        ],
+        sheetName: worksheet.name,
+      });
+
+    if (leftWorker) {
+      overflowCount += 1;
+    }
+
+    if (rightWorker) {
+      overflowCount += 1;
+    }
+  }
+
+  return {
+    workers:
+      detectedWorkers.slice(
+        0,
+        MAX_HISTORICAL_WORKERS,
+      ),
+    detectedCount:
+      detectedWorkers.length +
+      overflowCount,
+    overflowCount:
+      Math.max(
+        0,
+        detectedWorkers.length +
+          overflowCount -
+          MAX_HISTORICAL_WORKERS,
+      ),
+  };
 };
 
 const getSummaryWorkerCount = (
@@ -944,10 +1087,22 @@ export default function HistoricalDailyReportUpload({
             );
           }
 
-          const workers =
+          const workerReadResult =
             readWorksheetWorkers(
               worksheet,
             );
+
+          const workers =
+            workerReadResult.workers;
+
+          if (
+            workerReadResult
+              .overflowCount > 0
+          ) {
+            errors.push(
+              `근로자 명단이 최대 ${MAX_HISTORICAL_WORKERS}명을 초과했습니다. 감지 인원: ${workerReadResult.detectedCount}명`,
+            );
+          }
 
           workers.forEach(
             (worker) => {
@@ -1467,7 +1622,7 @@ export default function HistoricalDailyReportUpload({
               fontWeight: 700,
             }}
           >
-            월별 Excel 파일의 모든 일자 시트를 분석한 후 daily_reports에 등록합니다.
+            월별 Excel 파일의 모든 일자 시트를 분석하고 하루 최대 200명까지 daily_reports에 등록합니다.
           </Typography>
         </DialogTitle>
 
