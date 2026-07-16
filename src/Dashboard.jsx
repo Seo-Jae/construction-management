@@ -215,6 +215,46 @@ const jobOptions = ['소장', '관리자', '직영', '먹매김', '단열', '합
 
 const processOptions = ['바닥먹', '허리먹', '단열', '합지', '경량골조', '경량석고', '합지석고', '세대천정', '1차몰딩', '2차몰딩', '1차 걸레받이', '2차 걸레받이'];
 
+const MARK_VALLEY_EXTRA_PROCESS = '조적단열';
+
+const getProjectProcessOptions = (
+  projectName,
+) => {
+  const normalizedProjectName =
+    String(projectName || '')
+      .replace(/\s+/g, '');
+
+  const isMarkValley =
+    normalizedProjectName.includes(
+      '마크밸리',
+    );
+
+  if (!isMarkValley) {
+    return processOptions;
+  }
+
+  const insulationIndex =
+    processOptions.indexOf('단열');
+
+  if (insulationIndex === -1) {
+    return [
+      ...processOptions,
+      MARK_VALLEY_EXTRA_PROCESS,
+    ];
+  }
+
+  return [
+    ...processOptions.slice(
+      0,
+      insulationIndex + 1,
+    ),
+    MARK_VALLEY_EXTRA_PROCESS,
+    ...processOptions.slice(
+      insulationIndex + 1,
+    ),
+  ];
+};
+
 const modalStyle = {
   position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
   width: '95vw', maxWidth: '1600px', height: '82vh',
@@ -359,6 +399,11 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           ALL_PROJECTS_OPTION
         )
       : userProfile?.project_name || '';
+
+  const activeProcessOptions =
+    getProjectProcessOptions(
+      activeProjectName,
+    );
 
   const activeUserProfile = {
     ...(userProfile || {}),
@@ -714,6 +759,30 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   useEffect(() => {
     setSelectedCells(new Set());
   }, [selectedProcess]);
+
+  /*
+    마크밸리에서 조적단열을 선택한 뒤 다른 현장으로 이동하면
+    해당 현장에는 조적단열이 없으므로 첫 번째 공정으로 되돌립니다.
+  */
+  useEffect(() => {
+    const nextProcessOptions =
+      getProjectProcessOptions(
+        activeProjectName,
+      );
+
+    if (
+      !nextProcessOptions.includes(
+        selectedProcess,
+      )
+    ) {
+      setSelectedProcess(
+        nextProcessOptions[0],
+      );
+    }
+  }, [
+    activeProjectName,
+    selectedProcess,
+  ]);
 
   useEffect(() => {
     if (!activeProjectName) {
@@ -2190,7 +2259,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             <MainDashboard
               projectName={activeProjectName}
               buildingConfigs={buildingConfigs}
-              processOptions={processOptions}
+              processOptions={activeProcessOptions}
               savedData={savedData}
               viewYear={viewYear}
               viewMonth={viewMonth}
@@ -2265,7 +2334,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               progressPercentage={progressPercentage}
               setSelectedProcess={setSelectedProcess}
               selectedProcess={selectedProcess}
-              processOptions={processOptions}
+              processOptions={activeProcessOptions}
               buildingConfigs={buildingConfigs}
               unitProgressData={unitProgressData}
               handleGridCellClick={handleGridCellClick}
@@ -2276,7 +2345,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           {currentView === 'progress-multi' && activeProjectName && (
             <MultiProcessProgress
               projectName={activeProjectName || ''}
-              processOptions={processOptions}
+              processOptions={activeProcessOptions}
               buildingConfigs={buildingConfigs}
             />
           )}
@@ -2285,7 +2354,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             <CompletionSummary
               mode="monthly"
               projectName={activeProjectName || ''}
-              processOptions={processOptions}
+              processOptions={activeProcessOptions}
               buildingConfigs={buildingConfigs}
             />
           )}
@@ -2294,7 +2363,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             <CompletionSummary
               mode="weekly"
               projectName={activeProjectName || ''}
-              processOptions={processOptions}
+              processOptions={activeProcessOptions}
               buildingConfigs={buildingConfigs}
             />
           )}
