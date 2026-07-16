@@ -13,6 +13,7 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
 
 const TEMPLATE_PROJECTS = [
@@ -186,11 +187,17 @@ const getKoreaWeekRange = (
     weekStartUtc +
     6 * 24 * 60 * 60 * 1000;
 
+  const nextMondayUtc =
+    weekStartUtc +
+    8 * 24 * 60 * 60 * 1000;
+
   return {
     weekStart:
       formatUtcDateToISO(weekStartUtc),
     weekEnd:
       formatUtcDateToISO(weekEndUtc),
+    nextMonday:
+      formatUtcDateToISO(nextMondayUtc),
   };
 };
 
@@ -203,6 +210,34 @@ const formatDisplayDate = (dateKey) => {
     dateKey.split('-');
 
   return `${year}.${month}.${day}`;
+};
+
+const saveWorkbook = async (
+  workbook,
+  filename,
+) => {
+  const buffer =
+    await workbook.xlsx.writeBuffer();
+
+  const blob = new Blob(
+    [buffer],
+    {
+      type:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    },
+  );
+
+  const url =
+    URL.createObjectURL(blob);
+  const link =
+    document.createElement('a');
+
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
 };
 
 const normalizeText = (value) =>
@@ -527,6 +562,7 @@ function ProjectEditor({
 
 function ExcelTemplatePreview({
   cellValues,
+  nextMondayKey,
 }) {
   return (
     <Box
@@ -544,7 +580,7 @@ function ExcelTemplatePreview({
         component="img"
         src={
           '/templates/' +
-          '주간업무총괄_미리보기.png'
+          '주간업무총괄_무채색_미리보기.png'
         }
         alt="주간업무총괄 미리보기"
         sx={{
@@ -558,6 +594,34 @@ function ExcelTemplatePreview({
           pointerEvents: 'none',
         }}
       />
+
+      <Box
+        title="C3"
+        sx={{
+          position: 'absolute',
+          left: '23.763021%',
+          top: '3.766707%',
+          width: '55.143229%',
+          height: '2.673147%',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: 'hidden',
+          color: '#111827',
+          fontFamily:
+            '"Malgun Gothic",' +
+            ' "맑은 고딕",' +
+            ' sans-serif',
+          fontSize:
+            'clamp(11px, 1.05vw, 18px)',
+          fontWeight: 900,
+          lineHeight: 1,
+          whiteSpace: 'nowrap',
+          pointerEvents: 'none',
+        }}
+      >
+        {nextMondayKey}
+      </Box>
 
       {CELL_OVERLAYS.map((overlay) => {
         const value =
@@ -631,6 +695,8 @@ export default function WeeklyOverview({
   const [loading, setLoading] =
     useState(true);
   const [saving, setSaving] =
+    useState(false);
+  const [downloading, setDownloading] =
     useState(false);
   const [errorMessage, setErrorMessage] =
     useState('');
@@ -856,6 +922,92 @@ export default function WeeklyOverview({
     setSuccessMessage('');
   };
 
+  const handleDownloadExcel = async () => {
+    setDownloading(true);
+    setErrorMessage('');
+
+    try {
+      const response = await fetch(
+        '/templates/주간업무총괄.xlsx',
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          'public/templates/주간업무총괄.xlsx 파일을 찾을 수 없습니다.',
+        );
+      }
+
+      const workbook =
+        new ExcelJS.Workbook();
+
+      await workbook.xlsx.load(
+        await response.arrayBuffer(),
+      );
+
+      const worksheet =
+        workbook.worksheets[0];
+
+      if (!worksheet) {
+        throw new Error(
+          '주간업무총괄 양식 시트를 찾지 못했습니다.',
+        );
+      }
+
+      const dateCell =
+        worksheet.getCell('C3');
+
+      dateCell.value =
+        weekRange.nextMonday;
+      dateCell.numFmt =
+        'yyyy-mm-dd';
+      dateCell.font = {
+        ...(dateCell.font || {}),
+        name: '맑은 고딕',
+        size: 14,
+        bold: true,
+        italic: false,
+      };
+      dateCell.alignment = {
+        ...(dateCell.alignment || {}),
+        horizontal: 'center',
+        vertical: 'middle',
+        wrapText: false,
+      };
+
+      Object.entries(
+        cellValues,
+      ).forEach(([address, value]) => {
+        const cell =
+          worksheet.getCell(address);
+
+        cell.value =
+          String(value || '');
+        cell.alignment = {
+          ...(cell.alignment || {}),
+          vertical: 'center',
+          wrapText: true,
+        };
+      });
+
+      await saveWorkbook(
+        workbook,
+        `주간업무총괄_${weekRange.nextMonday}.xlsx`,
+      );
+    } catch (error) {
+      console.error(
+        '주간업무총괄 XLS 다운로드 실패:',
+        error,
+      );
+
+      setErrorMessage(
+        error?.message ||
+        '주간업무총괄 엑셀을 다운로드하지 못했습니다.',
+      );
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setErrorMessage('');
@@ -1039,6 +1191,25 @@ export default function WeeklyOverview({
           >
             <Button
               size="small"
+              variant="contained"
+              color="success"
+              onClick={handleDownloadExcel}
+              disabled={downloading}
+              sx={{
+                minWidth: 84,
+                px: 0.7,
+                whiteSpace: 'nowrap',
+                fontSize: '0.62rem',
+                fontWeight: 900,
+              }}
+            >
+              {downloading
+                ? '생성중'
+                : 'XLS 다운로드'}
+            </Button>
+
+            <Button
+              size="small"
               variant="outlined"
               onClick={handleRestoreAll}
               sx={{
@@ -1121,6 +1292,9 @@ export default function WeeklyOverview({
               {formatDisplayDate(
                 weekRange.weekEnd,
               )}
+              {' · '}
+              C3 기준일:{' '}
+              {weekRange.nextMonday}
             </Typography>
           </Paper>
 
@@ -1241,6 +1415,9 @@ export default function WeeklyOverview({
         >
           <ExcelTemplatePreview
             cellValues={cellValues}
+            nextMondayKey={
+              weekRange.nextMonday
+            }
           />
         </Box>
       </Paper>
