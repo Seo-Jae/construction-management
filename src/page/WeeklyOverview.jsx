@@ -9,42 +9,144 @@ import {
   Box,
   Button,
   CircularProgress,
-  Divider,
   Paper,
   TextField,
   Typography,
 } from '@mui/material';
 import { supabase } from '../supabaseClient';
 
-const SUPABASE_PAGE_SIZE = 1000;
-const MAX_LINES_PER_PROJECT = 10;
-
-const PROJECT_DISPLAY_ORDER = [
-  '한라건설 용인금어지구',
-  '현대건설 용인마크밸리',
-  '대우건설 용인현장',
+const TEMPLATE_PROJECTS = [
+  {
+    projectName: '디에이치 방배',
+    processCell: 'C7',
+    specialCell: 'C9',
+  },
+  {
+    projectName: '진접선 차량기지',
+    processCell: 'C11',
+    specialCell: 'C13',
+  },
+  {
+    projectName: '김해 장유삼문 공동주택',
+    processCell: 'C15',
+    specialCell: 'C17',
+  },
+  {
+    projectName: '여수 죽림 공동주택',
+    processCell: 'C19',
+    specialCell: 'C21',
+  },
+  {
+    projectName: '한라건설 용인금어지구',
+    processCell: 'C23',
+    specialCell: 'C25',
+  },
+  {
+    projectName: '울산 학성동 공동주택',
+    processCell: 'C27',
+    specialCell: 'C29',
+  },
+  {
+    projectName: '현대건설 용인마크밸리',
+    processCell: 'C31',
+    specialCell: 'C33',
+  },
+  {
+    projectName: '원주 푸르지오더센트럴',
+    processCell: 'C35',
+    specialCell: 'C37',
+  },
+  {
+    projectName: '대우건설 용인현장',
+    processCell: 'C39',
+    specialCell: 'C41',
+  },
 ];
+
+const TEMPLATE_PROJECT_NAMES =
+  TEMPLATE_PROJECTS.map(
+    (project) => project.projectName,
+  );
+
+const EMPTY_CELL_VALUES = Object.fromEntries(
+  TEMPLATE_PROJECTS.flatMap((project) => [
+    [project.processCell, ''],
+    [project.specialCell, ''],
+  ]),
+);
+
+const PROCESS_FORM_KEYS = [
+  'progressCurrent',
+  'progressNext',
+  'materialCurrent',
+  'materialNext',
+];
+
+const SPECIAL_FORM_KEYS = [
+  'publicCurrent',
+  'publicNext',
+  'meetingCurrent',
+  'meetingNext',
+  'directiveCurrent',
+  'directiveNext',
+  'specialCurrent',
+  'specialNext',
+];
+
+const CELL_OVERLAYS = [
+  { cell: 'C7', top: 9.113001 },
+  { cell: 'C9', top: 11.786148 },
+  { cell: 'C11', top: 14.459295 },
+  { cell: 'C13', top: 17.132442 },
+  { cell: 'C15', top: 19.805589 },
+  { cell: 'C17', top: 22.478736 },
+  { cell: 'C19', top: 25.151883 },
+  { cell: 'C21', top: 27.82503 },
+  { cell: 'C23', top: 30.498177 },
+  { cell: 'C25', top: 33.171324 },
+  { cell: 'C27', top: 35.844471 },
+  { cell: 'C29', top: 38.517618 },
+  { cell: 'C31', top: 41.190765 },
+  { cell: 'C33', top: 43.863913 },
+  { cell: 'C35', top: 46.53706 },
+  { cell: 'C37', top: 49.210207 },
+  { cell: 'C39', top: 51.883354 },
+  { cell: 'C41', top: 54.556501 },
+];
+
+const CELL_LEFT_PERCENT = 23.753666;
+const CELL_WIDTH_PERCENT = 76.246334;
+const CELL_HEIGHT_PERCENT = 1.336574;
 
 const pad2 = (value) =>
   String(value).padStart(2, '0');
 
-const formatKoreaISODate = (date = new Date()) => {
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Seoul',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
+const formatKoreaISODate = (
+  date = new Date(),
+) => {
+  const formatter =
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    });
 
   const values = {};
 
-  formatter.formatToParts(date).forEach((part) => {
-    if (part.type !== 'literal') {
-      values[part.type] = part.value;
-    }
-  });
+  formatter
+    .formatToParts(date)
+    .forEach((part) => {
+      if (part.type !== 'literal') {
+        values[part.type] = part.value;
+      }
+    });
 
-  return `${values.year}-${values.month}-${values.day}`;
+  return (
+    `${values.year}-` +
+    `${values.month}-` +
+    `${values.day}`
+  );
 };
 
 const formatUtcDateToISO = (utcValue) => {
@@ -57,8 +159,12 @@ const formatUtcDateToISO = (utcValue) => {
   ].join('-');
 };
 
-const getKoreaWeekRange = (date = new Date()) => {
-  const todayKey = formatKoreaISODate(date);
+const getKoreaWeekRange = (
+  date = new Date(),
+) => {
+  const todayKey =
+    formatKoreaISODate(date);
+
   const [year, month, day] = todayKey
     .split('-')
     .map(Number);
@@ -68,15 +174,23 @@ const getKoreaWeekRange = (date = new Date()) => {
     month - 1,
     day,
   );
-  const dayOfWeek = new Date(todayUtc).getUTCDay();
+
+  const dayOfWeek =
+    new Date(todayUtc).getUTCDay();
+
   const weekStartUtc =
-    todayUtc - dayOfWeek * 24 * 60 * 60 * 1000;
+    todayUtc -
+    dayOfWeek * 24 * 60 * 60 * 1000;
+
   const weekEndUtc =
-    weekStartUtc + 6 * 24 * 60 * 60 * 1000;
+    weekStartUtc +
+    6 * 24 * 60 * 60 * 1000;
 
   return {
-    weekStart: formatUtcDateToISO(weekStartUtc),
-    weekEnd: formatUtcDateToISO(weekEndUtc),
+    weekStart:
+      formatUtcDateToISO(weekStartUtc),
+    weekEnd:
+      formatUtcDateToISO(weekEndUtc),
   };
 };
 
@@ -85,104 +199,78 @@ const formatDisplayDate = (dateKey) => {
     return '';
   }
 
-  const [year, month, day] = dateKey.split('-');
+  const [year, month, day] =
+    dateKey.split('-');
 
   return `${year}.${month}.${day}`;
 };
 
-const createEmptyLines = () =>
-  Array.from(
-    { length: MAX_LINES_PER_PROJECT },
-    () => '',
-  );
+const normalizeText = (value) =>
+  String(value || '').trim();
 
-const normalizeLines = (values) => {
-  const source = Array.isArray(values)
-    ? values
-    : [];
+const normalizeTextList = (values) =>
+  (Array.isArray(values) ? values : [])
+    .map(normalizeText)
+    .filter(Boolean);
 
-  return Array.from(
-    { length: MAX_LINES_PER_PROJECT },
-    (_, index) =>
-      String(source[index] || '').trim(),
-  );
-};
-
-const sortProjectNames = (projectNames) =>
-  [...projectNames].sort((first, second) => {
-    const firstIndex =
-      PROJECT_DISPLAY_ORDER.indexOf(first);
-    const secondIndex =
-      PROJECT_DISPLAY_ORDER.indexOf(second);
-
-    if (firstIndex !== -1 || secondIndex !== -1) {
-      if (firstIndex === -1) {
-        return 1;
-      }
-
-      if (secondIndex === -1) {
-        return -1;
-      }
-
-      return firstIndex - secondIndex;
-    }
-
-    return String(first).localeCompare(
-      String(second),
-      'ko',
-    );
-  });
-
-const fetchAllProjectNames = async () => {
-  const allRows = [];
-  let from = 0;
-
-  while (true) {
-    const { data, error } = await supabase
-      .from('building_settings')
-      .select('project_name')
-      .not('project_name', 'is', null)
-      .order('project_name', {
-        ascending: true,
-      })
-      .range(
-        from,
-        from + SUPABASE_PAGE_SIZE - 1,
-      );
-
-    if (error) {
-      throw error;
-    }
-
-    const rows = data || [];
-    allRows.push(...rows);
-
-    if (rows.length < SUPABASE_PAGE_SIZE) {
-      break;
-    }
-
-    from += SUPABASE_PAGE_SIZE;
-  }
-
-  return sortProjectNames(
-    Array.from(
-      new Set(
-        allRows
-          .map((row) =>
-            String(
-              row?.project_name || '',
-            ).trim(),
-          )
-          .filter(Boolean),
-      ),
+const createTextSet = (
+  form,
+  keys,
+) =>
+  new Set(
+    keys.flatMap((key) =>
+      normalizeTextList(form?.[key]),
     ),
   );
+
+const getReportCellValues = (report) => {
+  const payload = report?.payload || {};
+  const highlights = normalizeTextList(
+    payload?.nextWeekHighlights,
+  );
+  const form = payload?.form || {};
+
+  const processSet = createTextSet(
+    form,
+    PROCESS_FORM_KEYS,
+  );
+  const specialSet = createTextSet(
+    form,
+    SPECIAL_FORM_KEYS,
+  );
+
+  const processLines = [];
+  const specialLines = [];
+
+  highlights.forEach((text) => {
+    if (
+      specialSet.has(text) &&
+      !processSet.has(text)
+    ) {
+      specialLines.push(text);
+      return;
+    }
+
+    processLines.push(text);
+  });
+
+  /*
+    과거 데이터처럼 입력 분류를 판단할 수 없는 경우에도
+    주요보고가 누락되지 않도록 공정 칸에 우선 배치합니다.
+  */
+  return {
+    processText: processLines.join('\n'),
+    specialText: specialLines.join('\n'),
+  };
 };
 
-const createSourceProjectRows = ({
-  projectNames,
+const createSourceCellValues = (
   weeklyReports,
-}) => {
+) => {
+  const values = {
+    ...EMPTY_CELL_VALUES,
+  };
+
   const reportMap = new Map(
     (weeklyReports || []).map((report) => [
       report.project_name,
@@ -190,80 +278,94 @@ const createSourceProjectRows = ({
     ]),
   );
 
-  return projectNames.map((projectName) => {
-    const report = reportMap.get(projectName);
-    const sourceLines = normalizeLines(
-      report?.payload?.nextWeekHighlights,
-    );
-
-    return {
-      projectName,
-      registered: Boolean(report),
-      completedAt: report?.completed_at || null,
-      sourceLines,
-      lines: [...sourceLines],
-    };
-  });
-};
-
-const mergeSavedProjects = ({
-  sourceProjects,
-  savedPayload,
-}) => {
-  const savedProjects = Array.isArray(
-    savedPayload?.projects,
-  )
-    ? savedPayload.projects
-    : [];
-
-  if (savedProjects.length === 0) {
-    return sourceProjects;
-  }
-
-  const savedMap = new Map(
-    savedProjects.map((project) => [
+  TEMPLATE_PROJECTS.forEach((project) => {
+    const report = reportMap.get(
       project.projectName,
-      project,
-    ]),
-  );
-
-  return sourceProjects.map((sourceProject) => {
-    const savedProject = savedMap.get(
-      sourceProject.projectName,
     );
 
-    if (!savedProject) {
-      return sourceProject;
+    if (!report) {
+      return;
     }
 
-    return {
-      ...sourceProject,
-      lines: normalizeLines(
-        savedProject.lines,
-      ),
-    };
+    const {
+      processText,
+      specialText,
+    } = getReportCellValues(report);
+
+    values[project.processCell] =
+      processText;
+    values[project.specialCell] =
+      specialText;
   });
+
+  return values;
 };
 
-const countFilledLines = (lines) =>
-  normalizeLines(lines).filter(Boolean).length;
+const migrateOldSavedPayload = (
+  payload,
+) => {
+  if (
+    payload?.cellValues &&
+    typeof payload.cellValues === 'object'
+  ) {
+    return {
+      ...EMPTY_CELL_VALUES,
+      ...payload.cellValues,
+    };
+  }
 
-function ProjectInputCard({
+  const values = {
+    ...EMPTY_CELL_VALUES,
+  };
+
+  const oldProjects = Array.isArray(
+    payload?.projects,
+  )
+    ? payload.projects
+    : [];
+
+  oldProjects.forEach((savedProject) => {
+    const templateProject =
+      TEMPLATE_PROJECTS.find(
+        (project) =>
+          project.projectName ===
+          savedProject.projectName,
+      );
+
+    if (!templateProject) {
+      return;
+    }
+
+    const lines =
+      normalizeTextList(
+        savedProject.lines,
+      );
+
+    values[
+      templateProject.processCell
+    ] = lines.slice(0, 5).join('\n');
+
+    values[
+      templateProject.specialCell
+    ] = lines.slice(5).join('\n');
+  });
+
+  return values;
+};
+
+function ProjectEditor({
   project,
-  onLineChange,
-  onClearLine,
-  onClearProject,
-  onRestoreProject,
+  cellValues,
+  registered,
+  onChange,
+  onRestore,
+  onClear,
 }) {
-  const filledCount = countFilledLines(
-    project.lines,
-  );
-
   return (
     <Paper
       variant="outlined"
       sx={{
-        mb: 1.2,
+        mb: 1,
         overflow: 'hidden',
         borderColor: '#cbd5e1',
         boxShadow: 'none',
@@ -271,21 +373,23 @@ function ProjectInputCard({
     >
       <Box
         sx={{
-          px: 1.15,
-          py: 0.85,
+          px: 1,
+          py: 0.75,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
+          justifyContent:
+            'space-between',
           gap: 1,
           bgcolor: '#f8fafc',
-          borderBottom: '1px solid #e2e8f0',
+          borderBottom:
+            '1px solid #e2e8f0',
         }}
       >
         <Box sx={{ minWidth: 0 }}>
           <Typography
             sx={{
               color: '#0f172a',
-              fontSize: '0.8rem',
+              fontSize: '0.78rem',
               fontWeight: 900,
             }}
           >
@@ -295,18 +399,16 @@ function ProjectInputCard({
           <Typography
             sx={{
               mt: 0.15,
-              color: project.registered
+              color: registered
                 ? '#15803d'
                 : '#dc2626',
-              fontSize: '0.64rem',
+              fontSize: '0.62rem',
               fontWeight: 800,
             }}
           >
-            {project.registered
-              ? '주간업무 등록'
-              : '주간업무 미등록'}
-            {' · '}
-            입력 {filledCount}/10
+            {registered
+              ? '주간업무 등록 · 자동취합'
+              : '주간업무 미등록 · 직접입력 가능'}
           </Typography>
         </Box>
 
@@ -314,22 +416,20 @@ function ProjectInputCard({
           sx={{
             flexShrink: 0,
             display: 'flex',
-            gap: 0.45,
+            gap: 0.4,
           }}
         >
           <Button
             size="small"
             variant="outlined"
             onClick={() =>
-              onRestoreProject(
-                project.projectName,
-              )
+              onRestore(project)
             }
             sx={{
-              minWidth: 58,
-              px: 0.7,
+              minWidth: 54,
+              px: 0.65,
               whiteSpace: 'nowrap',
-              fontSize: '0.63rem',
+              fontSize: '0.61rem',
               fontWeight: 800,
             }}
           >
@@ -341,284 +441,167 @@ function ProjectInputCard({
             variant="outlined"
             color="error"
             onClick={() =>
-              onClearProject(
-                project.projectName,
-              )
+              onClear(project)
             }
             sx={{
-              minWidth: 52,
-              px: 0.7,
+              minWidth: 48,
+              px: 0.65,
               whiteSpace: 'nowrap',
-              fontSize: '0.63rem',
+              fontSize: '0.61rem',
               fontWeight: 800,
             }}
           >
-            전체삭제
+            삭제
           </Button>
         </Box>
       </Box>
 
-      <Box sx={{ p: 1 }}>
-        {project.lines.map((value, index) => (
-          <Box
-            key={`${project.projectName}-${index}`}
-            sx={{
-              mb:
-                index ===
-                MAX_LINES_PER_PROJECT - 1
-                  ? 0
-                  : 0.55,
-              display: 'grid',
-              gridTemplateColumns:
-                '28px minmax(0, 1fr) 36px',
-              gap: 0.45,
-              alignItems: 'stretch',
-            }}
-          >
-            <Box
-              sx={{
-                borderRadius: 1,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#475569',
-                bgcolor: '#f1f5f9',
-                fontSize: '0.66rem',
-                fontWeight: 900,
-              }}
-            >
-              {index + 1}
-            </Box>
+      <Box
+        sx={{
+          p: 0.9,
+          display: 'grid',
+          gap: 0.75,
+        }}
+      >
+        <TextField
+          fullWidth
+          multiline
+          minRows={2}
+          maxRows={6}
+          size="small"
+          label={`공정 · ${project.processCell}`}
+          value={
+            cellValues[
+              project.processCell
+            ] || ''
+          }
+          onChange={(event) =>
+            onChange(
+              project.processCell,
+              event.target.value,
+            )
+          }
+          sx={{
+            '& .MuiInputBase-input': {
+              fontSize: '0.7rem',
+              lineHeight: 1.45,
+            },
+            '& .MuiInputLabel-root': {
+              fontSize: '0.7rem',
+            },
+          }}
+        />
 
-            <TextField
-              fullWidth
-              size="small"
-              value={value}
-              placeholder={
-                project.registered
-                  ? '주간업무 주요보고 내용'
-                  : '직접 입력'
-              }
-              onChange={(event) =>
-                onLineChange(
-                  project.projectName,
-                  index,
-                  event.target.value,
-                )
-              }
-              multiline
-              minRows={1}
-              maxRows={3}
-              sx={{
-                '& .MuiInputBase-root': {
-                  minHeight: 36,
-                  alignItems: 'flex-start',
-                },
-                '& .MuiInputBase-input': {
-                  fontSize: '0.72rem',
-                  lineHeight: 1.45,
-                },
-              }}
-            />
-
-            <Button
-              size="small"
-              variant="outlined"
-              color="error"
-              disabled={!value}
-              onClick={() =>
-                onClearLine(
-                  project.projectName,
-                  index,
-                )
-              }
-              sx={{
-                minWidth: 36,
-                width: 36,
-                px: 0,
-                fontSize: '0.8rem',
-                fontWeight: 900,
-              }}
-            >
-              ×
-            </Button>
-          </Box>
-        ))}
+        <TextField
+          fullWidth
+          multiline
+          minRows={2}
+          maxRows={6}
+          size="small"
+          label={`특이사항 · ${project.specialCell}`}
+          value={
+            cellValues[
+              project.specialCell
+            ] || ''
+          }
+          onChange={(event) =>
+            onChange(
+              project.specialCell,
+              event.target.value,
+            )
+          }
+          sx={{
+            '& .MuiInputBase-input': {
+              fontSize: '0.7rem',
+              lineHeight: 1.45,
+            },
+            '& .MuiInputLabel-root': {
+              fontSize: '0.7rem',
+            },
+          }}
+        />
       </Box>
     </Paper>
   );
 }
 
-function WeeklyOverviewPreview({
-  weekRange,
-  projects,
-  updatedByName,
+function ExcelTemplatePreview({
+  cellValues,
 }) {
   return (
-    <Paper
-      variant="outlined"
+    <Box
       sx={{
-        width: 850,
-        minHeight: 1020,
-        mx: 'auto',
+        position: 'relative',
+        width: '100%',
+        minWidth: 720,
+        aspectRatio: '1543 / 2457',
         bgcolor: '#ffffff',
-        color: '#0f172a',
-        borderColor: '#94a3b8',
         boxShadow:
-          '0 8px 28px rgba(15, 23, 42, 0.12)',
-        fontFamily:
-          '"Malgun Gothic", "맑은 고딕", sans-serif',
+          '0 7px 24px rgba(15,23,42,0.18)',
       }}
     >
       <Box
+        component="img"
+        src={
+          '/templates/' +
+          '주간업무총괄_미리보기.png'
+        }
+        alt="주간업무총괄 미리보기"
         sx={{
-          px: 2,
-          py: 2.4,
-          borderTop: '1px solid #334155',
-          borderLeft: '1px solid #334155',
-          borderRight: '1px solid #334155',
-          borderBottom: '1px solid #334155',
-          textAlign: 'center',
+          position: 'absolute',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          display: 'block',
+          objectFit: 'fill',
+          userSelect: 'none',
+          pointerEvents: 'none',
         }}
-      >
-        <Typography
-          sx={{
-            fontSize: '1.75rem',
-            fontWeight: 900,
-            letterSpacing: '0.2em',
-          }}
-        >
-          주간업무총괄
-        </Typography>
-      </Box>
+      />
 
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: '90px 1fr 90px 180px',
-          borderLeft: '1px solid #334155',
-        }}
-      >
-        <Box sx={previewLabelSx}>기간</Box>
-        <Box sx={previewValueSx}>
-          {formatDisplayDate(weekRange.weekStart)}
-          {' ~ '}
-          {formatDisplayDate(weekRange.weekEnd)}
-        </Box>
+      {CELL_OVERLAYS.map((overlay) => {
+        const value =
+          cellValues[overlay.cell] || '';
 
-        <Box sx={previewLabelSx}>작성자</Box>
-        <Box sx={previewValueSx}>
-          {updatedByName || ''}
-        </Box>
-      </Box>
-
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: '55px 210px 1fr',
-          borderTop: '1px solid #334155',
-          borderLeft: '1px solid #334155',
-        }}
-      >
-        {['No.', '현장명', '주요보고 내용'].map(
-          (label) => (
-            <Box key={label} sx={previewHeaderSx}>
-              {label}
-            </Box>
-          ),
-        )}
-
-        {projects.map((project, projectIndex) =>
-          project.lines.map((line, lineIndex) => (
-            <React.Fragment
-              key={`${project.projectName}-${lineIndex}`}
-            >
-              <Box sx={previewBodyCenterSx}>
-                {lineIndex === 0
-                  ? projectIndex + 1
-                  : ''}
-              </Box>
-
-              <Box sx={previewBodyCenterSx}>
-                {lineIndex === 0
-                  ? project.projectName
-                  : ''}
-              </Box>
-
-              <Box
-                sx={{
-                  ...previewBodySx,
-                  minHeight: 38,
-                  color: line
-                    ? '#0f172a'
-                    : '#cbd5e1',
-                }}
-              >
-                {line || ''}
-              </Box>
-            </React.Fragment>
-          )),
-        )}
-      </Box>
-    </Paper>
+        return (
+          <Box
+            key={overlay.cell}
+            title={overlay.cell}
+            sx={{
+              position: 'absolute',
+              left:
+                `${CELL_LEFT_PERCENT}%`,
+              top: `${overlay.top}%`,
+              width:
+                `${CELL_WIDTH_PERCENT}%`,
+              height:
+                `${CELL_HEIGHT_PERCENT}%`,
+              px: '0.5%',
+              py: '0.05%',
+              display: 'flex',
+              alignItems: 'center',
+              overflow: 'hidden',
+              color: '#111827',
+              fontFamily:
+                '"Malgun Gothic",' +
+                ' "맑은 고딕",' +
+                ' sans-serif',
+              fontSize:
+                'clamp(7px, 0.68vw, 11px)',
+              fontWeight: 500,
+              lineHeight: 1.2,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              pointerEvents: 'none',
+            }}
+          >
+            {value}
+          </Box>
+        );
+      })}
+    </Box>
   );
 }
-
-const previewLabelSx = {
-  p: 0.7,
-  borderRight: '1px solid #334155',
-  borderBottom: '1px solid #334155',
-  bgcolor: '#f1f5f9',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  fontSize: '0.68rem',
-  fontWeight: 900,
-  textAlign: 'center',
-};
-
-const previewValueSx = {
-  p: 0.7,
-  borderRight: '1px solid #334155',
-  borderBottom: '1px solid #334155',
-  display: 'flex',
-  alignItems: 'center',
-  fontSize: '0.68rem',
-};
-
-const previewHeaderSx = {
-  p: 0.72,
-  borderRight: '1px solid #334155',
-  borderBottom: '1px solid #334155',
-  bgcolor: '#e2e8f0',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  textAlign: 'center',
-  fontSize: '0.7rem',
-  fontWeight: 900,
-};
-
-const previewBodySx = {
-  px: 0.85,
-  py: 0.55,
-  borderRight: '1px solid #64748b',
-  borderBottom: '1px solid #94a3b8',
-  display: 'flex',
-  alignItems: 'center',
-  fontSize: '0.67rem',
-  lineHeight: 1.45,
-  whiteSpace: 'pre-wrap',
-  wordBreak: 'break-word',
-};
-
-const previewBodyCenterSx = {
-  ...previewBodySx,
-  justifyContent: 'center',
-  textAlign: 'center',
-  color: '#334155',
-  fontWeight: 800,
-};
 
 export default function WeeklyOverview({
   userProfile,
@@ -628,143 +611,158 @@ export default function WeeklyOverview({
     [],
   );
 
-  const [projects, setProjects] = useState([]);
-  const [sourceProjects, setSourceProjects] =
-    useState([]);
-  const [savedOverview, setSavedOverview] =
-    useState(null);
-  const [updatedByName, setUpdatedByName] =
-    useState(
-      userProfile?.manager_name ||
-        userProfile?.name ||
-        '',
-    );
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [cellValues, setCellValues] =
+    useState({
+      ...EMPTY_CELL_VALUES,
+    });
+
+  const [
+    sourceCellValues,
+    setSourceCellValues,
+  ] = useState({
+    ...EMPTY_CELL_VALUES,
+  });
+
+  const [
+    registeredProjects,
+    setRegisteredProjects,
+  ] = useState(new Set());
+
+  const [loading, setLoading] =
+    useState(true);
+  const [saving, setSaving] =
+    useState(false);
   const [errorMessage, setErrorMessage] =
     useState('');
-  const [successMessage, setSuccessMessage] =
-    useState('');
+  const [
+    warningMessage,
+    setWarningMessage,
+  ] = useState('');
+  const [
+    successMessage,
+    setSuccessMessage,
+  ] = useState('');
 
   const loadData = useCallback(async () => {
     setLoading(true);
     setErrorMessage('');
+    setWarningMessage('');
     setSuccessMessage('');
 
+    let reports = [];
+
     try {
-      const projectNames =
-        await fetchAllProjectNames();
+      const {
+        data,
+        error,
+      } = await supabase
+        .from('weekly_reports')
+        .select(
+          `
+          id,
+          project_name,
+          week_start,
+          payload,
+          status,
+          completed_at
+        `,
+        )
+        .eq(
+          'week_start',
+          weekRange.weekStart,
+        )
+        .eq('status', 'completed')
+        .in(
+          'project_name',
+          TEMPLATE_PROJECT_NAMES,
+        );
 
-      const [
-        {
-          data: weeklyReports,
-          error: weeklyError,
-        },
-        {
-          data: overview,
-          error: overviewError,
-        },
-      ] = await Promise.all([
-        supabase
-          .from('weekly_reports')
-          .select(
-            `
-            id,
-            project_name,
-            week_start,
-            week_end,
-            payload,
-            status,
-            completed_at
-          `,
-          )
-          .eq(
-            'week_start',
-            weekRange.weekStart,
-          )
-          .eq('status', 'completed'),
-
-        supabase
-          .from('weekly_overviews')
-          .select(
-            `
-            id,
-            week_start,
-            week_end,
-            display_period,
-            payload,
-            updated_by_name,
-            updated_at
-          `,
-          )
-          .eq(
-            'week_start',
-            weekRange.weekStart,
-          )
-          .maybeSingle(),
-      ]);
-
-      if (weeklyError) {
-        throw weeklyError;
+      if (error) {
+        throw error;
       }
 
-      if (overviewError) {
-        throw overviewError;
-      }
-
-      const extraProjectNames = (
-        weeklyReports || []
-      )
-        .map((report) => report.project_name)
-        .filter(Boolean);
-
-      const allProjectNames = sortProjectNames(
-        Array.from(
-          new Set([
-            ...projectNames,
-            ...extraProjectNames,
-          ]),
-        ),
-      );
-
-      const nextSourceProjects =
-        createSourceProjectRows({
-          projectNames: allProjectNames,
-          weeklyReports: weeklyReports || [],
-        });
-
-      const nextProjects =
-        mergeSavedProjects({
-          sourceProjects: nextSourceProjects,
-          savedPayload: overview?.payload,
-        });
-
-      setSourceProjects(nextSourceProjects);
-      setProjects(nextProjects);
-      setSavedOverview(overview || null);
-      setUpdatedByName(
-        overview?.updated_by_name ||
-          userProfile?.manager_name ||
-          userProfile?.name ||
-          '',
-      );
+      reports = data || [];
     } catch (error) {
       console.error(
-        '주간업무총괄 조회 실패:',
+        '주간업무 원본 조회 실패:',
         error,
       );
-      setErrorMessage(
-        error?.message ||
-          '주간업무총괄을 불러오지 못했습니다.',
+
+      setWarningMessage(
+        '현재 주차 주간업무 원본을 불러오지 못했습니다. ' +
+        '입력 화면은 사용할 수 있습니다.',
       );
-    } finally {
-      setLoading(false);
     }
-  }, [
-    userProfile?.manager_name,
-    userProfile?.name,
-    weekRange.weekStart,
-  ]);
+
+    const nextSourceValues =
+      createSourceCellValues(reports);
+
+    setSourceCellValues(
+      nextSourceValues,
+    );
+
+    setRegisteredProjects(
+      new Set(
+        reports.map(
+          (report) =>
+            report.project_name,
+        ),
+      ),
+    );
+
+    let savedValues = null;
+
+    try {
+      const {
+        data,
+        error,
+      } = await supabase
+        .from('weekly_overviews')
+        .select(
+          `
+          id,
+          week_start,
+          payload,
+          updated_at
+        `,
+        )
+        .eq(
+          'week_start',
+          weekRange.weekStart,
+        )
+        .maybeSingle();
+
+      if (error) {
+        throw error;
+      }
+
+      if (data) {
+        savedValues =
+          migrateOldSavedPayload(
+            data.payload,
+          );
+      }
+    } catch (error) {
+      console.error(
+        '주간업무총괄 저장본 조회 실패:',
+        error,
+      );
+
+      setWarningMessage(
+        (previous) =>
+          previous ||
+          '저장 테이블을 확인하지 못했습니다. ' +
+          'SQL 적용 후 저장할 수 있습니다.',
+      );
+    }
+
+    setCellValues(
+      savedValues ||
+        nextSourceValues,
+    );
+
+    setLoading(false);
+  }, [weekRange.weekStart]);
 
   useEffect(() => {
     loadData();
@@ -773,14 +771,18 @@ export default function WeeklyOverview({
       loadData();
     };
 
-    const handleWeeklyCompleted = () => {
+    const handleWeeklyChanged = () => {
       loadData();
     };
 
-    window.addEventListener('focus', handleFocus);
+    window.addEventListener(
+      'focus',
+      handleFocus,
+    );
+
     window.addEventListener(
       'weekly-report-completed',
-      handleWeeklyCompleted,
+      handleWeeklyChanged,
     );
 
     return () => {
@@ -788,110 +790,68 @@ export default function WeeklyOverview({
         'focus',
         handleFocus,
       );
+
       window.removeEventListener(
         'weekly-report-completed',
-        handleWeeklyCompleted,
+        handleWeeklyChanged,
       );
     };
   }, [loadData]);
 
-  const handleLineChange = (
-    projectName,
-    index,
+  const handleCellChange = (
+    cell,
     value,
   ) => {
-    setProjects((previous) =>
-      previous.map((project) => {
-        if (
-          project.projectName !== projectName
-        ) {
-          return project;
-        }
-
-        return {
-          ...project,
-          lines: project.lines.map(
-            (line, lineIndex) =>
-              lineIndex === index
-                ? value
-                : line,
-          ),
-        };
-      }),
-    );
-
-    setSuccessMessage('');
-  };
-
-  const handleClearLine = (
-    projectName,
-    index,
-  ) => {
-    handleLineChange(
-      projectName,
-      index,
-      '',
-    );
-  };
-
-  const handleClearProject = (projectName) => {
-    setProjects((previous) =>
-      previous.map((project) =>
-        project.projectName === projectName
-          ? {
-              ...project,
-              lines: createEmptyLines(),
-            }
-          : project,
-      ),
-    );
+    setCellValues((previous) => ({
+      ...previous,
+      [cell]: value,
+    }));
 
     setSuccessMessage('');
   };
 
   const handleRestoreProject = (
-    projectName,
+    project,
   ) => {
-    const sourceProject = sourceProjects.find(
-      (project) =>
-        project.projectName === projectName,
-    );
+    setCellValues((previous) => ({
+      ...previous,
+      [project.processCell]:
+        sourceCellValues[
+          project.processCell
+        ] || '',
+      [project.specialCell]:
+        sourceCellValues[
+          project.specialCell
+        ] || '',
+    }));
 
-    if (!sourceProject) {
-      return;
-    }
+    setSuccessMessage('');
+  };
 
-    setProjects((previous) =>
-      previous.map((project) =>
-        project.projectName === projectName
-          ? {
-              ...project,
-              lines: [
-                ...sourceProject.sourceLines,
-              ],
-            }
-          : project,
-      ),
-    );
+  const handleClearProject = (
+    project,
+  ) => {
+    setCellValues((previous) => ({
+      ...previous,
+      [project.processCell]: '',
+      [project.specialCell]: '',
+    }));
 
     setSuccessMessage('');
   };
 
   const handleRestoreAll = () => {
     const confirmed = window.confirm(
-      '모든 현장의 내용을 현재 등록된 주간업무 주요보고 원본으로 되돌리시겠습니까?',
+      '현재 주차 각 현장의 주간업무 주요보고 원본으로 다시 불러오시겠습니까?',
     );
 
     if (!confirmed) {
       return;
     }
 
-    setProjects(
-      sourceProjects.map((project) => ({
-        ...project,
-        lines: [...project.sourceLines],
-      })),
-    );
+    setCellValues({
+      ...sourceCellValues,
+    });
 
     setSuccessMessage('');
   };
@@ -917,40 +877,32 @@ export default function WeeklyOverview({
         );
       }
 
-      const displayPeriod =
-        `${formatDisplayDate(
-          weekRange.weekStart,
-        )}~${formatDisplayDate(
-          weekRange.weekEnd,
-        )}`;
-
-      const payload = {
-        projects: projects.map((project) => ({
-          projectName: project.projectName,
-          lines: normalizeLines(
-            project.lines,
-          ),
-        })),
-      };
-
-      const now = new Date().toISOString();
       const name =
         userProfile?.manager_name ||
         userProfile?.name ||
         user.email ||
         '';
 
-      const {
-        data,
-        error,
-      } = await supabase
+      const now =
+        new Date().toISOString();
+
+      const { error } = await supabase
         .from('weekly_overviews')
         .upsert(
           {
-            week_start: weekRange.weekStart,
-            week_end: weekRange.weekEnd,
-            display_period: displayPeriod,
-            payload,
+            week_start:
+              weekRange.weekStart,
+            week_end:
+              weekRange.weekEnd,
+            display_period:
+              `${formatDisplayDate(
+                weekRange.weekStart,
+              )}~${formatDisplayDate(
+                weekRange.weekEnd,
+              )}`,
+            payload: {
+              cellValues,
+            },
             updated_by: user.id,
             updated_by_name: name,
             updated_at: now,
@@ -958,26 +910,12 @@ export default function WeeklyOverview({
           {
             onConflict: 'week_start',
           },
-        )
-        .select(
-          `
-          id,
-          week_start,
-          week_end,
-          display_period,
-          payload,
-          updated_by_name,
-          updated_at
-        `,
-        )
-        .single();
+        );
 
       if (error) {
         throw error;
       }
 
-      setSavedOverview(data);
-      setUpdatedByName(name);
       setSuccessMessage(
         '주간업무총괄이 저장되었습니다.',
       );
@@ -986,9 +924,10 @@ export default function WeeklyOverview({
         '주간업무총괄 저장 실패:',
         error,
       );
+
       setErrorMessage(
         error?.message ||
-          '주간업무총괄을 저장하지 못했습니다.',
+        '주간업무총괄을 저장하지 못했습니다.',
       );
     } finally {
       setSaving(false);
@@ -1000,8 +939,8 @@ export default function WeeklyOverview({
       <Paper
         variant="outlined"
         sx={{
-          height: '100%',
-          minHeight: 0,
+          minHeight:
+            'calc(100vh - 96px)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -1011,10 +950,11 @@ export default function WeeklyOverview({
         }}
       >
         <CircularProgress size={20} />
+
         <Typography
           sx={{
             color: '#64748b',
-            fontSize: '0.78rem',
+            fontSize: '0.76rem',
           }}
         >
           주간업무총괄을 불러오는 중입니다.
@@ -1026,21 +966,23 @@ export default function WeeklyOverview({
   return (
     <Box
       sx={{
-        height: '100%',
-        minHeight: 0,
+        minHeight:
+          'calc(100vh - 96px)',
         display: 'grid',
         gridTemplateColumns: {
           xs: '1fr',
-          xl: 'minmax(430px, 0.86fr) minmax(700px, 1.14fr)',
+          xl:
+            'minmax(420px, 0.8fr) ' +
+            'minmax(680px, 1.2fr)',
         },
         gap: 1.2,
-        overflow: 'hidden',
+        alignItems: 'stretch',
       }}
     >
       <Paper
         variant="outlined"
         sx={{
-          minHeight: 0,
+          minWidth: 0,
           display: 'flex',
           flexDirection: 'column',
           borderColor: '#cbd5e1',
@@ -1050,13 +992,15 @@ export default function WeeklyOverview({
       >
         <Box
           sx={{
-            px: 1.35,
-            py: 1.05,
+            px: 1.2,
+            py: 0.95,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
+            justifyContent:
+              'space-between',
             gap: 1,
-            borderBottom: '1px solid #e2e8f0',
+            borderBottom:
+              '1px solid #e2e8f0',
             bgcolor: '#ffffff',
           }}
         >
@@ -1064,7 +1008,7 @@ export default function WeeklyOverview({
             <Typography
               sx={{
                 color: '#0f172a',
-                fontSize: '0.88rem',
+                fontSize: '0.86rem',
                 fontWeight: 900,
               }}
             >
@@ -1073,14 +1017,14 @@ export default function WeeklyOverview({
 
             <Typography
               sx={{
-                mt: 0.2,
+                mt: 0.15,
                 color: '#64748b',
-                fontSize: '0.68rem',
+                fontSize: '0.66rem',
+                lineHeight: 1.45,
               }}
             >
-              각 현장의 주간업무 주요보고가 기본으로
-              입력됩니다. 내용을 직접 수정하거나 삭제할 수
-              있습니다.
+              엑셀 양식의 C7, C9 형태 빈칸에
+              대응합니다.
             </Typography>
           </Box>
 
@@ -1088,7 +1032,7 @@ export default function WeeklyOverview({
             sx={{
               flexShrink: 0,
               display: 'flex',
-              gap: 0.5,
+              gap: 0.45,
             }}
           >
             <Button
@@ -1096,9 +1040,10 @@ export default function WeeklyOverview({
               variant="outlined"
               onClick={handleRestoreAll}
               sx={{
-                minWidth: 84,
+                minWidth: 78,
+                px: 0.7,
                 whiteSpace: 'nowrap',
-                fontSize: '0.66rem',
+                fontSize: '0.62rem',
                 fontWeight: 800,
               }}
             >
@@ -1111,9 +1056,10 @@ export default function WeeklyOverview({
               onClick={loadData}
               disabled={saving}
               sx={{
-                minWidth: 64,
+                minWidth: 58,
+                px: 0.7,
                 whiteSpace: 'nowrap',
-                fontSize: '0.66rem',
+                fontSize: '0.62rem',
                 fontWeight: 800,
               }}
             >
@@ -1126,55 +1072,33 @@ export default function WeeklyOverview({
               onClick={handleSave}
               disabled={saving}
               sx={{
-                minWidth: 64,
+                minWidth: 56,
+                px: 0.7,
                 whiteSpace: 'nowrap',
-                fontSize: '0.66rem',
+                fontSize: '0.62rem',
                 fontWeight: 900,
               }}
             >
-              {saving ? '저장중' : '저장'}
+              {saving
+                ? '저장중'
+                : '저장'}
             </Button>
           </Box>
         </Box>
 
-        {(errorMessage || successMessage) && (
-          <Box sx={{ px: 1, pt: 1 }}>
-            {errorMessage && (
-              <Alert
-                severity="error"
-                sx={{ fontSize: '0.7rem' }}
-              >
-                {errorMessage}
-              </Alert>
-            )}
-
-            {successMessage && (
-              <Alert
-                severity="success"
-                sx={{ fontSize: '0.7rem' }}
-              >
-                {successMessage}
-              </Alert>
-            )}
-          </Box>
-        )}
-
         <Box
           sx={{
-            flex: 1,
-            minHeight: 0,
-            overflowY: 'auto',
             px: 1,
-            py: 1,
-            bgcolor: '#f8fafc',
+            pt: 0.9,
+            display: 'grid',
+            gap: 0.7,
           }}
         >
           <Paper
             variant="outlined"
             sx={{
-              mb: 1.1,
-              px: 1,
-              py: 0.75,
+              px: 0.9,
+              py: 0.7,
               borderColor: '#bfdbfe',
               bgcolor: '#eff6ff',
               boxShadow: 'none',
@@ -1183,38 +1107,81 @@ export default function WeeklyOverview({
             <Typography
               sx={{
                 color: '#1e40af',
-                fontSize: '0.68rem',
+                fontSize: '0.66rem',
                 fontWeight: 800,
               }}
             >
-              기간: {formatDisplayDate(
+              기간:{' '}
+              {formatDisplayDate(
                 weekRange.weekStart,
               )}
               {' ~ '}
               {formatDisplayDate(
                 weekRange.weekEnd,
               )}
-              {savedOverview?.updated_at
-                ? ` · 저장된 총괄 있음`
-                : ' · 아직 저장되지 않음'}
             </Typography>
           </Paper>
 
-          {projects.length === 0 ? (
-            <Alert severity="warning">
-              등록된 현장을 찾지 못했습니다.
+          {warningMessage && (
+            <Alert
+              severity="warning"
+              sx={{ fontSize: '0.68rem' }}
+            >
+              {warningMessage}
             </Alert>
-          ) : (
-            projects.map((project) => (
-              <ProjectInputCard
+          )}
+
+          {errorMessage && (
+            <Alert
+              severity="error"
+              sx={{ fontSize: '0.68rem' }}
+            >
+              {errorMessage}
+            </Alert>
+          )}
+
+          {successMessage && (
+            <Alert
+              severity="success"
+              sx={{ fontSize: '0.68rem' }}
+            >
+              {successMessage}
+            </Alert>
+          )}
+        </Box>
+
+        <Box
+          sx={{
+            flex: 1,
+            minHeight: 540,
+            overflowY: 'auto',
+            px: 1,
+            py: 1,
+            bgcolor: '#f8fafc',
+          }}
+        >
+          {TEMPLATE_PROJECTS.map(
+            (project) => (
+              <ProjectEditor
                 key={project.projectName}
                 project={project}
-                onLineChange={handleLineChange}
-                onClearLine={handleClearLine}
-                onClearProject={handleClearProject}
-                onRestoreProject={handleRestoreProject}
+                cellValues={cellValues}
+                registered={
+                  registeredProjects.has(
+                    project.projectName,
+                  )
+                }
+                onChange={
+                  handleCellChange
+                }
+                onRestore={
+                  handleRestoreProject
+                }
+                onClear={
+                  handleClearProject
+                }
               />
-            ))
+            ),
           )}
         </Box>
       </Paper>
@@ -1222,7 +1189,7 @@ export default function WeeklyOverview({
       <Paper
         variant="outlined"
         sx={{
-          minHeight: 0,
+          minWidth: 0,
           display: 'flex',
           flexDirection: 'column',
           borderColor: '#cbd5e1',
@@ -1232,16 +1199,17 @@ export default function WeeklyOverview({
       >
         <Box
           sx={{
-            px: 1.35,
-            py: 1.05,
-            borderBottom: '1px solid #e2e8f0',
+            px: 1.2,
+            py: 0.95,
+            borderBottom:
+              '1px solid #e2e8f0',
             bgcolor: '#ffffff',
           }}
         >
           <Typography
             sx={{
               color: '#0f172a',
-              fontSize: '0.88rem',
+              fontSize: '0.86rem',
               fontWeight: 900,
             }}
           >
@@ -1250,30 +1218,27 @@ export default function WeeklyOverview({
 
           <Typography
             sx={{
-              mt: 0.2,
+              mt: 0.15,
               color: '#64748b',
-              fontSize: '0.68rem',
+              fontSize: '0.66rem',
             }}
           >
-            왼쪽 입력내용이 즉시 반영됩니다.
+            업로드한 엑셀 양식과 같은 위치에
+            입력값이 즉시 반영됩니다.
           </Typography>
         </Box>
-
-        <Divider />
 
         <Box
           sx={{
             flex: 1,
-            minHeight: 0,
+            minHeight: 700,
             overflow: 'auto',
-            p: 1.4,
+            p: 1.2,
             bgcolor: '#e2e8f0',
           }}
         >
-          <WeeklyOverviewPreview
-            weekRange={weekRange}
-            projects={projects}
-            updatedByName={updatedByName}
+          <ExcelTemplatePreview
+            cellValues={cellValues}
           />
         </Box>
       </Paper>
