@@ -24,6 +24,10 @@ const dailyMenus = [
     value: 'daily-monthly-workers',
     label: '금월 투입현황',
   },
+  {
+    value: 'daily-cumulative-workers',
+    label: '누계투입조회',
+  },
 ];
 
 const progressMenus = [
@@ -129,6 +133,7 @@ export default function Sidebar({
   const isDailyView = [
     'daily',
     'daily-monthly-workers',
+    'daily-cumulative-workers',
   ].includes(currentView);
   const isProgressView = currentView?.startsWith('progress-');
   const isReportView = currentView?.startsWith('report-');

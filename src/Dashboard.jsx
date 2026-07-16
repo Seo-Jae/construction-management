@@ -33,6 +33,7 @@ import Sidebar from './components/Sidebar.jsx';
 import MainDashboard from './page/MainDashboard.jsx';
 import DailyReport from './page/DailyReport.jsx';
 import MonthlyWorkerStatus from './page/MonthlyWorkerStatus.jsx';
+import CumulativeWorkerStatus from './page/CumulativeWorkerStatus.jsx';
 import ProgressInput from './page/ProgressInput.jsx';
 import MultiProcessProgress from './page/MultiProcessProgress.jsx';
 import CompletionSummary from './page/CompletionSummary.jsx';
@@ -45,6 +46,7 @@ import AdminDashboard from './page/AdminDashboard.jsx';
 const drawerWidth = 240;
 const SUPABASE_PAGE_SIZE = 1000;
 const PROGRESS_WRITE_CHUNK_SIZE = 500;
+const ALL_PROJECTS_OPTION = '전체현장';
 
 const PROJECT_DISPLAY_ORDER = [
   '한라건설 용인금어지구',
@@ -56,6 +58,7 @@ const PROJECT_FREE_VIEWS = [
   'admin-dashboard',
   'approval-inbox',
   'weekly-overview',
+  'daily-cumulative-workers',
 ];
 
 const MANAGEMENT_ONLY_VIEWS = [
@@ -227,6 +230,7 @@ const viewTitles = {
   'admin-dashboard': '욱림건설 전체 현장 Dashboard',
   daily: '출력일보작성',
   'daily-monthly-workers': '금월 투입현황',
+  'daily-cumulative-workers': '누계투입조회',
   'progress-input': '공종별 현황 입력',
   'progress-multi': '다중 공종 진척 현황',
   'progress-weekly': '주별 완료 집계',
@@ -328,14 +332,33 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
   const [selectedProjectName, setSelectedProjectName] =
     useState('');
+
+  const [
+    lastSelectedProjectName,
+    setLastSelectedProjectName,
+  ] = useState('');
+
   const [projectOptions, setProjectOptions] =
     useState([]);
   const [projectOptionsLoading, setProjectOptionsLoading] =
     useState(false);
 
   const activeProjectName = isManagementRole
-    ? selectedProjectName
+    ? (
+        selectedProjectName ===
+        ALL_PROJECTS_OPTION
+          ? ''
+          : selectedProjectName
+      )
     : userProfile?.project_name || '';
+
+  const cumulativeProjectScope =
+    isManagementRole
+      ? (
+          selectedProjectName ||
+          ALL_PROJECTS_OPTION
+        )
+      : userProfile?.project_name || '';
 
   const activeUserProfile = {
     ...(userProfile || {}),
@@ -556,6 +579,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
   const handleOpenAdminProject = (projectName) => {
     setSelectedProjectName(projectName);
+    setLastSelectedProjectName(projectName);
     setCurrentView('main');
   };
 
@@ -582,6 +606,17 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       return;
     }
 
+    if (
+      nextView !==
+        'daily-cumulative-workers' &&
+      selectedProjectName ===
+        ALL_PROJECTS_OPTION
+    ) {
+      setSelectedProjectName(
+        lastSelectedProjectName || '',
+      );
+    }
+
     setCurrentView(nextView);
   };
 
@@ -589,7 +624,22 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     event,
     projectName,
   ) => {
-    setSelectedProjectName(projectName || '');
+    const nextProjectName =
+      projectName || '';
+
+    setSelectedProjectName(
+      nextProjectName,
+    );
+
+    if (
+      nextProjectName &&
+      nextProjectName !==
+        ALL_PROJECTS_OPTION
+    ) {
+      setLastSelectedProjectName(
+        nextProjectName,
+      );
+    }
   };
 
   // 💡 공정이 변경될 때마다 화면에 선택되어 있던 세대와 팝업창을 즉시 지워줍니다.
@@ -1872,14 +1922,17 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             sx={{ flexGrow: 1, fontWeight: 'bold' }}
           >
             🏗️{' '}
-            {[
-              'admin-dashboard',
-              'approval-inbox',
-              'weekly-overview',
-            ].includes(currentView)
-              ? '욱림건설'
-              : activeProjectName ||
-                '현장을 선택해주세요'}{' '}
+            {currentView ===
+            'daily-cumulative-workers'
+              ? cumulativeProjectScope
+              : [
+                  'admin-dashboard',
+                  'approval-inbox',
+                  'weekly-overview',
+                ].includes(currentView)
+                ? '욱림건설'
+                : activeProjectName ||
+                  '현장을 선택해주세요'}{' '}
             - {viewTitles[currentView] || '현장 관리'}
           </Typography>
 
@@ -1902,8 +1955,22 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             >
               <Autocomplete
                 size="small"
-                options={projectOptions}
-                value={activeProjectName || null}
+                options={
+                  currentView ===
+                  'daily-cumulative-workers'
+                    ? [
+                        ALL_PROJECTS_OPTION,
+                        ...projectOptions,
+                      ]
+                    : projectOptions
+                }
+                value={
+                  currentView ===
+                  'daily-cumulative-workers'
+                    ? cumulativeProjectScope
+                    : activeProjectName ||
+                      null
+                }
                 loading={projectOptionsLoading}
                 disableClearable
                 onChange={handleSelectManagementProject}
@@ -2098,6 +2165,16 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                 viewMonth={viewMonth}
                 handlePrevMonth={handlePrevMonth}
                 handleNextMonth={handleNextMonth}
+              />
+            )}
+
+          {currentView ===
+            'daily-cumulative-workers' && (
+              <CumulativeWorkerStatus
+                projectScope={
+                  cumulativeProjectScope
+                }
+                userRole={userRole}
               />
             )}
 
