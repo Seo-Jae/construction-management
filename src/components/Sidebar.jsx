@@ -347,11 +347,13 @@ export default function Sidebar({
               currentView ===
               'weekly-overview'
             }
-            onClick={() =>
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
               handleViewChange(
                 'weekly-overview',
-              )
-            }
+              );
+            }}
             sx={topMenuSx(
               currentView ===
                 'weekly-overview',

@@ -39,6 +39,7 @@ import CompletionSummary from './page/CompletionSummary.jsx';
 import WeeklyReport from './page/WeeklyReport.jsx';
 import ProposalReport from './page/ProposalReport.jsx';
 import ApprovalInbox from './page/ApprovalInbox.jsx';
+import WeeklyOverview from './page/WeeklyOverview.jsx';
 import AdminDashboard from './page/AdminDashboard.jsx';
 
 const drawerWidth = 240;
@@ -49,6 +50,17 @@ const PROJECT_DISPLAY_ORDER = [
   '한라건설 용인금어지구',
   '현대건설 용인마크밸리',
   '대우건설 용인현장',
+];
+
+const PROJECT_FREE_VIEWS = [
+  'admin-dashboard',
+  'approval-inbox',
+  'weekly-overview',
+];
+
+const MANAGEMENT_ONLY_VIEWS = [
+  'admin-dashboard',
+  'weekly-overview',
 ];
 
 const sortProjectNames = (projectNames) =>
@@ -224,6 +236,7 @@ const viewTitles = {
   'report-outsourcing-approval': '외주 품의 보고',
   'report-accident': '사고 경위 보고',
   'approval-inbox': '결재함',
+  'weekly-overview': '주간업무총괄',
 };
 
 function ReportPlaceholder({ title }) {
@@ -368,6 +381,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       return 'approval-inbox';
     }
 
+    if (
+      requestedView === 'weekly-overview' &&
+      isManagementRole
+    ) {
+      return 'weekly-overview';
+    }
+
     return isManagementRole
       ? 'admin-dashboard'
       : 'main';
@@ -505,9 +525,26 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       return;
     }
 
+    if (
+      requestedView === 'weekly-overview' &&
+      isManagementRole
+    ) {
+      setCurrentView('weekly-overview');
+      return;
+    }
+
     if (isManagementRole) {
-      setCurrentView('admin-dashboard');
-      setSelectedProjectName('');
+      /*
+        이미 관리 전용 전역 화면에 들어와 있다면
+        프로필 갱신으로 Dashboard로 되돌리지 않습니다.
+      */
+      setCurrentView((previousView) =>
+        MANAGEMENT_ONLY_VIEWS.includes(
+          previousView,
+        )
+          ? previousView
+          : 'admin-dashboard',
+      );
       return;
     }
 
@@ -520,6 +557,32 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const handleOpenAdminProject = (projectName) => {
     setSelectedProjectName(projectName);
     setCurrentView('main');
+  };
+
+  const handleSidebarViewChange = (nextView) => {
+    if (
+      nextView === 'weekly-overview'
+    ) {
+      if (!isManagementRole) {
+        return;
+      }
+
+      /*
+        주간업무총괄은 현장 선택과 무관한 관리자 전역 화면입니다.
+        기존 현장 선택값은 보존하되 화면은 즉시 전환합니다.
+      */
+      setCurrentView('weekly-overview');
+      return;
+    }
+
+    if (
+      nextView === 'admin-dashboard' &&
+      !isManagementRole
+    ) {
+      return;
+    }
+
+    setCurrentView(nextView);
   };
 
   const handleSelectManagementProject = (
@@ -1812,6 +1875,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             {[
               'admin-dashboard',
               'approval-inbox',
+              'weekly-overview',
             ].includes(currentView)
               ? '욱림건설'
               : activeProjectName ||
@@ -1819,7 +1883,8 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             - {viewTitles[currentView] || '현장 관리'}
           </Typography>
 
-          {isManagementRole && (
+          {isManagementRole &&
+            currentView !== 'weekly-overview' && (
             <Box
               sx={{
                 position: 'absolute',
@@ -1938,7 +2003,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         <Toolbar sx={{ minHeight: '56px !important' }} />
         <Sidebar
           currentView={currentView}
-          onViewChange={setCurrentView}
+          onViewChange={handleSidebarViewChange}
           drawerOpen={open}
           userRole={userRole}
         />
@@ -1957,7 +2022,17 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       >
         <Toolbar sx={{ minHeight: '56px !important' }} />
 
-        <Box sx={{ p: 2, flexGrow: 1, minHeight: 0, overflow: 'hidden' }}>
+        <Box
+          sx={{
+            p: 2,
+            flexGrow: 1,
+            minHeight: 0,
+            overflow:
+              currentView === 'weekly-overview'
+                ? 'auto'
+                : 'hidden',
+          }}
+        >
           {currentView === 'admin-dashboard' && isManagementRole && (
             <AdminDashboard
               processOptions={processOptions}
@@ -1968,6 +2043,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           {currentView === 'approval-inbox' && (
             <ApprovalInbox />
           )}
+
+          {isManagementRole &&
+            currentView === 'weekly-overview' && (
+              <WeeklyOverview
+                userProfile={activeUserProfile}
+              />
+            )}
 
           {currentView === 'main' && activeProjectName && (
             <MainDashboard
@@ -2090,8 +2172,9 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           )}
 
           {isManagementRole &&
-            currentView !== 'admin-dashboard' &&
-            currentView !== 'approval-inbox' &&
+            !PROJECT_FREE_VIEWS.includes(
+              currentView,
+            ) &&
             !activeProjectName && (
               <Paper
                 variant="outlined"

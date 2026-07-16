@@ -966,8 +966,10 @@ export default function WeeklyOverview({
   return (
     <Box
       sx={{
+        width: '100%',
         minHeight:
           'calc(100vh - 96px)',
+        bgcolor: '#f1f5f9',
         display: 'grid',
         gridTemplateColumns: {
           xs: '1fr',
