@@ -332,6 +332,60 @@ export default function Sidebar({
         </ListItemButton>
       </Tooltip>
 
+      {isManagementRole && (
+        <Tooltip
+          title={
+            drawerOpen
+              ? ''
+              : '주간업무총괄'
+          }
+          placement="right"
+          arrow
+        >
+          <ListItemButton
+            selected={
+              currentView ===
+              'weekly-overview'
+            }
+            onClick={() =>
+              handleViewChange(
+                'weekly-overview',
+              )
+            }
+            sx={topMenuSx(
+              currentView ===
+                'weekly-overview',
+            )}
+          >
+            <ListItemIcon
+              sx={{
+                minWidth: 34,
+                color: 'inherit',
+                justifyContent: 'center',
+              }}
+            >
+              <AssessmentIcon fontSize="small" />
+            </ListItemIcon>
+
+            <ListItemText
+              primary="주간업무총괄"
+              primaryTypographyProps={{
+                noWrap: true,
+                fontSize: '0.8rem',
+                fontWeight:
+                  currentView ===
+                  'weekly-overview'
+                    ? 700
+                    : 500,
+              }}
+              sx={{
+                opacity: drawerOpen ? 1 : 0,
+              }}
+            />
+          </ListItemButton>
+        </Tooltip>
+      )}
+
       <Tooltip
         title={drawerOpen ? '' : 'Main'}
         placement="right"
