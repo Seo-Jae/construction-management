@@ -14,6 +14,7 @@ import {
 import { supabase } from '../supabaseClient';
 import { countUniqueUnits } from '../utils/buildingUnits.js';
 import AdminDashboardReportPreview from './AdminDashboardReportPreview.jsx';
+import AdminDashboardScheduleBoard from './AdminDashboardScheduleBoard.jsx';
 
 const PAGE_SIZE = 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -146,6 +147,20 @@ const getKoreaWeekRange = (date = new Date()) => {
     weekEnd: formatUtcDateToISO(weekEndUtc),
   };
 };
+
+const formatKoreaLongDate = (
+  date = new Date(),
+) =>
+  new Intl.DateTimeFormat(
+    'ko-KR',
+    {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      weekday: 'long',
+    },
+  ).format(date);
 
 const formatKoreaYYMMDD = (date = new Date()) => {
   const formatter = new Intl.DateTimeFormat('en-CA', {
@@ -318,6 +333,7 @@ function SummaryBox({ label, value, detail }) {
 
 function ProjectCard({
   project,
+  compact,
   onOpenProject,
   onPreviewDaily,
   onPreviewWeekly,
@@ -326,19 +342,24 @@ function ProjectCard({
     project.hasTodayReport
       ? '일보 등록'
       : '일보 미등록';
+
   const reportColor =
     project.hasTodayReport
       ? '#15803d'
       : '#dc2626';
+
   const weeklyLabel =
     project.hasWeeklyReport
       ? '주간업무 등록'
       : '주간업무 미등록';
+
   const weeklyColor =
     project.hasWeeklyReport
       ? '#15803d'
       : '#dc2626';
-  const rate = Number(project.progressRate) || 0;
+
+  const rate =
+    Number(project.progressRate) || 0;
 
   const dDayStyle =
     project.dDayState === 'expired'
@@ -365,17 +386,19 @@ function ProjectCard({
     <Paper
       variant="outlined"
       sx={{
-        p: 1.7,
+        p: compact ? 1.25 : 1.7,
         borderColor: '#cbd5e1',
         bgcolor: '#ffffff',
-        boxShadow: '0 2px 9px rgba(15, 23, 42, 0.05)',
+        boxShadow:
+          '0 2px 9px rgba(15, 23, 42, 0.05)',
       }}
     >
       <Box
         sx={{
           display: 'flex',
           alignItems: 'flex-start',
-          justifyContent: 'space-between',
+          justifyContent:
+            'space-between',
           gap: 1,
         }}
       >
@@ -383,13 +406,27 @@ function ProjectCard({
           <Typography
             noWrap
             fontWeight={900}
-            sx={{ color: '#1e293b', fontSize: '1rem' }}
+            sx={{
+              color: '#1e293b',
+              fontSize: '1rem',
+            }}
           >
             {project.projectName}
           </Typography>
-          <Typography sx={{ mt: 0.25, color: '#64748b', fontSize: '0.7rem' }}>
-            {project.buildingCount}개 동 · 전체 {project.totalUnits.toLocaleString()}세대
-          </Typography>
+
+          {!compact && (
+            <Typography
+              sx={{
+                mt: 0.25,
+                color: '#64748b',
+                fontSize: '0.7rem',
+              }}
+            >
+              {project.buildingCount}개 동 · 전체{' '}
+              {project.totalUnits.toLocaleString()}
+              세대
+            </Typography>
+          )}
         </Box>
 
         <Box
@@ -397,44 +434,52 @@ function ProjectCard({
             flexShrink: 0,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'flex-end',
+            justifyContent:
+              'flex-end',
             gap: 0.55,
             minWidth: 0,
           }}
         >
-          <Box
-            sx={{
-              mr: 0.15,
-              textAlign: 'right',
-              lineHeight: 1.2,
-              whiteSpace: 'nowrap',
-            }}
-          >
-            <Typography
+          {!compact && (
+            <Box
               sx={{
-                color: '#64748b',
-                fontSize: '0.61rem',
-                lineHeight: 1.35,
+                mr: 0.15,
+                textAlign: 'right',
+                lineHeight: 1.2,
+                whiteSpace: 'nowrap',
               }}
             >
-              시작일 {project.startDate}
-            </Typography>
-            <Typography
-              sx={{
-                color: '#64748b',
-                fontSize: '0.61rem',
-                lineHeight: 1.35,
-              }}
-            >
-              종료일 {project.endDate}
-            </Typography>
-          </Box>
+              <Typography
+                sx={{
+                  color: '#64748b',
+                  fontSize: '0.61rem',
+                  lineHeight: 1.35,
+                }}
+              >
+                시작일 {project.startDate}
+              </Typography>
+
+              <Typography
+                sx={{
+                  color: '#64748b',
+                  fontSize: '0.61rem',
+                  lineHeight: 1.35,
+                }}
+              >
+                종료일 {project.endDate}
+              </Typography>
+            </Box>
+          )}
 
           <Typography
             fontWeight={900}
             sx={{
               flexShrink: 0,
-              minWidth: project.dDayState === 'unknown' ? 66 : 52,
+              minWidth:
+                project.dDayState ===
+                'unknown'
+                  ? 66
+                  : 52,
               px: 0.75,
               py: 0.28,
               borderRadius: 1,
@@ -450,7 +495,10 @@ function ProjectCard({
             sx={{
               flexShrink: 0,
               display: 'flex',
-              flexDirection: 'column',
+              flexDirection:
+                compact
+                  ? 'row'
+                  : 'column',
               alignItems: 'stretch',
               gap: 0.35,
             }}
@@ -458,7 +506,9 @@ function ProjectCard({
             <Box
               component="button"
               type="button"
-              onClick={() => onPreviewDaily(project)}
+              onClick={() =>
+                onPreviewDaily(project)
+              }
               sx={{
                 m: 0,
                 px: 0.8,
@@ -466,9 +516,10 @@ function ProjectCard({
                 border: 0,
                 borderRadius: 1,
                 color: reportColor,
-                bgcolor: project.hasTodayReport
-                  ? '#dcfce7'
-                  : '#fee2e2',
+                bgcolor:
+                  project.hasTodayReport
+                    ? '#dcfce7'
+                    : '#fee2e2',
                 fontFamily: 'inherit',
                 fontSize: '0.68rem',
                 fontWeight: 800,
@@ -476,165 +527,292 @@ function ProjectCard({
                 whiteSpace: 'nowrap',
                 cursor: 'pointer',
                 '&:hover': {
-                  filter: 'brightness(0.97)',
+                  filter:
+                    'brightness(0.97)',
                 },
               }}
             >
               {reportLabel}
             </Box>
 
-            <Box
-              component="button"
-              type="button"
-              onClick={() => onPreviewWeekly(project)}
-              sx={{
-                m: 0,
-                px: 0.8,
-                py: 0.28,
-                border: 0,
-                borderRadius: 1,
-                color: weeklyColor,
-                bgcolor: project.hasWeeklyReport
-                  ? '#dcfce7'
-                  : '#fee2e2',
-                fontFamily: 'inherit',
-                fontSize: '0.68rem',
-                fontWeight: 800,
-                lineHeight: 1.35,
-                whiteSpace: 'nowrap',
-                cursor: 'pointer',
-                '&:hover': {
-                  filter: 'brightness(0.97)',
-                },
-              }}
-            >
-              {weeklyLabel}
-            </Box>
+            {!compact && (
+              <Box
+                component="button"
+                type="button"
+                onClick={() =>
+                  onPreviewWeekly(project)
+                }
+                sx={{
+                  m: 0,
+                  px: 0.8,
+                  py: 0.28,
+                  border: 0,
+                  borderRadius: 1,
+                  color: weeklyColor,
+                  bgcolor:
+                    project.hasWeeklyReport
+                      ? '#dcfce7'
+                      : '#fee2e2',
+                  fontFamily: 'inherit',
+                  fontSize: '0.68rem',
+                  fontWeight: 800,
+                  lineHeight: 1.35,
+                  whiteSpace: 'nowrap',
+                  cursor: 'pointer',
+                  '&:hover': {
+                    filter:
+                      'brightness(0.97)',
+                  },
+                }}
+              >
+                {weeklyLabel}
+              </Box>
+            )}
           </Box>
         </Box>
       </Box>
 
-      <Divider sx={{ my: 1.25 }} />
-
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: '1.45fr 0.85fr 0.85fr',
-          gap: 0.8,
-          alignItems: 'stretch',
-        }}
-      >
+      {compact ? (
         <Box
           sx={{
+            mt: 0.95,
+            pt: 0.85,
             display: 'grid',
-            gridTemplateColumns: '0.82fr 1.18fr',
-            gap: 0.85,
-            minWidth: 0,
+            gridTemplateColumns:
+              'repeat(4, minmax(0, 1fr))',
+            gap: 0.55,
+            borderTop:
+              '1px solid #e2e8f0',
           }}
         >
-          <Box>
-            <Typography sx={{ color: '#64748b', fontSize: '0.67rem' }}>
-              금일 출력
-            </Typography>
-            <Typography
-              fontWeight={900}
-              sx={{ mt: 0.2, fontSize: '1.05rem' }}
+          {[
+            {
+              label: '금일출력',
+              value:
+                `${project.todayWorkers.toLocaleString()}명`,
+            },
+            {
+              label: '전일누계',
+              value:
+                `${project.previousWorkers.toLocaleString()}명`,
+            },
+            {
+              label: '금일출력',
+              value:
+                `${project.todayWorkers.toLocaleString()}명`,
+            },
+            {
+              label: '누계출력',
+              value:
+                `${project.cumulativeWorkers.toLocaleString()}명`,
+            },
+          ].map((item, index) => (
+            <Box
+              key={`${item.label}-${index}`}
+              sx={{
+                minWidth: 0,
+                px: 0.45,
+                py: 0.35,
+                borderLeft:
+                  index === 0
+                    ? 0
+                    : '1px solid #e2e8f0',
+                textAlign: 'center',
+              }}
             >
-              {project.todayWorkers.toLocaleString()}명
-            </Typography>
+              <Typography
+                sx={{
+                  color: '#64748b',
+                  fontSize: '0.61rem',
+                  fontWeight: 700,
+                }}
+              >
+                {item.label}
+              </Typography>
+
+              <Typography
+                sx={{
+                  mt: 0.15,
+                  color: '#0f172a',
+                  fontSize: '0.76rem',
+                  fontWeight: 900,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {item.value}
+              </Typography>
+            </Box>
+          ))}
+        </Box>
+      ) : (
+        <>
+          <Divider sx={{ my: 1.25 }} />
+
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns:
+                '1.45fr 0.85fr 0.85fr',
+              gap: 0.8,
+              alignItems: 'stretch',
+            }}
+          >
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns:
+                  '0.82fr 1.18fr',
+                gap: 0.85,
+                minWidth: 0,
+              }}
+            >
+              <Box>
+                <Typography
+                  sx={{
+                    color: '#64748b',
+                    fontSize: '0.67rem',
+                  }}
+                >
+                  금일 출력
+                </Typography>
+
+                <Typography
+                  fontWeight={900}
+                  sx={{
+                    mt: 0.2,
+                    fontSize: '1.05rem',
+                  }}
+                >
+                  {project.todayWorkers.toLocaleString()}
+                  명
+                </Typography>
+              </Box>
+
+              <Box
+                sx={{
+                  pl: 0.9,
+                  borderLeft:
+                    '1px solid #e2e8f0',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  gap: 0.18,
+                  minWidth: 0,
+                }}
+              >
+                {[
+                  `전일누계: ${project.previousWorkers.toLocaleString()}명`,
+                  `금일출력: ${project.todayWorkers.toLocaleString()}명`,
+                  `누계출력: ${project.cumulativeWorkers.toLocaleString()}명`,
+                ].map((label) => (
+                  <Typography
+                    key={label}
+                    sx={{
+                      color: '#475569',
+                      fontSize: '0.66rem',
+                      fontWeight: 400,
+                      lineHeight: 1.35,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {label}
+                  </Typography>
+                ))}
+              </Box>
+            </Box>
+
+            <Box>
+              <Typography
+                sx={{
+                  color: '#64748b',
+                  fontSize: '0.67rem',
+                }}
+              >
+                공정 완료
+              </Typography>
+
+              <Typography
+                fontWeight={900}
+                sx={{
+                  mt: 0.2,
+                  fontSize: '1.05rem',
+                }}
+              >
+                {project.fullyCompletedProcessCount.toLocaleString()}
+                건
+              </Typography>
+            </Box>
+
+            <Box>
+              <Typography
+                sx={{
+                  color: '#64748b',
+                  fontSize: '0.67rem',
+                }}
+              >
+                작업 공정률
+              </Typography>
+
+              <Typography
+                fontWeight={900}
+                sx={{
+                  mt: 0.2,
+                  color: '#0284c7',
+                  fontSize: '1.05rem',
+                }}
+              >
+                {rate.toFixed(1)}%
+              </Typography>
+            </Box>
           </Box>
 
           <Box
             sx={{
-              pl: 0.9,
-              borderLeft: '1px solid #e2e8f0',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'center',
-              gap: 0.18,
-              minWidth: 0,
+              mt: 1.2,
+              height: 7,
+              borderRadius: 999,
+              bgcolor: '#e2e8f0',
+              overflow: 'hidden',
             }}
           >
-            {[
-              `전일누계: ${project.previousWorkers.toLocaleString()}명`,
-              `금일출력: ${project.todayWorkers.toLocaleString()}명`,
-              `누계출력: ${project.cumulativeWorkers.toLocaleString()}명`,
-            ].map((label) => (
-              <Typography
-                key={label}
-                sx={{
-                  color: '#475569',
-                  fontSize: '0.66rem',
-                  fontWeight: 400,
-                  lineHeight: 1.35,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {label}
-              </Typography>
-            ))}
+            <Box
+              sx={{
+                width:
+                  `${Math.min(
+                    100,
+                    Math.max(0, rate),
+                  )}%`,
+                height: '100%',
+                bgcolor: '#0ea5e9',
+              }}
+            />
           </Box>
-        </Box>
 
-        <Box>
-          <Typography sx={{ color: '#64748b', fontSize: '0.67rem' }}>
-            공정 완료
-          </Typography>
-          <Typography fontWeight={900} sx={{ mt: 0.2, fontSize: '1.05rem' }}>
-            {project.fullyCompletedProcessCount.toLocaleString()}건
-          </Typography>
-        </Box>
-
-        <Box>
-          <Typography sx={{ color: '#64748b', fontSize: '0.67rem' }}>
-            작업 공정률
-          </Typography>
-          <Typography
-            fontWeight={900}
-            sx={{ mt: 0.2, color: '#0284c7', fontSize: '1.05rem' }}
+          <Button
+            className="admin-dashboard-no-print"
+            fullWidth
+            size="small"
+            variant="contained"
+            onClick={() =>
+              onOpenProject(
+                project.projectName,
+              )
+            }
+            sx={{
+              mt: 1.35,
+              bgcolor: '#334155',
+              boxShadow: 'none',
+              fontSize: '0.73rem',
+              '&:hover': {
+                bgcolor: '#1e293b',
+                boxShadow: 'none',
+              },
+            }}
           >
-            {rate.toFixed(1)}%
-          </Typography>
-        </Box>
-      </Box>
-
-      <Box
-        sx={{
-          mt: 1.2,
-          height: 7,
-          borderRadius: 999,
-          bgcolor: '#e2e8f0',
-          overflow: 'hidden',
-        }}
-      >
-        <Box
-          sx={{
-            width: `${Math.min(100, Math.max(0, rate))}%`,
-            height: '100%',
-            bgcolor: '#0ea5e9',
-          }}
-        />
-      </Box>
-
-      <Button
-        className="admin-dashboard-no-print"
-        fullWidth
-        size="small"
-        variant="contained"
-        onClick={() => onOpenProject(project.projectName)}
-        sx={{
-          mt: 1.35,
-          bgcolor: '#334155',
-          boxShadow: 'none',
-          fontSize: '0.73rem',
-          '&:hover': {
-            bgcolor: '#1e293b',
-            boxShadow: 'none',
-          },
-        }}
-      >
-        현장 열기
-      </Button>
+            현장 열기
+          </Button>
+        </>
+      )}
     </Paper>
   );
 }
@@ -656,6 +834,40 @@ export default function AdminDashboard({
   const [koreaTodayKey, setKoreaTodayKey] = useState(() =>
     formatKoreaYYMMDD(),
   );
+
+  const [
+    summaryCollapsed,
+    setSummaryCollapsed,
+  ] = useState(
+    () =>
+      window.localStorage.getItem(
+        'admin-dashboard-summary-collapsed',
+      ) === 'true',
+  );
+
+  const [
+    projectsCollapsed,
+    setProjectsCollapsed,
+  ] = useState(
+    () =>
+      window.localStorage.getItem(
+        'admin-dashboard-projects-collapsed',
+      ) === 'true',
+  );
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      'admin-dashboard-summary-collapsed',
+      String(summaryCollapsed),
+    );
+  }, [summaryCollapsed]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      'admin-dashboard-projects-collapsed',
+      String(projectsCollapsed),
+    );
+  }, [projectsCollapsed]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -930,6 +1142,14 @@ export default function AdminDashboard({
     loadDashboard();
   }, [loadDashboard]);
 
+  const koreaTodayLabel = useMemo(
+    () =>
+      formatKoreaLongDate(
+        new Date(),
+      ),
+    [koreaTodayKey],
+  );
+
   const totals = useMemo(() => {
     const totalProjects = projects.length;
     const todayWorkers = projects.reduce(
@@ -1108,42 +1328,63 @@ export default function AdminDashboard({
           </Box>
 
           <Box
-            className="admin-dashboard-no-print"
             sx={{
+              flexShrink: 0,
               display: 'flex',
-              alignItems: 'center',
-              gap: 0.7,
+              flexDirection: 'column',
+              alignItems: 'flex-end',
+              gap: 0.45,
             }}
           >
-            <Tooltip title="Dashboard 인쇄">
-              <IconButton
-                size="small"
-                aria-label="Dashboard 인쇄"
-                onClick={handlePrintDashboard}
-                sx={{
-                  width: 32,
-                  height: 32,
-                  border: '1px solid #93c5fd',
-                  borderRadius: 1,
-                  color: '#2563eb',
-                  bgcolor: '#ffffff',
-                  '&:hover': {
-                    bgcolor: '#eff6ff',
-                    borderColor: '#60a5fa',
-                  },
-                }}
-              >
-                <PrinterIcon sx={{ fontSize: 18 }} />
-              </IconButton>
-            </Tooltip>
-
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={loadDashboard}
+            <Typography
+              sx={{
+                color: '#334155',
+                fontSize: '0.74rem',
+                fontWeight: 900,
+                whiteSpace: 'nowrap',
+              }}
             >
-              새로고침
-            </Button>
+              {koreaTodayLabel}
+            </Typography>
+
+            <Box
+              className="admin-dashboard-no-print"
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.7,
+              }}
+            >
+              <Tooltip title="Dashboard 인쇄">
+                <IconButton
+                  size="small"
+                  aria-label="Dashboard 인쇄"
+                  onClick={handlePrintDashboard}
+                  sx={{
+                    width: 32,
+                    height: 32,
+                    border: '1px solid #93c5fd',
+                    borderRadius: 1,
+                    color: '#2563eb',
+                    bgcolor: '#ffffff',
+                    '&:hover': {
+                      bgcolor: '#eff6ff',
+                      borderColor: '#60a5fa',
+                    },
+                  }}
+                >
+                  <PrinterIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+              </Tooltip>
+
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={loadDashboard}
+              >
+                새로고침
+              </Button>
+            </Box>
           </Box>
         </Box>
       </Paper>
@@ -1154,35 +1395,147 @@ export default function AdminDashboard({
         </Alert>
       )}
 
-      <Box
+      <Paper
+        variant="outlined"
         sx={{
-          display: 'grid',
-          gridTemplateColumns: {
-            xs: 'repeat(2, minmax(0, 1fr))',
-            lg: 'repeat(4, minmax(0, 1fr))',
-          },
-          gap: 1.2,
           mb: 1.5,
+          borderColor: '#cbd5e1',
+          bgcolor: '#ffffff',
+          overflow: 'hidden',
         }}
       >
-        <SummaryBox
-          label="전체 현장"
-          value={`${totals.totalProjects}개`}
-        />
-        <SummaryBox
-          label="금일 총출력"
-          value={`${totals.todayWorkers.toLocaleString()}명`}
-        />
-        <SummaryBox
-          label="금일 일보 등록"
-          value={`${totals.submittedReports}/${totals.totalProjects}`}
-        />
-        <SummaryBox
-          label="평균 작업 공정률"
-          value={`${totals.averageProgress.toFixed(1)}%`}
-          detail="전체 공정·전체 세대 기준"
-        />
-      </Box>
+        <Box
+          sx={{
+            px: 1.1,
+            py: 0.75,
+            minHeight: 42,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent:
+              'space-between',
+            gap: 1,
+            bgcolor: '#f8fafc',
+            borderBottom:
+              summaryCollapsed
+                ? 0
+                : '1px solid #e2e8f0',
+          }}
+        >
+          {summaryCollapsed ? (
+            <Box
+              sx={{
+                minWidth: 0,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.65,
+                flexWrap: 'wrap',
+              }}
+            >
+              {[
+                `전체현장 ${totals.totalProjects}개`,
+                `금일 총 출력 ${totals.todayWorkers.toLocaleString()}명`,
+                `금일 일보 등록 ${totals.submittedReports}/${totals.totalProjects}`,
+                `평균 작업 공정률 ${totals.averageProgress.toFixed(1)}%`,
+              ].map((label, index) => (
+                <React.Fragment
+                  key={label}
+                >
+                  {index > 0 && (
+                    <Typography
+                      sx={{
+                        color: '#cbd5e1',
+                        fontSize: '0.72rem',
+                        fontWeight: 900,
+                      }}
+                    >
+                      /
+                    </Typography>
+                  )}
+
+                  <Typography
+                    sx={{
+                      color: '#334155',
+                      fontSize: '0.72rem',
+                      fontWeight: 900,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {label}
+                  </Typography>
+                </React.Fragment>
+              ))}
+            </Box>
+          ) : (
+            <Typography
+              sx={{
+                color: '#0f172a',
+                fontSize: '0.8rem',
+                fontWeight: 900,
+              }}
+            >
+              전체 현장 요약
+            </Typography>
+          )}
+
+          <Button
+            className="admin-dashboard-no-print"
+            size="small"
+            variant="outlined"
+            onClick={() =>
+              setSummaryCollapsed(
+                (previous) => !previous,
+              )
+            }
+            sx={{
+              flexShrink: 0,
+              minWidth: 64,
+              px: 0.7,
+              whiteSpace: 'nowrap',
+              fontSize: '0.62rem',
+              fontWeight: 900,
+            }}
+          >
+            {summaryCollapsed
+              ? '펼치기'
+              : '최소화'}
+          </Button>
+        </Box>
+
+        {!summaryCollapsed && (
+          <Box
+            sx={{
+              p: 1.1,
+              display: 'grid',
+              gridTemplateColumns: {
+                xs: 'repeat(2, minmax(0, 1fr))',
+                lg: 'repeat(4, minmax(0, 1fr))',
+              },
+              gap: 1.2,
+            }}
+          >
+            <SummaryBox
+              label="전체 현장"
+              value={`${totals.totalProjects}개`}
+            />
+
+            <SummaryBox
+              label="금일 총출력"
+              value={`${totals.todayWorkers.toLocaleString()}명`}
+            />
+
+            <SummaryBox
+              label="금일 일보 등록"
+              value={`${totals.submittedReports}/${totals.totalProjects}`}
+            />
+
+            <SummaryBox
+              label="평균 작업 공정률"
+              value={`${totals.averageProgress.toFixed(1)}%`}
+              detail="전체 공정·전체 세대 기준"
+            />
+          </Box>
+        )}
+      </Paper>
 
       {projects.length === 0 ? (
         <Paper
@@ -1194,36 +1547,123 @@ export default function AdminDashboard({
             bgcolor: '#ffffff',
           }}
         >
-          <Typography fontWeight={800} color="#475569">
+          <Typography
+            fontWeight={800}
+            color="#475569"
+          >
             조회 가능한 현장이 없습니다.
           </Typography>
-          <Typography sx={{ mt: 0.6, color: '#94a3b8', fontSize: '0.75rem' }}>
-            관리자 계정의 Supabase 조회 권한과 현장 데이터를 확인해주세요.
+
+          <Typography
+            sx={{
+              mt: 0.6,
+              color: '#94a3b8',
+              fontSize: '0.75rem',
+            }}
+          >
+            관리자 계정의 Supabase 조회 권한과
+            현장 데이터를 확인해주세요.
           </Typography>
         </Paper>
       ) : (
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: {
-              xs: '1fr',
-              md: 'repeat(2, minmax(0, 1fr))',
-              xl: 'repeat(3, minmax(0, 1fr))',
-            },
-            gap: 1.2,
-            pb: 1,
-          }}
-        >
-          {projects.map((project) => (
-            <ProjectCard
-              key={project.projectName}
-              project={project}
-              onOpenProject={onOpenProject}
-              onPreviewDaily={handlePreviewDaily}
-              onPreviewWeekly={handlePreviewWeekly}
-            />
-          ))}
-        </Box>
+        <>
+          <Paper
+            variant="outlined"
+            sx={{
+              mb: 0.8,
+              borderColor: '#cbd5e1',
+              bgcolor: '#ffffff',
+            }}
+          >
+            <Box
+              sx={{
+                px: 1.1,
+                py: 0.7,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent:
+                  'space-between',
+                gap: 1,
+              }}
+            >
+              <Typography
+                sx={{
+                  color: '#0f172a',
+                  fontSize: '0.8rem',
+                  fontWeight: 900,
+                }}
+              >
+                현장별 현황
+              </Typography>
+
+              <Button
+                className="admin-dashboard-no-print"
+                size="small"
+                variant="outlined"
+                onClick={() =>
+                  setProjectsCollapsed(
+                    (previous) =>
+                      !previous,
+                  )
+                }
+                sx={{
+                  minWidth: 64,
+                  px: 0.7,
+                  whiteSpace: 'nowrap',
+                  fontSize: '0.62rem',
+                  fontWeight: 900,
+                }}
+              >
+                {projectsCollapsed
+                  ? '펼치기'
+                  : '최소화'}
+              </Button>
+            </Box>
+          </Paper>
+
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: {
+                xs: '1fr',
+                md:
+                  'repeat(2, minmax(0, 1fr))',
+                xl:
+                  'repeat(3, minmax(0, 1fr))',
+              },
+              gap: 1.2,
+              pb: 0.2,
+            }}
+          >
+            {projects.map((project) => (
+              <ProjectCard
+                key={
+                  project.projectName
+                }
+                project={project}
+                compact={
+                  projectsCollapsed
+                }
+                onOpenProject={
+                  onOpenProject
+                }
+                onPreviewDaily={
+                  handlePreviewDaily
+                }
+                onPreviewWeekly={
+                  handlePreviewWeekly
+                }
+              />
+            ))}
+          </Box>
+
+          <AdminDashboardScheduleBoard
+            projectNames={projects.map(
+              (project) =>
+                project.projectName,
+            )}
+          />
+        </>
       )}
       </Box>
 
