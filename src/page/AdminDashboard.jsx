@@ -13,6 +13,7 @@ import {
 } from '@mui/material';
 import { supabase } from '../supabaseClient';
 import { countUniqueUnits } from '../utils/buildingUnits.js';
+import AdminDashboardReportPreview from './AdminDashboardReportPreview.jsx';
 
 const PAGE_SIZE = 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -92,6 +93,57 @@ const getProjectSchedule = (projectName, todayKey) => {
       startUtc === null ? Number.MAX_SAFE_INTEGER : startUtc,
     dDayLabel,
     dDayState,
+  };
+};
+
+const formatKoreaISODate = (date = new Date()) => {
+  const formatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+
+  const values = {};
+
+  formatter.formatToParts(date).forEach((part) => {
+    if (part.type !== 'literal') {
+      values[part.type] = part.value;
+    }
+  });
+
+  return `${values.year}-${values.month}-${values.day}`;
+};
+
+const formatUtcDateToISO = (utcValue) => {
+  const date = new Date(utcValue);
+
+  return [
+    date.getUTCFullYear(),
+    pad2(date.getUTCMonth() + 1),
+    pad2(date.getUTCDate()),
+  ].join('-');
+};
+
+const getKoreaWeekRange = (date = new Date()) => {
+  const isoDate = formatKoreaISODate(date);
+  const [year, month, day] = isoDate
+    .split('-')
+    .map(Number);
+  const todayUtc = Date.UTC(
+    year,
+    month - 1,
+    day,
+  );
+  const dayOfWeek = new Date(todayUtc).getUTCDay();
+  const weekStartUtc =
+    todayUtc - dayOfWeek * DAY_MS;
+  const weekEndUtc =
+    weekStartUtc + 6 * DAY_MS;
+
+  return {
+    weekStart: formatUtcDateToISO(weekStartUtc),
+    weekEnd: formatUtcDateToISO(weekEndUtc),
   };
 };
 
@@ -264,9 +316,28 @@ function SummaryBox({ label, value, detail }) {
   );
 }
 
-function ProjectCard({ project, onOpenProject }) {
-  const reportLabel = project.hasTodayReport ? '일보 등록' : '일보 미등록';
-  const reportColor = project.hasTodayReport ? '#15803d' : '#dc2626';
+function ProjectCard({
+  project,
+  onOpenProject,
+  onPreviewDaily,
+  onPreviewWeekly,
+}) {
+  const reportLabel =
+    project.hasTodayReport
+      ? '일보 등록'
+      : '일보 미등록';
+  const reportColor =
+    project.hasTodayReport
+      ? '#15803d'
+      : '#dc2626';
+  const weeklyLabel =
+    project.hasWeeklyReport
+      ? '주간업무 등록'
+      : '주간업무 미등록';
+  const weeklyColor =
+    project.hasWeeklyReport
+      ? '#15803d'
+      : '#dc2626';
   const rate = Number(project.progressRate) || 0;
 
   const dDayStyle =
@@ -375,20 +446,71 @@ function ProjectCard({ project, onOpenProject }) {
             {project.dDayLabel}
           </Typography>
 
-          <Typography
-            fontWeight={800}
+          <Box
             sx={{
               flexShrink: 0,
-              px: 0.8,
-              py: 0.28,
-              borderRadius: 1,
-              color: reportColor,
-              bgcolor: project.hasTodayReport ? '#dcfce7' : '#fee2e2',
-              fontSize: '0.68rem',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'stretch',
+              gap: 0.35,
             }}
           >
-            {reportLabel}
-          </Typography>
+            <Box
+              component="button"
+              type="button"
+              onClick={() => onPreviewDaily(project)}
+              sx={{
+                m: 0,
+                px: 0.8,
+                py: 0.28,
+                border: 0,
+                borderRadius: 1,
+                color: reportColor,
+                bgcolor: project.hasTodayReport
+                  ? '#dcfce7'
+                  : '#fee2e2',
+                fontFamily: 'inherit',
+                fontSize: '0.68rem',
+                fontWeight: 800,
+                lineHeight: 1.35,
+                whiteSpace: 'nowrap',
+                cursor: 'pointer',
+                '&:hover': {
+                  filter: 'brightness(0.97)',
+                },
+              }}
+            >
+              {reportLabel}
+            </Box>
+
+            <Box
+              component="button"
+              type="button"
+              onClick={() => onPreviewWeekly(project)}
+              sx={{
+                m: 0,
+                px: 0.8,
+                py: 0.28,
+                border: 0,
+                borderRadius: 1,
+                color: weeklyColor,
+                bgcolor: project.hasWeeklyReport
+                  ? '#dcfce7'
+                  : '#fee2e2',
+                fontFamily: 'inherit',
+                fontSize: '0.68rem',
+                fontWeight: 800,
+                lineHeight: 1.35,
+                whiteSpace: 'nowrap',
+                cursor: 'pointer',
+                '&:hover': {
+                  filter: 'brightness(0.97)',
+                },
+              }}
+            >
+              {weeklyLabel}
+            </Box>
+          </Box>
         </Box>
       </Box>
 
@@ -524,6 +646,13 @@ export default function AdminDashboard({
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
+  const [previewState, setPreviewState] = useState({
+    open: false,
+    type: 'daily',
+    projectName: '',
+    dateKey: '',
+    report: null,
+  });
   const [koreaTodayKey, setKoreaTodayKey] = useState(() =>
     formatKoreaYYMMDD(),
   );
@@ -549,10 +678,13 @@ export default function AdminDashboard({
     try {
       const todayKey = koreaTodayKey;
 
+      const currentWeek = getKoreaWeekRange();
+
       const [
         buildingRows,
         dailyReports,
         progressRows,
+        weeklyReports,
       ] = await Promise.all([
         fetchAllRows(
           'building_settings',
@@ -566,6 +698,15 @@ export default function AdminDashboard({
           'unit_progress',
           'project_name, building, unit, process_type, status',
         ),
+        fetchAllRows(
+          'weekly_reports',
+          'id, project_name, week_start, week_end, display_period, author_name, payload, status, completed_at, created_at',
+          (query) =>
+            query.eq(
+              'week_start',
+              currentWeek.weekStart,
+            ),
+        ),
       ]);
 
       const projectNames = new Set();
@@ -577,6 +718,9 @@ export default function AdminDashboard({
         if (row?.project_name) projectNames.add(row.project_name);
       });
       progressRows.forEach((row) => {
+        if (row?.project_name) projectNames.add(row.project_name);
+      });
+      weeklyReports.forEach((row) => {
         if (row?.project_name) projectNames.add(row.project_name);
       });
 
@@ -601,6 +745,61 @@ export default function AdminDashboard({
               row.date === todayKey &&
               hasMeaningfulDailyReport(row),
           );
+
+          const todayReport =
+            projectReports.length === 0
+              ? null
+              : {
+                  project_name: projectName,
+                  date: todayKey,
+                  workers: projectReports.flatMap(
+                    (row) =>
+                      Array.isArray(row?.workers)
+                        ? row.workers
+                        : [],
+                  ),
+                  tasks: projectReports.flatMap(
+                    (row) =>
+                      Array.isArray(row?.tasks)
+                        ? row.tasks
+                        : [],
+                  ),
+                  today_task: projectReports
+                    .map((row) =>
+                      String(
+                        row?.today_task || '',
+                      ).trim(),
+                    )
+                    .filter(Boolean)
+                    .join('\n'),
+                  tomorrow_task: projectReports
+                    .map((row) =>
+                      String(
+                        row?.tomorrow_task || '',
+                      ).trim(),
+                    )
+                    .filter(Boolean)
+                    .join('\n'),
+                };
+
+          const projectWeeklyReports = weeklyReports
+            .filter(
+              (row) =>
+                row.project_name === projectName &&
+                row.status === 'completed',
+            )
+            .sort((a, b) =>
+              String(
+                b.completed_at || b.created_at || '',
+              ).localeCompare(
+                String(
+                  a.completed_at || a.created_at || '',
+                ),
+              ),
+            );
+
+          const weeklyReport =
+            projectWeeklyReports[0] || null;
 
           const previousReports = projectAllReports.filter((row) => {
             const reportDateNumber = dateKeyToNumber(row.date);
@@ -693,7 +892,10 @@ export default function AdminDashboard({
             completedProgress,
             fullyCompletedProcessCount,
             progressRate,
-            hasTodayReport: projectReports.length > 0,
+            hasTodayReport: Boolean(todayReport),
+            todayReport,
+            hasWeeklyReport: Boolean(weeklyReport),
+            weeklyReport,
             ...projectSchedule,
           };
         })
@@ -755,6 +957,33 @@ export default function AdminDashboard({
 
   const handlePrintDashboard = () => {
     window.print();
+  };
+
+  const handlePreviewDaily = (project) => {
+    setPreviewState({
+      open: true,
+      type: 'daily',
+      projectName: project.projectName,
+      dateKey: koreaTodayKey,
+      report: project.todayReport || null,
+    });
+  };
+
+  const handlePreviewWeekly = (project) => {
+    setPreviewState({
+      open: true,
+      type: 'weekly',
+      projectName: project.projectName,
+      dateKey: '',
+      report: project.weeklyReport || null,
+    });
+  };
+
+  const handleClosePreview = () => {
+    setPreviewState((previous) => ({
+      ...previous,
+      open: false,
+    }));
   };
 
   if (loading) {
@@ -990,11 +1219,22 @@ export default function AdminDashboard({
               key={project.projectName}
               project={project}
               onOpenProject={onOpenProject}
+              onPreviewDaily={handlePreviewDaily}
+              onPreviewWeekly={handlePreviewWeekly}
             />
           ))}
         </Box>
       )}
       </Box>
+
+      <AdminDashboardReportPreview
+        open={previewState.open}
+        type={previewState.type}
+        projectName={previewState.projectName}
+        dateKey={previewState.dateKey}
+        report={previewState.report}
+        onClose={handleClosePreview}
+      />
     </>
   );
 }
