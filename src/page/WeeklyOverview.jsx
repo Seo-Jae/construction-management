@@ -121,6 +121,63 @@ const createEmptyScheduleValues = () =>
     () => '',
   );
 
+const OFFICE_INPUT_SECTIONS = [
+  {
+    title: '[입찰]',
+    fields: [
+      {
+        key: 'bidSubmitted',
+        label: '1. 제출',
+        cellRange: 'C44:N46',
+        anchorCell: 'C44',
+        startRow: 44,
+        endRow: 46,
+      },
+      {
+        key: 'bidExpected',
+        label: '2. 제출예정',
+        cellRange: 'C48:N49',
+        anchorCell: 'C48',
+        startRow: 48,
+        endRow: 49,
+      },
+    ],
+  },
+  {
+    title: '[예가 및 견적]',
+    fields: [
+      {
+        key: 'estimateSubmitted',
+        label: '1. 제출',
+        cellRange: 'C52:N54',
+        anchorCell: 'C52',
+        startRow: 52,
+        endRow: 54,
+      },
+      {
+        key: 'estimateExpected',
+        label: '2. 제출예정',
+        cellRange: 'C56:N57',
+        anchorCell: 'C56',
+        startRow: 56,
+        endRow: 57,
+      },
+    ],
+  },
+];
+
+const OFFICE_INPUT_FIELDS =
+  OFFICE_INPUT_SECTIONS.flatMap(
+    (section) => section.fields,
+  );
+
+const createEmptyOfficeRows = () =>
+  Object.fromEntries(
+    OFFICE_INPUT_FIELDS.map(
+      (field) => [field.key, ['']],
+    ),
+  );
+
 const OFFICE_GROUPS = [
   {
     label: '공무',
@@ -425,6 +482,49 @@ const createSourceCellRows = (
   return rowsByCell;
 };
 
+const migrateSavedOfficeRows = (
+  payload,
+) => {
+  const result =
+    createEmptyOfficeRows();
+
+  if (
+    payload?.officeRows &&
+    typeof payload.officeRows === 'object'
+  ) {
+    OFFICE_INPUT_FIELDS.forEach(
+      (field) => {
+        result[field.key] =
+          normalizeRows(
+            payload.officeRows[
+              field.key
+            ],
+          );
+      },
+    );
+
+    return result;
+  }
+
+  if (
+    payload?.officeValues &&
+    typeof payload.officeValues === 'object'
+  ) {
+    OFFICE_INPUT_FIELDS.forEach(
+      (field) => {
+        result[field.key] =
+          textToRows(
+            payload.officeValues[
+              field.key
+            ],
+          );
+      },
+    );
+  }
+
+  return result;
+};
+
 const migrateSavedPayload = (
   payload,
 ) => {
@@ -545,9 +645,16 @@ const getExcelRowNumber = (address) =>
     ),
   );
 
-const previewCellSx = {
-  borderRight: '1px solid #111827',
-  borderBottom: '1px solid #111827',
+const STRONG_BORDER =
+  '1px solid #111827';
+
+const LIGHT_BORDER =
+  '1px solid #cbd5e1';
+
+const SOFT_BORDER =
+  '1px solid #e2e8f0';
+
+const previewBaseSx = {
   bgcolor: '#ffffff',
   color: '#111827',
   fontFamily:
@@ -562,6 +669,9 @@ function LineEditor({
   onAdd,
   onDelete,
 }) {
+  const normalizedRows =
+    normalizeRows(rows);
+
   return (
     <Box>
       <Box
@@ -581,7 +691,10 @@ function LineEditor({
             fontWeight: 900,
           }}
         >
-          {title} · {cellAddress}
+          {title}
+          {cellAddress
+            ? ` · ${cellAddress}`
+            : ''}
         </Typography>
 
         <Button
@@ -606,10 +719,10 @@ function LineEditor({
           gap: 0.45,
         }}
       >
-        {normalizeRows(rows).map(
+        {normalizedRows.map(
           (value, index) => (
             <Box
-              key={`${cellAddress}-${index}`}
+              key={`${title}-${index}`}
               sx={{
                 display: 'grid',
                 gridTemplateColumns:
@@ -623,7 +736,8 @@ function LineEditor({
                   borderRadius: 0.8,
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
+                  justifyContent:
+                    'center',
                   color: '#475569',
                   bgcolor: '#f1f5f9',
                   fontSize: '0.62rem',
@@ -645,13 +759,15 @@ function LineEditor({
                   )
                 }
                 sx={{
-                  '& .MuiInputBase-root': {
-                    minHeight: 34,
-                  },
-                  '& .MuiInputBase-input': {
-                    py: 0.7,
-                    fontSize: '0.69rem',
-                  },
+                  '& .MuiInputBase-root':
+                    {
+                      minHeight: 34,
+                    },
+                  '& .MuiInputBase-input':
+                    {
+                      py: 0.7,
+                      fontSize: '0.69rem',
+                    },
                 }}
               />
 
@@ -663,7 +779,7 @@ function LineEditor({
                   onDelete(index)
                 }
                 disabled={
-                  rows.length === 1 &&
+                  normalizedRows.length === 1 &&
                   !value
                 }
                 sx={{
@@ -797,7 +913,7 @@ function ProjectEditor({
         }}
       >
         <LineEditor
-          title="공정"
+          title="1. 공정"
           cellAddress={
             project.processCell
           }
@@ -827,7 +943,7 @@ function ProjectEditor({
         />
 
         <LineEditor
-          title="특이사항"
+          title="2. 특이사항"
           cellAddress={
             project.specialCell
           }
@@ -860,45 +976,396 @@ function ProjectEditor({
   );
 }
 
-function PreviewInputLines({
+function ScheduleEditor({
+  scheduleDates,
+  scheduleValues,
+  onChange,
+  onClear,
+}) {
+  return (
+    <Box>
+      <Box
+        sx={{
+          mb: 0.55,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent:
+            'space-between',
+          gap: 1,
+        }}
+      >
+        <Box>
+          <Typography
+            sx={{
+              color: '#334155',
+              fontSize: '0.72rem',
+              fontWeight: 900,
+            }}
+          >
+            [하자보수]
+          </Typography>
+
+          <Typography
+            sx={{
+              mt: 0.15,
+              color: '#64748b',
+              fontSize: '0.61rem',
+              fontWeight: 700,
+            }}
+          >
+            날짜 H58:N58 · 입력 H59:N59
+          </Typography>
+        </Box>
+
+        <Button
+          size="small"
+          variant="outlined"
+          color="error"
+          onClick={onClear}
+          sx={{
+            minWidth: 54,
+            px: 0.65,
+            whiteSpace: 'nowrap',
+            fontSize: '0.61rem',
+            fontWeight: 800,
+          }}
+        >
+          전체삭제
+        </Button>
+      </Box>
+
+      <Box
+        sx={{
+          overflowX: 'auto',
+        }}
+      >
+        <Box
+          sx={{
+            minWidth: 700,
+            display: 'grid',
+            gridTemplateColumns:
+              'repeat(7, minmax(90px, 1fr))',
+            gap: 0.55,
+          }}
+        >
+          {scheduleDates.map(
+            (dateKey, index) => (
+              <Box
+                key={dateKey}
+                sx={{ minWidth: 0 }}
+              >
+                <Box
+                  sx={{
+                    mb: 0.35,
+                    py: 0.4,
+                    borderRadius: 0.8,
+                    color: '#334155',
+                    bgcolor: '#f1f5f9',
+                    textAlign: 'center',
+                    fontSize: '0.66rem',
+                    fontWeight: 900,
+                  }}
+                >
+                  {formatMonthDay(
+                    dateKey,
+                  )}
+                </Box>
+
+                <TextField
+                  fullWidth
+                  size="small"
+                  multiline
+                  minRows={2}
+                  maxRows={5}
+                  value={
+                    scheduleValues[
+                      index
+                    ] || ''
+                  }
+                  placeholder="입력"
+                  onChange={(event) =>
+                    onChange(
+                      index,
+                      event.target.value,
+                    )
+                  }
+                  sx={{
+                    '& .MuiInputBase-root':
+                      {
+                        minHeight: 54,
+                        alignItems:
+                          'flex-start',
+                      },
+                    '& .MuiInputBase-input':
+                      {
+                        px: 0.65,
+                        py: 0.6,
+                        textAlign:
+                          'center',
+                        fontSize:
+                          '0.67rem',
+                        lineHeight: 1.4,
+                      },
+                  }}
+                />
+              </Box>
+            ),
+          )}
+        </Box>
+      </Box>
+    </Box>
+  );
+}
+
+function OfficeInputCard({
+  officeRows,
+  scheduleDates,
+  scheduleValues,
+  onOfficeRowChange,
+  onAddOfficeRow,
+  onDeleteOfficeRow,
+  onClearOffice,
+  onScheduleChange,
+  onClearSchedule,
+}) {
+  return (
+    <Paper
+      variant="outlined"
+      sx={{
+        mb: 1,
+        overflow: 'hidden',
+        borderColor: '#94a3b8',
+        boxShadow: 'none',
+      }}
+    >
+      <Box
+        sx={{
+          px: 1,
+          py: 0.8,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent:
+            'space-between',
+          gap: 1,
+          bgcolor: '#e2e8f0',
+          borderBottom:
+            '1px solid #94a3b8',
+        }}
+      >
+        <Box>
+          <Typography
+            sx={{
+              color: '#0f172a',
+              fontSize: '0.8rem',
+              fontWeight: 900,
+            }}
+          >
+            본사 · 공무
+          </Typography>
+
+          <Typography
+            sx={{
+              mt: 0.15,
+              color: '#475569',
+              fontSize: '0.62rem',
+              fontWeight: 700,
+            }}
+          >
+            대우건설 용인현장 아래의 본사 입력영역
+          </Typography>
+        </Box>
+
+        <Button
+          size="small"
+          variant="outlined"
+          color="error"
+          onClick={onClearOffice}
+          sx={{
+            minWidth: 64,
+            px: 0.65,
+            whiteSpace: 'nowrap',
+            fontSize: '0.61rem',
+            fontWeight: 800,
+          }}
+        >
+          공무 삭제
+        </Button>
+      </Box>
+
+      <Box
+        sx={{
+          p: 0.95,
+          display: 'grid',
+          gap: 1.25,
+        }}
+      >
+        {OFFICE_INPUT_SECTIONS.map(
+          (section) => (
+            <Box
+              key={section.title}
+              sx={{
+                p: 0.85,
+                border: SOFT_BORDER,
+                borderRadius: 1,
+                bgcolor: '#ffffff',
+              }}
+            >
+              <Typography
+                sx={{
+                  mb: 0.75,
+                  color: '#0f172a',
+                  fontSize: '0.73rem',
+                  fontWeight: 900,
+                }}
+              >
+                {section.title}
+              </Typography>
+
+              <Box
+                sx={{
+                  display: 'grid',
+                  gap: 1.05,
+                }}
+              >
+                {section.fields.map(
+                  (field) => (
+                    <LineEditor
+                      key={field.key}
+                      title={field.label}
+                      cellAddress={
+                        field.cellRange
+                      }
+                      rows={
+                        officeRows[
+                          field.key
+                        ] || ['']
+                      }
+                      onChange={(
+                        index,
+                        value,
+                      ) =>
+                        onOfficeRowChange(
+                          field.key,
+                          index,
+                          value,
+                        )
+                      }
+                      onAdd={() =>
+                        onAddOfficeRow(
+                          field.key,
+                        )
+                      }
+                      onDelete={(index) =>
+                        onDeleteOfficeRow(
+                          field.key,
+                          index,
+                        )
+                      }
+                    />
+                  ),
+                )}
+              </Box>
+            </Box>
+          ),
+        )}
+
+        <Box
+          sx={{
+            p: 0.85,
+            border: SOFT_BORDER,
+            borderRadius: 1,
+            bgcolor: '#ffffff',
+          }}
+        >
+          <ScheduleEditor
+            scheduleDates={
+              scheduleDates
+            }
+            scheduleValues={
+              scheduleValues
+            }
+            onChange={
+              onScheduleChange
+            }
+            onClear={
+              onClearSchedule
+            }
+          />
+        </Box>
+      </Box>
+    </Paper>
+  );
+}
+
+function PreviewContentRow({
+  children,
+  minHeight = 27,
+  strongTop = false,
+  strongBottom = false,
+  center = false,
+  bold = false,
+}) {
+  return (
+    <Box
+      sx={{
+        minHeight,
+        px: 0.75,
+        borderRight:
+          STRONG_BORDER,
+        borderTop: strongTop
+          ? STRONG_BORDER
+          : 0,
+        borderBottom: strongBottom
+          ? STRONG_BORDER
+          : LIGHT_BORDER,
+        ...previewBaseSx,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: center
+          ? 'center'
+          : 'flex-start',
+        textAlign: center
+          ? 'center'
+          : 'left',
+        fontSize: '0.66rem',
+        fontWeight: bold
+          ? 900
+          : 500,
+        lineHeight: 1.35,
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+      }}
+    >
+      {children}
+    </Box>
+  );
+}
+
+function PreviewInputRows({
   rows,
+  strongBottom = false,
 }) {
   const normalizedRows =
     normalizeRows(rows);
 
   return (
-    <Box
-      sx={{
-        px: 0.75,
-        py: 0.35,
-        minHeight: 27,
-        ...previewCellSx,
-        display: 'grid',
-        alignContent: 'center',
-      }}
-    >
+    <>
       {normalizedRows.map(
         (line, index) => (
-          <Box
+          <PreviewContentRow
             key={index}
-            sx={{
-              minHeight: 20,
-              display: 'flex',
-              alignItems: 'center',
-              color: line
-                ? '#111827'
-                : '#cbd5e1',
-              fontSize: '0.67rem',
-              lineHeight: 1.35,
-              whiteSpace: 'pre-wrap',
-              wordBreak: 'break-word',
-            }}
+            minHeight={24}
+            strongBottom={
+              strongBottom &&
+              index ===
+                normalizedRows.length - 1
+            }
           >
             {line || ''}
-          </Box>
+          </PreviewContentRow>
         ),
       )}
-    </Box>
+    </>
   );
 }
 
@@ -922,15 +1389,20 @@ function PreviewProjectRows({
         display: 'grid',
         gridTemplateColumns:
           '18.9% 81.1%',
+        borderBottom:
+          STRONG_BORDER,
       }}
     >
       <Box
         sx={{
-          ...previewCellSx,
+          px: 0.5,
+          borderRight:
+            STRONG_BORDER,
+          ...previewBaseSx,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
-          px: 0.5,
+          justifyContent:
+            'center',
           textAlign: 'center',
           fontSize: '0.69rem',
           fontWeight: 800,
@@ -940,40 +1412,25 @@ function PreviewProjectRows({
       </Box>
 
       <Box>
-        <Box
-          sx={{
-            px: 0.75,
-            minHeight: 27,
-            ...previewCellSx,
-            display: 'flex',
-            alignItems: 'center',
-            fontSize: '0.67rem',
-            fontWeight: 900,
-          }}
+        <PreviewContentRow
+          bold
         >
           1. 공정
-        </Box>
+        </PreviewContentRow>
 
-        <PreviewInputLines
+        <PreviewInputRows
           rows={processRows}
         />
 
-        <Box
-          sx={{
-            px: 0.75,
-            minHeight: 27,
-            ...previewCellSx,
-            display: 'flex',
-            alignItems: 'center',
-            fontSize: '0.67rem',
-            fontWeight: 900,
-          }}
+        <PreviewContentRow
+          bold
         >
           2. 특이사항
-        </Box>
+        </PreviewContentRow>
 
-        <PreviewInputLines
+        <PreviewInputRows
           rows={specialRows}
+          strongBottom
         />
       </Box>
     </Box>
@@ -984,13 +1441,21 @@ function SchedulePreviewRow({
   scheduleDates,
   scheduleValues,
   inputRow = false,
+  strongBottom = false,
 }) {
   return (
     <Box
       sx={{
-        minHeight: inputRow ? 54 : 27,
-        ...previewCellSx,
-        p: 0,
+        minHeight: inputRow
+          ? 54
+          : 27,
+        borderRight:
+          STRONG_BORDER,
+        borderBottom:
+          strongBottom
+            ? STRONG_BORDER
+            : LIGHT_BORDER,
+        ...previewBaseSx,
         display: 'grid',
         gridTemplateColumns:
           '56.7% 43.3%',
@@ -999,7 +1464,7 @@ function SchedulePreviewRow({
       <Box
         sx={{
           borderRight:
-            '1px solid #111827',
+            LIGHT_BORDER,
         }}
       />
 
@@ -1022,12 +1487,12 @@ function SchedulePreviewRow({
               borderLeft:
                 index === 0
                   ? 0
-                  : '1px solid #111827',
+                  : LIGHT_BORDER,
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
+              justifyContent:
+                'center',
               textAlign: 'center',
-              color: '#111827',
               fontSize: inputRow
                 ? '0.61rem'
                 : '0.62rem',
@@ -1048,25 +1513,97 @@ function SchedulePreviewRow({
   );
 }
 
-function OfficePreviewRows({
-  scheduleDates,
-  scheduleValues,
+function OfficeFieldPreview({
+  label,
+  rows,
+}) {
+  return (
+    <>
+      <PreviewContentRow
+        bold
+      >
+        {label}
+      </PreviewContentRow>
+
+      <PreviewInputRows
+        rows={rows}
+      />
+    </>
+  );
+}
+
+function OfficeGroupPreview({
+  label,
+  children,
+  first = false,
 }) {
   return (
     <Box
       sx={{
+        display: 'grid',
+        gridTemplateColumns:
+          '18.9% 81.1%',
+        borderTop: first
+          ? STRONG_BORDER
+          : 0,
+        borderBottom:
+          STRONG_BORDER,
+      }}
+    >
+      <Box
+        sx={{
+          borderRight:
+            STRONG_BORDER,
+          ...previewBaseSx,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent:
+            'center',
+          fontSize: '0.69rem',
+          fontWeight: 900,
+        }}
+      >
+        {label}
+      </Box>
+
+      <Box>
+        {children}
+      </Box>
+    </Box>
+  );
+}
+
+function OfficePreviewRows({
+  officeRows,
+  scheduleDates,
+  scheduleValues,
+}) {
+  const safetyRows =
+    Array.from(
+      { length: 5 },
+      () => '',
+    );
+
+  return (
+    <Box
+      sx={{
         display: 'flex',
-        borderLeft: '1px solid #111827',
+        borderLeft:
+          STRONG_BORDER,
       }}
     >
       <Box
         sx={{
           width: '5.99%',
-          ...previewCellSx,
-          borderLeft: 0,
+          borderRight:
+            STRONG_BORDER,
+          borderBottom:
+            STRONG_BORDER,
+          ...previewBaseSx,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center',
+          justifyContent:
+            'center',
           fontSize: '0.68rem',
           fontWeight: 900,
         }}
@@ -1075,99 +1612,136 @@ function OfficePreviewRows({
       </Box>
 
       <Box sx={{ width: '94.01%' }}>
-        {OFFICE_GROUPS.map((group) => (
-          <Box
-            key={group.label}
-            sx={{
-              display: 'grid',
-              gridTemplateColumns:
-                '18.9% 81.1%',
-            }}
+        <OfficeGroupPreview
+          label="공무"
+          first
+        >
+          <PreviewContentRow
+            bold
           >
-            <Box
-              sx={{
-                ...previewCellSx,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent:
-                  'center',
-                fontSize: '0.69rem',
-                fontWeight: 900,
-              }}
-            >
-              {group.label}
-            </Box>
+            [입찰]
+          </PreviewContentRow>
 
-            <Box>
-              {group.rows.map(
-                (line, index) => {
-                  if (
-                    group.label === '공무' &&
-                    index === 16
-                  ) {
-                    return (
-                      <SchedulePreviewRow
-                        key="schedule-date"
-                        scheduleDates={
-                          scheduleDates
-                        }
-                        scheduleValues={
-                          scheduleValues
-                        }
-                      />
-                    );
-                  }
+          <OfficeFieldPreview
+            label="1. 제출"
+            rows={
+              officeRows.bidSubmitted
+            }
+          />
 
-                  if (
-                    group.label === '공무' &&
-                    index === 17
-                  ) {
-                    return (
-                      <SchedulePreviewRow
-                        key="schedule-input"
-                        inputRow
-                        scheduleDates={
-                          scheduleDates
-                        }
-                        scheduleValues={
-                          scheduleValues
-                        }
-                      />
-                    );
-                  }
+          <OfficeFieldPreview
+            label="2. 제출예정"
+            rows={
+              officeRows.bidExpected
+            }
+          />
 
-                  if (
-                    group.label === '공무' &&
-                    index === 18
-                  ) {
-                    return null;
-                  }
+          <PreviewContentRow
+            bold
+          >
+            [예가 및 견적]
+          </PreviewContentRow>
 
-                  return (
-                    <Box
-                      key={index}
-                      sx={{
-                        px: 0.75,
-                        minHeight: 27,
-                        ...previewCellSx,
-                        display: 'flex',
-                        alignItems: 'center',
-                        color: '#111827',
-                        fontSize: '0.66rem',
-                        fontWeight:
-                          line.startsWith('[')
-                            ? 900
-                            : 500,
-                      }}
-                    >
-                      {line}
-                    </Box>
-                  );
-                },
-              )}
-            </Box>
-          </Box>
-        ))}
+          <OfficeFieldPreview
+            label="1. 제출"
+            rows={
+              officeRows
+                .estimateSubmitted
+            }
+          />
+
+          <OfficeFieldPreview
+            label="2. 제출예정"
+            rows={
+              officeRows
+                .estimateExpected
+            }
+          />
+
+          <PreviewContentRow
+            bold
+          >
+            [하자보수]
+          </PreviewContentRow>
+
+          <SchedulePreviewRow
+            scheduleDates={
+              scheduleDates
+            }
+            scheduleValues={
+              scheduleValues
+            }
+          />
+
+          <SchedulePreviewRow
+            inputRow
+            scheduleDates={
+              scheduleDates
+            }
+            scheduleValues={
+              scheduleValues
+            }
+          />
+
+          <PreviewContentRow
+            bold
+          >
+            1. 특이사항
+          </PreviewContentRow>
+
+          <PreviewContentRow
+            strongBottom
+          >
+            {' '}
+          </PreviewContentRow>
+        </OfficeGroupPreview>
+
+        <OfficeGroupPreview
+          label="관리"
+        >
+          <PreviewContentRow
+            bold
+          >
+            [노무, 세무]
+          </PreviewContentRow>
+
+          <PreviewContentRow>
+            {' '}
+          </PreviewContentRow>
+
+          <PreviewContentRow
+            bold
+          >
+            [회계, 경리]
+          </PreviewContentRow>
+
+          <PreviewContentRow
+            strongBottom
+          >
+            {' '}
+          </PreviewContentRow>
+        </OfficeGroupPreview>
+
+        <OfficeGroupPreview
+          label="안전"
+        >
+          {safetyRows.map(
+            (line, index) => (
+              <PreviewContentRow
+                key={index}
+                strongTop={
+                  index === 0
+                }
+                strongBottom={
+                  index ===
+                  safetyRows.length - 1
+                }
+              >
+                {line}
+              </PreviewContentRow>
+            ),
+          )}
+        </OfficeGroupPreview>
       </Box>
     </Box>
   );
@@ -1178,6 +1752,7 @@ function ExcelTemplatePreview({
   nextMondayKey,
   scheduleDates,
   scheduleValues,
+  officeRows,
 }) {
   return (
     <Box
@@ -1186,8 +1761,10 @@ function ExcelTemplatePreview({
         minWidth: 760,
         mx: 'auto',
         bgcolor: '#ffffff',
-        borderTop: '1px solid #111827',
-        borderLeft: '1px solid #111827',
+        borderTop:
+          STRONG_BORDER,
+        borderLeft:
+          STRONG_BORDER,
         boxShadow:
           '0 7px 24px rgba(15,23,42,0.18)',
         fontFamily:
@@ -1207,10 +1784,15 @@ function ExcelTemplatePreview({
           sx={{
             gridColumn: '1',
             gridRow: '1 / 5',
-            ...previewCellSx,
+            borderRight:
+              STRONG_BORDER,
+            borderBottom:
+              STRONG_BORDER,
+            ...previewBaseSx,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
+            justifyContent:
+              'center',
             fontSize: '1.12rem',
             fontWeight: 900,
             letterSpacing: '0.34em',
@@ -1223,10 +1805,15 @@ function ExcelTemplatePreview({
           sx={{
             gridColumn: '2',
             gridRow: '1 / 3',
-            ...previewCellSx,
+            borderRight:
+              STRONG_BORDER,
+            borderBottom:
+              STRONG_BORDER,
+            ...previewBaseSx,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
+            justifyContent:
+              'center',
             fontSize: '0.86rem',
             fontWeight: 900,
             letterSpacing: '0.12em',
@@ -1239,10 +1826,15 @@ function ExcelTemplatePreview({
           sx={{
             gridColumn: '2',
             gridRow: '3 / 5',
-            ...previewCellSx,
+            borderRight:
+              STRONG_BORDER,
+            borderBottom:
+              STRONG_BORDER,
+            ...previewBaseSx,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
+            justifyContent:
+              'center',
             fontSize: '0.88rem',
             fontWeight: 900,
           }}
@@ -1254,10 +1846,15 @@ function ExcelTemplatePreview({
           sx={{
             gridColumn: '3',
             gridRow: '1 / 5',
-            ...previewCellSx,
+            borderRight:
+              STRONG_BORDER,
+            borderBottom:
+              STRONG_BORDER,
+            ...previewBaseSx,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
+            justifyContent:
+              'center',
             fontSize: '0.62rem',
             fontWeight: 900,
             writingMode: 'vertical-rl',
@@ -1270,10 +1867,15 @@ function ExcelTemplatePreview({
           sx={{
             gridColumn: '4',
             gridRow: '1',
-            ...previewCellSx,
+            borderRight:
+              STRONG_BORDER,
+            borderBottom:
+              STRONG_BORDER,
+            ...previewBaseSx,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
+            justifyContent:
+              'center',
             fontSize: '0.64rem',
             fontWeight: 900,
           }}
@@ -1285,7 +1887,11 @@ function ExcelTemplatePreview({
           sx={{
             gridColumn: '4',
             gridRow: '2 / 5',
-            ...previewCellSx,
+            borderRight:
+              STRONG_BORDER,
+            borderBottom:
+              STRONG_BORDER,
+            ...previewBaseSx,
           }}
         />
 
@@ -1293,10 +1899,15 @@ function ExcelTemplatePreview({
           sx={{
             gridColumn: '5',
             gridRow: '1',
-            ...previewCellSx,
+            borderRight:
+              STRONG_BORDER,
+            borderBottom:
+              STRONG_BORDER,
+            ...previewBaseSx,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
+            justifyContent:
+              'center',
             fontSize: '0.64rem',
             fontWeight: 900,
           }}
@@ -1308,7 +1919,11 @@ function ExcelTemplatePreview({
           sx={{
             gridColumn: '5',
             gridRow: '2 / 5',
-            ...previewCellSx,
+            borderRight:
+              STRONG_BORDER,
+            borderBottom:
+              STRONG_BORDER,
+            ...previewBaseSx,
           }}
         />
       </Box>
@@ -1329,10 +1944,15 @@ function ExcelTemplatePreview({
             key={label}
             sx={{
               minHeight: 27,
-              ...previewCellSx,
+              borderRight:
+                STRONG_BORDER,
+              borderBottom:
+                STRONG_BORDER,
+              ...previewBaseSx,
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
+              justifyContent:
+                'center',
               fontSize: '0.67rem',
               fontWeight: 900,
             }}
@@ -1345,17 +1965,22 @@ function ExcelTemplatePreview({
       <Box
         sx={{
           display: 'flex',
-          borderLeft: '1px solid #111827',
+          borderLeft:
+            STRONG_BORDER,
         }}
       >
         <Box
           sx={{
             width: '5.99%',
-            ...previewCellSx,
-            borderLeft: 0,
+            borderRight:
+              STRONG_BORDER,
+            borderBottom:
+              STRONG_BORDER,
+            ...previewBaseSx,
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
+            justifyContent:
+              'center',
             fontSize: '0.68rem',
             fontWeight: 900,
           }}
@@ -1367,7 +1992,9 @@ function ExcelTemplatePreview({
           {TEMPLATE_PROJECTS.map(
             (project) => (
               <PreviewProjectRows
-                key={project.projectName}
+                key={
+                  project.projectName
+                }
                 project={project}
                 cellRows={cellRows}
               />
@@ -1377,8 +2004,13 @@ function ExcelTemplatePreview({
       </Box>
 
       <OfficePreviewRows
-        scheduleDates={scheduleDates}
-        scheduleValues={scheduleValues}
+        officeRows={officeRows}
+        scheduleDates={
+          scheduleDates
+        }
+        scheduleValues={
+          scheduleValues
+        }
       />
     </Box>
   );
@@ -1427,6 +2059,13 @@ export default function WeeklyOverview({
     setScheduleValues,
   ] = useState(
     createEmptyScheduleValues(),
+  );
+
+  const [
+    officeRows,
+    setOfficeRows,
+  ] = useState(
+    createEmptyOfficeRows(),
   );
 
   const [loading, setLoading] =
@@ -1520,6 +2159,7 @@ export default function WeeklyOverview({
 
     let savedRows = null;
     let savedScheduleValues = null;
+    let savedOfficeRows = null;
 
     try {
       const {
@@ -1561,6 +2201,11 @@ export default function WeeklyOverview({
                   ?.[index] || '',
               ),
           );
+
+        savedOfficeRows =
+          migrateSavedOfficeRows(
+            data.payload,
+          );
       }
     } catch (error) {
       console.error(
@@ -1584,6 +2229,11 @@ export default function WeeklyOverview({
     setScheduleValues(
       savedScheduleValues ||
         createEmptyScheduleValues(),
+    );
+
+    setOfficeRows(
+      savedOfficeRows ||
+        createEmptyOfficeRows(),
     );
 
     setLoading(false);
@@ -1622,6 +2272,79 @@ export default function WeeklyOverview({
       );
     };
   }, [loadData]);
+
+  const handleOfficeRowChange = (
+    fieldKey,
+    index,
+    value,
+  ) => {
+    setOfficeRows((previous) => ({
+      ...previous,
+      [fieldKey]:
+        normalizeRows(
+          previous[fieldKey],
+        ).map(
+          (row, rowIndex) =>
+            rowIndex === index
+              ? value
+              : row,
+        ),
+    }));
+
+    setSuccessMessage('');
+  };
+
+  const handleAddOfficeRow = (
+    fieldKey,
+  ) => {
+    setOfficeRows((previous) => ({
+      ...previous,
+      [fieldKey]: [
+        ...normalizeRows(
+          previous[fieldKey],
+        ),
+        '',
+      ],
+    }));
+
+    setSuccessMessage('');
+  };
+
+  const handleDeleteOfficeRow = (
+    fieldKey,
+    index,
+  ) => {
+    setOfficeRows((previous) => {
+      const currentRows =
+        normalizeRows(
+          previous[fieldKey],
+        );
+
+      const nextRows =
+        currentRows.filter(
+          (_, rowIndex) =>
+            rowIndex !== index,
+        );
+
+      return {
+        ...previous,
+        [fieldKey]:
+          nextRows.length > 0
+            ? nextRows
+            : [''],
+      };
+    });
+
+    setSuccessMessage('');
+  };
+
+  const handleClearOffice = () => {
+    setOfficeRows(
+      createEmptyOfficeRows(),
+    );
+
+    setSuccessMessage('');
+  };
 
   const handleScheduleValueChange = (
     index,
@@ -1900,6 +2623,69 @@ export default function WeeklyOverview({
         },
       );
 
+      OFFICE_INPUT_FIELDS.forEach(
+        (field) => {
+          try {
+            worksheet.unMergeCells(
+              field.cellRange,
+            );
+          } catch (error) {
+            // 기존 병합이 없으면 그대로 진행합니다.
+          }
+
+          worksheet.mergeCells(
+            field.cellRange,
+          );
+
+          const rows =
+            normalizeRows(
+              officeRows[field.key],
+            );
+
+          const cell =
+            worksheet.getCell(
+              field.anchorCell,
+            );
+
+          cell.value =
+            rowsToText(rows);
+
+          cell.alignment = {
+            ...(cell.alignment || {}),
+            horizontal: 'left',
+            vertical: 'top',
+            wrapText: true,
+          };
+
+          const rowCount =
+            field.endRow -
+            field.startRow +
+            1;
+
+          const totalHeight =
+            Math.max(
+              rowCount * 16.5,
+              rows.length * 17 + 10,
+            );
+
+          for (
+            let rowNumber =
+              field.startRow;
+            rowNumber <=
+              field.endRow;
+            rowNumber += 1
+          ) {
+            worksheet.getRow(
+              rowNumber,
+            ).height =
+              totalHeight / rowCount;
+          }
+        },
+      );
+
+      worksheet.pageSetup.printArea =
+        'A1:N74';
+
       TEMPLATE_CELL_ADDRESSES.forEach(
         (address) => {
           const rows =
@@ -2018,6 +2804,7 @@ export default function WeeklyOverview({
               cellRows,
               cellValues,
               scheduleValues,
+              officeRows,
             },
             updated_by: user.id,
             updated_by_name: name,
@@ -2310,158 +3097,6 @@ export default function WeeklyOverview({
             bgcolor: '#f8fafc',
           }}
         >
-          <Paper
-            variant="outlined"
-            sx={{
-              mb: 1.1,
-              overflow: 'hidden',
-              borderColor: '#cbd5e1',
-              boxShadow: 'none',
-            }}
-          >
-            <Box
-              sx={{
-                px: 1,
-                py: 0.75,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent:
-                  'space-between',
-                gap: 1,
-                bgcolor: '#f8fafc',
-                borderBottom:
-                  '1px solid #e2e8f0',
-              }}
-            >
-              <Box>
-                <Typography
-                  sx={{
-                    color: '#0f172a',
-                    fontSize: '0.78rem',
-                    fontWeight: 900,
-                  }}
-                >
-                  하자보수 주간일정
-                </Typography>
-
-                <Typography
-                  sx={{
-                    mt: 0.15,
-                    color: '#64748b',
-                    fontSize: '0.62rem',
-                    fontWeight: 700,
-                  }}
-                >
-                  날짜 H58:N58 · 입력 H59:N59
-                </Typography>
-              </Box>
-
-              <Button
-                size="small"
-                variant="outlined"
-                color="error"
-                onClick={
-                  handleClearSchedule
-                }
-                sx={{
-                  minWidth: 54,
-                  px: 0.65,
-                  whiteSpace: 'nowrap',
-                  fontSize: '0.61rem',
-                  fontWeight: 800,
-                }}
-              >
-                전체삭제
-              </Button>
-            </Box>
-
-            <Box
-              sx={{
-                p: 0.9,
-                overflowX: 'auto',
-              }}
-            >
-              <Box
-                sx={{
-                  minWidth: 700,
-                  display: 'grid',
-                  gridTemplateColumns:
-                    'repeat(7, minmax(90px, 1fr))',
-                  gap: 0.55,
-                }}
-              >
-                {scheduleDates.map(
-                  (dateKey, index) => (
-                    <Box
-                      key={dateKey}
-                      sx={{
-                        minWidth: 0,
-                      }}
-                    >
-                      <Box
-                        sx={{
-                          mb: 0.35,
-                          py: 0.4,
-                          borderRadius: 0.8,
-                          color: '#1e3a8a',
-                          bgcolor: '#dbeafe',
-                          textAlign: 'center',
-                          fontSize: '0.66rem',
-                          fontWeight: 900,
-                        }}
-                      >
-                        {formatMonthDay(
-                          dateKey,
-                        )}
-                      </Box>
-
-                      <TextField
-                        fullWidth
-                        size="small"
-                        multiline
-                        minRows={2}
-                        maxRows={5}
-                        value={
-                          scheduleValues[
-                            index
-                          ] || ''
-                        }
-                        placeholder="입력"
-                        onChange={(
-                          event,
-                        ) =>
-                          handleScheduleValueChange(
-                            index,
-                            event.target
-                              .value,
-                          )
-                        }
-                        sx={{
-                          '& .MuiInputBase-root':
-                            {
-                              minHeight: 54,
-                              alignItems:
-                                'flex-start',
-                            },
-                          '& .MuiInputBase-input':
-                            {
-                              px: 0.65,
-                              py: 0.6,
-                              textAlign:
-                                'center',
-                              fontSize:
-                                '0.67rem',
-                              lineHeight: 1.4,
-                            },
-                        }}
-                      />
-                    </Box>
-                  ),
-                )}
-              </Box>
-            </Box>
-          </Paper>
-
           {TEMPLATE_PROJECTS.map(
             (project) => (
               <ProjectEditor
@@ -2491,6 +3126,34 @@ export default function WeeklyOverview({
               />
             ),
           )}
+
+          <OfficeInputCard
+            officeRows={officeRows}
+            scheduleDates={
+              scheduleDates
+            }
+            scheduleValues={
+              scheduleValues
+            }
+            onOfficeRowChange={
+              handleOfficeRowChange
+            }
+            onAddOfficeRow={
+              handleAddOfficeRow
+            }
+            onDeleteOfficeRow={
+              handleDeleteOfficeRow
+            }
+            onClearOffice={
+              handleClearOffice
+            }
+            onScheduleChange={
+              handleScheduleValueChange
+            }
+            onClearSchedule={
+              handleClearSchedule
+            }
+          />
         </Box>
       </Paper>
 
@@ -2558,6 +3221,7 @@ export default function WeeklyOverview({
             scheduleValues={
               scheduleValues
             }
+            officeRows={officeRows}
           />
         </Box>
       </Paper>
