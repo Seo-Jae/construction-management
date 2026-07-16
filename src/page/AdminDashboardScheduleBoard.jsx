@@ -485,7 +485,7 @@ function SiteSchedulePanel({
                 minWidth: 54,
                 px: 0.65,
                 whiteSpace: 'nowrap',
-                fontSize: '0.61rem',
+                fontSize: '0.68rem',
                 fontWeight: 900,
               }}
             >
@@ -528,7 +528,7 @@ function SiteSchedulePanel({
             minWidth: 0,
             display: 'grid',
             gridTemplateColumns:
-              'minmax(0, 0.82fr) minmax(0, 1fr) minmax(0, 0.58fr) minmax(0, 1.34fr) minmax(0, 1.34fr) 52px minmax(0, 0.72fr)',
+              'minmax(0, 0.82fr) minmax(0, 1fr) minmax(0, 0.58fr) minmax(0, 1.34fr) minmax(0, 1.34fr) 72px minmax(0, 0.52fr)',
             borderLeft:
               '1px solid #cbd5e1',
           }}
@@ -626,7 +626,7 @@ function SiteSchedulePanel({
                                 py: 0.48,
                                 px: 0.45,
                                 fontSize:
-                                  '0.59rem',
+                                  '0.65rem',
                               },
                           }}
                         />
@@ -676,7 +676,7 @@ function SiteSchedulePanel({
                             px: 0.25,
                             color: '#b91c1c',
                             fontSize:
-                              '0.53rem',
+                              '0.63rem',
                             fontWeight: 700,
                           },
                       }}
@@ -723,7 +723,7 @@ function SiteSchedulePanel({
                             px: 0.25,
                             color: '#1d4ed8',
                             fontSize:
-                              '0.53rem',
+                              '0.58rem',
                             fontWeight: 700,
                           },
                       }}
@@ -773,7 +773,7 @@ function SiteSchedulePanel({
                             textAlign:
                               'center',
                             fontSize:
-                              '0.56rem',
+                              '0.63rem',
                           },
                       }}
                     />
