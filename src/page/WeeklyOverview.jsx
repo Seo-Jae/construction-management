@@ -721,7 +721,6 @@ const previewBaseSx = {
 
 function LineEditor({
   title,
-  cellAddress,
   rows,
   onChange,
   onAdd,
@@ -735,24 +734,27 @@ function LineEditor({
       <Box
         sx={{
           mb: 0.45,
-          display: 'flex',
+          width: '100%',
+          minWidth: 0,
+          display: 'grid',
+          gridTemplateColumns:
+            'minmax(0, 1fr) auto',
           alignItems: 'center',
-          justifyContent:
-            'space-between',
-          gap: 1,
+          columnGap: 0.6,
         }}
       >
         <Typography
           sx={{
+            minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
             color: '#334155',
             fontSize: '0.7rem',
             fontWeight: 900,
           }}
         >
           {title}
-          {cellAddress
-            ? ` · ${cellAddress}`
-            : ''}
         </Typography>
 
         <Button
@@ -760,6 +762,7 @@ function LineEditor({
           variant="outlined"
           onClick={onAdd}
           sx={{
+            flexShrink: 0,
             minWidth: 58,
             px: 0.65,
             whiteSpace: 'nowrap',
@@ -782,6 +785,8 @@ function LineEditor({
             <Box
               key={`${title}-${index}`}
               sx={{
+                width: '100%',
+                minWidth: 0,
                 display: 'grid',
                 gridTemplateColumns:
                   '26px minmax(0, 1fr) 38px',
@@ -817,12 +822,15 @@ function LineEditor({
                   )
                 }
                 sx={{
+                  minWidth: 0,
                   '& .MuiInputBase-root':
                     {
+                      minWidth: 0,
                       minHeight: 34,
                     },
                   '& .MuiInputBase-input':
                     {
+                      minWidth: 0,
                       py: 0.7,
                       fontSize: '0.69rem',
                     },
@@ -972,9 +980,6 @@ function ProjectEditor({
       >
         <LineEditor
           title="1. 공정"
-          cellAddress={
-            project.processCell
-          }
           rows={
             cellRows[
               project.processCell
@@ -1002,9 +1007,6 @@ function ProjectEditor({
 
         <LineEditor
           title="2. 특이사항"
-          cellAddress={
-            project.specialCell
-          }
           rows={
             cellRows[
               project.specialCell
@@ -1257,10 +1259,13 @@ function OfficeInputCard({
             <Box
               key={section.title}
               sx={{
+                width: '100%',
+                minWidth: 0,
                 p: 0.85,
                 border: SOFT_BORDER,
                 borderRadius: 1,
                 bgcolor: '#ffffff',
+                overflow: 'hidden',
               }}
             >
               <Typography
@@ -1276,6 +1281,8 @@ function OfficeInputCard({
 
               <Box
                 sx={{
+                  width: '100%',
+                  minWidth: 0,
                   display: 'grid',
                   gap: 1.05,
                 }}
@@ -1285,9 +1292,6 @@ function OfficeInputCard({
                     <LineEditor
                       key={field.key}
                       title={field.label}
-                      cellAddress={
-                        field.cellRange
-                      }
                       rows={
                         officeRows[
                           field.key
