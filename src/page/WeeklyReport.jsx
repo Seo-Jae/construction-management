@@ -700,6 +700,7 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
   const [completionLoading, setCompletionLoading] =
     useState(false);
   const [completing, setCompleting] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
   const [highlightedLineIds, setHighlightedLineIds] =
     useState([]);
 
@@ -1026,6 +1027,59 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
     }
   };
 
+  const handleCancelWeeklyCompletion = async () => {
+    if (
+      !isWeeklyCompleted ||
+      !weeklyCompletion?.id ||
+      cancelling
+    ) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      '이번 주 주간 업무 보고의 결재완료를 취소하시겠습니까?\n취소하면 다시 결재요청할 수 있습니다.',
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setCancelling(true);
+    setErrorMessage('');
+
+    try {
+      const { error } = await supabase
+        .from('weekly_reports')
+        .delete()
+        .eq('id', weeklyCompletion.id);
+
+      if (error) {
+        throw error;
+      }
+
+      setWeeklyCompletion(null);
+
+      window.dispatchEvent(
+        new Event('weekly-report-completed'),
+      );
+
+      window.alert(
+        '주간 업무 보고 결재가 취소되었습니다.',
+      );
+    } catch (error) {
+      console.error(
+        '주간 업무 보고 결재취소 실패:',
+        error,
+      );
+      setErrorMessage(
+        error?.message ||
+          '주간 업무 보고 결재를 취소하지 못했습니다.',
+      );
+    } finally {
+      setCancelling(false);
+    }
+  };
+
   const handleDownloadExcel = async () => {
     try {
       const response = await fetch('/templates/주간업무보고.xlsx');
@@ -1133,6 +1187,7 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
                 }}
               >
                 이번 주 주간 업무 보고는 결재완료되었습니다.
+                필요하면 결재취소 후 다시 등록할 수 있습니다.
               </Typography>
             )}
           </Box>
@@ -1144,6 +1199,7 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
             disabled={
               completionLoading ||
               completing ||
+              cancelling ||
               isWeeklyCompleted
             }
             sx={{
@@ -1177,6 +1233,30 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
                   ? '결재완료'
                   : '결재요청'}
           </Button>
+
+          {isWeeklyCompleted && (
+            <Button
+              size="small"
+              variant="outlined"
+              color="error"
+              onClick={handleCancelWeeklyCompletion}
+              disabled={
+                cancelling ||
+                completionLoading ||
+                completing
+              }
+              sx={{
+                minWidth: 82,
+                px: 1.05,
+                whiteSpace: 'nowrap',
+                fontSize: '0.72rem',
+                fontWeight: 800,
+                borderWidth: 1.5,
+              }}
+            >
+              {cancelling ? '취소중' : '결재취소'}
+            </Button>
+          )}
 
           <Button
             size="small"
