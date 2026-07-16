@@ -45,6 +45,31 @@ const drawerWidth = 240;
 const SUPABASE_PAGE_SIZE = 1000;
 const PROGRESS_WRITE_CHUNK_SIZE = 500;
 
+const PROJECT_DISPLAY_ORDER = [
+  '한라건설 용인금어지구',
+  '현대건설 용인마크밸리',
+  '대우건설 용인현장',
+];
+
+const sortProjectNames = (projectNames) =>
+  [...projectNames].sort((first, second) => {
+    const firstIndex =
+      PROJECT_DISPLAY_ORDER.indexOf(first);
+    const secondIndex =
+      PROJECT_DISPLAY_ORDER.indexOf(second);
+
+    if (firstIndex !== -1 || secondIndex !== -1) {
+      if (firstIndex === -1) return 1;
+      if (secondIndex === -1) return -1;
+      return firstIndex - secondIndex;
+    }
+
+    return String(first).localeCompare(
+      String(second),
+      'ko',
+    );
+  });
+
 const splitIntoChunks = (items, chunkSize) => {
   const chunks = [];
 
@@ -288,7 +313,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const isSuperAdmin = userRole === '최고관리자';
   const isManagementRole = ['관리자', '최고관리자'].includes(userRole);
 
-  const [selectedProjectName, setSelectedProjectName] = useState('');
+  const [selectedProjectName, setSelectedProjectName] =
+    useState('');
+  const [projectOptions, setProjectOptions] =
+    useState([]);
+  const [projectOptionsLoading, setProjectOptionsLoading] =
+    useState(false);
+
   const activeProjectName = isManagementRole
     ? selectedProjectName
     : userProfile?.project_name || '';
@@ -373,6 +404,98 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   }, []);
 
   useEffect(() => {
+    if (!isManagementRole) {
+      setProjectOptions([]);
+      return undefined;
+    }
+
+    let active = true;
+
+    const loadProjectOptions = async () => {
+      setProjectOptionsLoading(true);
+
+      try {
+        const allRows = [];
+        let from = 0;
+
+        while (true) {
+          const { data, error } = await supabase
+            .from('building_settings')
+            .select('project_name')
+            .not('project_name', 'is', null)
+            .order('project_name', {
+              ascending: true,
+            })
+            .range(
+              from,
+              from + SUPABASE_PAGE_SIZE - 1,
+            );
+
+          if (error) {
+            throw error;
+          }
+
+          const rows = data || [];
+          allRows.push(...rows);
+
+          if (rows.length < SUPABASE_PAGE_SIZE) {
+            break;
+          }
+
+          from += SUPABASE_PAGE_SIZE;
+        }
+
+        const names = sortProjectNames(
+          Array.from(
+            new Set(
+              allRows
+                .map((row) =>
+                  String(
+                    row?.project_name || '',
+                  ).trim(),
+                )
+                .filter(Boolean),
+            ),
+          ),
+        );
+
+        if (active) {
+          setProjectOptions(names);
+        }
+      } catch (error) {
+        console.error(
+          '관리자 현장목록 조회 오류:',
+          error,
+        );
+
+        if (active) {
+          setProjectOptions([]);
+        }
+      } finally {
+        if (active) {
+          setProjectOptionsLoading(false);
+        }
+      }
+    };
+
+    loadProjectOptions();
+
+    const handleFocus = () => {
+      loadProjectOptions();
+    };
+
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      active = false;
+      window.removeEventListener(
+        'focus',
+        handleFocus,
+      );
+    };
+  }, [isManagementRole]);
+
+  useEffect(() => {
     const requestedView = new URLSearchParams(
       window.location.search,
     ).get('view');
@@ -397,6 +520,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const handleOpenAdminProject = (projectName) => {
     setSelectedProjectName(projectName);
     setCurrentView('main');
+  };
+
+  const handleSelectManagementProject = (
+    event,
+    projectName,
+  ) => {
+    setSelectedProjectName(projectName || '');
   };
 
   // 💡 공정이 변경될 때마다 화면에 선택되어 있던 세대와 팝업창을 즉시 지워줍니다.
@@ -1689,6 +1819,89 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             - {viewTitles[currentView] || '현장 관리'}
           </Typography>
 
+          {isManagementRole && (
+            <Box
+              sx={{
+                position: 'absolute',
+                left: '50%',
+                top: '50%',
+                width: {
+                  xs: 240,
+                  md: 330,
+                },
+                maxWidth: '38vw',
+                transform:
+                  'translate(-50%, -50%)',
+                zIndex: 2,
+              }}
+            >
+              <Autocomplete
+                size="small"
+                options={projectOptions}
+                value={activeProjectName || null}
+                loading={projectOptionsLoading}
+                disableClearable
+                onChange={handleSelectManagementProject}
+                noOptionsText="등록된 현장이 없습니다."
+                loadingText="현장목록 불러오는 중..."
+                isOptionEqualToValue={(
+                  option,
+                  value,
+                ) => option === value}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    placeholder="현장을 선택해주세요"
+                    inputProps={{
+                      ...params.inputProps,
+                      readOnly: true,
+                    }}
+                  />
+                )}
+                sx={{
+                  '& .MuiOutlinedInput-root': {
+                    minHeight: 36,
+                    py: '0 !important',
+                    pr: '34px !important',
+                    color: '#ffffff',
+                    bgcolor:
+                      'rgba(255,255,255,0.13)',
+                    borderRadius: 1.2,
+                    fontSize: '0.78rem',
+                    fontWeight: 900,
+                    '& fieldset': {
+                      borderColor:
+                        'rgba(255,255,255,0.38)',
+                    },
+                    '&:hover fieldset': {
+                      borderColor:
+                        'rgba(255,255,255,0.72)',
+                    },
+                    '&.Mui-focused fieldset': {
+                      borderColor: '#7dd3fc',
+                    },
+                  },
+                  '& .MuiInputBase-input': {
+                    py: '7px !important',
+                    textAlign: 'center',
+                    color: '#ffffff',
+                    cursor: 'pointer',
+                  },
+                  '& .MuiInputBase-input::placeholder': {
+                    color: '#cbd5e1',
+                    opacity: 1,
+                  },
+                  '& .MuiAutocomplete-popupIndicator': {
+                    color: '#e2e8f0',
+                  },
+                  '& .MuiAutocomplete-clearIndicator': {
+                    color: '#e2e8f0',
+                  },
+                }}
+              />
+            </Box>
+          )}
+
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <Typography variant="caption" sx={{ color: '#94a3b8' }}>
               접속자: {userProfile?.manager_name} ({userRole})
@@ -1893,16 +2106,20 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                   bgcolor: '#ffffff',
                 }}
               >
-                <Typography fontWeight={900} color="#334155">
-                  현장을 먼저 선택해주세요.
-                </Typography>
-                <Button
-                  variant="contained"
-                  size="small"
-                  onClick={() => setCurrentView('admin-dashboard')}
+                <Typography
+                  fontWeight={900}
+                  color="#334155"
                 >
-                  Dashboard로 이동
-                </Button>
+                  상단 현장목록에서 현장을 선택해주세요.
+                </Typography>
+                <Typography
+                  sx={{
+                    color: '#64748b',
+                    fontSize: '0.76rem',
+                  }}
+                >
+                  현장 선택 후 현재 메뉴가 바로 표시됩니다.
+                </Typography>
               </Paper>
             )}
         </Box>

@@ -214,38 +214,40 @@ export default function Sidebar({
 
   return (
     <List sx={{ px: 0.75, py: 0.75 }}>
-      <Tooltip
-        title={drawerOpen ? '' : 'Main'}
-        placement="right"
-        arrow
-      >
-        <ListItemButton
-          selected={currentView === 'main'}
-          onClick={() => handleViewChange('main')}
-          sx={topMenuSx(currentView === 'main')}
+      {isManagementRole && (
+        <Tooltip
+          title={drawerOpen ? '' : 'Dashboard'}
+          placement="right"
+          arrow
         >
-          <ListItemIcon
-            sx={{
-              minWidth: 34,
-              color: 'inherit',
-              justifyContent: 'center',
-            }}
+          <ListItemButton
+            selected={currentView === 'admin-dashboard'}
+            onClick={() => handleViewChange('admin-dashboard')}
+            sx={topMenuSx(currentView === 'admin-dashboard')}
           >
-            <HomeRoundedIcon fontSize="small" />
-          </ListItemIcon>
+            <ListItemIcon
+              sx={{
+                minWidth: 34,
+                color: 'inherit',
+                justifyContent: 'center',
+              }}
+            >
+              <AssessmentIcon fontSize="small" />
+            </ListItemIcon>
 
-          <ListItemText
-            primary="Main"
-            primaryTypographyProps={{
-              noWrap: true,
-              fontSize: '0.8rem',
-              fontWeight:
-                currentView === 'main' ? 700 : 500,
-            }}
-            sx={{ opacity: drawerOpen ? 1 : 0 }}
-          />
-        </ListItemButton>
-      </Tooltip>
+            <ListItemText
+              primary="Dashboard"
+              primaryTypographyProps={{
+                noWrap: true,
+                fontSize: '0.8rem',
+                fontWeight:
+                  currentView === 'admin-dashboard' ? 700 : 500,
+              }}
+              sx={{ opacity: drawerOpen ? 1 : 0 }}
+            />
+          </ListItemButton>
+        </Tooltip>
+      )}
 
       <Tooltip
         title={
@@ -330,40 +332,38 @@ export default function Sidebar({
         </ListItemButton>
       </Tooltip>
 
-      {isManagementRole && (
-        <Tooltip
-          title={drawerOpen ? '' : 'Dashboard'}
-          placement="right"
-          arrow
+      <Tooltip
+        title={drawerOpen ? '' : 'Main'}
+        placement="right"
+        arrow
+      >
+        <ListItemButton
+          selected={currentView === 'main'}
+          onClick={() => handleViewChange('main')}
+          sx={topMenuSx(currentView === 'main')}
         >
-          <ListItemButton
-            selected={currentView === 'admin-dashboard'}
-            onClick={() => handleViewChange('admin-dashboard')}
-            sx={topMenuSx(currentView === 'admin-dashboard')}
+          <ListItemIcon
+            sx={{
+              minWidth: 34,
+              color: 'inherit',
+              justifyContent: 'center',
+            }}
           >
-            <ListItemIcon
-              sx={{
-                minWidth: 34,
-                color: 'inherit',
-                justifyContent: 'center',
-              }}
-            >
-              <AssessmentIcon fontSize="small" />
-            </ListItemIcon>
+            <HomeRoundedIcon fontSize="small" />
+          </ListItemIcon>
 
-            <ListItemText
-              primary="Dashboard"
-              primaryTypographyProps={{
-                noWrap: true,
-                fontSize: '0.8rem',
-                fontWeight:
-                  currentView === 'admin-dashboard' ? 700 : 500,
-              }}
-              sx={{ opacity: drawerOpen ? 1 : 0 }}
-            />
-          </ListItemButton>
-        </Tooltip>
-      )}
+          <ListItemText
+            primary="Main"
+            primaryTypographyProps={{
+              noWrap: true,
+              fontSize: '0.8rem',
+              fontWeight:
+                currentView === 'main' ? 700 : 500,
+            }}
+            sx={{ opacity: drawerOpen ? 1 : 0 }}
+          />
+        </ListItemButton>
+      </Tooltip>
 
       <Tooltip
         title={drawerOpen ? '' : '공사일보관리'}
