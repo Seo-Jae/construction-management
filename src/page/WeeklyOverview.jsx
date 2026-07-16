@@ -95,6 +95,32 @@ const SPECIAL_FORM_KEYS = [
   'specialNext',
 ];
 
+const SCHEDULE_DATE_CELLS = [
+  'H58',
+  'I58',
+  'J58',
+  'K58',
+  'L58',
+  'M58',
+  'N58',
+];
+
+const SCHEDULE_INPUT_CELLS = [
+  'H59',
+  'I59',
+  'J59',
+  'K59',
+  'L59',
+  'M59',
+  'N59',
+];
+
+const createEmptyScheduleValues = () =>
+  Array.from(
+    { length: 7 },
+    () => '',
+  );
+
 const OFFICE_GROUPS = [
   {
     label: '공무',
@@ -186,6 +212,27 @@ const formatUtcDateToISO = (utcValue) => {
     pad2(date.getUTCDate()),
   ].join('-');
 };
+
+const addDaysToISO = (
+  dateKey,
+  days,
+) => {
+  const [year, month, day] =
+    String(dateKey)
+      .split('-')
+      .map(Number);
+
+  return formatUtcDateToISO(
+    Date.UTC(
+      year,
+      month - 1,
+      day + days,
+    ),
+  );
+};
+
+const formatMonthDay = (dateKey) =>
+  String(dateKey || '').slice(5);
 
 const getKoreaWeekRange = (
   date = new Date(),
@@ -933,7 +980,78 @@ function PreviewProjectRows({
   );
 }
 
-function OfficePreviewRows() {
+function SchedulePreviewRow({
+  scheduleDates,
+  scheduleValues,
+  inputRow = false,
+}) {
+  return (
+    <Box
+      sx={{
+        minHeight: inputRow ? 54 : 27,
+        ...previewCellSx,
+        p: 0,
+        display: 'grid',
+        gridTemplateColumns:
+          '56.7% 43.3%',
+      }}
+    >
+      <Box
+        sx={{
+          borderRight:
+            '1px solid #111827',
+        }}
+      />
+
+      <Box
+        sx={{
+          display: 'grid',
+          gridTemplateColumns:
+            'repeat(7, minmax(0, 1fr))',
+        }}
+      >
+        {(inputRow
+          ? scheduleValues
+          : scheduleDates
+        ).map((value, index) => (
+          <Box
+            key={index}
+            sx={{
+              minWidth: 0,
+              px: 0.22,
+              borderLeft:
+                index === 0
+                  ? 0
+                  : '1px solid #111827',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              textAlign: 'center',
+              color: '#111827',
+              fontSize: inputRow
+                ? '0.61rem'
+                : '0.62rem',
+              fontWeight: inputRow
+                ? 500
+                : 900,
+              lineHeight: 1.25,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              overflow: 'hidden',
+            }}
+          >
+            {value || ''}
+          </Box>
+        ))}
+      </Box>
+    </Box>
+  );
+}
+
+function OfficePreviewRows({
+  scheduleDates,
+  scheduleValues,
+}) {
   return (
     <Box
       sx={{
@@ -982,26 +1100,70 @@ function OfficePreviewRows() {
 
             <Box>
               {group.rows.map(
-                (line, index) => (
-                  <Box
-                    key={index}
-                    sx={{
-                      px: 0.75,
-                      minHeight: 27,
-                      ...previewCellSx,
-                      display: 'flex',
-                      alignItems: 'center',
-                      color: '#111827',
-                      fontSize: '0.66rem',
-                      fontWeight:
-                        line.startsWith('[')
-                          ? 900
-                          : 500,
-                    }}
-                  >
-                    {line}
-                  </Box>
-                ),
+                (line, index) => {
+                  if (
+                    group.label === '공무' &&
+                    index === 16
+                  ) {
+                    return (
+                      <SchedulePreviewRow
+                        key="schedule-date"
+                        scheduleDates={
+                          scheduleDates
+                        }
+                        scheduleValues={
+                          scheduleValues
+                        }
+                      />
+                    );
+                  }
+
+                  if (
+                    group.label === '공무' &&
+                    index === 17
+                  ) {
+                    return (
+                      <SchedulePreviewRow
+                        key="schedule-input"
+                        inputRow
+                        scheduleDates={
+                          scheduleDates
+                        }
+                        scheduleValues={
+                          scheduleValues
+                        }
+                      />
+                    );
+                  }
+
+                  if (
+                    group.label === '공무' &&
+                    index === 18
+                  ) {
+                    return null;
+                  }
+
+                  return (
+                    <Box
+                      key={index}
+                      sx={{
+                        px: 0.75,
+                        minHeight: 27,
+                        ...previewCellSx,
+                        display: 'flex',
+                        alignItems: 'center',
+                        color: '#111827',
+                        fontSize: '0.66rem',
+                        fontWeight:
+                          line.startsWith('[')
+                            ? 900
+                            : 500,
+                      }}
+                    >
+                      {line}
+                    </Box>
+                  );
+                },
               )}
             </Box>
           </Box>
@@ -1014,6 +1176,8 @@ function OfficePreviewRows() {
 function ExcelTemplatePreview({
   cellRows,
   nextMondayKey,
+  scheduleDates,
+  scheduleValues,
 }) {
   return (
     <Box
@@ -1212,7 +1376,10 @@ function ExcelTemplatePreview({
         </Box>
       </Box>
 
-      <OfficePreviewRows />
+      <OfficePreviewRows
+        scheduleDates={scheduleDates}
+        scheduleValues={scheduleValues}
+      />
     </Box>
   );
 }
@@ -1223,6 +1390,19 @@ export default function WeeklyOverview({
   const weekRange = useMemo(
     () => getKoreaWeekRange(),
     [],
+  );
+
+  const scheduleDates = useMemo(
+    () =>
+      Array.from(
+        { length: 7 },
+        (_, index) =>
+          addDaysToISO(
+            weekRange.nextMonday,
+            index,
+          ),
+      ),
+    [weekRange.nextMonday],
   );
 
   const [cellRows, setCellRows] =
@@ -1241,6 +1421,13 @@ export default function WeeklyOverview({
     registeredProjects,
     setRegisteredProjects,
   ] = useState(new Set());
+
+  const [
+    scheduleValues,
+    setScheduleValues,
+  ] = useState(
+    createEmptyScheduleValues(),
+  );
 
   const [loading, setLoading] =
     useState(true);
@@ -1332,6 +1519,7 @@ export default function WeeklyOverview({
     );
 
     let savedRows = null;
+    let savedScheduleValues = null;
 
     try {
       const {
@@ -1362,6 +1550,17 @@ export default function WeeklyOverview({
           migrateSavedPayload(
             data.payload,
           );
+
+        savedScheduleValues =
+          Array.from(
+            { length: 7 },
+            (_, index) =>
+              String(
+                data?.payload
+                  ?.scheduleValues
+                  ?.[index] || '',
+              ),
+          );
       }
     } catch (error) {
       console.error(
@@ -1380,6 +1579,11 @@ export default function WeeklyOverview({
     setCellRows(
       savedRows ||
         nextSourceRows,
+    );
+
+    setScheduleValues(
+      savedScheduleValues ||
+        createEmptyScheduleValues(),
     );
 
     setLoading(false);
@@ -1418,6 +1622,30 @@ export default function WeeklyOverview({
       );
     };
   }, [loadData]);
+
+  const handleScheduleValueChange = (
+    index,
+    value,
+  ) => {
+    setScheduleValues((previous) =>
+      previous.map(
+        (item, itemIndex) =>
+          itemIndex === index
+            ? value
+            : item,
+      ),
+    );
+
+    setSuccessMessage('');
+  };
+
+  const handleClearSchedule = () => {
+    setScheduleValues(
+      createEmptyScheduleValues(),
+    );
+
+    setSuccessMessage('');
+  };
 
   const handleRowChange = (
     cellAddress,
@@ -1585,7 +1813,17 @@ export default function WeeklyOverview({
       const workbook =
         new ExcelJS.Workbook();
 
-      await workbook.xlsx.load(bytes);
+      try {
+        await workbook.xlsx.load(
+          arrayBuffer,
+        );
+      } catch (loadError) {
+        throw new Error(
+          '주간업무총괄.xlsx 원본을 읽지 못했습니다. ' +
+          'public/templates의 파일을 제공된 원본으로 교체해주세요. ' +
+          `(${loadError?.message || 'load error'})`,
+        );
+      }
 
       const worksheet =
         workbook.getWorksheet(
@@ -1621,6 +1859,46 @@ export default function WeeklyOverview({
         vertical: 'middle',
         wrapText: false,
       };
+
+      SCHEDULE_DATE_CELLS.forEach(
+        (address, index) => {
+          const cell =
+            worksheet.getCell(address);
+
+          cell.value =
+            formatMonthDay(
+              scheduleDates[index],
+            );
+
+          cell.numFmt = '@';
+
+          cell.alignment = {
+            ...(cell.alignment || {}),
+            horizontal: 'center',
+            vertical: 'middle',
+            wrapText: false,
+          };
+        },
+      );
+
+      SCHEDULE_INPUT_CELLS.forEach(
+        (address, index) => {
+          const cell =
+            worksheet.getCell(address);
+
+          cell.value =
+            String(
+              scheduleValues[index] || '',
+            );
+
+          cell.alignment = {
+            ...(cell.alignment || {}),
+            horizontal: 'center',
+            vertical: 'middle',
+            wrapText: true,
+          };
+        },
+      );
 
       TEMPLATE_CELL_ADDRESSES.forEach(
         (address) => {
@@ -1739,6 +2017,7 @@ export default function WeeklyOverview({
             payload: {
               cellRows,
               cellValues,
+              scheduleValues,
             },
             updated_by: user.id,
             updated_by_name: name,
@@ -2031,6 +2310,158 @@ export default function WeeklyOverview({
             bgcolor: '#f8fafc',
           }}
         >
+          <Paper
+            variant="outlined"
+            sx={{
+              mb: 1.1,
+              overflow: 'hidden',
+              borderColor: '#cbd5e1',
+              boxShadow: 'none',
+            }}
+          >
+            <Box
+              sx={{
+                px: 1,
+                py: 0.75,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent:
+                  'space-between',
+                gap: 1,
+                bgcolor: '#f8fafc',
+                borderBottom:
+                  '1px solid #e2e8f0',
+              }}
+            >
+              <Box>
+                <Typography
+                  sx={{
+                    color: '#0f172a',
+                    fontSize: '0.78rem',
+                    fontWeight: 900,
+                  }}
+                >
+                  하자보수 주간일정
+                </Typography>
+
+                <Typography
+                  sx={{
+                    mt: 0.15,
+                    color: '#64748b',
+                    fontSize: '0.62rem',
+                    fontWeight: 700,
+                  }}
+                >
+                  날짜 H58:N58 · 입력 H59:N59
+                </Typography>
+              </Box>
+
+              <Button
+                size="small"
+                variant="outlined"
+                color="error"
+                onClick={
+                  handleClearSchedule
+                }
+                sx={{
+                  minWidth: 54,
+                  px: 0.65,
+                  whiteSpace: 'nowrap',
+                  fontSize: '0.61rem',
+                  fontWeight: 800,
+                }}
+              >
+                전체삭제
+              </Button>
+            </Box>
+
+            <Box
+              sx={{
+                p: 0.9,
+                overflowX: 'auto',
+              }}
+            >
+              <Box
+                sx={{
+                  minWidth: 700,
+                  display: 'grid',
+                  gridTemplateColumns:
+                    'repeat(7, minmax(90px, 1fr))',
+                  gap: 0.55,
+                }}
+              >
+                {scheduleDates.map(
+                  (dateKey, index) => (
+                    <Box
+                      key={dateKey}
+                      sx={{
+                        minWidth: 0,
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          mb: 0.35,
+                          py: 0.4,
+                          borderRadius: 0.8,
+                          color: '#1e3a8a',
+                          bgcolor: '#dbeafe',
+                          textAlign: 'center',
+                          fontSize: '0.66rem',
+                          fontWeight: 900,
+                        }}
+                      >
+                        {formatMonthDay(
+                          dateKey,
+                        )}
+                      </Box>
+
+                      <TextField
+                        fullWidth
+                        size="small"
+                        multiline
+                        minRows={2}
+                        maxRows={5}
+                        value={
+                          scheduleValues[
+                            index
+                          ] || ''
+                        }
+                        placeholder="입력"
+                        onChange={(
+                          event,
+                        ) =>
+                          handleScheduleValueChange(
+                            index,
+                            event.target
+                              .value,
+                          )
+                        }
+                        sx={{
+                          '& .MuiInputBase-root':
+                            {
+                              minHeight: 54,
+                              alignItems:
+                                'flex-start',
+                            },
+                          '& .MuiInputBase-input':
+                            {
+                              px: 0.65,
+                              py: 0.6,
+                              textAlign:
+                                'center',
+                              fontSize:
+                                '0.67rem',
+                              lineHeight: 1.4,
+                            },
+                        }}
+                      />
+                    </Box>
+                  ),
+                )}
+              </Box>
+            </Box>
+          </Paper>
+
           {TEMPLATE_PROJECTS.map(
             (project) => (
               <ProjectEditor
@@ -2118,6 +2549,14 @@ export default function WeeklyOverview({
             cellRows={cellRows}
             nextMondayKey={
               weekRange.nextMonday
+            }
+            scheduleDates={
+              scheduleDates.map(
+                formatMonthDay,
+              )
+            }
+            scheduleValues={
+              scheduleValues
             }
           />
         </Box>
