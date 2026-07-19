@@ -916,7 +916,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
     /*
       마감 상태는 관리자 화면의 로컬 상태에만 저장하면 안 됩니다.
-      담당자가 다시 로그인했을 때도 같은 상태를 읽을 수 있도록
+      모든 사용자가 다시 로그인했을 때도 같은 상태를 읽을 수 있도록
       daily_reports에 open 또는 closed 상태가 반드시 존재해야 합니다.
 
       기존 일보 행:
@@ -1022,7 +1022,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const isClosed = (dateStr) => {
     if (!dateStr) return false;
 
-    // 최고관리자가 취소한 open 상태를 자동 마감보다 우선합니다.
+    // 사용자가 취소한 open 상태를 자동 마감보다 우선합니다.
     if (manualStatus[dateStr] === 'open') return false;
     if (manualStatus[dateStr] === 'closed') return true;
 
@@ -1052,13 +1052,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   };
   const handleToggleDeadline = async (dateStr) => {
     const currentlyClosed = isClosed(dateStr);
-
-    if (currentlyClosed && !isSuperAdmin) {
-      alert(
-        `마감 취소는 최고관리자만 가능합니다.\n\n현재 인식된 권한: ${userRole}`,
-      );
-      return;
-    }
 
     const confirmed = window.confirm(
       currentlyClosed
@@ -2289,7 +2282,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               todayMidnight={todayMidnight}
               formatYYMMDD={formatYYMMDD}
               userProfile={activeUserProfile}
-              canCancelDeadline={isSuperAdmin}
               onHistoricalUploadComplete={
                 handleHistoricalUploadComplete
               }

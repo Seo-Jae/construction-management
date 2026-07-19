@@ -30,7 +30,6 @@ export default function DailyReport({
   todayMidnight,
   formatYYMMDD,
   userProfile,
-  canCancelDeadline = false,
   onHistoricalUploadComplete,
 }) {
   return (
@@ -285,10 +284,8 @@ export default function DailyReport({
                   onClick={() => handleToggleDeadline(day.date)}
                   title={
                     closedStatus
-                      ? canCancelDeadline
-                        ? '최고관리자 마감 취소'
-                        : '최고관리자만 마감 취소 가능'
-                      : '일보 마감 처리'
+                      ? '마감을 취소하고 일보를 수정합니다.'
+                      : '일보를 마감 처리합니다.'
                   }
                   variant="outlined"
                   size="small"
@@ -299,22 +296,21 @@ export default function DailyReport({
                     fontSize: '0.65rem',
                     fontWeight: 'bold',
                     color: closedStatus
-                      ? canCancelDeadline
-                        ? '#dc2626'
-                        : '#64748b'
+                      ? '#dc2626'
                       : '#64748b',
                     borderColor: closedStatus
-                      ? canCancelDeadline
-                        ? '#f87171'
-                        : '#cbd5e1'
+                      ? '#f87171'
                       : '#cbd5e1',
-                    bgcolor:
-                      closedStatus && canCancelDeadline
-                        ? '#fff7f7'
-                        : 'transparent',
+                    bgcolor: closedStatus
+                      ? '#fff7f7'
+                      : 'transparent',
                     '&:hover': {
-                      borderColor: closedStatus ? '#ef4444' : '#94a3b8',
-                      bgcolor: closedStatus ? '#fef2f2' : '#f8fafc',
+                      borderColor: closedStatus
+                        ? '#ef4444'
+                        : '#94a3b8',
+                      bgcolor: closedStatus
+                        ? '#fef2f2'
+                        : '#f8fafc',
                     },
                   }}
                 >
