@@ -37,7 +37,7 @@ const TEMPLATE_URL =
   '/templates/발주서양식.xlsx';
 
 const TEMPLATE_VERSION =
-  'MATERIAL_ORDER_V2_SINGLE';
+  'MATERIAL_ORDER_V3_CATEGORY';
 
 const ITEM_INSERT_CHUNK_SIZE =
   500;
@@ -45,9 +45,24 @@ const ITEM_INSERT_CHUNK_SIZE =
 const TITLE_KEY =
   '자재발주의뢰서';
 
+const MATERIAL_CATEGORIES = [
+  '잡자재',
+  '경량벽체',
+  '단열합지',
+  '합판',
+  '천정',
+  '몰딩',
+  '걸레받이',
+  '안전용품',
+];
+
 const REQUIRED_HEADERS = [
   {
     column: 'A',
+    label: '자재분류',
+  },
+  {
+    column: 'B',
     label: '품명',
   },
   {
@@ -494,44 +509,6 @@ const createFileHash =
     }
   };
 
-const isCategoryRow = ({
-  itemName,
-  specification,
-  unit,
-  executionQuantity,
-  previousQuantity,
-  currentQuantity,
-  note,
-}) => {
-  if (
-    !itemName.startsWith(
-      '■',
-    )
-  ) {
-    return false;
-  }
-
-  return ![
-    specification,
-    unit,
-    executionQuantity,
-    previousQuantity,
-    currentQuantity,
-    note,
-  ].some(
-    (value) =>
-      value !== null &&
-      value !== '',
-  );
-};
-
-const cleanCategoryName = (
-  value,
-) =>
-  normalizeText(value)
-    .replace(/^■+\s*/, '')
-    .trim();
-
 const validateHeaders = ({
   worksheet,
   headerRow,
@@ -749,9 +726,6 @@ const parseOrderWorkbook =
                   `F${infoRow3}`,
                 );
 
-              let currentCategory =
-                '';
-
               const items = [];
               let ignoredRowCount =
                 0;
@@ -773,10 +747,16 @@ const parseOrderWorkbook =
                 blockEndRow;
                 row += 1
               ) {
-                const itemName =
+                const category =
                   getCellText(
                     worksheet,
                     `A${row}`,
+                  );
+
+                const itemName =
+                  getCellText(
+                    worksheet,
+                    `B${row}`,
                   );
 
                 const specification =
@@ -826,7 +806,8 @@ const parseOrderWorkbook =
 
                 const rowHasValue =
                   Boolean(
-                    itemName ||
+                    category ||
+                      itemName ||
                       specification ||
                       unit ||
                       note ||
@@ -844,25 +825,6 @@ const parseOrderWorkbook =
 
                 foundAnyInput =
                   true;
-
-                if (
-                  isCategoryRow({
-                    itemName,
-                    specification,
-                    unit,
-                    executionQuantity,
-                    previousQuantity,
-                    currentQuantity,
-                    note,
-                  })
-                ) {
-                  currentCategory =
-                    cleanCategoryName(
-                      itemName,
-                    );
-
-                  continue;
-                }
 
                 if (!itemName) {
                   warnings.push(
@@ -891,6 +853,26 @@ const parseOrderWorkbook =
                   continue;
                 }
 
+                if (!category) {
+                  errors.push(
+                    `${worksheet.name} ${row}행의 자재분류를 선택해주세요.`,
+                  );
+
+                  continue;
+                }
+
+                if (
+                  !MATERIAL_CATEGORIES.includes(
+                    category,
+                  )
+                ) {
+                  errors.push(
+                    `${worksheet.name} ${row}행의 자재분류(${category})는 허용된 분류가 아닙니다.`,
+                  );
+
+                  continue;
+                }
+
                 const cumulativeQuantity =
                   (
                     previousQuantity ||
@@ -910,8 +892,7 @@ const parseOrderWorkbook =
                     items.length +
                     1,
                   sourceRow: row,
-                  category:
-                    currentCategory,
+                  category,
                   itemName,
                   specification,
                   unit,
@@ -925,6 +906,7 @@ const parseOrderWorkbook =
                   executionRatio,
                   note,
                   rawRow: {
+                    category,
                     itemName,
                     specification,
                     unit,
@@ -1402,6 +1384,7 @@ export default function MaterialOrderUpload({
             ) {
               [
                 'A',
+                'B',
                 'C',
                 'E',
                 'F',
@@ -2557,13 +2540,13 @@ export default function MaterialOrderUpload({
           >
             1. 반드시 이 화면의 ‘발주서 양식 다운로드’ 버튼으로 양식을 받습니다.
             <br />
-            2. 품명·규격·단위·실행물량·전회발주량·금회발주량·비고를 입력합니다.
+            2. 각 자재 행의 자재분류를 목록에서 선택합니다.
             <br />
-            3. 자재 분류 행은 품명 칸에 ‘■ 경량골조’처럼 입력할 수 있습니다.
+            3. 품명과 규격은 현장에서 사용하는 표현대로 자유롭게 입력합니다.
             <br />
-            4. 금회발주량이 0보다 큰 행만 이번 발주 품목으로 저장됩니다.
+            4. 제조사나 납품업체는 입력하지 않습니다.
             <br />
-            5. 한 파일에는 발주서 한 장이 들어 있으며, 금회발주량이 입력된 품목만 저장됩니다.
+            5. 금회발주량이 0보다 큰 행만 이번 발주 품목으로 저장됩니다.
             <br />
             6. 열 제목 또는 발주서 구조가 바뀌면 저장 전에 오류 안내가 표시됩니다.
             <br />
@@ -2574,7 +2557,7 @@ export default function MaterialOrderUpload({
             severity="info"
             sx={{ mt: 1 }}
           >
-            자재 종류는 미리 등록하지 않아도 됩니다. 품명·규격·단위는 자유롭게 입력할 수 있으며, 새로운 자재도 그대로 저장됩니다.
+            자재분류는 잡자재·경량벽체·단열합지·합판·천정·몰딩·걸레받이·안전용품 중에서 선택하고, 품명과 규격은 자유롭게 입력합니다. 이후 본사에서 동일 자재를 표준 자재로 연결합니다.
           </Alert>
         </DialogContent>
 
