@@ -112,6 +112,7 @@ export default function BuildingGrid({
   onCellClick,
   unitData = {},
   onFloorClick,
+  protectCompleted = false,
 }) {
   const floors = Number(config?.floors) || 0;
   const totalUnits = useMemo(() => countUniqueUnits(config), [config]);
