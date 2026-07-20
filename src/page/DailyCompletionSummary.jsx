@@ -1833,9 +1833,9 @@ export default function DailyCompletionSummary({
                   '1px solid #dbe3ee',
                 fontSize:
                   '0.64rem',
-                lineHeight: 1.15,
+                lineHeight: 1.2,
                 px: 0.45,
-                py: 0.42,
+                py: 0.62,
               },
             }}
           >
@@ -1868,9 +1868,9 @@ export default function DailyCompletionSummary({
                           'normal',
                         wordBreak:
                           'keep-all',
-                        lineHeight: 1.05,
+                        lineHeight: 1.15,
                         px: 0.3,
-                        py: 0.38,
+                        py: 0.58,
                         fontSize:
                           '0.6rem',
                       }}
@@ -1905,6 +1905,7 @@ export default function DailyCompletionSummary({
                                 : '#f8fafc',
                         whiteSpace:
                           'nowrap',
+                        py: 0.55,
                       }}
                     >
                       <Typography
@@ -1955,11 +1956,15 @@ export default function DailyCompletionSummary({
                     }
                     hover
                     sx={{
+                      minHeight: 34,
                       bgcolor:
                         index % 2 ===
                         0
                           ? '#ffffff'
                           : '#fbfdff',
+                      '& td': {
+                        height: 34,
+                      },
                     }}
                   >
                     <TableCell
@@ -2175,7 +2180,7 @@ export default function DailyCompletionSummary({
                               fontSize:
                                 '0.62rem',
                               px: 0.35,
-                              py: 0.4,
+                              py: 0.62,
                             }}
                           >
                             {count > 0
