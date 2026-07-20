@@ -43,6 +43,8 @@ import ProposalReport from './page/ProposalReport.jsx';
 import ApprovalInbox from './page/ApprovalInbox.jsx';
 import WeeklyOverview from './page/WeeklyOverview.jsx';
 import WeeklyOverviewArchive from './page/WeeklyOverviewArchive.jsx';
+import MaterialOrderUpload from './page/MaterialOrderUpload.jsx';
+import MaterialInputStatus from './page/MaterialInputStatus.jsx';
 import AdminDashboard from './page/AdminDashboard.jsx';
 
 const drawerWidth = 240;
@@ -2709,13 +2711,18 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           {currentView ===
             'material-order' &&
             activeProjectName && (
-              <ReportPlaceholder title="자재발주작성" />
+              <MaterialOrderUpload
+                projectName={activeProjectName}
+                userProfile={activeUserProfile}
+              />
             )}
 
           {currentView ===
             'material-input-status' &&
             activeProjectName && (
-              <ReportPlaceholder title="자재투입현황" />
+              <MaterialInputStatus
+                projectName={activeProjectName}
+              />
             )}
 
           {currentView === 'report-weekly' && activeProjectName && (
