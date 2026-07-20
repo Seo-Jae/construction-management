@@ -43,6 +43,28 @@ const PROCESS_COLORS = [
   '#e11d48',
 ];
 
+const TARGET_COLORS = [
+  '#dc2626',
+  '#2563eb',
+  '#16a34a',
+  '#9333ea',
+  '#ea580c',
+  '#0891b2',
+  '#be123c',
+  '#4f46e5',
+];
+
+const TARGET_SELECT_COLUMNS = `
+  id,
+  project_name,
+  process_type,
+  sequence,
+  target_name,
+  target_date,
+  building_floor_targets,
+  updated_at
+`;
+
 const getProcessColor = (processName, processOptions) => {
   const processIndex = processOptions.indexOf(processName);
   const safeIndex = processIndex >= 0 ? processIndex : 0;
@@ -59,6 +81,170 @@ const formatCompletionDate = (dateValue) => {
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}.${month}.${day}`;
+};
+
+const normalizeFloorTargets = (
+  value,
+) => {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value)
+  ) {
+    return {};
+  }
+
+  return Object.entries(value)
+    .reduce(
+      (
+        result,
+        [buildingName, floor],
+      ) => {
+        const nextFloor =
+          Number(floor);
+
+        if (
+          buildingName &&
+          Number.isFinite(
+            nextFloor,
+          ) &&
+          nextFloor > 0
+        ) {
+          result[buildingName] =
+            nextFloor;
+        }
+
+        return result;
+      },
+      {},
+    );
+};
+
+const groupProgressTargetRows = (
+  rows,
+  processOptions,
+) => {
+  const groupMap =
+    new Map();
+
+  (rows || []).forEach(
+    (row) => {
+      const sequence =
+        Number(
+          row?.sequence,
+        ) || 1;
+
+      if (
+        !groupMap.has(
+          sequence,
+        )
+      ) {
+        groupMap.set(
+          sequence,
+          [],
+        );
+      }
+
+      groupMap
+        .get(sequence)
+        .push(row);
+    },
+  );
+
+  return Array.from(
+    groupMap.entries(),
+  )
+    .sort(
+      ([first], [second]) =>
+        first - second,
+    )
+    .map(
+      ([
+        sequence,
+        groupRows,
+      ]) => {
+        const representative =
+          groupRows
+            .slice()
+            .sort(
+              (
+                first,
+                second,
+              ) =>
+                String(
+                  second.updated_at ||
+                    '',
+                ).localeCompare(
+                  String(
+                    first.updated_at ||
+                      '',
+                  ),
+                ),
+            )[0] ||
+          groupRows[0];
+
+        const processTypes =
+          Array.from(
+            new Set(
+              groupRows
+                .map(
+                  (row) =>
+                    String(
+                      row?.process_type ||
+                        '',
+                    ).trim(),
+                )
+                .filter(Boolean),
+            ),
+          ).sort(
+            (first, second) => {
+              const firstIndex =
+                processOptions.indexOf(
+                  first,
+                );
+
+              const secondIndex =
+                processOptions.indexOf(
+                  second,
+                );
+
+              return (
+                (
+                  firstIndex < 0
+                    ? Number.MAX_SAFE_INTEGER
+                    : firstIndex
+                ) -
+                (
+                  secondIndex < 0
+                    ? Number.MAX_SAFE_INTEGER
+                    : secondIndex
+                )
+              );
+            },
+          );
+
+        return {
+          id:
+            `sequence:${sequence}`,
+          sequence,
+          target_name:
+            representative
+              ?.target_name ||
+            `${sequence}차 방통`,
+          target_date:
+            representative
+              ?.target_date ||
+            '',
+          building_floor_targets:
+            normalizeFloorTargets(
+              representative
+                ?.building_floor_targets,
+            ),
+          process_types:
+            processTypes,
+        };
+      },
+    );
 };
 
 function MultiStatusCell({
@@ -196,6 +382,7 @@ function MultiProcessBuildingGrid({
   selectedProcesses,
   processOptions,
   progressMap,
+  targetLines = [],
 }) {
   const floors = Number(config?.floors) || 0;
   const buildingTotalUnits = countUniqueUnits(config);
@@ -226,11 +413,88 @@ function MultiProcessBuildingGrid({
           {floorNumbers.map((floor) => {
             const floorCells = buildFloorVisualCells(config, floor);
 
+            const floorTargetLines =
+              (targetLines || [])
+                .filter(
+                  (line) =>
+                    Number(
+                      line.floor,
+                    ) === floor,
+                );
+
             return (
             <Box
               key={floor}
-              sx={{ display: 'flex', alignItems: 'center', gap: '2px' }}
+              sx={{
+                position: 'relative',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '2px',
+                pt:
+                  floorTargetLines.length >
+                  0
+                    ? `${Math.max(
+                        7,
+                        floorTargetLines.length *
+                          7,
+                      )}px`
+                    : 0,
+              }}
             >
+              {floorTargetLines.map(
+                (line, index) => (
+                  <Box
+                    key={line.id}
+                    title={
+                      line.processLabel
+                        ? `적용 공종: ${line.processLabel}`
+                        : line.label
+                    }
+                    sx={{
+                      position:
+                        'absolute',
+                      top:
+                        index * 7,
+                      left: 23,
+                      right: 0,
+                      height: 0,
+                      borderTop:
+                        `2px dashed ${line.color}`,
+                      pointerEvents:
+                        'none',
+                      zIndex: 3,
+                    }}
+                  >
+                    <Typography
+                      component="span"
+                      sx={{
+                        position:
+                          'absolute',
+                        right: 0,
+                        top: -9,
+                        px: 0.35,
+                        bgcolor:
+                          line.color,
+                        color:
+                          '#ffffff',
+                        borderRadius:
+                          '3px 3px 0 0',
+                        fontSize:
+                          '0.48rem',
+                        lineHeight:
+                          '9px',
+                        fontWeight:
+                          900,
+                        whiteSpace:
+                          'nowrap',
+                      }}
+                    >
+                      {line.label}
+                    </Typography>
+                  </Box>
+                ),
+              )}
+
               <Typography
                 sx={{
                   width: 21,
@@ -357,8 +621,11 @@ export default function MultiProcessProgress({
     safeProcessOptions.slice(0, 2),
   );
   const [progressRows, setProgressRows] = useState([]);
+  const [targetRows, setTargetRows] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [targetLoading, setTargetLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [targetErrorMessage, setTargetErrorMessage] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
@@ -435,6 +702,136 @@ export default function MultiProcessProgress({
     };
   }, [projectName, selectedProcesses, refreshKey]);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchTargetRows =
+      async () => {
+        if (
+          !projectName ||
+          selectedProcesses.length ===
+            0
+        ) {
+          if (isMounted) {
+            setTargetRows([]);
+            setTargetErrorMessage('');
+          }
+
+          return;
+        }
+
+        setTargetLoading(true);
+        setTargetErrorMessage('');
+
+        try {
+          const allRows = [];
+          let from = 0;
+
+          while (true) {
+            const to =
+              from +
+              PAGE_SIZE -
+              1;
+
+            const {
+              data,
+              error,
+            } = await supabase
+              .from(
+                'progress_targets',
+              )
+              .select(
+                TARGET_SELECT_COLUMNS,
+              )
+              .eq(
+                'project_name',
+                projectName,
+              )
+              .in(
+                'process_type',
+                selectedProcesses,
+              )
+              .order(
+                'sequence',
+                {
+                  ascending: true,
+                },
+              )
+              .order(
+                'updated_at',
+                {
+                  ascending: false,
+                },
+              )
+              .range(
+                from,
+                to,
+              );
+
+            if (error) {
+              throw error;
+            }
+
+            const pageRows =
+              data || [];
+
+            allRows.push(
+              ...pageRows,
+            );
+
+            if (
+              pageRows.length <
+              PAGE_SIZE
+            ) {
+              break;
+            }
+
+            from +=
+              PAGE_SIZE;
+          }
+
+          if (isMounted) {
+            setTargetRows(
+              allRows,
+            );
+          }
+        } catch (error) {
+          console.error(
+            '다중 공종 방통구간 조회 오류:',
+            error,
+          );
+
+          if (isMounted) {
+            setTargetRows([]);
+
+            setTargetErrorMessage(
+              error?.code ===
+                '42P01'
+                ? '방통구간 테이블이 없어 다중 공종 화면에는 구간선을 표시하지 못했습니다.'
+                : error?.message ||
+                  '방통구간을 불러오지 못했습니다.',
+            );
+          }
+        } finally {
+          if (isMounted) {
+            setTargetLoading(
+              false,
+            );
+          }
+        }
+      };
+
+    fetchTargetRows();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [
+    projectName,
+    refreshKey,
+    selectedProcesses,
+  ]);
+
   const progressMap = useMemo(() => {
     const mapped = {};
 
@@ -461,6 +858,69 @@ export default function MultiProcessProgress({
     () => getProjectCellKeys(safeBuildingConfigs),
     [safeBuildingConfigs],
   );
+
+  const progressTargetGroups =
+    useMemo(
+      () =>
+        groupProgressTargetRows(
+          targetRows,
+          safeProcessOptions,
+        ),
+      [
+        safeProcessOptions,
+        targetRows,
+      ],
+    );
+
+  const targetLinesByBuilding =
+    useMemo(() => {
+      const result = {};
+
+      Object.keys(
+        safeBuildingConfigs,
+      ).forEach(
+        (buildingName) => {
+          result[buildingName] =
+            progressTargetGroups
+              .map(
+                (
+                  target,
+                  index,
+                ) => ({
+                  id:
+                    target.id,
+                  label:
+                    target.target_name,
+                  color:
+                    TARGET_COLORS[
+                      index %
+                        TARGET_COLORS.length
+                    ],
+                  floor:
+                    Number(
+                      target
+                        .building_floor_targets?.[
+                        buildingName
+                      ],
+                    ) || 0,
+                  processLabel:
+                    target.process_types.join(
+                      ', ',
+                    ),
+                }),
+              )
+              .filter(
+                (line) =>
+                  line.floor > 0,
+              );
+        },
+      );
+
+      return result;
+    }, [
+      progressTargetGroups,
+      safeBuildingConfigs,
+    ]);
 
   const processStats = useMemo(
     () =>
@@ -731,7 +1191,11 @@ export default function MultiProcessProgress({
           variant="outlined"
           startIcon={<RefreshIcon />}
           onClick={() => setRefreshKey((previous) => previous + 1)}
-          disabled={loading || selectedProcesses.length === 0}
+          disabled={
+              loading ||
+              targetLoading ||
+              selectedProcesses.length === 0
+            }
           sx={{ whiteSpace: 'nowrap' }}
         >
           새로고침
@@ -739,6 +1203,12 @@ export default function MultiProcessProgress({
       </Paper>
 
       {errorMessage && <Alert severity="error">{errorMessage}</Alert>}
+
+      {targetErrorMessage && (
+        <Alert severity="warning">
+          {targetErrorMessage}
+        </Alert>
+      )}
 
       {selectedProcesses.length === 0 && (
         <Alert severity="info">표시할 공종을 한 개 이상 선택해주세요.</Alert>
@@ -828,7 +1298,7 @@ export default function MultiProcessProgress({
           bgcolor: '#f1f5f9',
         }}
       >
-        {loading && (
+        {(loading || targetLoading) && (
           <Box
             sx={{
               position: 'absolute',
@@ -844,7 +1314,7 @@ export default function MultiProcessProgress({
           >
             <CircularProgress size={32} />
             <Typography variant="body2" color="text.secondary">
-              공종별 완료 데이터를 불러오는 중입니다.
+              공종별 완료 데이터와 방통구간을 불러오는 중입니다.
             </Typography>
           </Box>
         )}
@@ -886,6 +1356,11 @@ export default function MultiProcessProgress({
                   selectedProcesses={selectedProcesses}
                   processOptions={safeProcessOptions}
                   progressMap={progressMap}
+                  targetLines={
+                    targetLinesByBuilding[
+                      buildingName
+                    ] || []
+                  }
                 />
               ))}
           </Box>
