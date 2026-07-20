@@ -17,13 +17,19 @@ const REPORT_PROCESSES = [
   { label: '단열', processType: '단열' },
   { label: '경량골조', processType: '경량골조' },
   { label: '경량석고', processType: '경량석고' },
-  { label: '합지석고', processType: '합지석고' },
+  { label: '합지', processType: '합지' },
   { label: '세대천정', processType: '세대천정' },
   { label: '1차몰딩', processType: '1차몰딩' },
   { label: '2차몰딩', processType: '2차몰딩' },
   { label: '1차 걸레받이', processType: '1차 걸레받이' },
   { label: '2차 걸레받이', processType: '2차 걸레받이' },
 ];
+
+const normalizeProcessText = (value) =>
+  String(value || '').replace(
+    /합지석고/g,
+    '합지',
+  );
 
 const createLines = (count) => Array.from({ length: count }, () => '');
 
@@ -160,8 +166,19 @@ const buildProcessStats = (rows, totalUnits, period) => {
   const uniqueRows = new Map();
 
   rows.forEach((row) => {
-    const key = `${row.process_type}|${row.building}|${row.unit}`;
-    uniqueRows.set(key, row);
+    const normalizedProcessType =
+      row.process_type === '합지석고'
+        ? '합지'
+        : row.process_type;
+
+    const normalizedRow = {
+      ...row,
+      process_type:
+        normalizedProcessType,
+    };
+
+    const key = `${normalizedProcessType}|${row.building}|${row.unit}`;
+    uniqueRows.set(key, normalizedRow);
   });
 
   return REPORT_PROCESSES.map((process) => {
@@ -841,7 +858,15 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
           .eq('project_name', projectName)
           .in(
             'process_type',
-            REPORT_PROCESSES.map((process) => process.processType),
+            Array.from(
+              new Set([
+                ...REPORT_PROCESSES.map(
+                  (process) =>
+                    process.processType,
+                ),
+                '합지석고',
+              ]),
+            ),
           )
           .range(from, from + pageSize - 1);
 

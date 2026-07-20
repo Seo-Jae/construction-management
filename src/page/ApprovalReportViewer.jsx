@@ -13,12 +13,25 @@ import {
 } from '@mui/material';
 import ExcelJS from 'exceljs';
 
+const normalizeProcessText = (value) =>
+  String(value || '').replace(
+    /합지석고/g,
+    '합지',
+  );
+
+const normalizeStoredProcessType = (
+  value,
+) =>
+  value === '합지석고'
+    ? '합지'
+    : value;
+
 const WEEKLY_REPORT_PROCESSES = [
   { label: '바닥먹매김', processType: '바닥먹' },
   { label: '단열', processType: '단열' },
   { label: '경량골조', processType: '경량골조' },
   { label: '경량석고', processType: '경량석고' },
-  { label: '합지석고', processType: '합지석고' },
+  { label: '합지', processType: '합지' },
   { label: '세대천정', processType: '세대천정' },
   { label: '1차몰딩', processType: '1차몰딩' },
   { label: '2차몰딩', processType: '2차몰딩' },
@@ -185,14 +198,26 @@ const downloadWeeklyReport = async (request) => {
   const period = payload?.period || {};
   const form = payload?.form || {};
   const stats = Array.isArray(payload?.stats)
-    ? payload.stats
+    ? payload.stats.map((row) => ({
+        ...row,
+        processType:
+          normalizeStoredProcessType(
+            row?.processType,
+          ),
+        label:
+          normalizeProcessText(
+            row?.label,
+          ),
+      }))
     : [];
   const hasStoredHighlights = Array.isArray(
     payload?.nextWeekHighlights,
   );
   const nextWeekHighlights = hasStoredHighlights
     ? payload.nextWeekHighlights
-        .map((value) => String(value || '').trim())
+        .map((value) =>
+          normalizeProcessText(value).trim(),
+        )
         .slice(0, 10)
     : WEEKLY_REPORT_PROCESSES.map(
         (process) => process.label,
@@ -562,24 +587,51 @@ function WeeklyPreview({ request }) {
   const period = payload?.period || {};
   const form = payload?.form || {};
   const stats = Array.isArray(payload?.stats)
-    ? payload.stats
+    ? payload.stats.map((row) => ({
+        ...row,
+        processType:
+          normalizeStoredProcessType(
+            row?.processType,
+          ),
+        label:
+          normalizeProcessText(
+            row?.label,
+          ),
+      }))
     : [];
   const hasStoredHighlights = Array.isArray(
     payload?.nextWeekHighlights,
   );
   const nextWeekHighlights = hasStoredHighlights
     ? payload.nextWeekHighlights
-        .map((value) => String(value || '').trim())
+        .map((value) =>
+          normalizeProcessText(value).trim(),
+        )
         .slice(0, 10)
     : WEEKLY_REPORT_PROCESSES.map(
         (process) => process.label,
       );
 
   const statMap = new Map(
-    stats.map((row) => [
-      row?.processType,
-      row,
-    ]),
+    stats.map((row) => {
+      const normalizedProcessType =
+        normalizeStoredProcessType(
+          row?.processType,
+        );
+
+      return [
+        normalizedProcessType,
+        {
+          ...row,
+          processType:
+            normalizedProcessType,
+          label:
+            normalizeProcessText(
+              row?.label,
+            ),
+        },
+      ];
+    }),
   );
 
   const workRows = WEEKLY_REPORT_PROCESSES.map(

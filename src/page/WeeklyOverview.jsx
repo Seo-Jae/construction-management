@@ -374,7 +374,9 @@ const formatDisplayDate = (dateKey) => {
 };
 
 const normalizeText = (value) =>
-  String(value || '').trim();
+  String(value || '')
+    .replace(/합지석고/g, '합지')
+    .trim();
 
 const normalizeTextList = (values) =>
   (Array.isArray(values) ? values : [])
