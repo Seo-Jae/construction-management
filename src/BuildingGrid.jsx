@@ -113,6 +113,9 @@ export default function BuildingGrid({
   unitData = {},
   onFloorClick,
   protectCompleted = false,
+  targetLines = [],
+  targetEditMode = false,
+  activeTargetId = '',
 }) {
   const floors = Number(config?.floors) || 0;
   const totalUnits = useMemo(() => countUniqueUnits(config), [config]);
@@ -141,30 +144,156 @@ export default function BuildingGrid({
           {floorNumbers.map((floor) => {
             const floorCells = buildFloorVisualCells(config, floor);
 
+            const floorTargetLines =
+              (targetLines || [])
+                .filter(
+                  (line) =>
+                    Number(
+                      line.floor,
+                    ) === floor,
+                );
+
+            const activeFloorLine =
+              floorTargetLines.find(
+                (line) =>
+                  line.id ===
+                  activeTargetId,
+              );
+
             return (
               <Box
                 key={floor}
-                sx={{ display: 'flex', alignItems: 'center', gap: `${CELL_GAP}px` }}
+                sx={{
+                  position: 'relative',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: `${CELL_GAP}px`,
+                  pt:
+                    floorTargetLines.length >
+                    0
+                      ? `${Math.max(
+                          7,
+                          floorTargetLines.length *
+                            7,
+                        )}px`
+                      : 0,
+                }}
               >
+                {floorTargetLines.map(
+                  (line, index) => (
+                    <Box
+                      key={
+                        line.id
+                      }
+                      sx={{
+                        position:
+                          'absolute',
+                        top:
+                          index *
+                          7,
+                        left: 23,
+                        right: 0,
+                        height: 0,
+                        borderTop:
+                          `2px ${line.active ? 'solid' : 'dashed'} ${line.color}`,
+                        pointerEvents:
+                          'none',
+                        zIndex: 3,
+                      }}
+                    >
+                      <Typography
+                        component="span"
+                        sx={{
+                          position:
+                            'absolute',
+                          right: 0,
+                          top: -9,
+                          px: 0.35,
+                          bgcolor:
+                            line.color,
+                          color:
+                            '#ffffff',
+                          borderRadius:
+                            '3px 3px 0 0',
+                          fontSize:
+                            '0.48rem',
+                          lineHeight:
+                            '9px',
+                          fontWeight:
+                            900,
+                          whiteSpace:
+                            'nowrap',
+                        }}
+                      >
+                        {line.label}
+                      </Typography>
+                    </Box>
+                  ),
+                )}
+
                 <Typography
                   component="button"
                   type="button"
-                  onClick={() => onFloorClick?.(buildingName, floor)}
+                  title={
+                    targetEditMode
+                      ? activeFloorLine
+                        ? '같은 층을 다시 누르면 목표 라인이 해제됩니다.'
+                        : '이 층까지 목표 범위로 설정합니다.'
+                      : '층 전체 세대 선택'
+                  }
+                  onClick={() =>
+                    onFloorClick?.(
+                      buildingName,
+                      floor,
+                    )
+                  }
                   sx={{
                     width: 21,
                     flex: '0 0 21px',
                     p: 0,
-                    border: 0,
-                    bgcolor: 'transparent',
+                    border:
+                      targetEditMode
+                        ? '1px solid #fbbf24'
+                        : 0,
+                    borderRadius:
+                      targetEditMode
+                        ? 0.5
+                        : 0,
+                    bgcolor:
+                      activeFloorLine
+                        ? activeFloorLine.color
+                        : targetEditMode
+                          ? '#fffbeb'
+                          : 'transparent',
                     textAlign: 'right',
                     pr: 0.25,
-                    color: '#64748b',
+                    color:
+                      activeFloorLine
+                        ? '#ffffff'
+                        : targetEditMode
+                          ? '#b45309'
+                          : '#64748b',
                     fontSize: '0.55rem',
                     lineHeight: 1,
                     cursor: 'pointer',
                     fontFamily: 'inherit',
+                    fontWeight:
+                      targetEditMode
+                        ? 900
+                        : 400,
                     '&:hover': {
-                      color: '#0284c7',
+                      color:
+                        activeFloorLine
+                          ? '#ffffff'
+                          : targetEditMode
+                            ? '#92400e'
+                            : '#0284c7',
+                      bgcolor:
+                        activeFloorLine
+                          ? activeFloorLine.color
+                          : targetEditMode
+                            ? '#fef3c7'
+                            : 'transparent',
                       fontWeight: 800,
                     },
                   }}
@@ -242,17 +371,21 @@ export default function BuildingGrid({
                       component="button"
                       type="button"
                       disabled={
+                        targetEditMode ||
                         isProtectedCompleted
                       }
                       title={
-                        isProtectedCompleted
-                          ? '완료 처리에서는 기존 완료 세대의 완료일을 유지합니다.'
-                          : isCompleted
-                            ? '작업전 또는 작업중으로 변경할 수 있습니다.'
-                            : ''
+                        targetEditMode
+                          ? '목표 라인 설정 중에는 층 번호를 클릭하세요.'
+                          : isProtectedCompleted
+                            ? '완료 처리에서는 기존 완료 세대의 완료일을 유지합니다.'
+                            : isCompleted
+                              ? '작업전 또는 작업중으로 변경할 수 있습니다.'
+                              : ''
                       }
                       onClick={() => {
                         if (
+                          targetEditMode ||
                           isProtectedCompleted
                         ) {
                           return;
@@ -270,6 +403,7 @@ export default function BuildingGrid({
                         border: '1px solid',
                         boxSizing: 'border-box',
                         cursor:
+                          targetEditMode ||
                           isProtectedCompleted
                             ? 'not-allowed'
                             : 'pointer',
@@ -286,7 +420,10 @@ export default function BuildingGrid({
                         transition: 'filter 120ms ease, transform 120ms ease',
                         ...statusStyle,
                         '&:disabled': {
-                          opacity: 1,
+                          opacity:
+                            targetEditMode
+                              ? 0.72
+                              : 1,
                           WebkitTextFillColor:
                             'currentColor',
                         },
