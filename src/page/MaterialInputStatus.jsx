@@ -448,6 +448,43 @@ const formatMoney = (
     0,
   )}원`;
 
+const formatShortDate = (
+  value,
+) => {
+  const text =
+    String(value || '').trim();
+
+  if (!text) {
+    return '-';
+  }
+
+  const matched =
+    text.match(
+      /^(\d{4})-(\d{2})-(\d{2})$/,
+    );
+
+  if (!matched) {
+    return text;
+  }
+
+  return [
+    matched[1].slice(-2),
+    matched[2],
+    matched[3],
+  ].join('-');
+};
+
+const tableVerticalBorderSx = {
+  '& th, & td': {
+    borderRight:
+      '1px solid #e2e8f0',
+  },
+  '& th:last-of-type, & td:last-of-type':
+    {
+      borderRight: 'none',
+    },
+};
+
 const safeFileName = (
   value,
 ) =>
@@ -3033,6 +3070,9 @@ export default function MaterialInputStatus({
               <Table
                 stickyHeader
                 size="small"
+                sx={
+                  tableVerticalBorderSx
+                }
               >
                 <TableHead>
                   <TableRow>
@@ -3158,9 +3198,15 @@ export default function MaterialInputStatus({
                           )}
                         </TableCell>
 
-                        <TableCell>
-                          {row.latestArrivalDate ||
-                            '-'}
+                        <TableCell
+                          sx={{
+                            whiteSpace:
+                              'nowrap',
+                          }}
+                        >
+                          {formatShortDate(
+                            row.latestArrivalDate,
+                          )}
                         </TableCell>
 
                         <TableCell>
@@ -3213,6 +3259,9 @@ export default function MaterialInputStatus({
               <Table
                 stickyHeader
                 size="small"
+                sx={
+                  tableVerticalBorderSx
+                }
               >
                 <TableHead>
                   <TableRow>
@@ -3358,13 +3407,26 @@ export default function MaterialInputStatus({
                               : 'inherit',
                         }}
                       >
-                        <TableCell>
-                          {record.arrival_date}
+                        <TableCell
+                          sx={{
+                            whiteSpace:
+                              'nowrap',
+                          }}
+                        >
+                          {formatShortDate(
+                            record.arrival_date,
+                          )}
                         </TableCell>
 
-                        <TableCell>
-                          {record.order_date ||
-                            '-'}
+                        <TableCell
+                          sx={{
+                            whiteSpace:
+                              'nowrap',
+                          }}
+                        >
+                          {formatShortDate(
+                            record.order_date,
+                          )}
                         </TableCell>
 
                         <TableCell>
