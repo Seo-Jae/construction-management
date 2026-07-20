@@ -1663,6 +1663,71 @@ export default function MaterialInputStatus({
       ],
     );
 
+  const selectedSupplierMonthSummary =
+    useMemo(
+      () => {
+        if (!selectedSupplier) {
+          return null;
+        }
+
+        return records.reduce(
+          (
+            result,
+            record,
+          ) => {
+            const inMonth =
+              record.arrival_date >=
+                monthRange.start &&
+              record.arrival_date <=
+                monthRange.end;
+
+            if (
+              !inMonth ||
+              record.supplier !==
+                selectedSupplier
+            ) {
+              return result;
+            }
+
+            return {
+              supplyAmount:
+                result.supplyAmount +
+                (
+                  Number(
+                    record.supply_amount,
+                  ) || 0
+                ),
+              vatAmount:
+                result.vatAmount +
+                (
+                  Number(
+                    record.vat_amount,
+                  ) || 0
+                ),
+              totalAmount:
+                result.totalAmount +
+                (
+                  Number(
+                    record.calculated_total_amount,
+                  ) || 0
+                ),
+            };
+          },
+          {
+            supplyAmount: 0,
+            vatAmount: 0,
+            totalAmount: 0,
+          },
+        );
+      },
+      [
+        monthRange.end,
+        monthRange.start,
+        records,
+        selectedSupplier,
+      ],
+    );
+
   const monthSummary =
     useMemo(
       () =>
@@ -3026,7 +3091,6 @@ export default function MaterialInputStatus({
                         <TableCell
                           sx={{
                             minWidth: 160,
-                            fontWeight: 900,
                           }}
                         >
                           {row.itemName}
@@ -3197,6 +3261,91 @@ export default function MaterialInputStatus({
                 </TableHead>
 
                 <TableBody>
+                  {selectedSupplier &&
+                    selectedSupplierMonthSummary && (
+                    <TableRow
+                      sx={{
+                        bgcolor:
+                          '#eff6ff',
+                        '& td': {
+                          borderBottom:
+                            '2px solid #93c5fd',
+                        },
+                      }}
+                    >
+                      <TableCell
+                        colSpan={8}
+                        sx={{
+                          color:
+                            '#1e3a8a',
+                          fontWeight:
+                            900,
+                          whiteSpace:
+                            'nowrap',
+                        }}
+                      >
+                        {selectedSupplier}{' '}
+                        {monthRange.label}{' '}
+                        금액 합계
+                      </TableCell>
+
+                      <TableCell
+                        align="right"
+                        sx={{
+                          color:
+                            '#1e3a8a',
+                          fontWeight:
+                            900,
+                          whiteSpace:
+                            'nowrap',
+                        }}
+                      >
+                        {formatMoney(
+                          selectedSupplierMonthSummary
+                            .supplyAmount,
+                        )}
+                      </TableCell>
+
+                      <TableCell
+                        align="right"
+                        sx={{
+                          color:
+                            '#1e3a8a',
+                          fontWeight:
+                            900,
+                          whiteSpace:
+                            'nowrap',
+                        }}
+                      >
+                        {formatMoney(
+                          selectedSupplierMonthSummary
+                            .vatAmount,
+                        )}
+                      </TableCell>
+
+                      <TableCell
+                        align="right"
+                        sx={{
+                          color:
+                            '#1d4ed8',
+                          fontWeight:
+                            900,
+                          whiteSpace:
+                            'nowrap',
+                        }}
+                      >
+                        {formatMoney(
+                          selectedSupplierMonthSummary
+                            .totalAmount,
+                        )}
+                      </TableCell>
+
+                      <TableCell />
+
+                      <TableCell />
+                    </TableRow>
+                  )}
+
                   {filteredDetailRows.map(
                     (record) => (
                       <TableRow
@@ -3226,7 +3375,6 @@ export default function MaterialInputStatus({
                         <TableCell
                           sx={{
                             minWidth: 150,
-                            fontWeight: 800,
                           }}
                         >
                           {record.raw_item_name}
