@@ -10,6 +10,7 @@ import {
   Button,
   CircularProgress,
   Divider,
+  MenuItem,
   Paper,
   TextField,
   Typography,
@@ -19,7 +20,7 @@ import WeeklyOverview from './WeeklyOverview.jsx';
 
 const PAGE_SIZE = 1000;
 
-const formatKoreaDate = (
+const getKoreaYearMonth = (
   date = new Date(),
 ) => {
   const formatter =
@@ -29,7 +30,6 @@ const formatKoreaDate = (
         timeZone: 'Asia/Seoul',
         year: 'numeric',
         month: '2-digit',
-        day: '2-digit',
       },
     );
 
@@ -44,27 +44,49 @@ const formatKoreaDate = (
       }
     });
 
-  return (
-    `${values.year}-` +
-    `${values.month}-` +
-    `${values.day}`
-  );
+  return {
+    year: Number(values.year),
+    month: Number(values.month),
+  };
 };
 
-const addMonths = (
+const parseDateKey = (
   dateKey,
-  months,
 ) => {
-  const [year, month, day] =
-    String(dateKey)
-      .split('-')
-      .map(Number);
+  const match =
+    String(dateKey || '')
+      .trim()
+      .match(
+        /^(\d{4})-(\d{2})-(\d{2})$/,
+      );
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+  };
+};
+
+const addDaysToDateKey = (
+  dateKey,
+  days,
+) => {
+  const parts =
+    parseDateKey(dateKey);
+
+  if (!parts) {
+    return '';
+  }
 
   const date = new Date(
     Date.UTC(
-      year,
-      month - 1 + months,
-      day,
+      parts.year,
+      parts.month - 1,
+      parts.day + days,
     ),
   );
 
@@ -79,11 +101,121 @@ const addMonths = (
   ].join('-');
 };
 
-const formatDisplayDate = (
+const formatShortDate = (
   dateKey,
-) =>
-  String(dateKey || '')
-    .replace(/-/g, '.');
+) => {
+  const parts =
+    parseDateKey(dateKey);
+
+  if (!parts) {
+    return String(
+      dateKey || '',
+    );
+  }
+
+  return [
+    String(parts.year).slice(-2),
+    String(parts.month).padStart(
+      2,
+      '0',
+    ),
+    String(parts.day).padStart(
+      2,
+      '0',
+    ),
+  ].join('.');
+};
+
+const getFirstMondayDay = (
+  year,
+  month,
+) => {
+  const firstDay =
+    new Date(
+      Date.UTC(
+        year,
+        month - 1,
+        1,
+      ),
+    ).getUTCDay();
+
+  const offsetToMonday =
+    (8 - firstDay) % 7;
+
+  return 1 + offsetToMonday;
+};
+
+const getMondayWeekNumber = (
+  dateKey,
+) => {
+  const parts =
+    parseDateKey(dateKey);
+
+  if (!parts) {
+    return 1;
+  }
+
+  const firstMondayDay =
+    getFirstMondayDay(
+      parts.year,
+      parts.month,
+    );
+
+  /*
+    week_start는 월요일이므로 보통 firstMondayDay 이상입니다.
+    혹시 비정상 데이터가 있더라도 최소 1주차로 표시합니다.
+  */
+  if (
+    parts.day <
+    firstMondayDay
+  ) {
+    return 1;
+  }
+
+  return (
+    Math.floor(
+      (
+        parts.day -
+        firstMondayDay
+      ) / 7,
+    ) + 1
+  );
+};
+
+const formatArchiveWeekLabel = (
+  item,
+) => {
+  const startParts =
+    parseDateKey(
+      item?.week_start,
+    );
+
+  if (!startParts) {
+    return '주차 확인불가';
+  }
+
+  const weekEnd =
+    item?.week_end ||
+    addDaysToDateKey(
+      item.week_start,
+      6,
+    );
+
+  const weekNumber =
+    getMondayWeekNumber(
+      item.week_start,
+    );
+
+  return (
+    `${startParts.month}월 ` +
+    `${weekNumber}주차 ` +
+    `(${formatShortDate(
+      item.week_start,
+    )}~${formatShortDate(
+      weekEnd,
+    )})`
+  );
+};
 
 const formatUpdatedAt = (
   value,
@@ -183,11 +315,25 @@ export default function WeeklyOverviewArchive({
     setSelectedWeekStart,
   ] = useState('');
 
-  const [startDate, setStartDate] =
-    useState('');
+  const currentYearMonth =
+    useMemo(
+      () => getKoreaYearMonth(),
+      [],
+    );
 
-  const [endDate, setEndDate] =
-    useState('');
+  const [
+    selectedYear,
+    setSelectedYear,
+  ] = useState(
+    currentYearMonth.year,
+  );
+
+  const [
+    selectedMonth,
+    setSelectedMonth,
+  ] = useState(
+    currentYearMonth.month,
+  );
 
   const [loading, setLoading] =
     useState(true);
@@ -252,34 +398,66 @@ export default function WeeklyOverviewArchive({
     loadItems();
   }, [loadItems]);
 
+  const yearOptions =
+    useMemo(() => {
+      const years =
+        new Set([
+          currentYearMonth.year,
+        ]);
+
+      items.forEach((item) => {
+        const parts =
+          parseDateKey(
+            item.week_start,
+          );
+
+        if (parts?.year) {
+          years.add(
+            parts.year,
+          );
+        }
+      });
+
+      return Array.from(years)
+        .sort(
+          (first, second) =>
+            second - first,
+        );
+    }, [
+      currentYearMonth.year,
+      items,
+    ]);
+
   const filteredItems =
     useMemo(
       () =>
         items.filter(
           (item) => {
-            if (
-              startDate &&
-              item.week_start <
-                startDate
-            ) {
+            const parts =
+              parseDateKey(
+                item.week_start,
+              );
+
+            if (!parts) {
               return false;
             }
 
-            if (
-              endDate &&
-              item.week_start >
-                endDate
-            ) {
-              return false;
-            }
-
-            return true;
+            /*
+              주간업무의 소속 월은 week_start인 월요일 기준입니다.
+              월요일이 7월이면 그 주 전체를 7월 주차로 분류합니다.
+            */
+            return (
+              parts.year ===
+                selectedYear &&
+              parts.month ===
+                selectedMonth
+            );
           },
         ),
       [
-        endDate,
         items,
-        startDate,
+        selectedMonth,
+        selectedYear,
       ],
     );
 
@@ -311,21 +489,6 @@ export default function WeeklyOverviewArchive({
     filteredItems,
     selectedWeekStart,
   ]);
-
-  const applyRecentMonths = (
-    months,
-  ) => {
-    const today =
-      formatKoreaDate();
-
-    setEndDate(today);
-    setStartDate(
-      addMonths(
-        today,
-        -months,
-      ),
-    );
-  };
 
   const selectedItem =
     filteredItems.find(
@@ -394,6 +557,8 @@ export default function WeeklyOverviewArchive({
                 fontSize: '0.64rem',
               }}
             >
+              {selectedYear}년{' '}
+              {selectedMonth}월 ·{' '}
               저장된 주차{' '}
               {filteredItems.length}건
             </Typography>
@@ -425,58 +590,15 @@ export default function WeeklyOverviewArchive({
             bgcolor: '#f8fafc',
           }}
         >
-          <Box
+          <Typography
             sx={{
-              display: 'grid',
-              gridTemplateColumns:
-                'repeat(4, minmax(0, 1fr))',
-              gap: 0.4,
+              color: '#475569',
+              fontSize: '0.64rem',
+              fontWeight: 900,
             }}
           >
-            <Button
-              size="small"
-              variant={
-                !startDate &&
-                !endDate
-                  ? 'contained'
-                  : 'outlined'
-              }
-              onClick={() => {
-                setStartDate('');
-                setEndDate('');
-              }}
-              sx={{
-                px: 0.4,
-                fontSize: '0.59rem',
-                fontWeight: 900,
-              }}
-            >
-              전체
-            </Button>
-
-            {[3, 6, 12].map(
-              (months) => (
-                <Button
-                  key={months}
-                  size="small"
-                  variant="outlined"
-                  onClick={() =>
-                    applyRecentMonths(
-                      months,
-                    )
-                  }
-                  sx={{
-                    px: 0.35,
-                    fontSize:
-                      '0.59rem',
-                    fontWeight: 900,
-                  }}
-                >
-                  {months}개월
-                </Button>
-              ),
-            )}
-          </Box>
+            보관 기간 선택
+          </Typography>
 
           <Box
             sx={{
@@ -487,49 +609,89 @@ export default function WeeklyOverviewArchive({
             }}
           >
             <TextField
+              select
               size="small"
-              type="date"
-              label="시작일"
-              value={startDate}
+              label="년도"
+              value={
+                selectedYear
+              }
               onChange={(event) =>
-                setStartDate(
-                  event.target.value,
+                setSelectedYear(
+                  Number(
+                    event.target
+                      .value,
+                  ),
                 )
               }
-              InputLabelProps={{
-                shrink: true,
-              }}
               sx={{
                 '& .MuiInputBase-input':
                   {
                     fontSize:
-                      '0.65rem',
+                      '0.68rem',
+                    fontWeight: 800,
                   },
               }}
-            />
+            >
+              {yearOptions.map(
+                (year) => (
+                  <MenuItem
+                    key={year}
+                    value={year}
+                  >
+                    {year}년
+                  </MenuItem>
+                ),
+              )}
+            </TextField>
 
             <TextField
+              select
               size="small"
-              type="date"
-              label="종료일"
-              value={endDate}
+              label="월"
+              value={
+                selectedMonth
+              }
               onChange={(event) =>
-                setEndDate(
-                  event.target.value,
+                setSelectedMonth(
+                  Number(
+                    event.target
+                      .value,
+                  ),
                 )
               }
-              InputLabelProps={{
-                shrink: true,
-              }}
               sx={{
                 '& .MuiInputBase-input':
                   {
                     fontSize:
-                      '0.65rem',
+                      '0.68rem',
+                    fontWeight: 800,
                   },
               }}
-            />
+            >
+              {Array.from(
+                { length: 12 },
+                (_, index) =>
+                  index + 1,
+              ).map((month) => (
+                <MenuItem
+                  key={month}
+                  value={month}
+                >
+                  {month}월
+                </MenuItem>
+              ))}
+            </TextField>
           </Box>
+
+          <Typography
+            sx={{
+              color: '#94a3b8',
+              fontSize: '0.59rem',
+              lineHeight: 1.45,
+            }}
+          >
+            저장 주차는 월요일 날짜가 속한 연도·월을 기준으로 분류됩니다.
+          </Typography>
         </Box>
 
         {errorMessage && (
@@ -595,7 +757,7 @@ export default function WeeklyOverviewArchive({
                   fontWeight: 700,
                 }}
               >
-                선택한 기간에 저장된 주간업무가 없습니다.
+                선택한 연도와 월에 저장된 주간업무가 없습니다.
               </Typography>
             </Box>
           ) : (
@@ -656,12 +818,8 @@ export default function WeeklyOverviewArchive({
                           fontWeight: 900,
                         }}
                       >
-                        {formatDisplayDate(
-                          item.week_start,
-                        )}
-                        {' ~ '}
-                        {formatDisplayDate(
-                          item.week_end,
+                        {formatArchiveWeekLabel(
+                          item,
                         )}
                       </Typography>
 
