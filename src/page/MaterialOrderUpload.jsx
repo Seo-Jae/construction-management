@@ -1283,9 +1283,20 @@ export default function MaterialOrderUpload({
         const workbook =
           new ExcelJS.Workbook();
 
-        await workbook.xlsx.load(
-          arrayBuffer,
-        );
+        try {
+          await workbook.xlsx.load(
+            arrayBuffer,
+          );
+        } catch (loadError) {
+          console.error(
+            '발주서 양식 ExcelJS 읽기 실패:',
+            loadError,
+          );
+
+          throw new Error(
+            '발주서 양식 내부 형식을 읽지 못했습니다. public/templates/발주서양식.xlsx 파일을 최신 호환 양식으로 교체해주세요.',
+          );
+        }
 
         clearWorkbookDefinedNames(
           workbook,
