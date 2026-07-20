@@ -2883,8 +2883,8 @@ export default function MaterialInputStatus({
               },
           }}
         >
-          <Tab label="품목별 월·누계" />
           <Tab label="월 원본 상세" />
+          <Tab label="품목별 월·누계" />
         </Tabs>
 
         <Box
@@ -2894,7 +2894,7 @@ export default function MaterialInputStatus({
             overflow: 'hidden',
           }}
         >
-          {tabValue === 0 && (
+          {tabValue === 1 && (
             <TableContainer
               sx={{
                 height: '100%',
@@ -3075,7 +3075,7 @@ export default function MaterialInputStatus({
             </TableContainer>
           )}
 
-          {tabValue === 1 && (
+          {tabValue === 0 && (
             <TableContainer
               sx={{
                 height: '100%',
