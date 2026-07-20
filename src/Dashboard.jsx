@@ -1756,7 +1756,119 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     alert('안전하게 저장되었습니다!');
     handleCloseModal();
   };
-  const handleKeyDown = (e) => { if (e.key === 'Enter') { e.preventDefault(); const inputs = Array.from(document.querySelectorAll('.excel-input')); const index = inputs.indexOf(e.target); setTimeout(() => { if (index > -1 && index < inputs.length - 1) inputs[index + 1].focus(); }, 50); } };
+  const focusWorkerGridCell = (
+    rowIndex,
+    columnIndex,
+  ) => {
+    const target =
+      document.querySelector(
+        `[data-worker-grid-input="true"]` +
+          `[data-worker-row="${rowIndex}"]` +
+          `[data-worker-column="${columnIndex}"]`,
+      );
+
+    if (
+      !target ||
+      typeof target.focus !==
+        'function'
+    ) {
+      return false;
+    }
+
+    setTimeout(() => {
+      target.focus();
+
+      if (
+        typeof target.select ===
+        'function'
+      ) {
+        target.select();
+      }
+    }, 0);
+
+    return true;
+  };
+
+  const handleWorkerGridKeyDown = (
+    event,
+    rowIndex,
+    columnIndex,
+  ) => {
+    const isAutocompleteOpen =
+      event.currentTarget?.getAttribute(
+        'aria-expanded',
+      ) === 'true' ||
+      event.target?.getAttribute(
+        'aria-expanded',
+      ) === 'true';
+
+    /*
+      자동완성 목록이 펼쳐진 상태의 Enter는
+      선택 항목 확정에 먼저 사용합니다.
+    */
+    if (
+      event.key === 'Enter' &&
+      isAutocompleteOpen
+    ) {
+      return;
+    }
+
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      event.stopPropagation();
+
+      focusWorkerGridCell(
+        rowIndex + 1,
+        columnIndex,
+      );
+
+      return;
+    }
+
+    if (event.key !== 'Tab') {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const lastColumnIndex = 6;
+
+    if (event.shiftKey) {
+      if (columnIndex > 0) {
+        focusWorkerGridCell(
+          rowIndex,
+          columnIndex - 1,
+        );
+        return;
+      }
+
+      if (rowIndex > 0) {
+        focusWorkerGridCell(
+          rowIndex - 1,
+          lastColumnIndex,
+        );
+      }
+
+      return;
+    }
+
+    if (
+      columnIndex <
+      lastColumnIndex
+    ) {
+      focusWorkerGridCell(
+        rowIndex,
+        columnIndex + 1,
+      );
+      return;
+    }
+
+    focusWorkerGridCell(
+      rowIndex + 1,
+      0,
+    );
+  };
   const handleFetchWorkers = () => {
     const targetKey = formatYYMMDD(new Date(workerFetchDate));
     const previousWorkers = savedData[targetKey]?.workers || [];
@@ -2486,9 +2598,25 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                   mb: 1,
                 }}
               >
-                <Typography variant="subtitle2" fontWeight="bold">
-                  근로자
-                </Typography>
+                <Box>
+                  <Typography
+                    variant="subtitle2"
+                    fontWeight="bold"
+                  >
+                    근로자
+                  </Typography>
+
+                  <Typography
+                    sx={{
+                      mt: 0.15,
+                      color: '#64748b',
+                      fontSize: '0.62rem',
+                      fontWeight: 700,
+                    }}
+                  >
+                    TAB: 오른쪽 이동 · ENTER: 아래 이동
+                  </Typography>
+                </Box>
 
                 <Box
                   sx={{
@@ -2723,10 +2851,22 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                                     className: `${
                                       params.inputProps?.className || ''
                                     } excel-input`,
+                                    'data-worker-grid-input': 'true',
+                                    'data-worker-row': index,
+                                    'data-worker-column': 0,
                                   }}
                                   onKeyDown={(event) => {
                                     params.inputProps?.onKeyDown?.(event);
-                                    handleKeyDown(event);
+
+                                    if (
+                                      !event.defaultPrevented
+                                    ) {
+                                      handleWorkerGridKeyDown(
+                                        event,
+                                        index,
+                                        0,
+                                      );
+                                    }
                                   }}
                                   sx={{
                                     '& input': {
@@ -2744,7 +2884,18 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                             <InputBase
                               className="excel-input"
                               value={row.name}
-                              onKeyDown={handleKeyDown}
+                              inputProps={{
+                                'data-worker-grid-input': 'true',
+                                'data-worker-row': index,
+                                'data-worker-column': 1,
+                              }}
+                              onKeyDown={(event) =>
+                                handleWorkerGridKeyDown(
+                                  event,
+                                  index,
+                                  1,
+                                )
+                              }
                               onChange={(event) =>
                                 handleWorkerChange(
                                   row.id,
@@ -2790,10 +2941,22 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                                     className: `${
                                       params.inputProps?.className || ''
                                     } excel-input`,
+                                    'data-worker-grid-input': 'true',
+                                    'data-worker-row': index,
+                                    'data-worker-column': 2,
                                   }}
                                   onKeyDown={(event) => {
                                     params.inputProps?.onKeyDown?.(event);
-                                    handleKeyDown(event);
+
+                                    if (
+                                      !event.defaultPrevented
+                                    ) {
+                                      handleWorkerGridKeyDown(
+                                        event,
+                                        index,
+                                        2,
+                                      );
+                                    }
                                   }}
                                   sx={{
                                     '& input': {
@@ -2811,7 +2974,18 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                             <InputBase
                               className="excel-input"
                               value={row.location}
-                              onKeyDown={handleKeyDown}
+                              inputProps={{
+                                'data-worker-grid-input': 'true',
+                                'data-worker-row': index,
+                                'data-worker-column': 3,
+                              }}
+                              onKeyDown={(event) =>
+                                handleWorkerGridKeyDown(
+                                  event,
+                                  index,
+                                  3,
+                                )
+                              }
                               onChange={(event) =>
                                 handleWorkerChange(
                                   row.id,
@@ -2835,7 +3009,18 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                             <InputBase
                               className="excel-input"
                               value={row.workContent}
-                              onKeyDown={handleKeyDown}
+                              inputProps={{
+                                'data-worker-grid-input': 'true',
+                                'data-worker-row': index,
+                                'data-worker-column': 4,
+                              }}
+                              onKeyDown={(event) =>
+                                handleWorkerGridKeyDown(
+                                  event,
+                                  index,
+                                  4,
+                                )
+                              }
                               onChange={(event) =>
                                 handleWorkerChange(
                                   row.id,
@@ -2859,7 +3044,20 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                               className="excel-input"
                               type="number"
                               value={row.day}
-                              onKeyDown={handleKeyDown}
+                              inputProps={{
+                                min: 0,
+                                step: 0.5,
+                                'data-worker-grid-input': 'true',
+                                'data-worker-row': index,
+                                'data-worker-column': 5,
+                              }}
+                              onKeyDown={(event) =>
+                                handleWorkerGridKeyDown(
+                                  event,
+                                  index,
+                                  5,
+                                )
+                              }
                               onChange={(event) =>
                                 handleWorkerChange(
                                   row.id,
@@ -2867,7 +3065,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                                   Number(event.target.value),
                                 )
                               }
-                              inputProps={{ min: 0, step: 0.5 }}
                               sx={{
                                 width: '100%',
                                 input: {
@@ -2883,7 +3080,20 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                               className="excel-input"
                               type="number"
                               value={row.night}
-                              onKeyDown={handleKeyDown}
+                              inputProps={{
+                                min: 0,
+                                step: 0.5,
+                                'data-worker-grid-input': 'true',
+                                'data-worker-row': index,
+                                'data-worker-column': 6,
+                              }}
+                              onKeyDown={(event) =>
+                                handleWorkerGridKeyDown(
+                                  event,
+                                  index,
+                                  6,
+                                )
+                              }
                               onChange={(event) =>
                                 handleWorkerChange(
                                   row.id,
@@ -2891,7 +3101,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                                   Number(event.target.value),
                                 )
                               }
-                              inputProps={{ min: 0, step: 0.5 }}
                               sx={{
                                 width: '100%',
                                 input: {
