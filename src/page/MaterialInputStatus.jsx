@@ -10,6 +10,7 @@ import {
   Autocomplete,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
@@ -1718,6 +1719,26 @@ export default function MaterialInputStatus({
   ] = useState(false);
 
   const [
+    selectedReviewRows,
+    setSelectedReviewRows,
+  ] = useState([]);
+
+  const [
+    batchReviewStatus,
+    setBatchReviewStatus,
+  ] = useState('');
+
+  const [
+    batchReviewDate,
+    setBatchReviewDate,
+  ] = useState('');
+
+  const [
+    batchIncludeInAmount,
+    setBatchIncludeInAmount,
+  ] = useState('');
+
+  const [
     recordEditOpen,
     setRecordEditOpen,
   ] = useState(false);
@@ -2328,6 +2349,69 @@ export default function MaterialInputStatus({
       [analysis],
     );
 
+  const reviewRowIds =
+    useMemo(
+      () =>
+        (
+          analysis?.reviewRows ||
+          []
+        ).map(
+          (record) =>
+            record.sourceRow,
+        ),
+      [analysis],
+    );
+
+  const allReviewRowsSelected =
+    reviewRowIds.length > 0 &&
+    reviewRowIds.every(
+      (sourceRow) =>
+        selectedReviewRows.includes(
+          sourceRow,
+        ),
+    );
+
+  const someReviewRowsSelected =
+    selectedReviewRows.length >
+      0 &&
+    !allReviewRowsSelected;
+
+  const handleToggleReviewRow = (
+    sourceRow,
+  ) => {
+    setSelectedReviewRows(
+      (previous) =>
+        previous.includes(
+          sourceRow,
+        )
+          ? previous.filter(
+              (value) =>
+                value !==
+                sourceRow,
+            )
+          : [
+              ...previous,
+              sourceRow,
+            ],
+    );
+  };
+
+  const handleToggleAllReviewRows =
+    () => {
+      setSelectedReviewRows(
+        allReviewRowsSelected
+          ? []
+          : reviewRowIds,
+      );
+    };
+
+  const resetBatchReviewFields =
+    () => {
+      setBatchReviewStatus('');
+      setBatchReviewDate('');
+      setBatchIncludeInAmount('');
+    };
+
   const updateAnalysisRecord = (
     sourceRow,
     patch,
@@ -2372,6 +2456,146 @@ export default function MaterialInputStatus({
     );
   };
 
+  const handleApplyBatchReview =
+    () => {
+      if (
+        selectedReviewRows.length ===
+        0
+      ) {
+        return;
+      }
+
+      const hasStatus =
+        Boolean(
+          batchReviewStatus,
+        );
+
+      const hasDate =
+        Boolean(
+          batchReviewDate,
+        );
+
+      const hasIncludeSetting =
+        batchIncludeInAmount ===
+          'include' ||
+        batchIncludeInAmount ===
+          'exclude';
+
+      if (
+        !hasStatus &&
+        !hasDate &&
+        !hasIncludeSetting
+      ) {
+        setMessage({
+          severity: 'warning',
+          text:
+            '일괄 적용할 처리상태, 확정입고일 또는 금액 포함여부를 선택해주세요.',
+        });
+
+        return;
+      }
+
+      const selectedSet =
+        new Set(
+          selectedReviewRows,
+        );
+
+      setAnalysis(
+        (previous) => {
+          if (!previous) {
+            return previous;
+          }
+
+          const nextRecords =
+            previous.records.map(
+              (record) => {
+                if (
+                  !selectedSet.has(
+                    record.sourceRow,
+                  )
+                ) {
+                  return record;
+                }
+
+                const patch = {};
+
+                if (hasStatus) {
+                  patch.arrivalDateStatus =
+                    batchReviewStatus;
+
+                  patch.arrivalDateReason =
+                    DATE_STATUS_LABELS[
+                      batchReviewStatus
+                    ] || '';
+                }
+
+                if (hasDate) {
+                  patch.arrivalDate =
+                    batchReviewDate;
+
+                  patch.sourceYear =
+                    Number(
+                      batchReviewDate.slice(
+                        0,
+                        4,
+                      ),
+                    );
+
+                  patch.sourceMonth =
+                    Number(
+                      batchReviewDate.slice(
+                        5,
+                        7,
+                      ),
+                    );
+                }
+
+                if (
+                  hasIncludeSetting
+                ) {
+                  patch.includeInAmount =
+                    batchIncludeInAmount ===
+                    'include';
+                }
+
+                return {
+                  ...record,
+                  ...patch,
+                };
+              },
+            );
+
+          return {
+            ...previous,
+            records: nextRecords,
+            reviewRows:
+              nextRecords.filter(
+                (record) =>
+                  record.reviewRequired,
+              ),
+            summary:
+              createImportSummary({
+                records:
+                  nextRecords,
+                excludedRows:
+                  previous.excludedRows,
+                amountMismatchRows:
+                  previous.amountMismatchRows,
+              }),
+          };
+        },
+      );
+
+      setMessage({
+        severity: 'success',
+        text:
+          `${selectedReviewRows.length.toLocaleString()}개 행에 일괄 처리값을 적용했습니다.`,
+      });
+
+      setSelectedReviewRows([]);
+      resetBatchReviewFields();
+    };
+
   const handleFileChange =
     async (event) => {
       const file =
@@ -2404,6 +2628,8 @@ export default function MaterialInputStatus({
       setAnalyzing(true);
       setAnalysis(null);
       setSelectedFile(file);
+      setSelectedReviewRows([]);
+      resetBatchReviewFields();
       setMessage(null);
 
       try {
@@ -4624,6 +4850,145 @@ export default function MaterialInputStatus({
             숫자와 문자가 함께 입력된 일자나 존재하지 않는 일자는 자동 제외하지 않습니다. 각 행의 상태와 금액 포함여부를 결정해야 현재 현황으로 반영할 수 있습니다.
           </Alert>
 
+          {selectedReviewRows.length >
+            0 && (
+            <Paper
+              variant="outlined"
+              sx={{
+                mt: 1,
+                p: 1,
+                display: 'flex',
+                alignItems:
+                  'center',
+                gap: 0.8,
+                flexWrap:
+                  'wrap',
+                borderColor:
+                  '#93c5fd',
+                bgcolor:
+                  '#eff6ff',
+                boxShadow:
+                  'none',
+              }}
+            >
+              <Chip
+                color="primary"
+                size="small"
+                label={`${selectedReviewRows.length.toLocaleString()}개 행 선택`}
+                sx={{
+                  fontWeight: 900,
+                }}
+              />
+
+              <TextField
+                select
+                size="small"
+                label="처리상태"
+                value={
+                  batchReviewStatus
+                }
+                onChange={(event) =>
+                  setBatchReviewStatus(
+                    event.target.value,
+                  )
+                }
+                sx={{
+                  minWidth: 135,
+                }}
+              >
+                <MenuItem value="">
+                  변경 안 함
+                </MenuItem>
+
+                {DATE_STATUS_OPTIONS.map(
+                  (option) => (
+                    <MenuItem
+                      key={option.value}
+                      value={option.value}
+                    >
+                      {option.label}
+                    </MenuItem>
+                  ),
+                )}
+              </TextField>
+
+              <TextField
+                type="date"
+                size="small"
+                label="확정 입고일"
+                value={
+                  batchReviewDate
+                }
+                onChange={(event) =>
+                  setBatchReviewDate(
+                    event.target.value,
+                  )
+                }
+                InputLabelProps={{
+                  shrink: true,
+                }}
+                sx={{
+                  width: 155,
+                }}
+              />
+
+              <TextField
+                select
+                size="small"
+                label="금액 포함"
+                value={
+                  batchIncludeInAmount
+                }
+                onChange={(event) =>
+                  setBatchIncludeInAmount(
+                    event.target.value,
+                  )
+                }
+                sx={{
+                  minWidth: 125,
+                }}
+              >
+                <MenuItem value="">
+                  변경 안 함
+                </MenuItem>
+
+                <MenuItem value="include">
+                  포함
+                </MenuItem>
+
+                <MenuItem value="exclude">
+                  제외
+                </MenuItem>
+              </TextField>
+
+              <Button
+                variant="contained"
+                onClick={
+                  handleApplyBatchReview
+                }
+                sx={{
+                  fontWeight: 900,
+                }}
+              >
+                선택 행 일괄 적용
+              </Button>
+
+              <Button
+                variant="text"
+                color="inherit"
+                onClick={() => {
+                  setSelectedReviewRows(
+                    [],
+                  );
+
+                  resetBatchReviewFields();
+                }}
+              >
+                선택 해제
+              </Button>
+            </Paper>
+          )}
+
           <TableContainer
             sx={{
               mt: 1,
@@ -4641,6 +5006,32 @@ export default function MaterialInputStatus({
             >
               <TableHead>
                 <TableRow>
+                  <TableCell
+                    padding="checkbox"
+                    sx={{
+                      width: 38,
+                      minWidth: 38,
+                      maxWidth: 38,
+                    }}
+                  >
+                    <Checkbox
+                      size="small"
+                      checked={
+                        allReviewRowsSelected
+                      }
+                      indeterminate={
+                        someReviewRowsSelected
+                      }
+                      onChange={
+                        handleToggleAllReviewRows
+                      }
+                      inputProps={{
+                        'aria-label':
+                          '검토 대상 전체 선택',
+                      }}
+                    />
+                  </TableCell>
+
                   {[
                     '엑셀행',
                     '원본 일자',
@@ -4681,6 +5072,33 @@ export default function MaterialInputStatus({
                               : '#fffbea',
                         }}
                       >
+                        <TableCell
+                          padding="checkbox"
+                          sx={{
+                            width: 38,
+                            minWidth: 38,
+                            maxWidth: 38,
+                          }}
+                        >
+                          <Checkbox
+                            size="small"
+                            checked={
+                              selectedReviewRows.includes(
+                                record.sourceRow,
+                              )
+                            }
+                            onChange={() =>
+                              handleToggleReviewRow(
+                                record.sourceRow,
+                              )
+                            }
+                            inputProps={{
+                              'aria-label':
+                                `${record.sourceRow}행 선택`,
+                            }}
+                          />
+                        </TableCell>
+
                         <TableCell>
                           {record.sourceRow}
                         </TableCell>
