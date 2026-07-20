@@ -54,6 +54,8 @@ const materialMenus = [
   {
     value: 'material-order',
     label: '자재발주작성',
+    disabled: true,
+    statusLabel: '준비중',
   },
   {
     value: 'material-input-status',
@@ -127,19 +129,85 @@ function SubMenuList({ items, currentView, onViewChange }) {
         return (
           <ListItemButton
             key={item.value}
-            selected={selected}
-            onClick={() => onViewChange(item.value)}
-            sx={subMenuSx(selected)}
+            selected={
+              selected &&
+              !item.disabled
+            }
+            disabled={
+              Boolean(
+                item.disabled,
+              )
+            }
+            onClick={() => {
+              if (
+                item.disabled
+              ) {
+                return;
+              }
+
+              onViewChange(
+                item.value,
+              );
+            }}
+            sx={{
+              ...subMenuSx(
+                selected &&
+                  !item.disabled,
+              ),
+              '&.Mui-disabled': {
+                opacity: 1,
+                color:
+                  '#64748b',
+                cursor:
+                  'not-allowed',
+              },
+            }}
           >
             <ListItemText
-              primary={item.label}
+              primary={
+                item.label
+              }
               primaryTypographyProps={{
                 noWrap: true,
-                fontSize: '0.72rem',
+                fontSize:
+                  '0.72rem',
                 lineHeight: 1.2,
-                fontWeight: selected ? 700 : 500,
+                fontWeight:
+                  selected &&
+                  !item.disabled
+                    ? 700
+                    : 500,
               }}
             />
+
+            {item.statusLabel && (
+              <Box
+                component="span"
+                sx={{
+                  ml: 0.5,
+                  px: 0.55,
+                  py: 0.05,
+                  borderRadius:
+                    10,
+                  bgcolor:
+                    'rgba(100,116,139,0.22)',
+                  color:
+                    '#94a3b8',
+                  fontSize:
+                    '0.58rem',
+                  fontWeight:
+                    800,
+                  lineHeight:
+                    1.4,
+                  whiteSpace:
+                    'nowrap',
+                }}
+              >
+                {
+                  item.statusLabel
+                }
+              </Box>
+            )}
           </ListItemButton>
         );
       })}
