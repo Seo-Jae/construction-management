@@ -44,6 +44,7 @@ const weeklyOverviewMenus = [
 const progressMenus = [
   { value: 'progress-input', label: '공종별 현황 입력' },
   { value: 'progress-multi', label: '다중 공종 진척 현황' },
+  { value: 'progress-daily', label: '일별 완료 집계' },
   { value: 'progress-weekly', label: '주별 완료 집계' },
   { value: 'progress-monthly', label: '월별 완료 집계' },
 ];

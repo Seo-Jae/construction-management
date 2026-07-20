@@ -37,6 +37,7 @@ import CumulativeWorkerStatus from './page/CumulativeWorkerStatus.jsx';
 import ProgressInput from './page/ProgressInput.jsx';
 import MultiProcessProgress from './page/MultiProcessProgress.jsx';
 import CompletionSummary from './page/CompletionSummary.jsx';
+import DailyCompletionSummary from './page/DailyCompletionSummary.jsx';
 import WeeklyReport from './page/WeeklyReport.jsx';
 import ProposalReport from './page/ProposalReport.jsx';
 import ApprovalInbox from './page/ApprovalInbox.jsx';
@@ -276,6 +277,7 @@ const viewTitles = {
   'daily-cumulative-workers': '누계투입조회',
   'progress-input': '공종별 현황 입력',
   'progress-multi': '다중 공종 진척 현황',
+  'progress-daily': '일별 완료 집계',
   'progress-weekly': '주별 완료 집계',
   'progress-monthly': '월별 완료 집계',
   'report-weekly': '주간 업무 보고',
@@ -2669,6 +2671,14 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
           {currentView === 'progress-multi' && activeProjectName && (
             <MultiProcessProgress
+              projectName={activeProjectName || ''}
+              processOptions={activeProcessOptions}
+              buildingConfigs={buildingConfigs}
+            />
+          )}
+
+          {currentView === 'progress-daily' && activeProjectName && (
+            <DailyCompletionSummary
               projectName={activeProjectName || ''}
               processOptions={activeProcessOptions}
               buildingConfigs={buildingConfigs}
