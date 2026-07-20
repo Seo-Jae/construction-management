@@ -182,12 +182,50 @@ const getMondayWeekNumber = (
   );
 };
 
+const getArchiveDisplayStart = (
+  weekStart,
+) => {
+  const parts =
+    parseDateKey(
+      weekStart,
+    );
+
+  if (!parts) {
+    return weekStart;
+  }
+
+  const dayOfWeek =
+    new Date(
+      Date.UTC(
+        parts.year,
+        parts.month - 1,
+        parts.day,
+      ),
+    ).getUTCDay();
+
+  /*
+    기존 주간업무 데이터는 일요일을 week_start로 사용합니다.
+    보관함 표시는 사용자가 요청한 월요일 기준으로 변환합니다.
+  */
+  return dayOfWeek === 0
+    ? addDaysToDateKey(
+        weekStart,
+        1,
+      )
+    : weekStart;
+};
+
 const formatArchiveWeekLabel = (
   item,
 ) => {
+  const displayStart =
+    getArchiveDisplayStart(
+      item?.week_start,
+    );
+
   const startParts =
     parseDateKey(
-      item?.week_start,
+      displayStart,
     );
 
   if (!startParts) {
@@ -195,22 +233,21 @@ const formatArchiveWeekLabel = (
   }
 
   const weekEnd =
-    item?.week_end ||
     addDaysToDateKey(
-      item.week_start,
+      displayStart,
       6,
     );
 
   const weekNumber =
     getMondayWeekNumber(
-      item.week_start,
+      displayStart,
     );
 
   return (
     `${startParts.month}월 ` +
     `${weekNumber}주차 ` +
     `(${formatShortDate(
-      item.week_start,
+      displayStart,
     )}~${formatShortDate(
       weekEnd,
     )})`
@@ -304,6 +341,206 @@ const fetchAllSavedOverviews =
     return rows;
   };
 
+const fetchAllCompletedWeeklyReports =
+  async () => {
+    const rows = [];
+    let from = 0;
+
+    while (true) {
+      const {
+        data,
+        error,
+      } = await supabase
+        .from(
+          'weekly_reports',
+        )
+        .select(
+          `
+          id,
+          project_name,
+          week_start,
+          week_end,
+          author_name,
+          completed_at,
+          updated_at,
+          status
+        `,
+        )
+        .eq(
+          'status',
+          'completed',
+        )
+        .order(
+          'week_start',
+          {
+            ascending: false,
+          },
+        )
+        .range(
+          from,
+          from +
+            PAGE_SIZE -
+            1,
+        );
+
+      if (error) {
+        throw error;
+      }
+
+      const nextRows =
+        data || [];
+
+      rows.push(...nextRows);
+
+      if (
+        nextRows.length <
+        PAGE_SIZE
+      ) {
+        break;
+      }
+
+      from += PAGE_SIZE;
+    }
+
+    return rows;
+  };
+
+const buildArchiveItems = (
+  savedOverviews,
+  weeklyReports,
+) => {
+  const itemMap = new Map();
+
+  (savedOverviews || []).forEach(
+    (item) => {
+      itemMap.set(
+        item.week_start,
+        {
+          ...item,
+          archive_source:
+            'weekly_overview',
+        },
+      );
+    },
+  );
+
+  const reportGroups =
+    new Map();
+
+  (weeklyReports || []).forEach(
+    (report) => {
+      const weekStart =
+        report.week_start;
+
+      if (!weekStart) {
+        return;
+      }
+
+      if (
+        !reportGroups.has(
+          weekStart,
+        )
+      ) {
+        reportGroups.set(
+          weekStart,
+          [],
+        );
+      }
+
+      reportGroups
+        .get(weekStart)
+        .push(report);
+    },
+  );
+
+  reportGroups.forEach(
+    (reports, weekStart) => {
+      if (
+        itemMap.has(
+          weekStart,
+        )
+      ) {
+        return;
+      }
+
+      const latestUpdatedAt =
+        reports.reduce(
+          (latest, report) => {
+            const candidate =
+              report.updated_at ||
+              report.completed_at ||
+              '';
+
+            return candidate >
+              latest
+              ? candidate
+              : latest;
+          },
+          '',
+        );
+
+      itemMap.set(
+        weekStart,
+        {
+          id:
+            `auto:${weekStart}`,
+          week_start:
+            weekStart,
+          week_end:
+            reports[0]
+              ?.week_end ||
+            addDaysToDateKey(
+              weekStart,
+              6,
+            ),
+          display_period: '',
+          updated_by_name:
+            `자동보관 · ${reports.length}개 현장`,
+          created_at:
+            latestUpdatedAt,
+          updated_at:
+            latestUpdatedAt,
+          archive_source:
+            'weekly_reports',
+          report_count:
+            reports.length,
+        },
+      );
+    },
+  );
+
+  return Array.from(
+    itemMap.values(),
+  ).sort(
+    (first, second) =>
+      String(
+        second.week_start ||
+          '',
+      ).localeCompare(
+        String(
+          first.week_start ||
+            '',
+        ),
+      ),
+  );
+};
+
+const fetchAllArchiveItems =
+  async () => {
+    const [
+      savedOverviews,
+      weeklyReports,
+    ] = await Promise.all([
+      fetchAllSavedOverviews(),
+      fetchAllCompletedWeeklyReports(),
+    ]);
+
+    return buildArchiveItems(
+      savedOverviews,
+      weeklyReports,
+    );
+  };
+
 export default function WeeklyOverviewArchive({
   userProfile,
 }) {
@@ -350,7 +587,7 @@ export default function WeeklyOverviewArchive({
 
       try {
         const rows =
-          await fetchAllSavedOverviews();
+          await fetchAllArchiveItems();
 
         setItems(rows);
 
@@ -435,7 +672,9 @@ export default function WeeklyOverviewArchive({
           (item) => {
             const parts =
               parseDateKey(
-                item.week_start,
+                getArchiveDisplayStart(
+                  item.week_start,
+                ),
               );
 
             if (!parts) {
@@ -832,7 +1071,11 @@ export default function WeeklyOverviewArchive({
                             '0.62rem',
                         }}
                       >
-                        저장자:{' '}
+                        {item.archive_source ===
+                        'weekly_reports'
+                          ? '구분'
+                          : '저장자'}
+                        :{' '}
                         {item.updated_by_name ||
                           '확인불가'}
                       </Typography>

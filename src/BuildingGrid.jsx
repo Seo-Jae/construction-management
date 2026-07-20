@@ -212,8 +212,12 @@ export default function BuildingGrid({
                     progress?.status ===
                     '작업완료';
 
+                  const isProtectedCompleted =
+                    protectCompleted &&
+                    isCompleted;
+
                   const selected =
-                    !isCompleted &&
+                    !isProtectedCompleted &&
                     (
                       selectedCells?.has?.(
                         cellKey,
@@ -237,16 +241,18 @@ export default function BuildingGrid({
                       component="button"
                       type="button"
                       disabled={
-                        isCompleted
+                        isProtectedCompleted
                       }
                       title={
-                        isCompleted
-                          ? '이미 작업완료된 세대입니다. 기존 완료일을 유지합니다.'
-                          : ''
+                        isProtectedCompleted
+                          ? '완료 처리에서는 기존 완료 세대의 완료일을 유지합니다.'
+                          : isCompleted
+                            ? '작업전 또는 작업중으로 변경할 수 있습니다.'
+                            : ''
                       }
                       onClick={() => {
                         if (
-                          isCompleted
+                          isProtectedCompleted
                         ) {
                           return;
                         }
@@ -262,9 +268,10 @@ export default function BuildingGrid({
                         p: 0,
                         border: '1px solid',
                         boxSizing: 'border-box',
-                        cursor: isCompleted
-                          ? 'not-allowed'
-                          : 'pointer',
+                        cursor:
+                          isProtectedCompleted
+                            ? 'not-allowed'
+                            : 'pointer',
                         fontFamily: 'inherit',
                         fontSize: completionDate
                           ? '0.53rem'
@@ -283,14 +290,16 @@ export default function BuildingGrid({
                             'currentColor',
                         },
                         '&:hover': {
-                          filter: isCompleted
-                            ? 'none'
-                            : 'brightness(0.96)',
+                          filter:
+                            isProtectedCompleted
+                              ? 'none'
+                              : 'brightness(0.96)',
                         },
                         '&:active': {
-                          transform: isCompleted
-                            ? 'none'
-                            : 'scale(0.98)',
+                          transform:
+                            isProtectedCompleted
+                              ? 'none'
+                              : 'scale(0.98)',
                         },
                       }}
                     >

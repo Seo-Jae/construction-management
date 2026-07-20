@@ -2037,7 +2037,21 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       cellKey
     ]?.status === '작업완료';
 
-  // 공정 진척 관리: 층수 클릭 시 미완료 세대만 선택합니다.
+  /*
+    기존 완료일 보호는 새로운 완료 처리에서만 적용합니다.
+
+    완료:
+    기존 완료 세대 선택·저장 제외
+
+    작업전 / 작업중:
+    완료 세대도 선택 가능
+    잘못 처리한 완료 상태를 되돌리거나 변경할 수 있음
+  */
+  const shouldProtectCompletedProgress =
+    selectedStatusAction ===
+    '작업완료';
+
+  // 공정 진척 관리: 현재 선택한 상태에 맞는 세대만 선택합니다.
   const handleFloorClick = (buildingName, floor) => {
     const config = buildingConfigs[buildingName];
     if (!config) return;
@@ -2049,12 +2063,14 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     );
 
     const editableCellKeys =
-      validCellKeys.filter(
-        (cellKey) =>
-          !isCompletedProgressCell(
-            cellKey,
-          ),
-      );
+      shouldProtectCompletedProgress
+        ? validCellKeys.filter(
+            (cellKey) =>
+              !isCompletedProgressCell(
+                cellKey,
+              ),
+          )
+        : validCellKeys;
 
     if (
       editableCellKeys.length ===
@@ -2085,6 +2101,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     cellKey,
   ) => {
     if (
+      shouldProtectCompletedProgress &&
       isCompletedProgressCell(
         cellKey,
       )
@@ -2138,20 +2155,24 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       저장 직전에 다시 제외해 기존 완료일을 보호합니다.
     */
     const protectedCompletedCellKeys =
-      allSelectedCellKeys.filter(
-        (cellKey) =>
-          isCompletedProgressCell(
-            cellKey,
-          ),
-      );
+      shouldProtectCompletedProgress
+        ? allSelectedCellKeys.filter(
+            (cellKey) =>
+              isCompletedProgressCell(
+                cellKey,
+              ),
+          )
+        : [];
 
     const selectedCellKeys =
-      allSelectedCellKeys.filter(
-        (cellKey) =>
-          !isCompletedProgressCell(
-            cellKey,
-          ),
-      );
+      shouldProtectCompletedProgress
+        ? allSelectedCellKeys.filter(
+            (cellKey) =>
+              !isCompletedProgressCell(
+                cellKey,
+              ),
+          )
+        : allSelectedCellKeys;
 
     if (
       selectedCellKeys.length ===
@@ -2630,6 +2651,9 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               setSelectedCells={setSelectedCells}
               selectedStatusAction={selectedStatusAction}
               setSelectedStatusAction={setSelectedStatusAction}
+              protectCompleted={
+                shouldProtectCompletedProgress
+              }
               completedUnits={completedUnits}
               totalUnits={totalUnits}
               progressPercentage={progressPercentage}

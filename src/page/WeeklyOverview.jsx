@@ -2305,49 +2305,52 @@ export default function WeeklyOverview({
 
     let reports = [];
 
-    if (!readOnly) {
-      try {
-        const {
-          data,
-          error,
-        } = await supabase
-          .from('weekly_reports')
-          .select(
-            `
-            id,
-            project_name,
-            week_start,
-            payload,
-            status,
-            completed_at
-          `,
-          )
-          .eq(
-            'week_start',
-            weekRange.weekStart,
-          )
-          .eq('status', 'completed')
-          .in(
-            'project_name',
-            TEMPLATE_PROJECT_NAMES,
-          );
-
-        if (error) {
-          throw error;
-        }
-
-        reports = data || [];
-      } catch (error) {
-        console.error(
-          '주간업무 원본 조회 실패:',
-          error,
+    try {
+      const {
+        data,
+        error,
+      } = await supabase
+        .from('weekly_reports')
+        .select(
+          `
+          id,
+          project_name,
+          week_start,
+          week_end,
+          payload,
+          status,
+          author_name,
+          completed_at,
+          updated_at
+        `,
+        )
+        .eq(
+          'week_start',
+          weekRange.weekStart,
+        )
+        .eq('status', 'completed')
+        .in(
+          'project_name',
+          TEMPLATE_PROJECT_NAMES,
         );
 
-        setWarningMessage(
-          '현재 주차 주간업무 원본을 불러오지 못했습니다. ' +
-          '입력 화면은 사용할 수 있습니다.',
-        );
+      if (error) {
+        throw error;
       }
+
+      reports = data || [];
+    } catch (error) {
+      console.error(
+        '주간업무 원본 조회 실패:',
+        error,
+      );
+
+      setWarningMessage(
+        readOnly
+          ? '자동보관 원본을 불러오지 못했습니다.'
+          : '현재 주차 주간업무 원본을 불러오지 못했습니다. ' +
+            '입력 화면은 사용할 수 있습니다.',
+      );
     }
 
     const nextSourceRows =
@@ -2451,9 +2454,52 @@ export default function WeeklyOverview({
       readOnly &&
       !savedRows
     ) {
-      setWarningMessage(
-        '선택한 기간의 저장본을 찾지 못했습니다.',
-      );
+      if (reports.length > 0) {
+        const latestReportDate =
+          reports.reduce(
+            (latest, report) => {
+              const candidate =
+                report.updated_at ||
+                report.completed_at ||
+                '';
+
+              return candidate >
+                latest
+                ? candidate
+                : latest;
+            },
+            '',
+          );
+
+        setSavedMetadata({
+          id:
+            `auto:${weekRange.weekStart}`,
+          weekStart:
+            weekRange.weekStart,
+          weekEnd:
+            weekRange.weekEnd,
+          displayPeriod:
+            `${formatDisplayDate(
+              weekRange.weekStart,
+            )}~${formatDisplayDate(
+              weekRange.weekEnd,
+            )}`,
+          updatedByName:
+            `자동보관 · ${reports.length}개 현장`,
+          updatedAt:
+            latestReportDate,
+          isAuto: true,
+        });
+
+        setWarningMessage(
+          '별도 총괄 저장본이 없어 각 현장에서 완료한 주간업무를 자동보관하여 표시합니다. ' +
+          '본사·공무 수기 입력은 저장된 총괄본이 있을 때만 복원됩니다.',
+        );
+      } else {
+        setWarningMessage(
+          '선택한 기간의 저장본과 완료된 주간업무가 없습니다.',
+        );
+      }
     }
 
     const draft =
@@ -2945,49 +2991,25 @@ export default function WeeklyOverview({
 
       OFFICE_INPUT_FIELDS.forEach(
         (field) => {
-          try {
-            worksheet.unMergeCells(
-              field.cellRange,
-            );
-          } catch (error) {
-            // 기존 병합이 없으면 그대로 진행합니다.
-          }
-
-          worksheet.mergeCells(
-            field.cellRange,
-          );
-
           const rows =
             normalizeRows(
               officeRows[field.key],
             );
-
-          const cell =
-            worksheet.getCell(
-              field.anchorCell,
-            );
-
-          cell.value =
-            rowsToText(rows);
-
-          cell.alignment = {
-            ...(cell.alignment || {}),
-            horizontal: 'left',
-            vertical: 'top',
-            wrapText: true,
-          };
 
           const rowCount =
             field.endRow -
             field.startRow +
             1;
 
-          const totalHeight =
-            Math.max(
-              rowCount * 16.5,
-              rows.length * 17 + 10,
-            );
+          /*
+            템플릿의 셀 병합과 테두리를 변경하지 않습니다.
 
+            기존에는 C:N 전체를 하나로 병합하면서
+            원본 셀 서식과 테두리가 깨졌습니다.
+
+            이제 각 행의 C열에 한 줄씩 입력하고
+            D:N은 비워둬 원본 테두리와 셀 구조를 유지합니다.
+          */
           for (
             let rowNumber =
               field.startRow;
@@ -2995,11 +3017,93 @@ export default function WeeklyOverview({
               field.endRow;
             rowNumber += 1
           ) {
-            worksheet.getRow(
-              rowNumber,
-            ).height =
-              totalHeight / rowCount;
+            for (
+              let columnNumber = 3;
+              columnNumber <= 14;
+              columnNumber += 1
+            ) {
+              worksheet.getCell(
+                rowNumber,
+                columnNumber,
+              ).value = null;
+            }
           }
+
+          const displayRows =
+            Array.from(
+              { length: rowCount },
+              (_, index) => {
+                if (
+                  index <
+                  rowCount - 1
+                ) {
+                  return String(
+                    rows[index] || '',
+                  );
+                }
+
+                return rows
+                  .slice(index)
+                  .map(
+                    (value) =>
+                      String(
+                        value || '',
+                      ),
+                  )
+                  .filter(Boolean)
+                  .join('\n');
+              },
+            );
+
+          displayRows.forEach(
+            (value, index) => {
+              const rowNumber =
+                field.startRow +
+                index;
+
+              const cell =
+                worksheet.getCell(
+                  rowNumber,
+                  3,
+                );
+
+              cell.value = value;
+
+              cell.alignment = {
+                ...(cell.alignment || {}),
+                horizontal: 'left',
+                vertical: 'middle',
+                wrapText:
+                  value.includes(
+                    '\n',
+                  ),
+              };
+
+              const lineCount =
+                Math.max(
+                  1,
+                  value
+                    .split('\n')
+                    .length,
+                );
+
+              const currentHeight =
+                Number(
+                  worksheet.getRow(
+                    rowNumber,
+                  ).height,
+                ) || 16.5;
+
+              worksheet.getRow(
+                rowNumber,
+              ).height =
+                Math.max(
+                  currentHeight,
+                  lineCount * 17 +
+                    3,
+                );
+            },
+          );
         },
       );
 
@@ -3230,7 +3334,9 @@ export default function WeeklyOverview({
                 fontWeight: 900,
               }}
             >
-              주간업무 저장본
+              {savedMetadata?.isAuto
+                ? '주간업무 자동보관본'
+                : '주간업무 저장본'}
             </Typography>
 
             <Typography

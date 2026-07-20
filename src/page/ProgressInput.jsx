@@ -60,6 +60,7 @@ export default function ProgressInput({
   setSelectedCells,
   selectedStatusAction = '작업완료',
   setSelectedStatusAction,
+  protectCompleted = false,
   completedUnits = 0,
   totalUnits = 0,
   progressPercentage = 0,
@@ -97,15 +98,19 @@ export default function ProgressInput({
       );
 
     const editableCellKeys =
-      Array.from(
-        allCellKeys,
-      ).filter(
-        (cellKey) =>
-          unitProgressData?.[
-            cellKey
-          ]?.status !==
-          '작업완료',
-      );
+      protectCompleted
+        ? Array.from(
+            allCellKeys,
+          ).filter(
+            (cellKey) =>
+              unitProgressData?.[
+                cellKey
+              ]?.status !==
+              '작업완료',
+          )
+        : Array.from(
+            allCellKeys,
+          );
 
     setSelectedCells?.(
       new Set(
@@ -439,6 +444,9 @@ export default function ProgressInput({
                   onCellClick={handleGridCellClick}
                   unitData={unitProgressData}
                   onFloorClick={handleFloorClick}
+                  protectCompleted={
+                    protectCompleted
+                  }
                 />
               </Box>
             ))}
