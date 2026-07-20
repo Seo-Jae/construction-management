@@ -323,6 +323,15 @@ const makeDailyPeriods = (
   const today =
     getKoreaTodayKey();
 
+  /*
+    최신 날짜를 가장 앞에 표시합니다.
+
+    index 0:
+    오늘
+
+    index 1:
+    어제
+  */
   return Array.from(
     {
       length:
@@ -330,15 +339,10 @@ const makeDailyPeriods = (
         14,
     },
     (_, index) => {
-      const reverseIndex =
-        Number(dayCount) -
-        1 -
-        index;
-
       const key =
         addDaysToDateKey(
           today,
-          -reverseIndex,
+          -index,
         );
 
       return {
@@ -1361,10 +1365,10 @@ export default function DailyCompletionSummary({
         ) => {
           column.width =
             index === 0
-              ? 22
+              ? 16
               : index <= 8
-                ? 13
-                : 11;
+                ? 10
+                : 8.5;
 
           column.alignment = {
             horizontal:
@@ -1434,58 +1438,79 @@ export default function DailyCompletionSummary({
       key: 'process',
       label: '공정',
       left: 0,
-      width: 150,
+      width: 110,
     },
     {
       key: 'total',
       label: '전체',
-      left: 150,
-      width: 70,
+      left: 110,
+      width: 68,
     },
     {
       key: 'completed',
       label: '완료',
-      left: 220,
-      width: 70,
+      left: 178,
+      width: 68,
     },
     {
       key: 'progress',
       label: '진도율',
-      left: 290,
-      width: 85,
+      left: 246,
+      width: 68,
     },
     {
       key: 'remaining',
       label: '잔여',
-      left: 375,
-      width: 70,
+      left: 314,
+      width: 68,
     },
     {
       key: 'targetCount',
-      label:
-        `${selectedTargetName} 목표량`,
-      left: 445,
-      width: 100,
+      label: (
+        <>
+          {selectedTargetName}
+          <br />
+          목표량
+        </>
+      ),
+      left: 382,
+      width: 68,
     },
     {
       key: 'targetCompleted',
-      label:
-        `${selectedTargetName} 완료`,
-      left: 545,
-      width: 95,
+      label: (
+        <>
+          {selectedTargetName}
+          <br />
+          완료
+        </>
+      ),
+      left: 450,
+      width: 68,
     },
     {
       key: 'targetRemaining',
-      label:
-        `${selectedTargetName} 잔여`,
-      left: 640,
-      width: 95,
+      label: (
+        <>
+          {selectedTargetName}
+          <br />
+          잔여
+        </>
+      ),
+      left: 518,
+      width: 68,
     },
     {
       key: 'dday',
-      label: 'D-day',
-      left: 735,
-      width: 82,
+      label: (
+        <>
+          D-
+          <br />
+          day
+        </>
+      ),
+      left: 586,
+      width: 68,
     },
   ];
 
@@ -1527,7 +1552,7 @@ export default function DailyCompletionSummary({
             variant="caption"
             color="text.secondary"
           >
-            공종별 완료수량을 일자별로 집계하고 선택 차수의 목표·잔여·D-day를 비교합니다.
+            오늘부터 과거 순으로 일별 완료수량과 선택 차수의 목표·잔여·D-day를 비교합니다.
           </Typography>
         </Box>
 
@@ -1796,9 +1821,9 @@ export default function DailyCompletionSummary({
             size="small"
             sx={{
               minWidth:
-                817 +
+                654 +
                 periods.length *
-                  74,
+                  56,
               tableLayout:
                 'fixed',
               '& th, & td': {
@@ -1807,8 +1832,10 @@ export default function DailyCompletionSummary({
                 borderRight:
                   '1px solid #dbe3ee',
                 fontSize:
-                  '0.72rem',
-                py: 0.7,
+                  '0.64rem',
+                lineHeight: 1.15,
+                px: 0.45,
+                py: 0.42,
               },
             }}
           >
@@ -1839,7 +1866,13 @@ export default function DailyCompletionSummary({
                             : '#ffffff',
                         whiteSpace:
                           'normal',
-                        lineHeight: 1.25,
+                        wordBreak:
+                          'keep-all',
+                        lineHeight: 1.05,
+                        px: 0.3,
+                        py: 0.38,
+                        fontSize:
+                          '0.6rem',
                       }}
                     >
                       {column.label}
@@ -1856,9 +1889,9 @@ export default function DailyCompletionSummary({
                         period.title
                       }
                       sx={{
-                        width: 74,
-                        minWidth: 74,
-                        maxWidth: 74,
+                        width: 56,
+                        minWidth: 56,
+                        maxWidth: 56,
                         fontWeight: 800,
                         bgcolor:
                           period.isToday
@@ -1877,9 +1910,9 @@ export default function DailyCompletionSummary({
                       <Typography
                         sx={{
                           fontSize:
-                            '0.68rem',
+                            '0.6rem',
                           fontWeight: 900,
-                          lineHeight: 1.15,
+                          lineHeight: 1.05,
                         }}
                       >
                         {period.label}
@@ -1897,9 +1930,9 @@ export default function DailyCompletionSummary({
                                 ? '#2563eb'
                                 : '#64748b',
                           fontSize:
-                            '0.58rem',
+                            '0.52rem',
                           fontWeight: 800,
-                          lineHeight: 1.1,
+                          lineHeight: 1.05,
                         }}
                       >
                         {period.weekday}
@@ -1933,12 +1966,15 @@ export default function DailyCompletionSummary({
                       sx={{
                         ...stickyCellStyle(
                           0,
-                          150,
+                          110,
                           5,
                         ),
                         fontWeight: 700,
                         color:
                           '#1e293b',
+                        fontSize:
+                          '0.62rem',
+                        px: 0.45,
                       }}
                     >
                       {row.processName}
@@ -1948,8 +1984,8 @@ export default function DailyCompletionSummary({
                       align="right"
                       sx={{
                         ...stickyCellStyle(
-                          150,
-                          70,
+                          110,
+                          68,
                           5,
                         ),
                         fontWeight: 700,
@@ -1964,8 +2000,8 @@ export default function DailyCompletionSummary({
                       align="right"
                       sx={{
                         ...stickyCellStyle(
-                          220,
-                          70,
+                          178,
+                          68,
                           5,
                         ),
                         fontWeight: 700,
@@ -1980,8 +2016,8 @@ export default function DailyCompletionSummary({
                       align="right"
                       sx={{
                         ...stickyCellStyle(
-                          290,
-                          85,
+                          246,
+                          68,
                           5,
                         ),
                         fontWeight: 800,
@@ -1999,8 +2035,8 @@ export default function DailyCompletionSummary({
                       align="right"
                       sx={{
                         ...stickyCellStyle(
-                          375,
-                          70,
+                          314,
+                          68,
                           5,
                         ),
                         fontWeight: 700,
@@ -2015,8 +2051,8 @@ export default function DailyCompletionSummary({
                       align="right"
                       sx={{
                         ...stickyCellStyle(
-                          445,
-                          100,
+                          382,
+                          68,
                           5,
                         ),
                         bgcolor:
@@ -2035,8 +2071,8 @@ export default function DailyCompletionSummary({
                       align="right"
                       sx={{
                         ...stickyCellStyle(
-                          545,
-                          95,
+                          450,
+                          68,
                           5,
                         ),
                         bgcolor:
@@ -2055,8 +2091,8 @@ export default function DailyCompletionSummary({
                       align="right"
                       sx={{
                         ...stickyCellStyle(
-                          640,
-                          95,
+                          518,
+                          68,
                           5,
                         ),
                         bgcolor:
@@ -2081,8 +2117,8 @@ export default function DailyCompletionSummary({
                       align="center"
                       sx={{
                         ...stickyCellStyle(
-                          735,
-                          82,
+                          586,
+                          68,
                           5,
                         ),
                         bgcolor:
@@ -2136,6 +2172,10 @@ export default function DailyCompletionSummary({
                                 count > 0
                                   ? 800
                                   : 400,
+                              fontSize:
+                                '0.62rem',
+                              px: 0.35,
+                              py: 0.4,
                             }}
                           >
                             {count > 0
@@ -2160,7 +2200,7 @@ export default function DailyCompletionSummary({
         color="text.secondary"
         sx={{ px: 0.5 }}
       >
-        날짜 열은 해당 날짜에 새로 작업완료 처리된 세대수입니다. 차수 목표량은 공종별 현황입력에서 설정한 동·층 목표선을 기준으로 계산하며, D-day는 한국시간 오늘 날짜와 선택 차수 목표일의 차이입니다.
+        날짜 열은 오늘부터 과거 순으로 표시되며, 해당 날짜에 새로 작업완료 처리된 세대수입니다. 차수 목표량은 공종별 현황입력에서 설정한 동·층 목표선을 기준으로 계산하며, D-day는 한국시간 오늘 날짜와 선택 차수 목표일의 차이입니다.
       </Typography>
     </Box>
   );
