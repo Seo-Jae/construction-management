@@ -17,8 +17,13 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  FormControlLabel,
+  IconButton,
   LinearProgress,
+  MenuItem,
   Paper,
+  Switch,
+  Tooltip,
   Tab,
   Tabs,
   Table,
@@ -35,6 +40,8 @@ import SaveIcon from '@mui/icons-material/Save';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import DownloadIcon from '@mui/icons-material/Download';
 import HistoryIcon from '@mui/icons-material/History';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
 
@@ -58,6 +65,63 @@ const EXPECTED_HEADERS = [
   ['K', '부가세'],
   ['L', '지출합계'],
 ];
+
+const DATE_STATUS_OPTIONS = [
+  {
+    value: 'confirmed',
+    label: '확정',
+  },
+  {
+    value: 'unconfirmed',
+    label: '미확정',
+  },
+  {
+    value: 'carryover',
+    label: '이월',
+  },
+  {
+    value: 'scheduled',
+    label: '입고예정',
+  },
+  {
+    value: 'other',
+    label: '기타',
+  },
+];
+
+const DATE_STATUS_LABELS =
+  DATE_STATUS_OPTIONS.reduce(
+    (result, option) => ({
+      ...result,
+      [option.value]:
+        option.label,
+    }),
+    {},
+  );
+
+const COMPACT_TABLE_SX = {
+  tableLayout: 'auto',
+  '& .MuiTableCell-root': {
+    px: 0.65,
+    py: 0.48,
+    fontSize: '0.63rem',
+    lineHeight: 1.22,
+    borderRight:
+      '1px solid #e2e8f0',
+    verticalAlign: 'middle',
+  },
+  '& .MuiTableCell-head': {
+    px: 0.65,
+    py: 0.55,
+    fontSize: '0.61rem',
+    lineHeight: 1.15,
+    fontWeight: 900,
+    whiteSpace: 'nowrap',
+  },
+  '& .MuiTableCell-root:last-of-type': {
+    borderRight: 'none',
+  },
+};
 
 const normalizeText = (
   value,
@@ -206,91 +270,239 @@ const roundAmount = (
           10000,
       ) / 10000;
 
+const inferDateStatus = (
+  text,
+) => {
+  const normalized =
+    normalizeText(text);
+
+  if (
+    normalized.includes(
+      '이월',
+    )
+  ) {
+    return 'carryover';
+  }
+
+  if (
+    normalized.includes(
+      '예정',
+    )
+  ) {
+    return 'scheduled';
+  }
+
+  if (
+    normalized.includes(
+      '미정',
+    ) ||
+    normalized.includes(
+      '미확정',
+    )
+  ) {
+    return 'unconfirmed';
+  }
+
+  return 'other';
+};
+
 const parseDateParts = ({
   year,
   month,
   day,
 }) => {
+  const rawYearText =
+    normalizeText(year);
+
+  const rawMonthText =
+    normalizeText(month);
+
+  const rawDayText =
+    normalizeText(day);
+
   const y =
     parseNumber(year);
 
   const m =
     parseNumber(month);
 
-  const d =
+  const exactDay =
     parseNumber(day);
 
-  const hasAny =
-    y !== null ||
-    m !== null ||
-    d !== null;
+  const dayMatch =
+    rawDayText.match(
+      /(?:^|\D)(\d{1,2})(?:\D|$)/,
+    );
 
-  const hasAll =
-    y !== null &&
-    m !== null &&
-    d !== null;
+  const extractedDay =
+    exactDay !== null
+      ? exactDay
+      : dayMatch
+        ? Number(
+            dayMatch[1],
+          )
+        : null;
+
+  const hasTextAnnotation =
+    Boolean(rawDayText) &&
+    exactDay === null;
+
+  const hasAny =
+    Boolean(
+      rawYearText ||
+      rawMonthText ||
+      rawDayText,
+    );
+
+  const sourceYear =
+    y === null
+      ? null
+      : y < 100
+        ? 2000 + y
+        : y;
+
+  const sourceMonth =
+    m === null
+      ? null
+      : m;
+
+  const status =
+    hasTextAnnotation
+      ? inferDateStatus(
+          rawDayText,
+        )
+      : 'confirmed';
 
   if (!hasAny) {
     return {
       hasAny: false,
       valid: false,
-      value: '',
-    };
-  }
-
-  if (!hasAll) {
-    return {
-      hasAny: true,
-      valid: false,
-      value: '',
+      value: null,
+      sourceYear,
+      sourceMonth,
+      rawDayText,
+      reviewRequired: true,
+      status: '',
+      suggestedStatus:
+        'other',
       reason:
-        '년·월·일 중 일부가 비어 있습니다.',
+        '입고일이 비어 있습니다.',
     };
   }
-
-  const fullYear =
-    y < 100
-      ? 2000 + y
-      : y;
-
-  const date =
-    new Date(
-      fullYear,
-      m - 1,
-      d,
-    );
 
   if (
-    date.getFullYear() !==
-      fullYear ||
-    date.getMonth() !==
-      m - 1 ||
-    date.getDate() !==
-      d
+    sourceYear === null ||
+    sourceMonth === null
   ) {
     return {
       hasAny: true,
       valid: false,
-      value: '',
+      value: null,
+      sourceYear,
+      sourceMonth,
+      rawDayText,
+      reviewRequired: true,
+      status: '',
+      suggestedStatus:
+        status === 'confirmed'
+          ? 'other'
+          : status,
       reason:
-        `${fullYear}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}는 올바른 날짜가 아닙니다.`,
+        '년 또는 월을 확인할 수 없습니다.',
+    };
+  }
+
+  if (
+    extractedDay === null
+  ) {
+    return {
+      hasAny: true,
+      valid: false,
+      value: null,
+      sourceYear,
+      sourceMonth,
+      rawDayText,
+      reviewRequired: true,
+      status: '',
+      suggestedStatus:
+        status === 'confirmed'
+          ? 'other'
+          : status,
+      reason:
+        rawDayText
+          ? `일자 '${rawDayText}'를 확인해주세요.`
+          : '일자가 비어 있습니다.',
+    };
+  }
+
+  const date =
+    new Date(
+      sourceYear,
+      sourceMonth - 1,
+      extractedDay,
+    );
+
+  const validDate =
+    date.getFullYear() ===
+      sourceYear &&
+    date.getMonth() ===
+      sourceMonth - 1 &&
+    date.getDate() ===
+      extractedDay;
+
+  const value =
+    validDate
+      ? [
+          sourceYear,
+          String(
+            sourceMonth,
+          ).padStart(2, '0'),
+          String(
+            extractedDay,
+          ).padStart(2, '0'),
+        ].join('-')
+      : null;
+
+  if (!validDate) {
+    return {
+      hasAny: true,
+      valid: false,
+      value: null,
+      sourceYear,
+      sourceMonth,
+      rawDayText,
+      reviewRequired: true,
+      status: '',
+      suggestedStatus:
+        status === 'confirmed'
+          ? 'other'
+          : status,
+      reason:
+        `${sourceYear}-${String(sourceMonth).padStart(2, '0')}-${String(extractedDay).padStart(2, '0')}는 올바른 날짜가 아닙니다.`,
     };
   }
 
   return {
     hasAny: true,
     valid: true,
-    value: [
-      fullYear,
-      String(m).padStart(
-        2,
-        '0',
-      ),
-      String(d).padStart(
-        2,
-        '0',
-      ),
-    ].join('-'),
+    value,
+    sourceYear,
+    sourceMonth,
+    rawDayText,
+    reviewRequired:
+      hasTextAnnotation,
+    status:
+      hasTextAnnotation
+        ? ''
+        : status,
+    suggestedStatus:
+      hasTextAnnotation
+        ? status
+        : 'confirmed',
+    reason:
+      hasTextAnnotation
+        ? `원본 일자 '${rawDayText}'를 확인해주세요.`
+        : '',
   };
 };
 
@@ -370,6 +582,234 @@ const getMonthRange = (
     label:
       `${year}년 ${month}월`,
   };
+};
+
+const getRecordMonthKey = (
+  record,
+) => {
+  if (
+    record?.arrival_date
+  ) {
+    return String(
+      record.arrival_date,
+    ).slice(0, 7);
+  }
+
+  const year =
+    Number(
+      record?.source_year,
+    );
+
+  const month =
+    Number(
+      record?.source_month,
+    );
+
+  if (
+    !Number.isFinite(year) ||
+    !Number.isFinite(month) ||
+    month < 1 ||
+    month > 12
+  ) {
+    return '';
+  }
+
+  return (
+    `${year}-` +
+    `${String(month).padStart(2, '0')}`
+  );
+};
+
+const isRecordInMonth = (
+  record,
+  monthKey,
+) =>
+  getRecordMonthKey(
+    record,
+  ) === monthKey;
+
+const isReviewComplete = (
+  record,
+) => {
+  if (
+    !record?.reviewRequired &&
+    !record?.review_required
+  ) {
+    return true;
+  }
+
+  const status =
+    record.arrivalDateStatus ??
+    record.arrival_date_status;
+
+  const includeInAmount =
+    record.includeInAmount ??
+    record.include_in_amount;
+
+  const arrivalDate =
+    record.arrivalDate ??
+    record.arrival_date;
+
+  const sourceYear =
+    record.sourceYear ??
+    record.source_year;
+
+  const sourceMonth =
+    record.sourceMonth ??
+    record.source_month;
+
+  const hasReferenceMonth =
+    Boolean(
+      Number(sourceYear) &&
+      Number(sourceMonth),
+    );
+
+  return Boolean(
+    status &&
+    typeof includeInAmount ===
+      'boolean' &&
+    (
+      arrivalDate ||
+      (
+        includeInAmount === false &&
+        hasReferenceMonth
+      )
+    ),
+  );
+};
+
+const createImportSummary = ({
+  records,
+  excludedRows,
+  amountMismatchRows,
+}) => {
+  const arrivalDates =
+    records
+      .map(
+        (record) =>
+          record.arrivalDate,
+      )
+      .filter(Boolean)
+      .sort();
+
+  const summary =
+    records.reduce(
+      (
+        result,
+        record,
+      ) => {
+        const includeAmount =
+          record.includeInAmount ===
+          true;
+
+        return {
+          rowCount:
+            result.rowCount + 1,
+          pricedRowCount:
+            result.pricedRowCount +
+            (
+              record.calculatedTotalAmount !==
+              null
+                ? 1
+                : 0
+            ),
+          unpricedRowCount:
+            result.unpricedRowCount +
+            (
+              record.calculatedTotalAmount ===
+              null
+                ? 1
+                : 0
+            ),
+          excludedAmountCount:
+            result.excludedAmountCount +
+            (
+              record.includeInAmount ===
+              false
+                ? 1
+                : 0
+            ),
+          pendingReviewCount:
+            result.pendingReviewCount +
+            (
+              isReviewComplete(
+                record,
+              )
+                ? 0
+                : 1
+            ),
+          reviewRowCount:
+            result.reviewRowCount +
+            (
+              record.reviewRequired
+                ? 1
+                : 0
+            ),
+          quantity:
+            result.quantity +
+            (
+              Number(
+                record.quantity,
+              ) || 0
+            ),
+          supplyAmount:
+            result.supplyAmount +
+            (
+              includeAmount
+                ? Number(
+                    record.supplyAmount,
+                  ) || 0
+                : 0
+            ),
+          vatAmount:
+            result.vatAmount +
+            (
+              includeAmount
+                ? Number(
+                    record.vatAmount,
+                  ) || 0
+                : 0
+            ),
+          calculatedTotalAmount:
+            result.calculatedTotalAmount +
+            (
+              includeAmount
+                ? Number(
+                    record.calculatedTotalAmount,
+                  ) || 0
+                : 0
+            ),
+        };
+      },
+      {
+        rowCount: 0,
+        pricedRowCount: 0,
+        unpricedRowCount: 0,
+        excludedAmountCount: 0,
+        pendingReviewCount: 0,
+        reviewRowCount: 0,
+        quantity: 0,
+        supplyAmount: 0,
+        vatAmount: 0,
+        calculatedTotalAmount: 0,
+      },
+    );
+
+  summary.minArrivalDate =
+    arrivalDates[0] || '';
+
+  summary.maxArrivalDate =
+    arrivalDates[
+      arrivalDates.length - 1
+    ] || '';
+
+  summary.amountMismatchCount =
+    amountMismatchRows.length;
+
+  summary.excludedRowCount =
+    excludedRows.length;
+
+  return summary;
 };
 
 const createFileHash =
@@ -838,39 +1278,10 @@ const parseHeadOfficeWorkbook =
       }
 
       /*
-        날짜 없이 업체/품명만 있는 분류행,
-        마지막 칸의 단독 숫자 같은 잔여값은 저장하지 않습니다.
+        품명이 없는 분류행이나 잔여값은 제외합니다.
+        품명이 있는 실제 자재행은 날짜가 미정·이월이어도
+        검토 대상으로 보존합니다.
       */
-      if (
-        !arrivalDateResult.hasAny
-      ) {
-        excludedRows.push({
-          row,
-          reason:
-            '입고일이 없어 원장 데이터에서 제외했습니다.',
-          supplier,
-          itemName,
-          specification,
-        });
-
-        continue;
-      }
-
-      if (
-        !arrivalDateResult.valid
-      ) {
-        excludedRows.push({
-          row,
-          reason:
-            arrivalDateResult.reason,
-          supplier,
-          itemName,
-          specification,
-        });
-
-        continue;
-      }
-
       if (!itemName) {
         excludedRows.push({
           row,
@@ -959,6 +1370,26 @@ const parseHeadOfficeWorkbook =
         sourceRow: row,
         arrivalDate:
           arrivalDateResult.value,
+        sourceYear:
+          arrivalDateResult.sourceYear,
+        sourceMonth:
+          arrivalDateResult.sourceMonth,
+        sourceDayText:
+          arrivalDateResult.rawDayText,
+        arrivalDateStatus:
+          arrivalDateResult.reviewRequired
+            ? arrivalDateResult.status
+            : 'confirmed',
+        arrivalDateReason:
+          arrivalDateResult.reason || '',
+        reviewRequired:
+          Boolean(
+            arrivalDateResult.reviewRequired,
+          ),
+        includeInAmount:
+          arrivalDateResult.reviewRequired
+            ? null
+            : true,
         orderDate:
           orderDateResult.valid
             ? orderDateResult.value
@@ -982,103 +1413,43 @@ const parseHeadOfficeWorkbook =
           auxiliaryS,
           auxiliaryT,
           auxiliaryU,
+          rawArrivalYear:
+            normalizeText(
+              getCellRawValue(
+                worksheet.getCell(
+                  `A${row}`,
+                ),
+              ),
+            ),
+          rawArrivalMonth:
+            normalizeText(
+              getCellRawValue(
+                worksheet.getCell(
+                  `B${row}`,
+                ),
+              ),
+            ),
+          rawArrivalDay:
+            normalizeText(
+              getCellRawValue(
+                worksheet.getCell(
+                  `C${row}`,
+                ),
+              ),
+            ),
+          suggestedArrivalDateStatus:
+            arrivalDateResult.suggestedStatus ||
+            '',
         },
       });
     }
 
-    const datedRecords =
-      records.filter(
-        (record) =>
-          record.arrivalDate,
-      );
-
-    const arrivalDates =
-      datedRecords
-        .map(
-          (record) =>
-            record.arrivalDate,
-        )
-        .sort();
-
     const summary =
-      records.reduce(
-        (
-          result,
-          record,
-        ) => ({
-          rowCount:
-            result.rowCount +
-            1,
-          pricedRowCount:
-            result.pricedRowCount +
-            (
-              record.calculatedTotalAmount !==
-              null
-                ? 1
-                : 0
-            ),
-          unpricedRowCount:
-            result.unpricedRowCount +
-            (
-              record.calculatedTotalAmount ===
-              null
-                ? 1
-                : 0
-            ),
-          quantity:
-            result.quantity +
-            (
-              Number(
-                record.quantity,
-              ) || 0
-            ),
-          supplyAmount:
-            result.supplyAmount +
-            (
-              Number(
-                record.supplyAmount,
-              ) || 0
-            ),
-          vatAmount:
-            result.vatAmount +
-            (
-              Number(
-                record.vatAmount,
-              ) || 0
-            ),
-          calculatedTotalAmount:
-            result.calculatedTotalAmount +
-            (
-              Number(
-                record.calculatedTotalAmount,
-              ) || 0
-            ),
-        }),
-        {
-          rowCount: 0,
-          pricedRowCount: 0,
-          unpricedRowCount: 0,
-          quantity: 0,
-          supplyAmount: 0,
-          vatAmount: 0,
-          calculatedTotalAmount: 0,
-        },
-      );
-
-    summary.minArrivalDate =
-      arrivalDates[0] || '';
-
-    summary.maxArrivalDate =
-      arrivalDates[
-        arrivalDates.length -
-          1
-      ] || '';
-
-    summary.amountMismatchCount =
-      amountMismatchRows.length;
-
-    summary.excludedRowCount =
-      excludedRows.length;
+      createImportSummary({
+        records,
+        excludedRows,
+        amountMismatchRows,
+      });
 
     return {
       fileName:
@@ -1093,23 +1464,31 @@ const parseHeadOfficeWorkbook =
       warnings,
       excludedRows,
       amountMismatchRows,
+      reviewRows:
+        records.filter(
+          (record) =>
+            record.reviewRequired,
+        ),
       summary,
     };
   };
 
 const aggregateItemRows = ({
   records,
-  monthStart,
-  monthEnd,
+  monthKey,
 }) => {
   const map = new Map();
 
   records.forEach(
     (record) => {
+      const recordMonth =
+        getRecordMonthKey(
+          record,
+        );
+
       if (
-        !record.arrival_date ||
-        record.arrival_date >
-          monthEnd
+        !recordMonth ||
+        recordMonth > monthKey
       ) {
         return;
       }
@@ -1151,6 +1530,9 @@ const aggregateItemRows = ({
           latestArrivalDate:
             '',
           mismatchCount: 0,
+          excludedAmountCount:
+            0,
+          reviewCount: 0,
         });
       }
 
@@ -1165,15 +1547,20 @@ const aggregateItemRows = ({
 
       const quantity =
         Number(
-          record.quantity ||
-            0,
+          record.quantity || 0,
         );
 
+      const amountIncluded =
+        record.include_in_amount !==
+        false;
+
       const amount =
-        Number(
-          record.calculated_total_amount ||
-            0,
-        );
+        amountIncluded
+          ? Number(
+              record.calculated_total_amount ||
+                0,
+            )
+          : 0;
 
       target.cumulativeQuantity +=
         quantity;
@@ -1181,39 +1568,44 @@ const aggregateItemRows = ({
       target.cumulativeAmount +=
         amount;
 
-      target.cumulativeCount +=
-        1;
+      target.cumulativeCount += 1;
 
-      if (
-        record.amount_mismatch
-      ) {
-        target.mismatchCount +=
+      if (!amountIncluded) {
+        target.excludedAmountCount +=
           1;
       }
 
       if (
-        !target.latestArrivalDate ||
-        record.arrival_date >
-          target.latestArrivalDate
+        record.arrival_date_status !==
+          'confirmed'
+      ) {
+        target.reviewCount += 1;
+      }
+
+      if (record.amount_mismatch) {
+        target.mismatchCount += 1;
+      }
+
+      if (
+        record.arrival_date &&
+        (
+          !target.latestArrivalDate ||
+          record.arrival_date >
+            target.latestArrivalDate
+        )
       ) {
         target.latestArrivalDate =
           record.arrival_date;
       }
 
-      if (
-        record.arrival_date >=
-          monthStart &&
-        record.arrival_date <=
-          monthEnd
-      ) {
+      if (recordMonth === monthKey) {
         target.monthlyQuantity +=
           quantity;
 
         target.monthlyAmount +=
           amount;
 
-        target.monthlyCount +=
-          1;
+        target.monthlyCount += 1;
       }
     },
   );
@@ -1318,6 +1710,26 @@ export default function MaterialInputStatus({
   const [
     issueDialogOpen,
     setIssueDialogOpen,
+  ] = useState(false);
+
+  const [
+    dateReviewDialogOpen,
+    setDateReviewDialogOpen,
+  ] = useState(false);
+
+  const [
+    recordEditOpen,
+    setRecordEditOpen,
+  ] = useState(false);
+
+  const [
+    editingRecord,
+    setEditingRecord,
+  ] = useState(null);
+
+  const [
+    recordEditSaving,
+    setRecordEditSaving,
   ] = useState(false);
 
   const [
@@ -1570,10 +1982,10 @@ export default function MaterialInputStatus({
             records
               .filter(
                 (record) =>
-                  record.arrival_date >=
-                    monthRange.start &&
-                  record.arrival_date <=
-                    monthRange.end,
+                  isRecordInMonth(
+                    record,
+                    selectedMonth,
+                  ),
               )
               .map(
                 (record) =>
@@ -1592,9 +2004,8 @@ export default function MaterialInputStatus({
             ),
         ),
       [
-        monthRange.end,
-        monthRange.start,
         records,
+        selectedMonth,
       ],
     );
 
@@ -1622,15 +2033,12 @@ export default function MaterialInputStatus({
       () =>
         aggregateItemRows({
           records,
-          monthStart:
-            monthRange.start,
-          monthEnd:
-            monthRange.end,
+          monthKey:
+            selectedMonth,
         }),
       [
-        monthRange.end,
-        monthRange.start,
         records,
+        selectedMonth,
       ],
     );
 
@@ -1685,10 +2093,10 @@ export default function MaterialInputStatus({
         records.filter(
           (record) => {
             const inMonth =
-              record.arrival_date >=
-                monthRange.start &&
-              record.arrival_date <=
-                monthRange.end;
+              isRecordInMonth(
+                record,
+                selectedMonth,
+              );
 
             const supplierMatched =
               !selectedSupplier ||
@@ -1719,10 +2127,9 @@ export default function MaterialInputStatus({
           },
         ),
       [
-        monthRange.end,
-        monthRange.start,
         normalizedSearch,
         records,
+        selectedMonth,
         selectedSupplier,
       ],
     );
@@ -1740,10 +2147,10 @@ export default function MaterialInputStatus({
             record,
           ) => {
             const inMonth =
-              record.arrival_date >=
-                monthRange.start &&
-              record.arrival_date <=
-                monthRange.end;
+              isRecordInMonth(
+                record,
+                selectedMonth,
+              );
 
             if (
               !inMonth ||
@@ -1757,23 +2164,32 @@ export default function MaterialInputStatus({
               supplyAmount:
                 result.supplyAmount +
                 (
-                  Number(
-                    record.supply_amount,
-                  ) || 0
+                  record.include_in_amount ===
+                  false
+                    ? 0
+                    : Number(
+                        record.supply_amount,
+                      ) || 0
                 ),
               vatAmount:
                 result.vatAmount +
                 (
-                  Number(
-                    record.vat_amount,
-                  ) || 0
+                  record.include_in_amount ===
+                  false
+                    ? 0
+                    : Number(
+                        record.vat_amount,
+                      ) || 0
                 ),
               totalAmount:
                 result.totalAmount +
                 (
-                  Number(
-                    record.calculated_total_amount,
-                  ) || 0
+                  record.include_in_amount ===
+                  false
+                    ? 0
+                    : Number(
+                        record.calculated_total_amount,
+                      ) || 0
                 ),
             };
           },
@@ -1785,9 +2201,8 @@ export default function MaterialInputStatus({
         );
       },
       [
-        monthRange.end,
-        monthRange.start,
         records,
+        selectedMonth,
         selectedSupplier,
       ],
     );
@@ -1801,18 +2216,21 @@ export default function MaterialInputStatus({
             record,
           ) => {
             if (
-              record.arrival_date <
-                monthRange.start ||
-              record.arrival_date >
-                monthRange.end
+              !isRecordInMonth(
+                record,
+                selectedMonth,
+              )
             ) {
               return result;
             }
 
+            const includeAmount =
+              record.include_in_amount !==
+              false;
+
             return {
               rowCount:
-                result.rowCount +
-                1,
+                result.rowCount + 1,
               pricedRowCount:
                 result.pricedRowCount +
                 (
@@ -1829,26 +2247,47 @@ export default function MaterialInputStatus({
                     ? 1
                     : 0
                 ),
+              excludedAmountCount:
+                result.excludedAmountCount +
+                (
+                  includeAmount
+                    ? 0
+                    : 1
+                ),
+              reviewCount:
+                result.reviewCount +
+                (
+                  record.arrival_date_status !==
+                    'confirmed'
+                    ? 1
+                    : 0
+                ),
               supplyAmount:
                 result.supplyAmount +
                 (
-                  Number(
-                    record.supply_amount,
-                  ) || 0
+                  includeAmount
+                    ? Number(
+                        record.supply_amount,
+                      ) || 0
+                    : 0
                 ),
               vatAmount:
                 result.vatAmount +
                 (
-                  Number(
-                    record.vat_amount,
-                  ) || 0
+                  includeAmount
+                    ? Number(
+                        record.vat_amount,
+                      ) || 0
+                    : 0
                 ),
               totalAmount:
                 result.totalAmount +
                 (
-                  Number(
-                    record.calculated_total_amount,
-                  ) || 0
+                  includeAmount
+                    ? Number(
+                        record.calculated_total_amount,
+                      ) || 0
+                    : 0
                 ),
               mismatchCount:
                 result.mismatchCount +
@@ -1863,6 +2302,8 @@ export default function MaterialInputStatus({
             rowCount: 0,
             pricedRowCount: 0,
             unpricedRowCount: 0,
+            excludedAmountCount: 0,
+            reviewCount: 0,
             supplyAmount: 0,
             vatAmount: 0,
             totalAmount: 0,
@@ -1870,11 +2311,66 @@ export default function MaterialInputStatus({
           },
         ),
       [
-        monthRange.end,
-        monthRange.start,
         records,
+        selectedMonth,
       ],
     );
+
+  const pendingAnalysisReviewRows =
+    useMemo(
+      () =>
+        analysis?.records?.filter(
+          (record) =>
+            !isReviewComplete(
+              record,
+            ),
+        ) || [],
+      [analysis],
+    );
+
+  const updateAnalysisRecord = (
+    sourceRow,
+    patch,
+  ) => {
+    setAnalysis(
+      (previous) => {
+        if (!previous) {
+          return previous;
+        }
+
+        const nextRecords =
+          previous.records.map(
+            (record) =>
+              record.sourceRow ===
+              sourceRow
+                ? {
+                    ...record,
+                    ...patch,
+                  }
+                : record,
+          );
+
+        return {
+          ...previous,
+          records: nextRecords,
+          reviewRows:
+            nextRecords.filter(
+              (record) =>
+                record.reviewRequired,
+            ),
+          summary:
+            createImportSummary({
+              records:
+                nextRecords,
+              excludedRows:
+                previous.excludedRows,
+              amountMismatchRows:
+                previous.amountMismatchRows,
+            }),
+        };
+      },
+    );
+  };
 
   const handleFileChange =
     async (event) => {
@@ -1922,6 +2418,15 @@ export default function MaterialInputStatus({
         );
 
         if (
+          result.reviewRows.length >
+          0
+        ) {
+          setDateReviewDialogOpen(
+            true,
+          );
+        }
+
+        if (
           result.blockingErrors.length >
           0
         ) {
@@ -1935,7 +2440,9 @@ export default function MaterialInputStatus({
             severity:
               'success',
             text:
-              `${result.summary.rowCount.toLocaleString()}건을 확인했습니다. 제외 ${result.summary.excludedRowCount.toLocaleString()}건, 금액 불일치 ${result.summary.amountMismatchCount.toLocaleString()}건입니다.`,
+              result.summary.reviewRowCount > 0
+                ? `${result.summary.rowCount.toLocaleString()}건을 확인했습니다. 일자 확인 ${result.summary.reviewRowCount.toLocaleString()}건은 금액 포함여부를 반드시 결정해야 합니다.`
+                : `${result.summary.rowCount.toLocaleString()}건을 확인했습니다. 제외 ${result.summary.excludedRowCount.toLocaleString()}건, 금액 불일치 ${result.summary.amountMismatchCount.toLocaleString()}건입니다.`,
           });
         }
       } catch (error) {
@@ -1972,6 +2479,23 @@ export default function MaterialInputStatus({
         analysis.records.length ===
           0
       ) {
+        return;
+      }
+
+      if (
+        pendingAnalysisReviewRows.length >
+        0
+      ) {
+        setDateReviewDialogOpen(
+          true,
+        );
+
+        setMessage({
+          severity: 'error',
+          text:
+            `일자 확인이 끝나지 않은 자료가 ${pendingAnalysisReviewRows.length.toLocaleString()}건 있습니다. 사유와 금액 포함여부를 먼저 결정해주세요.`,
+        });
+
         return;
       }
 
@@ -2060,6 +2584,9 @@ export default function MaterialInputStatus({
             amount_mismatch_count:
               analysis.summary
                 .amountMismatchCount,
+            review_required_count:
+              analysis.summary
+                .reviewRowCount,
             min_arrival_date:
               analysis.summary
                 .minArrivalDate ||
@@ -2114,7 +2641,36 @@ export default function MaterialInputStatus({
               source_row:
                 record.sourceRow,
               arrival_date:
-                record.arrivalDate,
+                record.arrivalDate ||
+                null,
+              source_year:
+                record.sourceYear,
+              source_month:
+                record.sourceMonth,
+              source_day_text:
+                record.sourceDayText ||
+                null,
+              arrival_date_status:
+                record.arrivalDateStatus ||
+                'confirmed',
+              arrival_date_reason:
+                record.arrivalDateReason ||
+                null,
+              include_in_amount:
+                record.includeInAmount ===
+                true,
+              review_required:
+                Boolean(
+                  record.reviewRequired,
+                ),
+              reviewed_by:
+                record.reviewRequired
+                  ? userEmail
+                  : null,
+              reviewed_at:
+                record.reviewRequired
+                  ? new Date().toISOString()
+                  : null,
               order_date:
                 record.orderDate,
               supplier:
@@ -2266,6 +2822,253 @@ export default function MaterialInputStatus({
         });
       } finally {
         setSaving(false);
+      }
+    };
+
+  const handleOpenRecordEdit = (
+    record,
+  ) => {
+    setEditingRecord({
+      ...record,
+      arrival_date_status:
+        record.arrival_date_status ||
+        'confirmed',
+      include_in_amount:
+        record.include_in_amount !==
+        false,
+    });
+
+    setRecordEditOpen(true);
+  };
+
+  const handleSaveRecordEdit =
+    async () => {
+      if (!editingRecord) {
+        return;
+      }
+
+      if (
+        editingRecord.include_in_amount &&
+        !editingRecord.arrival_date
+      ) {
+        setMessage({
+          severity: 'error',
+          text:
+            '금액을 포함하려면 입고일을 입력해야 합니다.',
+        });
+        return;
+      }
+
+      setRecordEditSaving(true);
+
+      try {
+        const {
+          data: authData,
+        } =
+          await supabase.auth.getUser();
+
+        const userEmail =
+          authData?.user?.email ||
+          null;
+
+        const nextDate =
+          editingRecord.arrival_date ||
+          null;
+
+        const nextYear =
+          nextDate
+            ? Number(
+                nextDate.slice(0, 4),
+              )
+            : editingRecord.source_year;
+
+        const nextMonth =
+          nextDate
+            ? Number(
+                nextDate.slice(5, 7),
+              )
+            : editingRecord.source_month;
+
+        const payload = {
+          arrival_date: nextDate,
+          source_year:
+            nextYear || null,
+          source_month:
+            nextMonth || null,
+          arrival_date_status:
+            editingRecord.arrival_date_status,
+          arrival_date_reason:
+            editingRecord.arrival_date_reason ||
+            null,
+          include_in_amount:
+            Boolean(
+              editingRecord.include_in_amount,
+            ),
+          review_required:
+            Boolean(
+              editingRecord.review_required ||
+              editingRecord.arrival_date_status !==
+                'confirmed',
+            ),
+          reviewed_by:
+            userEmail,
+          reviewed_at:
+            new Date().toISOString(),
+        };
+
+        const {
+          data,
+          error,
+        } = await supabase
+          .from(
+            'material_input_records',
+          )
+          .update(payload)
+          .eq(
+            'id',
+            editingRecord.id,
+          )
+          .select('*')
+          .single();
+
+        if (error) {
+          throw error;
+        }
+
+        const nextRecords =
+          records.map(
+            (record) =>
+              record.id ===
+              data.id
+                ? data
+                : record,
+          );
+
+        setRecords(
+          nextRecords,
+        );
+
+        if (activeImport?.id) {
+          const includedRows =
+            nextRecords.filter(
+              (record) =>
+                record.include_in_amount !==
+                false,
+            );
+
+          const datedRows =
+            nextRecords
+              .map(
+                (record) =>
+                  record.arrival_date,
+              )
+              .filter(Boolean)
+              .sort();
+
+          const importTotals =
+            includedRows.reduce(
+              (
+                result,
+                record,
+              ) => ({
+                supplyAmount:
+                  result.supplyAmount +
+                  (
+                    Number(
+                      record.supply_amount,
+                    ) || 0
+                  ),
+                vatAmount:
+                  result.vatAmount +
+                  (
+                    Number(
+                      record.vat_amount,
+                    ) || 0
+                  ),
+                totalAmount:
+                  result.totalAmount +
+                  (
+                    Number(
+                      record.calculated_total_amount,
+                    ) || 0
+                  ),
+              }),
+              {
+                supplyAmount: 0,
+                vatAmount: 0,
+                totalAmount: 0,
+              },
+            );
+
+          const importPatch = {
+            total_supply_amount:
+              importTotals.supplyAmount,
+            total_vat_amount:
+              importTotals.vatAmount,
+            total_amount:
+              importTotals.totalAmount,
+            min_arrival_date:
+              datedRows[0] || null,
+            max_arrival_date:
+              datedRows[
+                datedRows.length - 1
+              ] || null,
+            review_required_count:
+              nextRecords.filter(
+                (record) =>
+                  record.review_required,
+              ).length,
+          };
+
+          const {
+            error:
+              importUpdateError,
+          } = await supabase
+            .from(
+              'material_input_imports',
+            )
+            .update(
+              importPatch,
+            )
+            .eq(
+              'id',
+              activeImport.id,
+            );
+
+          if (importUpdateError) {
+            throw importUpdateError;
+          }
+
+          setActiveImport(
+            (previous) => ({
+              ...previous,
+              ...importPatch,
+            }),
+          );
+        }
+
+        setRecordEditOpen(false);
+        setEditingRecord(null);
+
+        setMessage({
+          severity: 'success',
+          text:
+            '일자 상태와 금액 포함여부를 수정했습니다.',
+        });
+      } catch (error) {
+        console.error(
+          '자재투입 상세 수정 실패:',
+          error,
+        );
+
+        setMessage({
+          severity: 'error',
+          text:
+            error?.message ||
+            '자재투입 상세를 수정하지 못했습니다.',
+        });
+      } finally {
+        setRecordEditSaving(false);
       }
     };
 
@@ -2655,6 +3458,34 @@ export default function MaterialInputStatus({
 
                 <Chip
                   size="small"
+                  color={
+                    analysis.summary.pendingReviewCount >
+                    0
+                      ? 'error'
+                      : 'success'
+                  }
+                  icon={
+                    analysis.summary.reviewRowCount >
+                    0
+                      ? (
+                        <WarningAmberOutlinedIcon />
+                      )
+                      : undefined
+                  }
+                  label={`일자확인 ${analysis.summary.reviewRowCount.toLocaleString()}건`}
+                  onClick={
+                    analysis.summary.reviewRowCount >
+                    0
+                      ? () =>
+                          setDateReviewDialogOpen(
+                            true,
+                          )
+                      : undefined
+                  }
+                />
+
+                <Chip
+                  size="small"
                   color="error"
                   label={`금액불일치 ${analysis.summary.amountMismatchCount.toLocaleString()}건`}
                 />
@@ -2813,7 +3644,9 @@ export default function MaterialInputStatus({
                     analysis.blockingErrors
                       .length > 0 ||
                     analysis.records
-                      .length === 0
+                      .length === 0 ||
+                    analysis.summary
+                      .pendingReviewCount > 0
                   }
                   sx={{
                     fontWeight: 900,
@@ -2990,7 +3823,9 @@ export default function MaterialInputStatus({
             '금액 확인 필요',
             `${(
               monthSummary.unpricedRowCount +
-              monthSummary.mismatchCount
+              monthSummary.mismatchCount +
+              monthSummary.reviewCount +
+              monthSummary.excludedAmountCount
             ).toLocaleString()}건`,
           ],
         ].map(
@@ -3097,9 +3932,10 @@ export default function MaterialInputStatus({
               <Table
                 stickyHeader
                 size="small"
-                sx={
-                  tableVerticalBorderSx
-                }
+                sx={{
+                  ...tableVerticalBorderSx,
+                  ...COMPACT_TABLE_SX,
+                }}
               >
                 <TableHead>
                   <TableRow>
@@ -3293,15 +4129,18 @@ export default function MaterialInputStatus({
               <Table
                 stickyHeader
                 size="small"
-                sx={
-                  tableVerticalBorderSx
-                }
+                sx={{
+                  ...tableVerticalBorderSx,
+                  ...COMPACT_TABLE_SX,
+                }}
               >
                 <TableHead>
                   <TableRow>
                     {[
                       '입고일',
                       '발주일',
+                      '일자상태',
+                      '금액포함',
                       '업체',
                       '품명',
                       '규격',
@@ -3313,6 +4152,7 @@ export default function MaterialInputStatus({
                       '재계산 합계',
                       '원본 합계',
                       '비고',
+                      '수정',
                     ].map(
                       (
                         header,
@@ -3322,8 +4162,8 @@ export default function MaterialInputStatus({
                           key={header}
                           align={
                             index >=
-                              6 &&
-                            index <= 11
+                              8 &&
+                            index <= 13
                               ? 'right'
                               : 'left'
                           }
@@ -3337,11 +4177,24 @@ export default function MaterialInputStatus({
                             ...(
                               index <= 1
                                 ? {
-                                    width: 82,
-                                    minWidth: 82,
-                                    maxWidth: 82,
+                                    width: 64,
+                                    minWidth: 64,
+                                    maxWidth: 64,
                                   }
-                                : {}
+                                : index === 4
+                                  ? {
+                                      minWidth: 145,
+                                    }
+                                  : index === 14
+                                    ? {
+                                        minWidth: 220,
+                                      }
+                                    : index >= 10 &&
+                                        index <= 13
+                                      ? {
+                                          minWidth: 86,
+                                        }
+                                      : {}
                             ),
                           }}
                         >
@@ -3366,7 +4219,7 @@ export default function MaterialInputStatus({
                       }}
                     >
                       <TableCell
-                        colSpan={8}
+                        colSpan={10}
                         sx={{
                           color:
                             '#1e3a8a',
@@ -3435,6 +4288,8 @@ export default function MaterialInputStatus({
                       <TableCell />
 
                       <TableCell />
+
+                      <TableCell />
                     </TableRow>
                   )}
 
@@ -3445,16 +4300,23 @@ export default function MaterialInputStatus({
                         hover
                         sx={{
                           bgcolor:
-                            record.amount_mismatch
-                              ? '#fff7ed'
-                              : 'inherit',
+                            record.review_required ||
+                            record.arrival_date_status !==
+                              'confirmed'
+                              ? record.include_in_amount ===
+                                false
+                                ? '#f8fafc'
+                                : '#fffbea'
+                              : record.amount_mismatch
+                                ? '#fff7ed'
+                                : 'inherit',
                         }}
                       >
                         <TableCell
                           sx={{
-                            width: 82,
-                            minWidth: 82,
-                            maxWidth: 82,
+                            width: 64,
+                            minWidth: 64,
+                            maxWidth: 64,
                             whiteSpace:
                               'nowrap',
                             wordBreak:
@@ -3470,9 +4332,9 @@ export default function MaterialInputStatus({
 
                         <TableCell
                           sx={{
-                            width: 82,
-                            minWidth: 82,
-                            maxWidth: 82,
+                            width: 64,
+                            minWidth: 64,
+                            maxWidth: 64,
                             whiteSpace:
                               'nowrap',
                             wordBreak:
@@ -3486,7 +4348,74 @@ export default function MaterialInputStatus({
                           )}
                         </TableCell>
 
-                        <TableCell>
+                        <TableCell
+                          sx={{
+                            minWidth: 72,
+                            whiteSpace:
+                              'nowrap',
+                          }}
+                        >
+                          <Chip
+                            size="small"
+                            color={
+                              record.arrival_date_status ===
+                              'confirmed'
+                                ? 'default'
+                                : 'warning'
+                            }
+                            label={
+                              DATE_STATUS_LABELS[
+                                record.arrival_date_status ||
+                                  'confirmed'
+                              ] || '기타'
+                            }
+                            sx={{
+                              height: 20,
+                              fontSize:
+                                '0.58rem',
+                            }}
+                          />
+                        </TableCell>
+
+                        <TableCell
+                          sx={{
+                            minWidth: 66,
+                            whiteSpace:
+                              'nowrap',
+                          }}
+                        >
+                          <Chip
+                            size="small"
+                            color={
+                              record.include_in_amount ===
+                              false
+                                ? 'default'
+                                : 'success'
+                            }
+                            label={
+                              record.include_in_amount ===
+                              false
+                                ? '제외'
+                                : '포함'
+                            }
+                            sx={{
+                              height: 20,
+                              fontSize:
+                                '0.58rem',
+                            }}
+                          />
+                        </TableCell>
+
+                        <TableCell
+                          sx={{
+                            minWidth: 145,
+                            maxWidth: 210,
+                            whiteSpace:
+                              'normal',
+                            wordBreak:
+                              'keep-all',
+                          }}
+                        >
                           {record.supplier ||
                             '-'}
                         </TableCell>
@@ -3586,9 +4515,43 @@ export default function MaterialInputStatus({
                               )}
                         </TableCell>
 
-                        <TableCell>
+                        <TableCell
+                          sx={{
+                            minWidth: 220,
+                            maxWidth: 340,
+                            whiteSpace:
+                              'normal',
+                            wordBreak:
+                              'break-word',
+                          }}
+                        >
                           {record.note ||
                             ''}
+                        </TableCell>
+
+                        <TableCell
+                          align="center"
+                          sx={{
+                            width: 42,
+                            minWidth: 42,
+                          }}
+                        >
+                          <Tooltip title="일자·금액 포함 수정">
+                            <IconButton
+                              size="small"
+                              onClick={() =>
+                                handleOpenRecordEdit(
+                                  record,
+                                )
+                              }
+                            >
+                              <EditOutlinedIcon
+                                sx={{
+                                  fontSize: 16,
+                                }}
+                              />
+                            </IconButton>
+                          </Tooltip>
                         </TableCell>
                       </TableRow>
                     ),
@@ -3599,7 +4562,7 @@ export default function MaterialInputStatus({
                       0 && (
                     <TableRow>
                       <TableCell
-                        colSpan={13}
+                        colSpan={16}
                         align="center"
                         sx={{
                           py: 5,
@@ -3630,6 +4593,486 @@ export default function MaterialInputStatus({
       >
         기성청구 참고금액은 입고일 기준으로 집계하며, 원본 지출합계가 잘못된 행은 공급가액과 부가세를 더한 재계산 합계를 사용합니다. 발주일은 참고정보로 별도 보관됩니다.
       </Alert>
+
+      <Dialog
+        open={dateReviewDialogOpen}
+        onClose={() =>
+          setDateReviewDialogOpen(
+            false,
+          )
+        }
+        fullWidth
+        maxWidth="xl"
+      >
+        <DialogTitle
+          sx={{
+            fontWeight: 900,
+          }}
+        >
+          입고일 확인 및 금액 포함 결정
+        </DialogTitle>
+
+        <DialogContent dividers>
+          <Alert
+            severity={
+              pendingAnalysisReviewRows.length >
+              0
+                ? 'warning'
+                : 'success'
+            }
+          >
+            숫자와 문자가 함께 입력된 일자나 존재하지 않는 일자는 자동 제외하지 않습니다. 각 행의 상태와 금액 포함여부를 결정해야 현재 현황으로 반영할 수 있습니다.
+          </Alert>
+
+          <TableContainer
+            sx={{
+              mt: 1,
+              maxHeight: 520,
+              border:
+                '1px solid #dbe3ee',
+            }}
+          >
+            <Table
+              stickyHeader
+              size="small"
+              sx={{
+                ...COMPACT_TABLE_SX,
+              }}
+            >
+              <TableHead>
+                <TableRow>
+                  {[
+                    '엑셀행',
+                    '원본 일자',
+                    '업체',
+                    '품명',
+                    '규격',
+                    '처리상태',
+                    '확정 입고일',
+                    '금액 포함',
+                    '안내',
+                  ].map(
+                    (header) => (
+                      <TableCell
+                        key={header}
+                      >
+                        {header}
+                      </TableCell>
+                    ),
+                  )}
+                </TableRow>
+              </TableHead>
+
+              <TableBody>
+                {(analysis?.reviewRows || []).map(
+                  (record) => {
+                    const complete =
+                      isReviewComplete(
+                        record,
+                      );
+
+                    return (
+                      <TableRow
+                        key={record.sourceRow}
+                        sx={{
+                          bgcolor:
+                            complete
+                              ? '#f0fdf4'
+                              : '#fffbea',
+                        }}
+                      >
+                        <TableCell>
+                          {record.sourceRow}
+                        </TableCell>
+
+                        <TableCell
+                          sx={{
+                            minWidth: 90,
+                            fontWeight: 900,
+                          }}
+                        >
+                          {[
+                            record.sourceYear,
+                            record.sourceMonth,
+                            record.sourceDayText ||
+                              '(빈칸)',
+                          ]
+                            .filter(
+                              (value) =>
+                                value !== null &&
+                                value !== undefined &&
+                                value !== '',
+                            )
+                            .join('-')}
+                        </TableCell>
+
+                        <TableCell>
+                          {record.supplier || '-'}
+                        </TableCell>
+
+                        <TableCell>
+                          {record.itemName}
+                        </TableCell>
+
+                        <TableCell>
+                          {record.specification || '-'}
+                        </TableCell>
+
+                        <TableCell
+                          sx={{
+                            minWidth: 120,
+                          }}
+                        >
+                          <TextField
+                            select
+                            fullWidth
+                            size="small"
+                            value={
+                              record.arrivalDateStatus ||
+                              ''
+                            }
+                            onChange={(event) =>
+                              updateAnalysisRecord(
+                                record.sourceRow,
+                                {
+                                  arrivalDateStatus:
+                                    event.target.value,
+                                  arrivalDateReason:
+                                    DATE_STATUS_LABELS[
+                                      event.target.value
+                                    ] || '',
+                                },
+                              )
+                            }
+                          >
+                            <MenuItem value="">
+                              선택 필요
+                            </MenuItem>
+                            {DATE_STATUS_OPTIONS.map(
+                              (option) => (
+                                <MenuItem
+                                  key={option.value}
+                                  value={option.value}
+                                >
+                                  {option.label}
+                                </MenuItem>
+                              ),
+                            )}
+                          </TextField>
+                        </TableCell>
+
+                        <TableCell
+                          sx={{
+                            minWidth: 140,
+                          }}
+                        >
+                          <TextField
+                            type="date"
+                            fullWidth
+                            size="small"
+                            value={
+                              record.arrivalDate ||
+                              ''
+                            }
+                            onChange={(event) =>
+                              updateAnalysisRecord(
+                                record.sourceRow,
+                                {
+                                  arrivalDate:
+                                    event.target.value ||
+                                    null,
+                                  sourceYear:
+                                    event.target.value
+                                      ? Number(
+                                          event.target.value.slice(
+                                            0,
+                                            4,
+                                          ),
+                                        )
+                                      : record.sourceYear,
+                                  sourceMonth:
+                                    event.target.value
+                                      ? Number(
+                                          event.target.value.slice(
+                                            5,
+                                            7,
+                                          ),
+                                        )
+                                      : record.sourceMonth,
+                                },
+                              )
+                            }
+                            InputLabelProps={{
+                              shrink: true,
+                            }}
+                          />
+                        </TableCell>
+
+                        <TableCell
+                          sx={{
+                            minWidth: 105,
+                          }}
+                        >
+                          <TextField
+                            select
+                            fullWidth
+                            size="small"
+                            value={
+                              typeof record.includeInAmount ===
+                              'boolean'
+                                ? record.includeInAmount
+                                  ? 'include'
+                                  : 'exclude'
+                                : ''
+                            }
+                            onChange={(event) =>
+                              updateAnalysisRecord(
+                                record.sourceRow,
+                                {
+                                  includeInAmount:
+                                    event.target.value ===
+                                    'include',
+                                },
+                              )
+                            }
+                          >
+                            <MenuItem value="">
+                              선택 필요
+                            </MenuItem>
+                            <MenuItem value="include">
+                              포함
+                            </MenuItem>
+                            <MenuItem value="exclude">
+                              제외
+                            </MenuItem>
+                          </TextField>
+                        </TableCell>
+
+                        <TableCell
+                          sx={{
+                            minWidth: 180,
+                            color:
+                              complete
+                                ? '#166534'
+                                : '#b45309',
+                          }}
+                        >
+                          {complete
+                            ? '확인 완료'
+                            : record.includeInAmount ===
+                                true &&
+                              !record.arrivalDate
+                              ? '금액 포함 시 입고일이 필요합니다.'
+                              : !record.arrivalDate &&
+                                  !(
+                                    record.sourceYear &&
+                                    record.sourceMonth
+                                  )
+                                ? '조회 월을 정하려면 입고일을 입력해야 합니다.'
+                                : record.arrivalDateReason ||
+                                (
+                                  record.rawMetadata
+                                    ?.suggestedArrivalDateStatus
+                                    ? `추천: ${DATE_STATUS_LABELS[record.rawMetadata.suggestedArrivalDateStatus]}`
+                                    : '상태와 금액 포함여부를 선택해주세요.'
+                                )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  },
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </DialogContent>
+
+        <DialogActions>
+          <Typography
+            sx={{
+              mr: 'auto',
+              color:
+                pendingAnalysisReviewRows.length >
+                0
+                  ? '#b45309'
+                  : '#166534',
+              fontSize: '0.72rem',
+              fontWeight: 900,
+            }}
+          >
+            미완료 {pendingAnalysisReviewRows.length.toLocaleString()}건
+          </Typography>
+
+          <Button
+            onClick={() =>
+              setDateReviewDialogOpen(
+                false,
+              )
+            }
+          >
+            닫기
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={recordEditOpen}
+        onClose={() =>
+          !recordEditSaving &&
+          setRecordEditOpen(false)
+        }
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle
+          sx={{
+            fontWeight: 900,
+          }}
+        >
+          입고일·금액 포함 수정
+        </DialogTitle>
+
+        <DialogContent dividers>
+          {editingRecord && (
+            <Box
+              sx={{
+                display: 'grid',
+                gap: 1.2,
+              }}
+            >
+              <Alert severity="info">
+                {editingRecord.supplier || '-'} · {editingRecord.raw_item_name} · {editingRecord.raw_specification || '-'}
+              </Alert>
+
+              <TextField
+                select
+                label="일자 상태"
+                value={
+                  editingRecord.arrival_date_status ||
+                  'confirmed'
+                }
+                onChange={(event) =>
+                  setEditingRecord(
+                    (previous) => ({
+                      ...previous,
+                      arrival_date_status:
+                        event.target.value,
+                    }),
+                  )
+                }
+              >
+                {DATE_STATUS_OPTIONS.map(
+                  (option) => (
+                    <MenuItem
+                      key={option.value}
+                      value={option.value}
+                    >
+                      {option.label}
+                    </MenuItem>
+                  ),
+                )}
+              </TextField>
+
+              <TextField
+                label="사유"
+                value={
+                  editingRecord.arrival_date_reason ||
+                  ''
+                }
+                onChange={(event) =>
+                  setEditingRecord(
+                    (previous) => ({
+                      ...previous,
+                      arrival_date_reason:
+                        event.target.value,
+                    }),
+                  )
+                }
+              />
+
+              <TextField
+                type="date"
+                label="입고일"
+                value={
+                  editingRecord.arrival_date ||
+                  ''
+                }
+                onChange={(event) =>
+                  setEditingRecord(
+                    (previous) => ({
+                      ...previous,
+                      arrival_date:
+                        event.target.value ||
+                        null,
+                    }),
+                  )
+                }
+                InputLabelProps={{
+                  shrink: true,
+                }}
+              />
+
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={
+                      editingRecord.include_in_amount !==
+                      false
+                    }
+                    onChange={(event) =>
+                      setEditingRecord(
+                        (previous) => ({
+                          ...previous,
+                          include_in_amount:
+                            event.target.checked,
+                        }),
+                      )
+                    }
+                  />
+                }
+                label={
+                  editingRecord.include_in_amount !==
+                  false
+                    ? '월 금액 합계에 포함'
+                    : '월 금액 합계에서 제외'
+                }
+              />
+            </Box>
+          )}
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={() =>
+              setRecordEditOpen(false)
+            }
+            disabled={recordEditSaving}
+          >
+            취소
+          </Button>
+
+          <Button
+            variant="contained"
+            onClick={
+              handleSaveRecordEdit
+            }
+            disabled={recordEditSaving}
+            startIcon={
+              recordEditSaving
+                ? (
+                  <CircularProgress
+                    size={16}
+                    color="inherit"
+                  />
+                )
+                : (
+                  <SaveIcon />
+                )
+            }
+          >
+            저장
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={issueDialogOpen}
