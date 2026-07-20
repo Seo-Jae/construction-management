@@ -15,6 +15,8 @@ import {
   DialogTitle,
   Fade,
   LinearProgress,
+  Menu,
+  MenuItem,
   Paper,
   TextField,
   Typography,
@@ -701,6 +703,11 @@ export default function ProgressInput({
     targetLineEditMode,
     setTargetLineEditMode,
   ] = useState(false);
+
+  const [
+    targetMenuAnchor,
+    setTargetMenuAnchor,
+  ] = useState(null);
 
   const [
     targetDialogOpen,
@@ -1676,11 +1683,11 @@ export default function ProgressInput({
           flexShrink: 0,
           display: 'grid',
           gridTemplateColumns:
-            'minmax(0, 1fr) auto auto',
+            'minmax(0, 1fr) auto',
           alignItems: 'center',
-          gap: 0.75,
+          gap: 0.7,
           px: 1,
-          py: 0.55,
+          py: 0.6,
           bgcolor: '#ffffff',
           border: targetLineEditMode
             ? '1px solid #f59e0b'
@@ -1692,129 +1699,277 @@ export default function ProgressInput({
         <Box
           sx={{
             minWidth: 0,
-            display: 'flex',
-            alignItems: 'stretch',
+            display: 'grid',
+            gridTemplateColumns:
+              'auto auto minmax(0, 1fr)',
+            alignItems: 'center',
             gap: 0.45,
-            overflowX: 'auto',
-            py: 0.1,
           }}
         >
-          {targetLoading && (
+          {targetLoading ? (
             <Box
               sx={{
-                width: 70,
-                display: 'flex',
-                alignItems: 'center',
+                width: 126,
+                px: 0.4,
               }}
             >
-              <LinearProgress
-                sx={{ width: '100%' }}
-              />
+              <LinearProgress />
             </Box>
-          )}
-
-          {!targetLoading &&
-            targetSummaries.map(
-              ({
-                target,
-                selectedProcessSummary,
-                color,
-              }) => {
-                const selected =
-                  target.id ===
-                  activeTargetId;
-
-                return (
-                  <Button
-                    key={target.id}
-                    size="small"
-                    variant={
-                      selected
-                        ? 'contained'
-                        : 'outlined'
-                    }
-                    onClick={() => {
-                      setActiveTargetId(
-                        target.id,
-                      );
-                      setTargetLineEditMode(
-                        false,
-                      );
-                    }}
+          ) : activeTargetItem ? (
+            <>
+              <Button
+                size="small"
+                variant="contained"
+                onClick={(event) =>
+                  setTargetMenuAnchor(
+                    event.currentTarget,
+                  )
+                }
+                sx={{
+                  minWidth: 138,
+                  maxWidth: 180,
+                  px: 0.9,
+                  py: 0.35,
+                  display: 'grid',
+                  gridTemplateColumns:
+                    'minmax(0, 1fr) auto',
+                  alignItems: 'center',
+                  gap: 0.55,
+                  bgcolor:
+                    activeTargetItem.color,
+                  color: '#ffffff',
+                  borderColor:
+                    activeTargetItem.color,
+                  boxShadow: 'none',
+                  '&:hover': {
+                    bgcolor:
+                      activeTargetItem.color,
+                    boxShadow: 'none',
+                    filter:
+                      'brightness(0.94)',
+                  },
+                }}
+              >
+                <Box
+                  component="span"
+                  sx={{
+                    minWidth: 0,
+                    display: 'flex',
+                    flexDirection:
+                      'column',
+                    alignItems:
+                      'flex-start',
+                    overflow: 'hidden',
+                  }}
+                >
+                  <Typography
+                    component="span"
                     sx={{
-                      minWidth: 126,
-                      px: 0.8,
-                      py: 0.35,
-                      flexShrink: 0,
-                      display: 'flex',
-                      flexDirection:
-                        'column',
-                      alignItems:
-                        'flex-start',
-                      borderColor: color,
-                      bgcolor: selected
-                        ? color
-                        : '#ffffff',
-                      color: selected
-                        ? '#ffffff'
-                        : color,
-                      boxShadow: 'none',
-                      '&:hover': {
-                        borderColor: color,
-                        bgcolor: selected
-                          ? color
-                          : `${color}12`,
-                        boxShadow: 'none',
-                      },
+                      width: '100%',
+                      overflow: 'hidden',
+                      textOverflow:
+                        'ellipsis',
+                      whiteSpace:
+                        'nowrap',
+                      textAlign: 'left',
+                      fontSize:
+                        '0.69rem',
+                      fontWeight: 900,
                     }}
                   >
-                    <Typography
-                      component="span"
-                      sx={{
-                        maxWidth: 112,
-                        overflow: 'hidden',
-                        textOverflow:
-                          'ellipsis',
-                        whiteSpace:
-                          'nowrap',
-                        fontSize:
-                          '0.69rem',
-                        fontWeight: 900,
-                      }}
-                    >
-                      {target.target_name}
-                    </Typography>
+                    {
+                      activeTargetItem
+                        .target
+                        .target_name
+                    }
+                  </Typography>
 
-                    <Typography
-                      component="span"
-                      sx={{
-                        mt: 0.1,
-                        fontSize:
-                          '0.56rem',
-                        fontWeight: 800,
-                        opacity: 0.94,
-                        whiteSpace:
-                          'nowrap',
-                      }}
-                    >
-                      공정{' '}
-                      {target.process_types.length.toLocaleString()}
-                      개
-                      {' · '}
-                      {selectedProcessSummary
-                        ?.summary
-                        ?.ddayLabel ||
-                        formatDday(
-                          getDdayValue(
-                            target
-                              .target_date,
-                          ),
-                        )}
-                    </Typography>
-                  </Button>
-                );
-              },
-            )}
+                  <Typography
+                    component="span"
+                    sx={{
+                      mt: 0.05,
+                      width: '100%',
+                      overflow: 'hidden',
+                      textOverflow:
+                        'ellipsis',
+                      whiteSpace:
+                        'nowrap',
+                      textAlign: 'left',
+                      fontSize:
+                        '0.55rem',
+                      fontWeight: 800,
+                      opacity: 0.94,
+                    }}
+                  >
+                    공정{' '}
+                    {activeTargetItem
+                      .target
+                      .process_types
+                      .length.toLocaleString()}
+                    개
+                  </Typography>
+                </Box>
+
+                <Typography
+                  component="span"
+                  sx={{
+                    fontSize:
+                      '0.62rem',
+                    fontWeight: 900,
+                  }}
+                >
+                  ▼
+                </Typography>
+              </Button>
+
+              <Menu
+                anchorEl={
+                  targetMenuAnchor
+                }
+                open={Boolean(
+                  targetMenuAnchor,
+                )}
+                onClose={() =>
+                  setTargetMenuAnchor(
+                    null,
+                  )
+                }
+                MenuListProps={{
+                  dense: true,
+                }}
+                PaperProps={{
+                  sx: {
+                    minWidth: 220,
+                    maxWidth: 320,
+                    mt: 0.4,
+                    border:
+                      '1px solid #cbd5e1',
+                    boxShadow:
+                      '0 12px 30px rgba(15, 23, 42, 0.16)',
+                  },
+                }}
+              >
+                {targetSummaries.map(
+                  ({
+                    target,
+                    color,
+                  }) => {
+                    const selected =
+                      target.id ===
+                      activeTargetId;
+
+                    return (
+                      <MenuItem
+                        key={target.id}
+                        selected={
+                          selected
+                        }
+                        onClick={() => {
+                          setActiveTargetId(
+                            target.id,
+                          );
+                          setTargetLineEditMode(
+                            false,
+                          );
+                          setTargetMenuAnchor(
+                            null,
+                          );
+                        }}
+                        sx={{
+                          minHeight: 44,
+                          display: 'grid',
+                          gridTemplateColumns:
+                            '5px minmax(0, 1fr) auto',
+                          gap: 0.7,
+                          alignItems:
+                            'center',
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            width: 5,
+                            alignSelf:
+                              'stretch',
+                            borderRadius: 0.5,
+                            bgcolor:
+                              color,
+                          }}
+                        />
+
+                        <Box
+                          sx={{
+                            minWidth: 0,
+                          }}
+                        >
+                          <Typography
+                            sx={{
+                              overflow:
+                                'hidden',
+                              textOverflow:
+                                'ellipsis',
+                              whiteSpace:
+                                'nowrap',
+                              color:
+                                '#0f172a',
+                              fontSize:
+                                '0.72rem',
+                              fontWeight:
+                                selected
+                                  ? 900
+                                  : 800,
+                            }}
+                          >
+                            {
+                              target.target_name
+                            }
+                          </Typography>
+
+                          <Typography
+                            sx={{
+                              mt: 0.1,
+                              color:
+                                '#64748b',
+                              fontSize:
+                                '0.58rem',
+                              fontWeight:
+                                700,
+                            }}
+                          >
+                            공정{' '}
+                            {target.process_types.length.toLocaleString()}
+                            개 ·{' '}
+                            {formatDday(
+                              getDdayValue(
+                                target
+                                  .target_date,
+                              ),
+                            )}
+                          </Typography>
+                        </Box>
+
+                        <Typography
+                          sx={{
+                            color:
+                              selected
+                                ? color
+                                : '#94a3b8',
+                            fontSize:
+                              '0.59rem',
+                            fontWeight:
+                              900,
+                          }}
+                        >
+                          {selected
+                            ? '선택됨'
+                            : '선택'}
+                        </Typography>
+                      </MenuItem>
+                    );
+                  },
+                )}
+              </Menu>
+            </>
+          ) : null}
 
           <Button
             size="small"
@@ -1831,8 +1986,8 @@ export default function ProgressInput({
               minWidth:
                 progressTargets.length >
                 0
-                  ? 78
-                  : 118,
+                  ? 82
+                  : 122,
               flexShrink: 0,
               px: 0.8,
               py: 0.35,
@@ -1853,174 +2008,71 @@ export default function ProgressInput({
               ? '+ 차수 추가'
               : '1차 방통 설정'}
           </Button>
-        </Box>
 
-        <Box
-          sx={{
-            minWidth: 380,
-            maxWidth: 620,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'stretch',
-            justifyContent:
-              'center',
-            gap: 0.3,
-            overflow: 'hidden',
-          }}
-        >
-          {activeTargetItem ? (
-            <>
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent:
-                    'center',
-                  gap: 0.45,
-                  overflowX: 'auto',
-                  py: 0.05,
-                }}
-              >
-                {activeTargetItem
-                  .processSummaries
-                  .map(
-                    ({
-                      processType,
-                      summary,
-                    }) => {
-                      const isCurrent =
-                        processType ===
-                        selectedProcess;
-
-                      return (
-                        <Button
-                          key={
-                            processType
-                          }
-                          size="small"
-                          variant={
-                            isCurrent
-                              ? 'contained'
-                              : 'outlined'
-                          }
-                          onClick={() =>
-                            setSelectedProcess?.(
-                              processType,
-                            )
-                          }
-                          sx={{
-                            minWidth: 88,
-                            flexShrink: 0,
-                            px: 0.65,
-                            py: 0.25,
-                            display: 'flex',
-                            flexDirection:
-                              'column',
-                            alignItems:
-                              'center',
-                            borderColor:
-                              activeTargetItem
-                                .color,
-                            bgcolor:
-                              isCurrent
-                                ? activeTargetItem
-                                    .color
-                                : '#ffffff',
-                            color:
-                              isCurrent
-                                ? '#ffffff'
-                                : activeTargetItem
-                                    .color,
-                            boxShadow: 'none',
-                            '&:hover': {
-                              borderColor:
-                                activeTargetItem
-                                  .color,
-                              bgcolor:
-                                isCurrent
-                                  ? activeTargetItem
-                                      .color
-                                  : `${activeTargetItem.color}12`,
-                              boxShadow:
-                                'none',
-                            },
-                          }}
-                        >
-                          <Typography
-                            component="span"
-                            sx={{
-                              maxWidth: 80,
-                              overflow:
-                                'hidden',
-                              textOverflow:
-                                'ellipsis',
-                              whiteSpace:
-                                'nowrap',
-                              fontSize:
-                                '0.59rem',
-                              fontWeight:
-                                900,
-                            }}
-                          >
-                            {processType}
-                          </Typography>
-
-                          <Typography
-                            component="span"
-                            sx={{
-                              mt: 0.05,
-                              fontSize:
-                                '0.55rem',
-                              fontWeight:
-                                900,
-                              whiteSpace:
-                                'nowrap',
-                            }}
-                          >
-                            잔여{' '}
-                            {summary.remainingCount.toLocaleString()}
-                          </Typography>
-                        </Button>
-                      );
-                    },
+          <Box
+            sx={{
+              minWidth: 0,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent:
+                'flex-end',
+              gap: 0.6,
+              overflow: 'hidden',
+            }}
+          >
+            {activeTargetItem ? (
+              <>
+                <Typography
+                  sx={{
+                    color: '#334155',
+                    fontSize:
+                      '0.66rem',
+                    fontWeight: 900,
+                    whiteSpace:
+                      'nowrap',
+                  }}
+                >
+                  {formatDday(
+                    getDdayValue(
+                      activeTargetItem
+                        .target
+                        .target_date,
+                    ),
                   )}
-              </Box>
+                </Typography>
 
-              <Typography
-                sx={{
-                  color: '#64748b',
-                  fontSize: '0.58rem',
-                  fontWeight: 800,
-                  textAlign: 'center',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {formatDday(
-                  getDdayValue(
+                <Typography
+                  sx={{
+                    color: '#64748b',
+                    fontSize:
+                      '0.59rem',
+                    fontWeight: 800,
+                    whiteSpace:
+                      'nowrap',
+                  }}
+                >
+                  목표일{' '}
+                  {
                     activeTargetItem
                       .target
-                      .target_date,
-                  ),
-                )}
-                {' · 목표일 '}
-                {activeTargetItem
-                  .target
-                  .target_date}
-                {' · 공정 버튼을 누르면 해당 공정 화면으로 이동'}
+                      .target_date
+                  }
+                </Typography>
+              </>
+            ) : (
+              <Typography
+                sx={{
+                  color: '#94a3b8',
+                  fontSize: '0.64rem',
+                  fontWeight: 800,
+                  whiteSpace:
+                    'nowrap',
+                }}
+              >
+                차수를 추가해주세요.
               </Typography>
-            </>
-          ) : (
-            <Typography
-              sx={{
-                color: '#94a3b8',
-                fontSize: '0.66rem',
-                fontWeight: 800,
-                textAlign: 'center',
-              }}
-            >
-              차수를 추가하고 적용 공정을 선택해주세요.
-            </Typography>
-          )}
+            )}
+          </Box>
         </Box>
 
         <Box
@@ -2099,6 +2151,124 @@ export default function ProgressInput({
             설정수정
           </Button>
         </Box>
+
+        {activeTargetItem && (
+          <Box
+            sx={{
+              gridColumn: '1 / -1',
+              minWidth: 0,
+              display: 'grid',
+              gridTemplateColumns:
+                'repeat(auto-fit, minmax(112px, 1fr))',
+              gap: 0.42,
+              pt: 0.15,
+            }}
+          >
+            {activeTargetItem
+              .processSummaries
+              .map(
+                ({
+                  processType,
+                  summary,
+                }) => {
+                  const isCurrent =
+                    processType ===
+                    selectedProcess;
+
+                  return (
+                    <Button
+                      key={
+                        processType
+                      }
+                      size="small"
+                      variant={
+                        isCurrent
+                          ? 'contained'
+                          : 'outlined'
+                      }
+                      onClick={() =>
+                        setSelectedProcess?.(
+                          processType,
+                        )
+                      }
+                      sx={{
+                        minWidth: 0,
+                        width: '100%',
+                        px: 0.55,
+                        py: 0.28,
+                        display: 'grid',
+                        gridTemplateColumns:
+                          'minmax(0, 1fr) auto',
+                        gap: 0.45,
+                        alignItems:
+                          'center',
+                        borderColor:
+                          activeTargetItem
+                            .color,
+                        bgcolor:
+                          isCurrent
+                            ? activeTargetItem
+                                .color
+                            : '#ffffff',
+                        color:
+                          isCurrent
+                            ? '#ffffff'
+                            : activeTargetItem
+                                .color,
+                        boxShadow: 'none',
+                        '&:hover': {
+                          borderColor:
+                            activeTargetItem
+                              .color,
+                          bgcolor:
+                            isCurrent
+                              ? activeTargetItem
+                                  .color
+                              : `${activeTargetItem.color}12`,
+                          boxShadow:
+                            'none',
+                        },
+                      }}
+                    >
+                      <Typography
+                        component="span"
+                        sx={{
+                          minWidth: 0,
+                          overflow:
+                            'hidden',
+                          textOverflow:
+                            'ellipsis',
+                          whiteSpace:
+                            'nowrap',
+                          textAlign:
+                            'left',
+                          fontSize:
+                            '0.61rem',
+                          fontWeight: 900,
+                        }}
+                      >
+                        {processType}
+                      </Typography>
+
+                      <Typography
+                        component="span"
+                        sx={{
+                          fontSize:
+                            '0.58rem',
+                          fontWeight: 900,
+                          whiteSpace:
+                            'nowrap',
+                        }}
+                      >
+                        잔여{' '}
+                        {summary.remainingCount.toLocaleString()}
+                      </Typography>
+                    </Button>
+                  );
+                },
+              )}
+          </Box>
+        )}
 
         {(targetLineEditMode ||
           targetError) && (
