@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   AppBar,
   Autocomplete,
@@ -1756,6 +1756,21 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     alert('안전하게 저장되었습니다!');
     handleCloseModal();
   };
+  const suppressedEnterCellRef =
+    useRef('');
+
+  const getWorkerCellKey = (
+    rowIndex,
+    columnIndex,
+  ) =>
+    `${rowIndex}:${columnIndex}`;
+
+  const isEnterEvent = (
+    event,
+  ) =>
+    event.key === 'Enter' ||
+    event.code === 'NumpadEnter';
+
   const focusWorkerGridCell = (
     rowIndex,
     columnIndex,
@@ -1775,16 +1790,29 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       return false;
     }
 
-    setTimeout(() => {
-      target.focus();
+    /*
+      MUI 입력창과 한글 조합이 완전히 정리된 뒤
+      포커스를 옮기기 위해 두 단계로 지연합니다.
+    */
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        target.focus({
+          preventScroll: true,
+        });
 
-      if (
-        typeof target.select ===
-        'function'
-      ) {
-        target.select();
-      }
-    }, 0);
+        target.scrollIntoView?.({
+          block: 'nearest',
+          inline: 'nearest',
+        });
+
+        if (
+          typeof target.select ===
+          'function'
+        ) {
+          target.select();
+        }
+      }, 0);
+    });
 
     return true;
   };
@@ -1794,33 +1822,30 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     rowIndex,
     columnIndex,
   ) => {
-    const isAutocompleteOpen =
-      event.currentTarget?.getAttribute(
-        'aria-expanded',
-      ) === 'true' ||
-      event.target?.getAttribute(
-        'aria-expanded',
-      ) === 'true';
-
     /*
-      자동완성 목록이 펼쳐진 상태의 Enter는
-      선택 항목 확정에 먼저 사용합니다.
+      자동완성 목록이 열린 상태의 Enter는
+      MUI의 항목 선택에 먼저 사용합니다.
+      이어지는 keyup에서는 아래 이동을 한 번 건너뜁니다.
     */
-    if (
-      event.key === 'Enter' &&
-      isAutocompleteOpen
-    ) {
-      return;
-    }
+    if (isEnterEvent(event)) {
+      const isAutocompleteOpen =
+        event.currentTarget?.getAttribute(
+          'aria-expanded',
+        ) === 'true' ||
+        event.target?.getAttribute(
+          'aria-expanded',
+        ) === 'true';
 
-    if (event.key === 'Enter') {
-      event.preventDefault();
-      event.stopPropagation();
-
-      focusWorkerGridCell(
-        rowIndex + 1,
-        columnIndex,
-      );
+      if (
+        isAutocompleteOpen ||
+        event.defaultPrevented
+      ) {
+        suppressedEnterCellRef.current =
+          getWorkerCellKey(
+            rowIndex,
+            columnIndex,
+          );
+      }
 
       return;
     }
@@ -1869,6 +1894,51 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       0,
     );
   };
+
+  const handleWorkerGridKeyUp = (
+    event,
+    rowIndex,
+    columnIndex,
+  ) => {
+    if (!isEnterEvent(event)) {
+      return;
+    }
+
+    /*
+      한글 IME 조합 중인 Enter는 글자 확정에 사용하고,
+      조합이 끝난 keyup에서만 이동합니다.
+    */
+    if (
+      event.nativeEvent?.isComposing ||
+      event.isComposing
+    ) {
+      return;
+    }
+
+    const cellKey =
+      getWorkerCellKey(
+        rowIndex,
+        columnIndex,
+      );
+
+    if (
+      suppressedEnterCellRef.current ===
+      cellKey
+    ) {
+      suppressedEnterCellRef.current =
+        '';
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    focusWorkerGridCell(
+      rowIndex + 1,
+      columnIndex,
+    );
+  };
+
   const handleFetchWorkers = () => {
     const targetKey = formatYYMMDD(new Date(workerFetchDate));
     const previousWorkers = savedData[targetKey]?.workers || [];
@@ -2614,7 +2684,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                       fontWeight: 700,
                     }}
                   >
-                    TAB: 오른쪽 이동 · ENTER: 아래 이동
+                    TAB: 오른쪽 이동 · ENTER: 아래 이동 · 숫자키패드 Enter 지원
                   </Typography>
                 </Box>
 
@@ -2856,18 +2926,40 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                                     'data-worker-column': 0,
                                   }}
                                   onKeyDown={(event) => {
+                                    const popupWasOpen =
+                                      event.currentTarget?.getAttribute(
+                                        'aria-expanded',
+                                      ) === 'true' ||
+                                      event.target?.getAttribute(
+                                        'aria-expanded',
+                                      ) === 'true';
+
                                     params.inputProps?.onKeyDown?.(event);
 
                                     if (
-                                      !event.defaultPrevented
+                                      isEnterEvent(event) &&
+                                      popupWasOpen
                                     ) {
-                                      handleWorkerGridKeyDown(
-                                        event,
-                                        index,
-                                        0,
-                                      );
+                                      suppressedEnterCellRef.current =
+                                        getWorkerCellKey(
+                                          index,
+                                          0,
+                                        );
                                     }
+
+                                    handleWorkerGridKeyDown(
+                                      event,
+                                      index,
+                                      0,
+                                    );
                                   }}
+                                  onKeyUp={(event) =>
+                                    handleWorkerGridKeyUp(
+                                      event,
+                                      index,
+                                      0,
+                                    )
+                                  }
                                   sx={{
                                     '& input': {
                                       py: 1,
@@ -2891,6 +2983,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                               }}
                               onKeyDown={(event) =>
                                 handleWorkerGridKeyDown(
+                                  event,
+                                  index,
+                                  1,
+                                )
+                              }
+                              onKeyUp={(event) =>
+                                handleWorkerGridKeyUp(
                                   event,
                                   index,
                                   1,
@@ -2946,18 +3045,40 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                                     'data-worker-column': 2,
                                   }}
                                   onKeyDown={(event) => {
+                                    const popupWasOpen =
+                                      event.currentTarget?.getAttribute(
+                                        'aria-expanded',
+                                      ) === 'true' ||
+                                      event.target?.getAttribute(
+                                        'aria-expanded',
+                                      ) === 'true';
+
                                     params.inputProps?.onKeyDown?.(event);
 
                                     if (
-                                      !event.defaultPrevented
+                                      isEnterEvent(event) &&
+                                      popupWasOpen
                                     ) {
-                                      handleWorkerGridKeyDown(
-                                        event,
-                                        index,
-                                        2,
-                                      );
+                                      suppressedEnterCellRef.current =
+                                        getWorkerCellKey(
+                                          index,
+                                          2,
+                                        );
                                     }
+
+                                    handleWorkerGridKeyDown(
+                                      event,
+                                      index,
+                                      2,
+                                    );
                                   }}
+                                  onKeyUp={(event) =>
+                                    handleWorkerGridKeyUp(
+                                      event,
+                                      index,
+                                      2,
+                                    )
+                                  }
                                   sx={{
                                     '& input': {
                                       py: 1,
@@ -2981,6 +3102,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                               }}
                               onKeyDown={(event) =>
                                 handleWorkerGridKeyDown(
+                                  event,
+                                  index,
+                                  3,
+                                )
+                              }
+                              onKeyUp={(event) =>
+                                handleWorkerGridKeyUp(
                                   event,
                                   index,
                                   3,
@@ -3016,6 +3144,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                               }}
                               onKeyDown={(event) =>
                                 handleWorkerGridKeyDown(
+                                  event,
+                                  index,
+                                  4,
+                                )
+                              }
+                              onKeyUp={(event) =>
+                                handleWorkerGridKeyUp(
                                   event,
                                   index,
                                   4,
@@ -3058,6 +3193,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                                   5,
                                 )
                               }
+                              onKeyUp={(event) =>
+                                handleWorkerGridKeyUp(
+                                  event,
+                                  index,
+                                  5,
+                                )
+                              }
                               onChange={(event) =>
                                 handleWorkerChange(
                                   row.id,
@@ -3089,6 +3231,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                               }}
                               onKeyDown={(event) =>
                                 handleWorkerGridKeyDown(
+                                  event,
+                                  index,
+                                  6,
+                                )
+                              }
+                              onKeyUp={(event) =>
+                                handleWorkerGridKeyUp(
                                   event,
                                   index,
                                   6,
