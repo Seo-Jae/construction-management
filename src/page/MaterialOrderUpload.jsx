@@ -414,6 +414,31 @@ const safeFileName = (
     )
     .replace(/\s+/g, '_');
 
+const clearWorkbookDefinedNames = (
+  workbook,
+) => {
+  try {
+    if (
+      workbook?.definedNames
+    ) {
+      /*
+        원본 엑셀에 남아 있는 #REF 이름 범위나
+        삭제된 다른 통합문서의 이름 범위를 제거합니다.
+
+        ExcelJS가 이를 그대로 다시 저장하면
+        Excel에서 복구 안내가 표시될 수 있습니다.
+      */
+      workbook.definedNames.model =
+        [];
+    }
+  } catch (error) {
+    console.warn(
+      '발주서 이름 범위 정리 실패:',
+      error,
+    );
+  }
+};
+
 const splitIntoChunks = (
   rows,
   size,
@@ -579,7 +604,7 @@ const parseOrderWorkbook =
         systemSheet?.getCell(
           'B1',
         )?.value,
-      ) || 'LEGACY';
+      ) || TEMPLATE_VERSION;
 
     const errors = [];
     const warnings = [];
@@ -1280,6 +1305,10 @@ export default function MaterialOrderUpload({
           arrayBuffer,
         );
 
+        clearWorkbookDefinedNames(
+          workbook,
+        );
+
         const worksheet =
           workbook.getWorksheet(
             '발주서',
@@ -1414,50 +1443,18 @@ export default function MaterialOrderUpload({
           itemEndRow: 27,
         });
 
-        let systemSheet =
-          workbook.getWorksheet(
-            '_SYSTEM',
-          );
+        /*
+          이름 범위를 제거한 뒤 정상 인쇄영역만 다시 지정합니다.
+          숨김 시스템 시트는 만들지 않습니다.
+        */
+        worksheet.pageSetup.printArea =
+          'A1:K27';
 
-        if (!systemSheet) {
-          systemSheet =
-            workbook.addWorksheet(
-              '_SYSTEM',
-            );
-        }
+        workbook.calcProperties.fullCalcOnLoad =
+          true;
 
-        systemSheet.getCell(
-          'A1',
-        ).value =
-          'template_version';
-
-        systemSheet.getCell(
-          'B1',
-        ).value =
-          TEMPLATE_VERSION;
-
-        systemSheet.getCell(
-          'A2',
-        ).value =
-          'project_name';
-
-        systemSheet.getCell(
-          'B2',
-        ).value =
-          projectName;
-
-        systemSheet.getCell(
-          'A3',
-        ).value =
-          'downloaded_at';
-
-        systemSheet.getCell(
-          'B3',
-        ).value =
-          new Date();
-
-        systemSheet.state =
-          'veryHidden';
+        workbook.calcProperties.forceFullCalc =
+          true;
 
         const outputBuffer =
           await workbook.xlsx.writeBuffer();
