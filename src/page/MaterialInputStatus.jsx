@@ -1473,7 +1473,7 @@ export default function MaterialInputStatus({
       }
     };
 
-  const supplierOptions =
+  const allSupplierOptions =
     useMemo(
       () =>
         Array.from(
@@ -1497,6 +1497,61 @@ export default function MaterialInputStatus({
         ),
       [records],
     );
+
+  const monthlySupplierOptions =
+    useMemo(
+      () =>
+        Array.from(
+          new Set(
+            records
+              .filter(
+                (record) =>
+                  record.arrival_date >=
+                    monthRange.start &&
+                  record.arrival_date <=
+                    monthRange.end,
+              )
+              .map(
+                (record) =>
+                  record.supplier,
+              )
+              .filter(Boolean),
+          ),
+        ).sort(
+          (first, second) =>
+            first.localeCompare(
+              second,
+              'ko',
+              {
+                numeric: true,
+              },
+            ),
+        ),
+      [
+        monthRange.end,
+        monthRange.start,
+        records,
+      ],
+    );
+
+  const supplierOptions =
+    tabValue === 0
+      ? monthlySupplierOptions
+      : allSupplierOptions;
+
+  useEffect(() => {
+    if (
+      selectedSupplier &&
+      !supplierOptions.includes(
+        selectedSupplier,
+      )
+    ) {
+      setSelectedSupplier('');
+    }
+  }, [
+    selectedSupplier,
+    supplierOptions,
+  ]);
 
   const itemRows =
     useMemo(
@@ -2718,7 +2773,16 @@ export default function MaterialInputStatus({
             ) => (
               <TextField
                 {...params}
-                label="업체 검색"
+                label={
+                  tabValue === 0
+                    ? '해당 월 입고업체'
+                    : '전체 업체 검색'
+                }
+                placeholder={
+                  tabValue === 0
+                    ? `${monthRange.label} 입고업체`
+                    : '전체 누계 업체'
+                }
                 size="small"
               />
             )}
