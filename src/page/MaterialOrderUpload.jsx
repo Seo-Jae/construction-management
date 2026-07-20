@@ -37,7 +37,7 @@ const TEMPLATE_URL =
   '/templates/발주서양식.xlsx';
 
 const TEMPLATE_VERSION =
-  'MATERIAL_ORDER_V1';
+  'MATERIAL_ORDER_V2_SINGLE';
 
 const ITEM_INSERT_CHUNK_SIZE =
   500;
@@ -912,8 +912,8 @@ const parseOrderWorkbook =
               }
 
               /*
-                두 번째 빈 발주서는 정상적인 템플릿 빈 영역이므로
-                오류로 처리하지 않습니다.
+                발주서 기본정보와 자재 입력이 모두 비어 있으면
+                빈 양식으로 보고 저장 대상에서 제외합니다.
               */
               if (
                 !foundAnyInput
@@ -1032,7 +1032,7 @@ const parseOrderWorkbook =
       errors.length === 0
     ) {
       errors.push(
-        '금회발주량이 입력된 자재발주서를 찾지 못했습니다.',
+        '발주서 7행~27행에서 금회발주량이 입력된 자재를 찾지 못했습니다.',
       );
     }
 
@@ -1412,12 +1412,6 @@ export default function MaterialOrderUpload({
           titleRow: 1,
           itemStartRow: 7,
           itemEndRow: 27,
-        });
-
-        clearOrderBlock({
-          titleRow: 28,
-          itemStartRow: 34,
-          itemEndRow: 54,
         });
 
         let systemSheet =
@@ -2572,7 +2566,7 @@ export default function MaterialOrderUpload({
             <br />
             4. 금회발주량이 0보다 큰 행만 이번 발주 품목으로 저장됩니다.
             <br />
-            5. 한 시트의 위·아래 발주서 두 장을 모두 작성하면 두 건으로 저장됩니다.
+            5. 한 파일에는 발주서 한 장이 들어 있으며, 금회발주량이 입력된 품목만 저장됩니다.
             <br />
             6. 열 제목 또는 발주서 구조가 바뀌면 저장 전에 오류 안내가 표시됩니다.
             <br />
