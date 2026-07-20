@@ -2030,7 +2030,14 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const handleSelectTask = (id) => setSelectedTasks(selectedTasks.includes(id) ? selectedTasks.filter(item => item !== id) : [...selectedTasks, id]);
   const handleTaskChange = (id, field, value) => setTaskRows(prev => prev.map(row => row.id === id ? { ...row, [field]: value } : row));
 
-  // 공정 진척 관리: 층수 클릭 시 같은 실제 세대를 중복 없이 선택합니다.
+  const isCompletedProgressCell = (
+    cellKey,
+  ) =>
+    unitProgressData?.[
+      cellKey
+    ]?.status === '작업완료';
+
+  // 공정 진척 관리: 층수 클릭 시 미완료 세대만 선택합니다.
   const handleFloorClick = (buildingName, floor) => {
     const config = buildingConfigs[buildingName];
     if (!config) return;
@@ -2041,13 +2048,31 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       floor,
     );
 
+    const editableCellKeys =
+      validCellKeys.filter(
+        (cellKey) =>
+          !isCompletedProgressCell(
+            cellKey,
+          ),
+      );
+
+    if (
+      editableCellKeys.length ===
+      0
+    ) {
+      return;
+    }
+
     setSelectedCells((prev) => {
       const next = new Set(prev);
       const allSelected =
-        validCellKeys.length > 0 &&
-        validCellKeys.every((key) => next.has(key));
+        editableCellKeys.length > 0 &&
+        editableCellKeys.every(
+          (key) =>
+            next.has(key),
+        );
 
-      validCellKeys.forEach((key) => {
+      editableCellKeys.forEach((key) => {
         if (allSelected) next.delete(key);
         else next.add(key);
       });
@@ -2056,7 +2081,17 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     });
   };
 
-  const handleGridCellClick = (cellKey) => {
+  const handleGridCellClick = (
+    cellKey,
+  ) => {
+    if (
+      isCompletedProgressCell(
+        cellKey,
+      )
+    ) {
+      return;
+    }
+
     setSelectedCells(prev => {
       const next = new Set(prev);
       if (next.has(cellKey)) next.delete(cellKey);
@@ -2092,7 +2127,45 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       return;
     }
 
-    const selectedCellKeys = Array.from(selectedCells);
+    const allSelectedCellKeys =
+      Array.from(
+        selectedCells,
+      );
+
+    /*
+      화면 선택 상태가 오래 남아 있거나
+      다른 선택 기능을 통해 완료 세대가 포함되더라도,
+      저장 직전에 다시 제외해 기존 완료일을 보호합니다.
+    */
+    const protectedCompletedCellKeys =
+      allSelectedCellKeys.filter(
+        (cellKey) =>
+          isCompletedProgressCell(
+            cellKey,
+          ),
+      );
+
+    const selectedCellKeys =
+      allSelectedCellKeys.filter(
+        (cellKey) =>
+          !isCompletedProgressCell(
+            cellKey,
+          ),
+      );
+
+    if (
+      selectedCellKeys.length ===
+      0
+    ) {
+      setSelectedCells(
+        new Set(),
+      );
+
+      alert(
+        '선택한 세대는 모두 이미 작업완료 상태입니다.\n기존 완료일은 변경되지 않습니다.',
+      );
+      return;
+    }
 
     try {
       /*
@@ -2153,7 +2226,16 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         });
 
         setSelectedCells(new Set());
-        alert('작업전으로 되돌렸습니다.');
+
+        const protectedMessage =
+          protectedCompletedCellKeys.length >
+          0
+            ? `\n이미 완료된 ${protectedCompletedCellKeys.length.toLocaleString()}세대는 변경하지 않았습니다.`
+            : '';
+
+        alert(
+          `${selectedCellKeys.length.toLocaleString()}세대를 작업전으로 되돌렸습니다.${protectedMessage}`,
+        );
         return;
       }
 
@@ -2208,8 +2290,15 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       });
 
       setSelectedCells(new Set());
+
+      const protectedMessage =
+        protectedCompletedCellKeys.length >
+        0
+          ? `\n이미 완료된 ${protectedCompletedCellKeys.length.toLocaleString()}세대는 기존 완료일을 유지했습니다.`
+          : '';
+
       alert(
-        `${selectedCellKeys.length.toLocaleString()}세대가 저장되었습니다.`,
+        `${selectedCellKeys.length.toLocaleString()}세대가 저장되었습니다.${protectedMessage}`,
       );
     } catch (error) {
       console.error('공정 상태 저장 오류:', error);

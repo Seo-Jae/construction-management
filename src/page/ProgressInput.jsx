@@ -4,13 +4,10 @@ import {
   Box,
   Button,
   Fade,
-  IconButton,
   Paper,
   TextField,
-  Tooltip,
   Typography,
 } from '@mui/material';
-import PrintIcon from '@mui/icons-material/Print';
 import BuildingGrid from '../BuildingGrid';
 import { getProjectCellKeys } from '../utils/buildingUnits.js';
 
@@ -55,7 +52,6 @@ const getStatusButtonStyle = (status, selectedStatusAction) => {
 };
 
 export default function ProgressInput({
-  projectName = '',
   selectedCells = new Set(),
   actionName = '',
   progressDate = '',
@@ -75,7 +71,17 @@ export default function ProgressInput({
   handleGridCellClick,
   handleFloorClick,
 }) {
-  const selectionCount = selectedCells?.size ?? 0;
+  const selectionCount =
+    selectedCells?.size ?? 0;
+
+  const protectedCompletedCount =
+    Object.values(
+      unitProgressData || {},
+    ).filter(
+      (progressItem) =>
+        progressItem?.status ===
+        '작업완료',
+    ).length;
 
   const sortedBuildings = Object.entries(buildingConfigs || {}).sort(
     ([keyA], [keyB]) =>
@@ -85,146 +91,45 @@ export default function ProgressInput({
   );
 
   const selectAllCells = () => {
-    const allCellKeys = getProjectCellKeys(buildingConfigs);
-    setSelectedCells?.(new Set(allCellKeys));
+    const allCellKeys =
+      getProjectCellKeys(
+        buildingConfigs,
+      );
+
+    const editableCellKeys =
+      Array.from(
+        allCellKeys,
+      ).filter(
+        (cellKey) =>
+          unitProgressData?.[
+            cellKey
+          ]?.status !==
+          '작업완료',
+      );
+
+    setSelectedCells?.(
+      new Set(
+        editableCellKeys,
+      ),
+    );
   };
 
   const clearSelectedCells = () => {
     setSelectedCells?.(new Set());
   };
 
-  const handlePrint = () => {
-    window.print();
-  };
-
   return (
-    <>
-      <style>
-        {`
-          .progress-print-only {
-            display: none;
-          }
-
-          @media print {
-            @page {
-              size: A4 landscape;
-              margin: 8mm;
-            }
-
-            html,
-            body {
-              background: #ffffff !important;
-            }
-
-            body * {
-              visibility: hidden !important;
-            }
-
-            #progress-input-print-area,
-            #progress-input-print-area * {
-              visibility: visible !important;
-            }
-
-            #progress-input-print-area {
-              position: absolute !important;
-              left: 0 !important;
-              top: 0 !important;
-              width: 100% !important;
-              height: auto !important;
-              min-height: 0 !important;
-              overflow: visible !important;
-              display: block !important;
-              background: #ffffff !important;
-              padding: 0 !important;
-              margin: 0 !important;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-
-            #progress-input-print-area .progress-no-print {
-              display: none !important;
-            }
-
-            #progress-input-print-area .progress-print-only {
-              display: flex !important;
-            }
-
-            #progress-input-print-area .progress-print-scroll {
-              height: auto !important;
-              min-height: 0 !important;
-              overflow: visible !important;
-              background: #ffffff !important;
-            }
-
-            #progress-input-print-area .progress-print-buildings {
-              width: 100% !important;
-              min-width: 0 !important;
-              min-height: 0 !important;
-              height: auto !important;
-              display: flex !important;
-              flex-wrap: wrap !important;
-              align-items: flex-end !important;
-              justify-content: flex-start !important;
-              gap: 12mm 8mm !important;
-              padding: 0 !important;
-            }
-
-            #progress-input-print-area .progress-print-building {
-              break-inside: avoid !important;
-              page-break-inside: avoid !important;
-            }
-
-            #progress-input-print-area .MuiPaper-root {
-              box-shadow: none !important;
-            }
-          }
-        `}
-      </style>
-
-      <Box
-        id="progress-input-print-area"
-        sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          height: '100%',
-          minHeight: 0,
-          overflow: 'hidden',
-        }}
-      >
-        <Box
-          className="progress-print-only"
-          sx={{
-            display: 'none',
-            alignItems: 'flex-end',
-            justifyContent: 'space-between',
-            gap: 2,
-            pb: 1,
-            mb: 1.2,
-            borderBottom: '2px solid #0f172a',
-          }}
-        >
-          <Box>
-            <Typography sx={{ fontSize: '1.05rem', fontWeight: 900 }}>
-              공종별 현황 입력
-            </Typography>
-            <Typography sx={{ mt: 0.2, fontSize: '0.72rem', color: '#475569' }}>
-              {projectName || '현장명 미등록'}
-            </Typography>
-          </Box>
-
-          <Box sx={{ textAlign: 'right' }}>
-            <Typography sx={{ fontSize: '0.75rem', fontWeight: 800 }}>
-              공종: {selectedProcess || '-'}
-            </Typography>
-            <Typography sx={{ mt: 0.15, fontSize: '0.72rem', color: '#475569' }}>
-              진도율 {completedUnits.toLocaleString()}/{totalUnits.toLocaleString()}세대
-              {' '}({progressPercentage}%)
-            </Typography>
-          </Box>
-        </Box>
+    <Box
+      sx={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        minHeight: 0,
+        overflow: 'hidden',
+      }}
+    >
       {/* 진도율과 공정 선택을 항상 화면 최상단에 고정합니다. */}
       <Paper
-        className="progress-no-print"
         elevation={1}
         sx={{
           minHeight: 42,
@@ -346,34 +251,9 @@ export default function ProgressInput({
           sx={{
             display: 'flex',
             justifyContent: 'flex-end',
-            alignItems: 'center',
-            gap: 0.7,
             minWidth: 0,
           }}
         >
-          <Tooltip title="공종별 현황 인쇄">
-            <IconButton
-              size="small"
-              aria-label="공종별 현황 인쇄"
-              onClick={handlePrint}
-              sx={{
-                width: 32,
-                height: 32,
-                flexShrink: 0,
-                border: '1px solid #93c5fd',
-                borderRadius: 1,
-                color: '#2563eb',
-                bgcolor: '#ffffff',
-                '&:hover': {
-                  bgcolor: '#eff6ff',
-                  borderColor: '#60a5fa',
-                },
-              }}
-            >
-              <PrintIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-          </Tooltip>
-
           <Autocomplete
             options={processOptions}
             value={selectedProcess || null}
@@ -408,7 +288,6 @@ export default function ProgressInput({
         선택 전에도 같은 높이를 유지하므로 건물들이 아래로 움직이지 않습니다.
       */}
       <Box
-        className="progress-no-print"
         sx={{
           position: 'relative',
           height: 43,
@@ -508,7 +387,6 @@ export default function ProgressInput({
 
       {/* 동은 줄바꿈하지 않고 다중 공종 화면처럼 가로로 이어집니다. */}
       <Box
-        className="progress-print-scroll"
         sx={{
           flexGrow: 1,
           minHeight: 0,
@@ -533,7 +411,6 @@ export default function ProgressInput({
           </Box>
         ) : (
           <Box
-            className="progress-print-buildings"
             sx={{
               display: 'flex',
               flexWrap: 'nowrap',
@@ -551,7 +428,6 @@ export default function ProgressInput({
             {sortedBuildings.map(([name, config]) => (
               <Box
                 key={name}
-                className="progress-print-building"
                 sx={{
                   flex: '0 0 auto',
                 }}
@@ -569,7 +445,6 @@ export default function ProgressInput({
           </Box>
         )}
       </Box>
-      </Box>
-    </>
+    </Box>
   );
 }

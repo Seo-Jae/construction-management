@@ -203,8 +203,23 @@ export default function BuildingGrid({
                   }
 
                   const cellKey = getCellKey(buildingName, cell.unitCode);
-                  const selected = selectedCells?.has?.(cellKey) || false;
-                  const progress = unitData?.[cellKey] || {};
+                  const progress =
+                    unitData?.[
+                      cellKey
+                    ] || {};
+
+                  const isCompleted =
+                    progress?.status ===
+                    '작업완료';
+
+                  const selected =
+                    !isCompleted &&
+                    (
+                      selectedCells?.has?.(
+                        cellKey,
+                      ) || false
+                    );
+
                   const statusStyle = getStatusStyle(
                     progress?.status,
                     selected,
@@ -221,7 +236,25 @@ export default function BuildingGrid({
                       key={visualKey}
                       component="button"
                       type="button"
-                      onClick={() => onCellClick?.(cellKey)}
+                      disabled={
+                        isCompleted
+                      }
+                      title={
+                        isCompleted
+                          ? '이미 작업완료된 세대입니다. 기존 완료일을 유지합니다.'
+                          : ''
+                      }
+                      onClick={() => {
+                        if (
+                          isCompleted
+                        ) {
+                          return;
+                        }
+
+                        onCellClick?.(
+                          cellKey,
+                        );
+                      }}
                       sx={{
                         width,
                         height: CELL_HEIGHT,
@@ -229,7 +262,9 @@ export default function BuildingGrid({
                         p: 0,
                         border: '1px solid',
                         boxSizing: 'border-box',
-                        cursor: 'pointer',
+                        cursor: isCompleted
+                          ? 'not-allowed'
+                          : 'pointer',
                         fontFamily: 'inherit',
                         fontSize: completionDate
                           ? '0.53rem'
@@ -242,11 +277,20 @@ export default function BuildingGrid({
                         userSelect: 'none',
                         transition: 'filter 120ms ease, transform 120ms ease',
                         ...statusStyle,
+                        '&:disabled': {
+                          opacity: 1,
+                          WebkitTextFillColor:
+                            'currentColor',
+                        },
                         '&:hover': {
-                          filter: 'brightness(0.96)',
+                          filter: isCompleted
+                            ? 'none'
+                            : 'brightness(0.96)',
                         },
                         '&:active': {
-                          transform: 'scale(0.98)',
+                          transform: isCompleted
+                            ? 'none'
+                            : 'scale(0.98)',
                         },
                       }}
                     >
