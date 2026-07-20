@@ -88,6 +88,7 @@ export default function MonthlyWorkerStatus({
   handleNextMonth,
 }) {
   const [searchName, setSearchName] = useState('');
+  const [searchJob, setSearchJob] = useState('');
 
   const daysInMonth = new Date(
     viewYear,
@@ -166,7 +167,11 @@ export default function MonthlyWorkerStatus({
     });
   }, [daysInMonth, savedData, viewMonth, viewYear]);
 
-  const normalizedSearch = normalizeWorkerName(searchName);
+  const normalizedNameSearch =
+    normalizeWorkerName(searchName);
+
+  const normalizedJobSearch =
+    normalizeWorkerName(searchJob);
 
   const workerNameOptions = useMemo(
     () =>
@@ -182,17 +187,67 @@ export default function MonthlyWorkerStatus({
     [workers],
   );
 
-  const filteredWorkers = useMemo(() => {
-    if (!normalizedSearch) {
-      return workers;
-    }
+  const workerJobOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          workers
+            .map((worker) => worker.job)
+            .filter(Boolean),
+        ),
+      ).sort((a, b) => {
+        const orderCompare =
+          getJobOrder(a) - getJobOrder(b);
 
-    return workers.filter((worker) =>
-      normalizeWorkerName(worker.name).includes(
-        normalizedSearch,
-      ),
+        if (orderCompare !== 0) {
+          return orderCompare;
+        }
+
+        return a.localeCompare(
+          b,
+          'ko',
+          { numeric: true },
+        );
+      }),
+    [workers],
+  );
+
+  const filteredWorkers = useMemo(
+    () =>
+      workers.filter((worker) => {
+        const nameMatched =
+          !normalizedNameSearch ||
+          normalizeWorkerName(
+            worker.name,
+          ).includes(
+            normalizedNameSearch,
+          );
+
+        const jobMatched =
+          !normalizedJobSearch ||
+          normalizeWorkerName(
+            worker.job,
+          ).includes(
+            normalizedJobSearch,
+          );
+
+        return (
+          nameMatched &&
+          jobMatched
+        );
+      }),
+    [
+      normalizedJobSearch,
+      normalizedNameSearch,
+      workers,
+    ],
+  );
+
+  const hasSearchCondition =
+    Boolean(
+      normalizedNameSearch ||
+        normalizedJobSearch,
     );
-  }, [normalizedSearch, workers]);
 
   const dayColumns = Array.from(
     { length: daysInMonth },
@@ -367,58 +422,114 @@ export default function MonthlyWorkerStatus({
             }}
           >
             등록 근로자 {workers.length.toLocaleString()}명
-            {normalizedSearch
+            {hasSearchCondition
               ? ` · 조회 결과 ${filteredWorkers.length.toLocaleString()}명`
               : ''}
           </Typography>
 
-          <Autocomplete
-            freeSolo
-            openOnFocus
-            options={workerNameOptions}
-            inputValue={searchName}
-            onInputChange={(_event, nextValue) => {
-              setSearchName(nextValue);
-            }}
-            onChange={(_event, nextValue) => {
-              setSearchName(nextValue || '');
-            }}
-            filterOptions={(options, state) => {
-              const keyword = normalizeWorkerName(
-                state.inputValue,
-              );
-
-              if (!keyword) {
-                return options.slice(0, 8);
-              }
-
-              return options
-                .filter((name) =>
-                  normalizeWorkerName(name).includes(keyword),
-                )
-                .slice(0, 8);
-            }}
-            noOptionsText="검색된 근로자가 없습니다."
+          <Box
             sx={{
-              width: 280,
-              '& .MuiInputBase-root': {
-                minHeight: 34,
-                bgcolor: '#ffffff',
-                fontSize: '0.78rem',
-              },
-              '& .MuiInputLabel-root': {
-                fontSize: '0.76rem',
-              },
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.8,
             }}
-            renderInput={(params) => (
-              <TextField
-                {...params}
-                size="small"
-                label="근로자 조회"
-                placeholder="근로자 이름 입력"
-              />
-            )}
-          />
+          >
+            <Autocomplete
+              freeSolo
+              openOnFocus
+              options={workerNameOptions}
+              inputValue={searchName}
+              onInputChange={(_event, nextValue) => {
+                setSearchName(nextValue);
+              }}
+              onChange={(_event, nextValue) => {
+                setSearchName(nextValue || '');
+              }}
+              filterOptions={(options, state) => {
+                const keyword = normalizeWorkerName(
+                  state.inputValue,
+                );
+
+                if (!keyword) {
+                  return options.slice(0, 8);
+                }
+
+                return options
+                  .filter((name) =>
+                    normalizeWorkerName(name).includes(keyword),
+                  )
+                  .slice(0, 8);
+              }}
+              noOptionsText="검색된 근로자가 없습니다."
+              sx={{
+                width: 230,
+                '& .MuiInputBase-root': {
+                  minHeight: 34,
+                  bgcolor: '#ffffff',
+                  fontSize: '0.78rem',
+                },
+                '& .MuiInputLabel-root': {
+                  fontSize: '0.76rem',
+                },
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  size="small"
+                  label="근로자 조회(성명)"
+                  placeholder="성명 입력"
+                />
+              )}
+            />
+
+            <Autocomplete
+              freeSolo
+              openOnFocus
+              options={workerJobOptions}
+              inputValue={searchJob}
+              onInputChange={(_event, nextValue) => {
+                setSearchJob(nextValue);
+              }}
+              onChange={(_event, nextValue) => {
+                setSearchJob(nextValue || '');
+              }}
+              filterOptions={(options, state) => {
+                const keyword = normalizeWorkerName(
+                  state.inputValue,
+                );
+
+                if (!keyword) {
+                  return options.slice(0, 10);
+                }
+
+                return options
+                  .filter((job) =>
+                    normalizeWorkerName(job).includes(keyword),
+                  )
+                  .slice(0, 10);
+              }}
+              noOptionsText="검색된 직종이 없습니다."
+              sx={{
+                width: 200,
+                '& .MuiInputBase-root': {
+                  minHeight: 34,
+                  bgcolor: '#ffffff',
+                  fontSize: '0.78rem',
+                },
+                '& .MuiInputLabel-root': {
+                  fontSize: '0.76rem',
+                },
+              }}
+              renderInput={(params) => (
+                <TextField
+                  {...params}
+                  size="small"
+                  label="직종 조회"
+                  placeholder="예: 직영"
+                />
+              )}
+            />
+          </Box>
         </Box>
       </Paper>
 
@@ -546,8 +657,8 @@ export default function MonthlyWorkerStatus({
                     fontSize: '0.82rem',
                   }}
                 >
-                  {normalizedSearch
-                    ? '검색한 근로자가 없습니다.'
+                  {hasSearchCondition
+                    ? '검색 조건에 맞는 근로자가 없습니다.'
                     : '해당 월에 등록된 근로자가 없습니다.'}
                 </TableCell>
               </TableRow>
