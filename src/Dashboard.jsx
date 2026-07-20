@@ -41,6 +41,7 @@ import WeeklyReport from './page/WeeklyReport.jsx';
 import ProposalReport from './page/ProposalReport.jsx';
 import ApprovalInbox from './page/ApprovalInbox.jsx';
 import WeeklyOverview from './page/WeeklyOverview.jsx';
+import WeeklyOverviewArchive from './page/WeeklyOverviewArchive.jsx';
 import AdminDashboard from './page/AdminDashboard.jsx';
 
 const drawerWidth = 240;
@@ -58,12 +59,14 @@ const PROJECT_FREE_VIEWS = [
   'admin-dashboard',
   'approval-inbox',
   'weekly-overview',
+  'weekly-overview-archive',
   'daily-cumulative-workers',
 ];
 
 const MANAGEMENT_ONLY_VIEWS = [
   'admin-dashboard',
   'weekly-overview',
+  'weekly-overview-archive',
 ];
 
 const sortProjectNames = (projectNames) =>
@@ -280,7 +283,8 @@ const viewTitles = {
   'report-outsourcing-approval': '외주 품의 보고',
   'report-accident': '사고 경위 보고',
   'approval-inbox': '결재함',
-  'weekly-overview': '주간업무총괄',
+  'weekly-overview': '주간업무작성',
+  'weekly-overview-archive': '주간업무보관',
 };
 
 function ReportPlaceholder({ title }) {
@@ -450,10 +454,15 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     }
 
     if (
-      requestedView === 'weekly-overview' &&
+      [
+        'weekly-overview',
+        'weekly-overview-archive',
+      ].includes(
+        requestedView,
+      ) &&
       isManagementRole
     ) {
-      return 'weekly-overview';
+      return requestedView;
     }
 
     return isManagementRole
@@ -594,10 +603,17 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     }
 
     if (
-      requestedView === 'weekly-overview' &&
+      [
+        'weekly-overview',
+        'weekly-overview-archive',
+      ].includes(
+        requestedView,
+      ) &&
       isManagementRole
     ) {
-      setCurrentView('weekly-overview');
+      setCurrentView(
+        requestedView,
+      );
       return;
     }
 
@@ -698,17 +714,20 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
   const handleSidebarViewChange = (nextView) => {
     if (
-      nextView === 'weekly-overview'
+      [
+        'weekly-overview',
+        'weekly-overview-archive',
+      ].includes(nextView)
     ) {
       if (!isManagementRole) {
         return;
       }
 
       /*
-        주간업무총괄은 현장 선택과 무관한 관리자 전역 화면입니다.
-        기존 현장 선택값은 보존하되 화면은 즉시 전환합니다.
+        주간업무총괄의 작성·보관 화면은
+        현장 선택과 무관한 관리자 전역 화면입니다.
       */
-      setCurrentView('weekly-overview');
+      setCurrentView(nextView);
       return;
     }
 
@@ -2059,6 +2078,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                   'admin-dashboard',
                   'approval-inbox',
                   'weekly-overview',
+                  'weekly-overview-archive',
                 ].includes(currentView)
                 ? '욱림건설'
                 : activeProjectName ||
@@ -2067,7 +2087,12 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           </Typography>
 
           {isManagementRole &&
-            currentView !== 'weekly-overview' && (
+            ![
+              'weekly-overview',
+              'weekly-overview-archive',
+            ].includes(
+              currentView,
+            ) && (
             <Box
               sx={{
                 position: 'absolute',
@@ -2225,7 +2250,12 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             flexGrow: 1,
             minHeight: 0,
             overflow:
-              currentView === 'weekly-overview'
+              [
+                'weekly-overview',
+                'weekly-overview-archive',
+              ].includes(
+                currentView,
+              )
                 ? 'auto'
                 : 'hidden',
           }}
@@ -2244,6 +2274,14 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           {isManagementRole &&
             currentView === 'weekly-overview' && (
               <WeeklyOverview
+                userProfile={activeUserProfile}
+              />
+            )}
+
+          {isManagementRole &&
+            currentView ===
+              'weekly-overview-archive' && (
+              <WeeklyOverviewArchive
                 userProfile={activeUserProfile}
               />
             )}

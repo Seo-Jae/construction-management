@@ -30,6 +30,17 @@ const dailyMenus = [
   },
 ];
 
+const weeklyOverviewMenus = [
+  {
+    value: 'weekly-overview',
+    label: '주간업무작성',
+  },
+  {
+    value: 'weekly-overview-archive',
+    label: '주간업무보관',
+  },
+];
+
 const progressMenus = [
   { value: 'progress-input', label: '공종별 현황 입력' },
   { value: 'progress-multi', label: '다중 공종 진척 현황' },
@@ -135,10 +146,21 @@ export default function Sidebar({
     'daily-monthly-workers',
     'daily-cumulative-workers',
   ].includes(currentView);
+  const isWeeklyOverviewView = [
+    'weekly-overview',
+    'weekly-overview-archive',
+  ].includes(currentView);
+
   const isProgressView = currentView?.startsWith('progress-');
   const isReportView = currentView?.startsWith('report-');
 
   const [dailyOpen, setDailyOpen] = useState(isDailyView);
+  const [
+    weeklyOverviewOpen,
+    setWeeklyOverviewOpen,
+  ] = useState(
+    isWeeklyOverviewView,
+  );
   const [progressOpen, setProgressOpen] = useState(isProgressView);
   const [reportOpen, setReportOpen] = useState(isReportView);
   const [approvalPendingCount, setApprovalPendingCount] =
@@ -147,6 +169,12 @@ export default function Sidebar({
   useEffect(() => {
     if (isDailyView) setDailyOpen(true);
   }, [isDailyView]);
+
+  useEffect(() => {
+    if (isWeeklyOverviewView) {
+      setWeeklyOverviewOpen(true);
+    }
+  }, [isWeeklyOverviewView]);
 
   useEffect(() => {
     if (isProgressView) setProgressOpen(true);
@@ -338,59 +366,89 @@ export default function Sidebar({
       </Tooltip>
 
       {isManagementRole && (
-        <Tooltip
-          title={
-            drawerOpen
-              ? ''
-              : '주간업무총괄'
-          }
-          placement="right"
-          arrow
-        >
-          <ListItemButton
-            selected={
-              currentView ===
-              'weekly-overview'
+        <>
+          <Tooltip
+            title={
+              drawerOpen
+                ? ''
+                : '주간업무총괄'
             }
-            onClick={(event) => {
-              event.preventDefault();
-              event.stopPropagation();
-              handleViewChange(
-                'weekly-overview',
-              );
-            }}
-            sx={topMenuSx(
-              currentView ===
-                'weekly-overview',
-            )}
+            placement="right"
+            arrow
           >
-            <ListItemIcon
-              sx={{
-                minWidth: 34,
-                color: 'inherit',
-                justifyContent: 'center',
-              }}
+            <ListItemButton
+              selected={
+                isWeeklyOverviewView
+              }
+              onClick={() =>
+                setWeeklyOverviewOpen(
+                  (previous) =>
+                    !previous,
+                )
+              }
+              sx={topMenuSx(
+                isWeeklyOverviewView,
+              )}
             >
-              <AssessmentIcon fontSize="small" />
-            </ListItemIcon>
+              <ListItemIcon
+                sx={{
+                  minWidth: 34,
+                  color: 'inherit',
+                  justifyContent:
+                    'center',
+                }}
+              >
+                <AssessmentIcon fontSize="small" />
+              </ListItemIcon>
 
-            <ListItemText
-              primary="주간업무총괄"
-              primaryTypographyProps={{
-                noWrap: true,
-                fontSize: '0.8rem',
-                fontWeight:
-                  currentView ===
-                  'weekly-overview'
-                    ? 700
-                    : 500,
-              }}
-              sx={{
-                opacity: drawerOpen ? 1 : 0,
-              }}
+              <ListItemText
+                primary="주간업무총괄"
+                primaryTypographyProps={{
+                  noWrap: true,
+                  fontSize: '0.8rem',
+                  fontWeight:
+                    isWeeklyOverviewView
+                      ? 700
+                      : 500,
+                }}
+                sx={{
+                  opacity:
+                    drawerOpen
+                      ? 1
+                      : 0,
+                }}
+              />
+
+              {drawerOpen &&
+                (weeklyOverviewOpen ? (
+                  <ExpandLessIcon fontSize="small" />
+                ) : (
+                  <ExpandMoreIcon fontSize="small" />
+                ))}
+            </ListItemButton>
+          </Tooltip>
+
+          <Collapse
+            in={
+              drawerOpen &&
+              weeklyOverviewOpen
+            }
+            timeout="auto"
+            unmountOnExit
+          >
+            <SubMenuList
+              items={
+                weeklyOverviewMenus
+              }
+              currentView={
+                currentView
+              }
+              onViewChange={
+                handleViewChange
+              }
             />
-          </ListItemButton>
-        </Tooltip>
+          </Collapse>
+        </>
       )}
 
       <Tooltip

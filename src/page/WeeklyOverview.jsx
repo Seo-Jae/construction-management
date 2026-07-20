@@ -333,6 +333,35 @@ const getKoreaWeekRange = (
   };
 };
 
+const getWeekRangeFromStart = (
+  weekStart,
+) => {
+  const normalized =
+    String(weekStart || '').trim();
+
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(
+      normalized,
+    )
+  ) {
+    return getKoreaWeekRange();
+  }
+
+  return {
+    weekStart: normalized,
+    weekEnd:
+      addDaysToISO(
+        normalized,
+        6,
+      ),
+    nextMonday:
+      addDaysToISO(
+        normalized,
+        8,
+      ),
+  };
+};
+
 const formatDisplayDate = (dateKey) => {
   if (!dateKey) {
     return '';
@@ -730,27 +759,17 @@ function LineEditor({
     normalizeRows(rows);
 
   return (
-    <Box
-      sx={{
-        width: '100%',
-        minWidth: 0,
-        maxWidth: '100%',
-        overflow: 'hidden',
-        boxSizing: 'border-box',
-      }}
-    >
+    <Box>
       <Box
         sx={{
-          position: 'relative',
+          mb: 0.45,
           width: '100%',
           minWidth: 0,
-          maxWidth: '100%',
-          minHeight: 30,
-          mb: 0.45,
-          pr: '66px',
-          boxSizing: 'border-box',
-          display: 'flex',
+          display: 'grid',
+          gridTemplateColumns:
+            'minmax(0, 1fr) auto',
           alignItems: 'center',
+          columnGap: 0.6,
         }}
       >
         <Typography
@@ -772,11 +791,8 @@ function LineEditor({
           variant="outlined"
           onClick={onAdd}
           sx={{
-            position: 'absolute',
-            top: 0,
-            right: 0,
+            flexShrink: 0,
             minWidth: 58,
-            height: 28,
             px: 0.65,
             whiteSpace: 'nowrap',
             fontSize: '0.61rem',
@@ -789,10 +805,6 @@ function LineEditor({
 
       <Box
         sx={{
-          width: '100%',
-          minWidth: 0,
-          maxWidth: '100%',
-          overflow: 'hidden',
           display: 'grid',
           gap: 0.45,
         }}
@@ -800,25 +812,19 @@ function LineEditor({
         {normalizedRows.map(
           (value, index) => (
             <Box
-              key={
-                title + '-' + index
-              }
+              key={`${title}-${index}`}
               sx={{
                 width: '100%',
                 minWidth: 0,
-                maxWidth: '100%',
-                boxSizing: 'border-box',
-                overflow: 'hidden',
                 display: 'grid',
                 gridTemplateColumns:
-                  '26px minmax(0, 1fr) 34px',
+                  '26px minmax(0, 1fr) 38px',
                 gap: 0.4,
                 alignItems: 'stretch',
               }}
             >
               <Box
                 sx={{
-                  minWidth: 0,
                   borderRadius: 0.8,
                   display: 'flex',
                   alignItems: 'center',
@@ -837,9 +843,7 @@ function LineEditor({
                 fullWidth
                 size="small"
                 value={value}
-                placeholder={
-                  title + ' 내용'
-                }
+                placeholder={`${title} 내용`}
                 onChange={(event) =>
                   onChange(
                     index,
@@ -847,25 +851,17 @@ function LineEditor({
                   )
                 }
                 sx={{
-                  width: '100%',
                   minWidth: 0,
-                  maxWidth: '100%',
-                  overflow: 'hidden',
                   '& .MuiInputBase-root':
                     {
-                      width: '100%',
                       minWidth: 0,
-                      maxWidth: '100%',
                       minHeight: 34,
-                      boxSizing:
-                        'border-box',
                     },
                   '& .MuiInputBase-input':
                     {
                       minWidth: 0,
                       py: 0.7,
-                      fontSize:
-                        '0.69rem',
+                      fontSize: '0.69rem',
                     },
                 }}
               />
@@ -882,9 +878,8 @@ function LineEditor({
                   !value
                 }
                 sx={{
-                  minWidth: 34,
-                  width: 34,
-                  maxWidth: 34,
+                  minWidth: 38,
+                  width: 38,
                   px: 0,
                   fontSize: '0.78rem',
                   fontWeight: 900,
@@ -1077,20 +1072,10 @@ function ScheduleEditor({
   onClear,
 }) {
   return (
-    <Box
-      sx={{
-        width: '100%',
-        minWidth: 0,
-        maxWidth: '100%',
-        overflow: 'hidden',
-        boxSizing: 'border-box',
-      }}
-    >
+    <Box>
       <Box
         sx={{
           mb: 0.55,
-          width: '100%',
-          minWidth: 0,
           display: 'flex',
           alignItems: 'center',
           justifyContent:
@@ -1098,16 +1083,19 @@ function ScheduleEditor({
           gap: 1,
         }}
       >
-        <Typography
-          sx={{
-            minWidth: 0,
-            color: '#334155',
-            fontSize: '0.72rem',
-            fontWeight: 900,
-          }}
-        >
-          [하자보수]
-        </Typography>
+        <Box>
+          <Typography
+            sx={{
+              color: '#334155',
+              fontSize: '0.72rem',
+              fontWeight: 900,
+            }}
+          >
+            [하자보수]
+          </Typography>
+
+
+        </Box>
 
         <Button
           size="small"
@@ -1115,7 +1103,6 @@ function ScheduleEditor({
           color="error"
           onClick={onClear}
           sx={{
-            flexShrink: 0,
             minWidth: 54,
             px: 0.65,
             whiteSpace: 'nowrap',
@@ -1129,18 +1116,11 @@ function ScheduleEditor({
 
       <Box
         sx={{
-          width: '100%',
-          minWidth: 0,
-          maxWidth: '100%',
           overflowX: 'auto',
-          overflowY: 'hidden',
-          WebkitOverflowScrolling:
-            'touch',
         }}
       >
         <Box
           sx={{
-            width: 'max-content',
             minWidth: 700,
             display: 'grid',
             gridTemplateColumns:
@@ -1190,7 +1170,6 @@ function ScheduleEditor({
                     )
                   }
                   sx={{
-                    minWidth: 0,
                     '& .MuiInputBase-root':
                       {
                         minHeight: 54,
@@ -1233,11 +1212,7 @@ function OfficeInputCard({
     <Paper
       variant="outlined"
       sx={{
-        width: '100%',
-        minWidth: 0,
-        maxWidth: '100%',
         mb: 1,
-        boxSizing: 'border-box',
         overflow: 'hidden',
         borderColor: '#94a3b8',
         boxShadow: 'none',
@@ -1245,10 +1220,6 @@ function OfficeInputCard({
     >
       <Box
         sx={{
-          width: '100%',
-          minWidth: 0,
-          maxWidth: '100%',
-          boxSizing: 'border-box',
           px: 1,
           py: 0.8,
           display: 'flex',
@@ -1261,27 +1232,31 @@ function OfficeInputCard({
             '1px solid #94a3b8',
         }}
       >
-        <Box sx={{ minWidth: 0 }}>
-          <Typography
-            sx={{
-              color: '#0f172a',
-              fontSize: '0.8rem',
-              fontWeight: 900,
-            }}
-          >
-            본사 · 공무
-          </Typography>
+        <Box>
+          <Box>
+            <Typography
+              sx={{
+                color: '#0f172a',
+                fontSize: '0.8rem',
+                fontWeight: 900,
+              }}
+            >
+              본사 · 공무
+            </Typography>
 
-          <Typography
-            sx={{
-              mt: 0.15,
-              color: '#64748b',
-              fontSize: '0.61rem',
-              fontWeight: 700,
-            }}
-          >
-            제출·제출예정 항목별 행 추가 가능
-          </Typography>
+            <Typography
+              sx={{
+                mt: 0.15,
+                color: '#64748b',
+                fontSize: '0.61rem',
+                fontWeight: 700,
+              }}
+            >
+              제출·제출예정 항목별 행 추가 가능
+            </Typography>
+          </Box>
+
+
         </Box>
 
         <Button
@@ -1290,7 +1265,6 @@ function OfficeInputCard({
           color="error"
           onClick={onClearOffice}
           sx={{
-            flexShrink: 0,
             minWidth: 64,
             px: 0.65,
             whiteSpace: 'nowrap',
@@ -1304,18 +1278,9 @@ function OfficeInputCard({
 
       <Box
         sx={{
-          width: '100%',
-          minWidth: 0,
-          maxWidth: '100%',
-          boxSizing: 'border-box',
-          overflow: 'hidden',
           p: 0.95,
           display: 'grid',
           gap: 1.25,
-          '& > *': {
-            minWidth: 0,
-            maxWidth: '100%',
-          },
         }}
       >
         {OFFICE_INPUT_SECTIONS.map(
@@ -1325,14 +1290,11 @@ function OfficeInputCard({
               sx={{
                 width: '100%',
                 minWidth: 0,
-                maxWidth: '100%',
-                boxSizing:
-                  'border-box',
-                overflow: 'hidden',
                 p: 0.85,
                 border: SOFT_BORDER,
                 borderRadius: 1,
                 bgcolor: '#ffffff',
+                overflow: 'hidden',
               }}
             >
               <Typography
@@ -1350,8 +1312,6 @@ function OfficeInputCard({
                 sx={{
                   width: '100%',
                   minWidth: 0,
-                  maxWidth: '100%',
-                  overflow: 'hidden',
                   display: 'grid',
                   gap: 1.05,
                 }}
@@ -1397,11 +1357,6 @@ function OfficeInputCard({
 
         <Box
           sx={{
-            width: '100%',
-            minWidth: 0,
-            maxWidth: '100%',
-            boxSizing: 'border-box',
-            overflow: 'hidden',
             p: 0.85,
             border: SOFT_BORDER,
             borderRadius: 1,
@@ -2136,10 +2091,17 @@ function ExcelTemplatePreview({
 
 export default function WeeklyOverview({
   userProfile,
+  readOnly = false,
+  weekStartOverride = '',
 }) {
   const weekRange = useMemo(
-    () => getKoreaWeekRange(),
-    [],
+    () =>
+      weekStartOverride
+        ? getWeekRangeFromStart(
+            weekStartOverride,
+          )
+        : getKoreaWeekRange(),
+    [weekStartOverride],
   );
 
   const draftStorageKey = useMemo(
@@ -2216,6 +2178,11 @@ export default function WeeklyOverview({
     setSuccessMessage,
   ] = useState('');
 
+  const [
+    savedMetadata,
+    setSavedMetadata,
+  ] = useState(null);
+
   const isHydratedRef = useRef(false);
   const isDirtyRef = useRef(false);
 
@@ -2231,50 +2198,53 @@ export default function WeeklyOverview({
     setErrorMessage('');
     setWarningMessage('');
     setSuccessMessage('');
+    setSavedMetadata(null);
 
     let reports = [];
 
-    try {
-      const {
-        data,
-        error,
-      } = await supabase
-        .from('weekly_reports')
-        .select(
-          `
-          id,
-          project_name,
-          week_start,
-          payload,
-          status,
-          completed_at
-        `,
-        )
-        .eq(
-          'week_start',
-          weekRange.weekStart,
-        )
-        .eq('status', 'completed')
-        .in(
-          'project_name',
-          TEMPLATE_PROJECT_NAMES,
+    if (!readOnly) {
+      try {
+        const {
+          data,
+          error,
+        } = await supabase
+          .from('weekly_reports')
+          .select(
+            `
+            id,
+            project_name,
+            week_start,
+            payload,
+            status,
+            completed_at
+          `,
+          )
+          .eq(
+            'week_start',
+            weekRange.weekStart,
+          )
+          .eq('status', 'completed')
+          .in(
+            'project_name',
+            TEMPLATE_PROJECT_NAMES,
+          );
+
+        if (error) {
+          throw error;
+        }
+
+        reports = data || [];
+      } catch (error) {
+        console.error(
+          '주간업무 원본 조회 실패:',
+          error,
         );
 
-      if (error) {
-        throw error;
+        setWarningMessage(
+          '현재 주차 주간업무 원본을 불러오지 못했습니다. ' +
+          '입력 화면은 사용할 수 있습니다.',
+        );
       }
-
-      reports = data || [];
-    } catch (error) {
-      console.error(
-        '주간업무 원본 조회 실패:',
-        error,
-      );
-
-      setWarningMessage(
-        '현재 주차 주간업무 원본을 불러오지 못했습니다. ' +
-        '입력 화면은 사용할 수 있습니다.',
-      );
     }
 
     const nextSourceRows =
@@ -2307,7 +2277,10 @@ export default function WeeklyOverview({
           `
           id,
           week_start,
+          week_end,
+          display_period,
           payload,
+          updated_by_name,
           updated_at
         `,
         )
@@ -2322,6 +2295,20 @@ export default function WeeklyOverview({
       }
 
       if (data) {
+        setSavedMetadata({
+          id: data.id,
+          weekStart:
+            data.week_start,
+          weekEnd:
+            data.week_end,
+          displayPeriod:
+            data.display_period,
+          updatedByName:
+            data.updated_by_name,
+          updatedAt:
+            data.updated_at,
+        });
+
         savedRows =
           migrateSavedPayload(
             data.payload,
@@ -2357,8 +2344,21 @@ export default function WeeklyOverview({
       );
     }
 
+    if (
+      readOnly &&
+      !savedRows
+    ) {
+      setWarningMessage(
+        '선택한 기간의 저장본을 찾지 못했습니다.',
+      );
+    }
+
     const draft =
-      readDraft(draftStorageKey);
+      readOnly
+        ? null
+        : readDraft(
+            draftStorageKey,
+          );
 
     const nextCellRows =
       draft?.cellRows
@@ -2403,7 +2403,10 @@ export default function WeeklyOverview({
     isDirtyRef.current =
       Boolean(draft);
 
-    if (draft) {
+    if (
+      draft &&
+      !readOnly
+    ) {
       setWarningMessage(
         '저장하지 않은 작성 내용이 임시저장에서 복원되었습니다.',
       );
@@ -2413,6 +2416,7 @@ export default function WeeklyOverview({
     setLoading(false);
   }, [
     draftStorageKey,
+    readOnly,
     weekRange.weekStart,
   ]);
 
@@ -2443,7 +2447,10 @@ export default function WeeklyOverview({
   }, [loadData]);
 
   useEffect(() => {
-    if (!isHydratedRef.current) {
+    if (
+      readOnly ||
+      !isHydratedRef.current
+    ) {
       return;
     }
 
@@ -2461,6 +2468,7 @@ export default function WeeklyOverview({
     cellRows,
     draftStorageKey,
     officeRows,
+    readOnly,
     scheduleValues,
   ]);
 
@@ -3077,6 +3085,172 @@ export default function WeeklyOverview({
         >
           주간업무총괄을 불러오는 중입니다.
         </Typography>
+      </Paper>
+    );
+  }
+
+  if (readOnly) {
+    return (
+      <Paper
+        variant="outlined"
+        sx={{
+          width: '100%',
+          height: '100%',
+          minHeight: 620,
+          display: 'flex',
+          flexDirection: 'column',
+          borderColor: '#cbd5e1',
+          bgcolor: '#ffffff',
+          boxShadow: 'none',
+          overflow: 'hidden',
+        }}
+      >
+        <Box
+          sx={{
+            px: 1.2,
+            py: 0.95,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent:
+              'space-between',
+            gap: 1,
+            borderBottom:
+              '1px solid #e2e8f0',
+            bgcolor: '#ffffff',
+          }}
+        >
+          <Box sx={{ minWidth: 0 }}>
+            <Typography
+              sx={{
+                color: '#0f172a',
+                fontSize: '0.86rem',
+                fontWeight: 900,
+              }}
+            >
+              주간업무 저장본
+            </Typography>
+
+            <Typography
+              sx={{
+                mt: 0.15,
+                color: '#64748b',
+                fontSize: '0.66rem',
+              }}
+            >
+              {formatDisplayDate(
+                weekRange.weekStart,
+              )}
+              {' ~ '}
+              {formatDisplayDate(
+                weekRange.weekEnd,
+              )}
+              {savedMetadata
+                ?.updatedByName
+                ? ` · 저장자 ${savedMetadata.updatedByName}`
+                : ''}
+            </Typography>
+          </Box>
+
+          <Button
+            size="small"
+            variant="contained"
+            color="success"
+            onClick={
+              handleDownloadExcel
+            }
+            disabled={
+              downloading ||
+              !savedMetadata
+            }
+            sx={{
+              minWidth: 72,
+              px: 0.8,
+              whiteSpace: 'nowrap',
+              fontSize: '0.64rem',
+              fontWeight: 900,
+            }}
+          >
+            {downloading
+              ? '생성중'
+              : 'XLS 다운로드'}
+          </Button>
+        </Box>
+
+        {warningMessage && (
+          <Alert
+            severity="warning"
+            sx={{
+              mx: 1,
+              mt: 1,
+              fontSize: '0.68rem',
+            }}
+          >
+            {warningMessage}
+          </Alert>
+        )}
+
+        {errorMessage && (
+          <Alert
+            severity="error"
+            sx={{
+              mx: 1,
+              mt: 1,
+              fontSize: '0.68rem',
+            }}
+          >
+            {errorMessage}
+          </Alert>
+        )}
+
+        <Box
+          sx={{
+            flex: 1,
+            minHeight: 0,
+            overflow: 'auto',
+            p: 1.2,
+            bgcolor: '#e2e8f0',
+          }}
+        >
+          {savedMetadata ? (
+            <ExcelTemplatePreview
+              cellRows={cellRows}
+              nextMondayKey={
+                weekRange.nextMonday
+              }
+              scheduleDates={
+                scheduleDates.map(
+                  formatMonthDay,
+                )
+              }
+              scheduleValues={
+                scheduleValues
+              }
+              officeRows={
+                officeRows
+              }
+            />
+          ) : (
+            <Box
+              sx={{
+                minHeight: 420,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent:
+                  'center',
+              }}
+            >
+              <Typography
+                sx={{
+                  color: '#64748b',
+                  fontSize: '0.8rem',
+                  fontWeight: 800,
+                }}
+              >
+                선택한 주차의 저장본이 없습니다.
+              </Typography>
+            </Box>
+          )}
+        </Box>
       </Paper>
     );
   }
