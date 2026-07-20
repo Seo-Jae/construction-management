@@ -323,6 +323,310 @@ const getTargetSummary = ({
   };
 };
 
+const normalizeProcessTypes = (
+  value,
+  processOptions = [],
+) => {
+  const rawValues =
+    Array.isArray(value)
+      ? value
+      : [];
+
+  const uniqueValues =
+    Array.from(
+      new Set(
+        rawValues
+          .map((item) =>
+            String(
+              item || '',
+            ).trim(),
+          )
+          .filter(Boolean),
+      ),
+    );
+
+  if (
+    !Array.isArray(
+      processOptions,
+    ) ||
+    processOptions.length ===
+      0
+  ) {
+    return uniqueValues;
+  }
+
+  const optionSet =
+    new Set(
+      processOptions,
+    );
+
+  return uniqueValues
+    .filter((item) =>
+      optionSet.has(item),
+    )
+    .sort(
+      (first, second) =>
+        processOptions.indexOf(
+          first,
+        ) -
+        processOptions.indexOf(
+          second,
+        ),
+    );
+};
+
+const groupProgressTargetRows = (
+  rows,
+  processOptions,
+) => {
+  const groupMap =
+    new Map();
+
+  (rows || []).forEach(
+    (row) => {
+      const sequence =
+        Number(
+          row?.sequence,
+        ) || 1;
+
+      if (
+        !groupMap.has(
+          sequence,
+        )
+      ) {
+        groupMap.set(
+          sequence,
+          [],
+        );
+      }
+
+      groupMap
+        .get(sequence)
+        .push(row);
+    },
+  );
+
+  return Array.from(
+    groupMap.entries(),
+  )
+    .sort(
+      ([first], [second]) =>
+        first - second,
+    )
+    .map(
+      ([
+        sequence,
+        groupRows,
+      ]) => {
+        const representative =
+          groupRows
+            .slice()
+            .sort(
+              (
+                first,
+                second,
+              ) =>
+                String(
+                  second.updated_at ||
+                    '',
+                ).localeCompare(
+                  String(
+                    first.updated_at ||
+                      '',
+                  ),
+                ),
+            )[0] ||
+          groupRows[0];
+
+        const processTypes =
+          normalizeProcessTypes(
+            groupRows.map(
+              (row) =>
+                row.process_type,
+            ),
+            processOptions,
+          );
+
+        const rowsByProcess =
+          groupRows.reduce(
+            (
+              result,
+              row,
+            ) => {
+              if (
+                row.process_type
+              ) {
+                result[
+                  row.process_type
+                ] = row;
+              }
+
+              return result;
+            },
+            {},
+          );
+
+        return {
+          id:
+            `sequence:${sequence}`,
+          sequence,
+          target_name:
+            representative
+              ?.target_name ||
+            `${sequence}차 방통`,
+          target_date:
+            representative
+              ?.target_date ||
+            '',
+          building_floor_targets:
+            normalizeFloorTargets(
+              representative
+                ?.building_floor_targets,
+            ),
+          process_types:
+            processTypes,
+          rows_by_process:
+            rowsByProcess,
+          updated_at:
+            representative
+              ?.updated_at ||
+            '',
+        };
+      },
+    );
+};
+
+const fetchAllTargetProgressRows =
+  async ({
+    projectName,
+    processTypes,
+  }) => {
+    const normalizedTypes =
+      Array.from(
+        new Set(
+          (processTypes || [])
+            .map((item) =>
+              String(
+                item || '',
+              ).trim(),
+            )
+            .filter(Boolean),
+        ),
+      );
+
+    if (
+      !projectName ||
+      normalizedTypes.length ===
+        0
+    ) {
+      return [];
+    }
+
+    const rows = [];
+    const pageSize = 1000;
+    let from = 0;
+
+    while (true) {
+      const {
+        data,
+        error,
+      } = await supabase
+        .from(
+          'unit_progress',
+        )
+        .select(
+          `
+          building,
+          unit,
+          process_type,
+          status,
+          completion_date
+        `,
+        )
+        .eq(
+          'project_name',
+          projectName,
+        )
+        .in(
+          'process_type',
+          normalizedTypes,
+        )
+        .range(
+          from,
+          from +
+            pageSize -
+            1,
+        );
+
+      if (error) {
+        throw error;
+      }
+
+      const nextRows =
+        data || [];
+
+      rows.push(...nextRows);
+
+      if (
+        nextRows.length <
+        pageSize
+      ) {
+        break;
+      }
+
+      from += pageSize;
+    }
+
+    return rows;
+  };
+
+const buildProgressDataByProcess =
+  (rows) =>
+    (rows || []).reduce(
+      (
+        result,
+        row,
+      ) => {
+        const processType =
+          String(
+            row?.process_type ||
+              '',
+          ).trim();
+
+        if (
+          !processType ||
+          !row?.building ||
+          !row?.unit
+        ) {
+          return result;
+        }
+
+        if (
+          !result[
+            processType
+          ]
+        ) {
+          result[
+            processType
+          ] = {};
+        }
+
+        result[
+          processType
+        ][
+          `${row.building}-${row.unit}`
+        ] = {
+          status:
+            row.status,
+          date:
+            row.completion_date,
+        };
+
+        return result;
+      },
+      {},
+    );
+
 const getStatusButtonStyle = (status, selectedStatusAction) => {
   const selected = selectedStatusAction === status;
 
@@ -412,9 +716,15 @@ export default function ProgressInput({
     target_name:
       '1차 방통',
     target_date: '',
+    process_types: [],
     building_floor_targets:
       {},
   });
+
+  const [
+    targetProcessProgressData,
+    setTargetProcessProgressData,
+  ] = useState({});
 
   const [
     targetLoading,
@@ -452,12 +762,12 @@ export default function ProgressInput({
 
   const loadProgressTargets =
     useCallback(async () => {
-      if (
-        !projectName ||
-        !selectedProcess
-      ) {
+      if (!projectName) {
         setProgressTargets([]);
         setActiveTargetId('');
+        setTargetProcessProgressData(
+          {},
+        );
         setTargetLineEditMode(
           false,
         );
@@ -482,10 +792,6 @@ export default function ProgressInput({
             'project_name',
             projectName,
           )
-          .eq(
-            'process_type',
-            selectedProcess,
-          )
           .order(
             'sequence',
             {
@@ -497,7 +803,7 @@ export default function ProgressInput({
           throw error;
         }
 
-        const rows =
+        const normalizedRows =
           (data || []).map(
             (row) => ({
               ...row,
@@ -509,19 +815,69 @@ export default function ProgressInput({
             }),
           );
 
-        setProgressTargets(rows);
+        const groupedTargets =
+          groupProgressTargetRows(
+            normalizedRows,
+            processOptions,
+          );
+
+        setProgressTargets(
+          groupedTargets,
+        );
 
         setActiveTargetId(
           (previous) =>
-            rows.some(
-              (row) =>
-                row.id ===
+            groupedTargets.some(
+              (target) =>
+                target.id ===
                 previous,
             )
               ? previous
-              : rows[0]?.id ||
+              : groupedTargets[0]
+                  ?.id ||
                 '',
         );
+
+        const targetProcessTypes =
+          Array.from(
+            new Set(
+              groupedTargets.flatMap(
+                (target) =>
+                  target.process_types,
+              ),
+            ),
+          );
+
+        try {
+          const progressRows =
+            await fetchAllTargetProgressRows({
+              projectName,
+              processTypes:
+                targetProcessTypes,
+            });
+
+          setTargetProcessProgressData(
+            buildProgressDataByProcess(
+              progressRows,
+            ),
+          );
+        } catch (
+          progressError
+        ) {
+          console.error(
+            '차수별 공정 진척 조회 실패:',
+            progressError,
+          );
+
+          setTargetProcessProgressData(
+            {},
+          );
+
+          setTargetError(
+            progressError?.message ||
+              '차수별 공정 진척을 불러오지 못했습니다.',
+          );
+        }
       } catch (error) {
         console.error(
           '공정 목표 조회 실패:',
@@ -530,6 +886,9 @@ export default function ProgressInput({
 
         setProgressTargets([]);
         setActiveTargetId('');
+        setTargetProcessProgressData(
+          {},
+        );
 
         setTargetError(
           error?.code ===
@@ -542,8 +901,8 @@ export default function ProgressInput({
         setTargetLoading(false);
       }
     }, [
+      processOptions,
       projectName,
-      selectedProcess,
     ]);
 
   useEffect(() => {
@@ -554,33 +913,82 @@ export default function ProgressInput({
     setTargetLineEditMode(
       false,
     );
+  }, [projectName]);
+
+  /*
+    현재 화면에서 수정한 공정은 Dashboard의 최신 데이터를
+    차수별 집계 데이터에도 즉시 반영합니다.
+  */
+  useEffect(() => {
+    if (!selectedProcess) {
+      return;
+    }
+
+    setTargetProcessProgressData(
+      (previous) => ({
+        ...previous,
+        [selectedProcess]:
+          unitProgressData || {},
+      }),
+    );
   }, [
-    projectName,
     selectedProcess,
+    unitProgressData,
   ]);
 
   const targetSummaries =
     useMemo(
       () =>
         progressTargets.map(
-          (target, index) => ({
-            target,
-            color:
-              TARGET_COLORS[
-                index %
-                  TARGET_COLORS.length
-              ],
-            summary:
-              getTargetSummary({
-                target,
-                buildingConfigs,
-                unitProgressData,
-              }),
-          }),
+          (target, index) => {
+            const processSummaries =
+              target.process_types.map(
+                (
+                  processType,
+                ) => {
+                  const processData =
+                    processType ===
+                    selectedProcess
+                      ? unitProgressData
+                      : targetProcessProgressData[
+                          processType
+                        ] || {};
+
+                  return {
+                    processType,
+                    summary:
+                      getTargetSummary({
+                        target,
+                        buildingConfigs,
+                        unitProgressData:
+                          processData,
+                      }),
+                  };
+                },
+              );
+
+            return {
+              target,
+              color:
+                TARGET_COLORS[
+                  index %
+                    TARGET_COLORS.length
+                ],
+              processSummaries,
+              selectedProcessSummary:
+                processSummaries.find(
+                  (item) =>
+                    item.processType ===
+                    selectedProcess,
+                ) || null,
+            };
+          },
         ),
       [
         buildingConfigs,
         progressTargets,
+        selectedProcess,
+        targetProcessProgressData,
         unitProgressData,
       ],
     );
@@ -614,6 +1022,14 @@ export default function ProgressInput({
           `${nextSequence}차 방통`,
         target_date:
           getKoreaDateKey(),
+        process_types:
+          selectedProcess
+            ? [selectedProcess]
+            : processOptions[0]
+              ? [
+                  processOptions[0],
+                ]
+              : [],
         building_floor_targets:
           {},
       });
@@ -632,6 +1048,13 @@ export default function ProgressInput({
       setTargetDraft({
         ...activeTargetItem
           .target,
+        process_types:
+          normalizeProcessTypes(
+            activeTargetItem
+              .target
+              .process_types,
+            processOptions,
+          ),
         building_floor_targets:
           normalizeFloorTargets(
             activeTargetItem
@@ -666,6 +1089,13 @@ export default function ProgressInput({
             .target_name || '',
         ).trim();
 
+      const selectedProcessTypes =
+        normalizeProcessTypes(
+          targetDraft
+            .process_types,
+          processOptions,
+        );
+
       if (!targetName) {
         setTargetError(
           '차수명을 입력해주세요.',
@@ -683,6 +1113,16 @@ export default function ProgressInput({
         return;
       }
 
+      if (
+        selectedProcessTypes.length ===
+        0
+      ) {
+        setTargetError(
+          '적용할 공정을 한 개 이상 선택해주세요.',
+        );
+        return;
+      }
+
       setTargetSaving(true);
       setTargetError('');
 
@@ -690,121 +1130,125 @@ export default function ProgressInput({
         const userEmail =
           await getCurrentUserEmail();
 
-        const payload = {
-          project_name:
-            projectName,
-          process_type:
-            selectedProcess,
-          sequence:
-            Number(
-              targetDraft
-                .sequence,
-            ) || 1,
-          target_name:
-            targetName,
-          target_date:
+        const sequence =
+          Number(
             targetDraft
-              .target_date,
-          building_floor_targets:
-            normalizeFloorTargets(
-              targetDraft
-                .building_floor_targets,
-            ),
-          updated_by:
-            userEmail || null,
-        };
+              .sequence,
+          ) || 1;
 
-        let savedRow;
+        const sharedFloorTargets =
+          normalizeFloorTargets(
+            targetDraft
+              .building_floor_targets,
+          );
 
-        if (targetDraft.id) {
-          const {
-            data,
-            error,
-          } = await supabase
-            .from(
-              'progress_targets',
-            )
-            .update(payload)
-            .eq(
-              'id',
-              targetDraft.id,
-            )
-            .select(
-              TARGET_SELECT_COLUMNS,
-            )
-            .single();
-
-          if (error) {
-            throw error;
-          }
-
-          savedRow = data;
-        } else {
-          const {
-            data,
-            error,
-          } = await supabase
-            .from(
-              'progress_targets',
-            )
-            .insert({
-              ...payload,
+        const upsertRows =
+          selectedProcessTypes.map(
+            (processType) => ({
+              project_name:
+                projectName,
+              process_type:
+                processType,
+              sequence,
+              target_name:
+                targetName,
+              target_date:
+                targetDraft
+                  .target_date,
+              building_floor_targets:
+                sharedFloorTargets,
               created_by:
                 userEmail ||
                 null,
-            })
-            .select(
-              TARGET_SELECT_COLUMNS,
-            )
-            .single();
+              updated_by:
+                userEmail ||
+                null,
+            }),
+          );
 
-          if (error) {
-            throw error;
-          }
+        const {
+          error: upsertError,
+        } = await supabase
+          .from(
+            'progress_targets',
+          )
+          .upsert(
+            upsertRows,
+            {
+              onConflict:
+                'project_name,process_type,sequence',
+            },
+          );
 
-          savedRow = data;
+        if (upsertError) {
+          throw upsertError;
         }
 
-        const normalizedRow = {
-          ...savedRow,
-          building_floor_targets:
-            normalizeFloorTargets(
-              savedRow
-                .building_floor_targets,
-            ),
-        };
+        const existingProcessTypes =
+          normalizeProcessTypes(
+            activeTargetItem
+              ?.target
+              ?.process_types ||
+              [],
+            processOptions,
+          );
 
-        setProgressTargets(
-          (previous) =>
-            previous
-              .filter(
-                (target) =>
-                  target.id !==
-                  normalizedRow.id,
-              )
-              .concat(
-                normalizedRow,
-              )
-              .sort(
-                (
-                  first,
-                  second,
-                ) =>
-                  Number(
-                    first.sequence,
-                  ) -
-                  Number(
-                    second.sequence,
-                  ),
+        const removedProcessTypes =
+          existingProcessTypes.filter(
+            (processType) =>
+              !selectedProcessTypes.includes(
+                processType,
               ),
-        );
+          );
+
+        if (
+          targetDraft.id &&
+          removedProcessTypes.length >
+            0
+        ) {
+          const {
+            error:
+              deleteRemovedError,
+          } = await supabase
+            .from(
+              'progress_targets',
+            )
+            .delete()
+            .eq(
+              'project_name',
+              projectName,
+            )
+            .eq(
+              'sequence',
+              sequence,
+            )
+            .in(
+              'process_type',
+              removedProcessTypes,
+            );
+
+          if (
+            deleteRemovedError
+          ) {
+            throw deleteRemovedError;
+          }
+        }
+
+        const nextTargetId =
+          `sequence:${sequence}`;
 
         setActiveTargetId(
-          normalizedRow.id,
+          nextTargetId,
         );
 
         setTargetDialogOpen(
           false,
+        );
+
+        await loadProgressTargets();
+
+        setActiveTargetId(
+          nextTargetId,
         );
 
         if (
@@ -839,7 +1283,7 @@ export default function ProgressInput({
 
       const confirmed =
         window.confirm(
-          `${targetDraft.target_name} 설정을 삭제할까요?`,
+          `${targetDraft.target_name} 설정과 적용 공정 전체를 삭제할까요?`,
         );
 
       if (!confirmed) {
@@ -858,29 +1302,20 @@ export default function ProgressInput({
           )
           .delete()
           .eq(
-            'id',
-            targetDraft.id,
+            'project_name',
+            projectName,
+          )
+          .eq(
+            'sequence',
+            Number(
+              targetDraft
+                .sequence,
+            ) || 1,
           );
 
         if (error) {
           throw error;
         }
-
-        const nextTargets =
-          progressTargets.filter(
-            (target) =>
-              target.id !==
-              targetDraft.id,
-          );
-
-        setProgressTargets(
-          nextTargets,
-        );
-
-        setActiveTargetId(
-          nextTargets[0]
-            ?.id || '',
-        );
 
         setTargetLineEditMode(
           false,
@@ -889,6 +1324,8 @@ export default function ProgressInput({
         setTargetDialogOpen(
           false,
         );
+
+        await loadProgressTargets();
       } catch (error) {
         console.error(
           '공정 목표 삭제 실패:',
@@ -955,7 +1392,6 @@ export default function ProgressInput({
           await getCurrentUserEmail();
 
         const {
-          data,
           error,
         } = await supabase
           .from(
@@ -969,34 +1405,32 @@ export default function ProgressInput({
               null,
           })
           .eq(
-            'id',
-            activeTarget.id,
+            'project_name',
+            projectName,
           )
-          .select(
-            TARGET_SELECT_COLUMNS,
-          )
-          .single();
+          .eq(
+            'sequence',
+            Number(
+              activeTarget
+                .sequence,
+            ) || 1,
+          );
 
         if (error) {
           throw error;
         }
-
-        const normalizedRow = {
-          ...data,
-          building_floor_targets:
-            normalizeFloorTargets(
-              data
-                .building_floor_targets,
-            ),
-        };
 
         setProgressTargets(
           (previous) =>
             previous.map(
               (target) =>
                 target.id ===
-                normalizedRow.id
-                  ? normalizedRow
+                activeTarget.id
+                  ? {
+                      ...target,
+                      building_floor_targets:
+                        nextTargets,
+                    }
                   : target,
             ),
         );
@@ -1283,7 +1717,7 @@ export default function ProgressInput({
             targetSummaries.map(
               ({
                 target,
-                summary,
+                selectedProcessSummary,
                 color,
               }) => {
                 const selected =
@@ -1363,10 +1797,19 @@ export default function ProgressInput({
                           'nowrap',
                       }}
                     >
-                      잔여{' '}
-                      {summary.remainingCount.toLocaleString()}
+                      공정{' '}
+                      {target.process_types.length.toLocaleString()}
+                      개
                       {' · '}
-                      {summary.ddayLabel}
+                      {selectedProcessSummary
+                        ?.summary
+                        ?.ddayLabel ||
+                        formatDday(
+                          getDdayValue(
+                            target
+                              .target_date,
+                          ),
+                        )}
                     </Typography>
                   </Button>
                 );
@@ -1414,69 +1857,156 @@ export default function ProgressInput({
 
         <Box
           sx={{
-            minWidth: 310,
+            minWidth: 380,
+            maxWidth: 620,
             display: 'flex',
             flexDirection: 'column',
-            alignItems: 'center',
+            alignItems: 'stretch',
             justifyContent:
               'center',
-            gap: 0.15,
+            gap: 0.3,
+            overflow: 'hidden',
           }}
         >
           {activeTargetItem ? (
             <>
-              <Typography
+              <Box
                 sx={{
-                  color: '#334155',
-                  fontSize: '0.67rem',
-                  fontWeight: 900,
-                  whiteSpace: 'nowrap',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent:
+                    'center',
+                  gap: 0.45,
+                  overflowX: 'auto',
+                  py: 0.05,
                 }}
               >
-                목표{' '}
-                {activeTargetItem.summary.targetCount.toLocaleString()}
-                {' · 완료 '}
-                {activeTargetItem.summary.completedCount.toLocaleString()}
-                {' · 잔여 '}
-                <Box
-                  component="span"
-                  sx={{
-                    color:
-                      activeTargetItem
-                        .color,
-                  }}
-                >
-                  {activeTargetItem.summary.remainingCount.toLocaleString()}
-                </Box>
-                {' · '}
-                {activeTargetItem.summary.ddayLabel}
-              </Typography>
+                {activeTargetItem
+                  .processSummaries
+                  .map(
+                    ({
+                      processType,
+                      summary,
+                    }) => {
+                      const isCurrent =
+                        processType ===
+                        selectedProcess;
+
+                      return (
+                        <Button
+                          key={
+                            processType
+                          }
+                          size="small"
+                          variant={
+                            isCurrent
+                              ? 'contained'
+                              : 'outlined'
+                          }
+                          onClick={() =>
+                            setSelectedProcess?.(
+                              processType,
+                            )
+                          }
+                          sx={{
+                            minWidth: 88,
+                            flexShrink: 0,
+                            px: 0.65,
+                            py: 0.25,
+                            display: 'flex',
+                            flexDirection:
+                              'column',
+                            alignItems:
+                              'center',
+                            borderColor:
+                              activeTargetItem
+                                .color,
+                            bgcolor:
+                              isCurrent
+                                ? activeTargetItem
+                                    .color
+                                : '#ffffff',
+                            color:
+                              isCurrent
+                                ? '#ffffff'
+                                : activeTargetItem
+                                    .color,
+                            boxShadow: 'none',
+                            '&:hover': {
+                              borderColor:
+                                activeTargetItem
+                                  .color,
+                              bgcolor:
+                                isCurrent
+                                  ? activeTargetItem
+                                      .color
+                                  : `${activeTargetItem.color}12`,
+                              boxShadow:
+                                'none',
+                            },
+                          }}
+                        >
+                          <Typography
+                            component="span"
+                            sx={{
+                              maxWidth: 80,
+                              overflow:
+                                'hidden',
+                              textOverflow:
+                                'ellipsis',
+                              whiteSpace:
+                                'nowrap',
+                              fontSize:
+                                '0.59rem',
+                              fontWeight:
+                                900,
+                            }}
+                          >
+                            {processType}
+                          </Typography>
+
+                          <Typography
+                            component="span"
+                            sx={{
+                              mt: 0.05,
+                              fontSize:
+                                '0.55rem',
+                              fontWeight:
+                                900,
+                              whiteSpace:
+                                'nowrap',
+                            }}
+                          >
+                            잔여{' '}
+                            {summary.remainingCount.toLocaleString()}
+                          </Typography>
+                        </Button>
+                      );
+                    },
+                  )}
+              </Box>
 
               <Typography
                 sx={{
                   color: '#64748b',
                   fontSize: '0.58rem',
                   fontWeight: 800,
+                  textAlign: 'center',
                   whiteSpace: 'nowrap',
                 }}
               >
-                진척{' '}
-                {activeTargetItem.summary.percentage}
-                %
-                {' · 일 필요량 '}
-                {activeTargetItem.summary.dailyRequired ===
-                null
-                  ? activeTargetItem.summary.remainingCount ===
-                    0
-                    ? '0'
-                    : '기한초과'
-                  : activeTargetItem.summary.dailyRequired.toLocaleString(
-                      'ko-KR',
-                      {
-                        maximumFractionDigits: 1,
-                      },
-                    )}
-                세대
+                {formatDday(
+                  getDdayValue(
+                    activeTargetItem
+                      .target
+                      .target_date,
+                  ),
+                )}
+                {' · 목표일 '}
+                {activeTargetItem
+                  .target
+                  .target_date}
+                {' · 공정 버튼을 누르면 해당 공정 화면으로 이동'}
               </Typography>
             </>
           ) : (
@@ -1485,9 +2015,10 @@ export default function ProgressInput({
                 color: '#94a3b8',
                 fontSize: '0.66rem',
                 fontWeight: 800,
+                textAlign: 'center',
               }}
             >
-              차수를 추가하면 목표량과 D-day가 표시됩니다.
+              차수를 추가하고 적용 공정을 선택해주세요.
             </Typography>
           )}
         </Box>
@@ -1798,6 +2329,17 @@ export default function ProgressInput({
                   }
                   targetLines={
                     targetSummaries
+                      .filter(
+                        ({ target }) =>
+                          (
+                            targetLineEditMode &&
+                            target.id ===
+                              activeTargetId
+                          ) ||
+                          target.process_types.includes(
+                            selectedProcess,
+                          ),
+                      )
                       .map(
                         ({
                           target,
@@ -1884,6 +2426,189 @@ export default function ProgressInput({
             placeholder="예: 1차 방통"
           />
 
+          <Box
+            sx={{
+              p: 1,
+              border:
+                '1px solid #cbd5e1',
+              borderRadius: 1,
+              bgcolor: '#f8fafc',
+            }}
+          >
+            <Box
+              sx={{
+                mb: 0.65,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent:
+                  'space-between',
+                gap: 0.6,
+              }}
+            >
+              <Typography
+                sx={{
+                  color: '#334155',
+                  fontSize: '0.75rem',
+                  fontWeight: 900,
+                }}
+              >
+                적용 공정 선택
+              </Typography>
+
+              <Box
+                sx={{
+                  display: 'flex',
+                  gap: 0.35,
+                }}
+              >
+                <Button
+                  size="small"
+                  variant="text"
+                  onClick={() =>
+                    setTargetDraft(
+                      (previous) => ({
+                        ...previous,
+                        process_types:
+                          [
+                            ...processOptions,
+                          ],
+                      }),
+                    )
+                  }
+                  sx={{
+                    minWidth: 48,
+                    px: 0.45,
+                    fontSize:
+                      '0.59rem',
+                    fontWeight: 900,
+                  }}
+                >
+                  전체선택
+                </Button>
+
+                <Button
+                  size="small"
+                  variant="text"
+                  color="inherit"
+                  onClick={() =>
+                    setTargetDraft(
+                      (previous) => ({
+                        ...previous,
+                        process_types:
+                          [],
+                      }),
+                    )
+                  }
+                  sx={{
+                    minWidth: 48,
+                    px: 0.45,
+                    fontSize:
+                      '0.59rem',
+                    fontWeight: 900,
+                  }}
+                >
+                  선택해제
+                </Button>
+              </Box>
+            </Box>
+
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns:
+                  'repeat(3, minmax(0, 1fr))',
+                gap: 0.45,
+              }}
+            >
+              {processOptions.map(
+                (processType) => {
+                  const selected =
+                    targetDraft
+                      .process_types
+                      .includes(
+                        processType,
+                      );
+
+                  return (
+                    <Button
+                      key={
+                        processType
+                      }
+                      size="small"
+                      variant={
+                        selected
+                          ? 'contained'
+                          : 'outlined'
+                      }
+                      onClick={() =>
+                        setTargetDraft(
+                          (previous) => {
+                            const current =
+                              normalizeProcessTypes(
+                                previous
+                                  .process_types,
+                                processOptions,
+                              );
+
+                            const next =
+                              current.includes(
+                                processType,
+                              )
+                                ? current.filter(
+                                    (item) =>
+                                      item !==
+                                      processType,
+                                  )
+                                : [
+                                    ...current,
+                                    processType,
+                                  ];
+
+                            return {
+                              ...previous,
+                              process_types:
+                                normalizeProcessTypes(
+                                  next,
+                                  processOptions,
+                                ),
+                            };
+                          },
+                        )
+                      }
+                      sx={{
+                        minWidth: 0,
+                        px: 0.45,
+                        py: 0.4,
+                        overflow: 'hidden',
+                        fontSize: '0.65rem',
+                        fontWeight: 900,
+                        whiteSpace: 'nowrap',
+                        textOverflow:
+                          'ellipsis',
+                        boxShadow: 'none',
+                      }}
+                    >
+                      {processType}
+                    </Button>
+                  );
+                },
+              )}
+            </Box>
+
+            <Typography
+              sx={{
+                mt: 0.65,
+                color: '#64748b',
+                fontSize: '0.62rem',
+                fontWeight: 700,
+              }}
+            >
+              선택{' '}
+              {targetDraft.process_types.length.toLocaleString()}
+              개 공정 · 목표일과 목표라인은 선택 공정에 공통 적용됩니다.
+            </Typography>
+          </Box>
+
           <TextField
             label="목표일"
             type="date"
@@ -1918,7 +2643,7 @@ export default function ProgressInput({
                 },
             }}
           >
-            저장 후 라인 설정을 누르고 각 동의 층 번호를 클릭하세요. 선택한 층까지의 실제 존재 세대가 목표량으로 자동 계산됩니다.
+            선택한 모든 공정에 동일한 목표일과 목표라인이 적용됩니다. 저장 후 라인 설정을 누르고 각 동의 층 번호를 클릭하세요.
           </Alert>
 
           {targetDraft.id && (
