@@ -759,12 +759,22 @@ function LineEditor({
     normalizeRows(rows);
 
   return (
-    <Box>
+    <Box
+      sx={{
+        width: '100%',
+        maxWidth: '100%',
+        minWidth: 0,
+        overflow: 'hidden',
+        boxSizing: 'border-box',
+      }}
+    >
       <Box
         sx={{
           mb: 0.45,
           width: '100%',
+          maxWidth: '100%',
           minWidth: 0,
+          boxSizing: 'border-box',
           display: 'grid',
           gridTemplateColumns:
             'minmax(0, 1fr) auto',
@@ -792,8 +802,10 @@ function LineEditor({
           onClick={onAdd}
           sx={{
             flexShrink: 0,
+            width: 58,
             minWidth: 58,
-            px: 0.65,
+            maxWidth: 58,
+            px: 0.35,
             whiteSpace: 'nowrap',
             fontSize: '0.61rem',
             fontWeight: 900,
@@ -805,8 +817,13 @@ function LineEditor({
 
       <Box
         sx={{
+          width: '100%',
+          maxWidth: '100%',
+          minWidth: 0,
           display: 'grid',
           gap: 0.45,
+          overflow: 'hidden',
+          boxSizing: 'border-box',
         }}
       >
         {normalizedRows.map(
@@ -815,12 +832,15 @@ function LineEditor({
               key={`${title}-${index}`}
               sx={{
                 width: '100%',
+                maxWidth: '100%',
                 minWidth: 0,
                 display: 'grid',
                 gridTemplateColumns:
                   '26px minmax(0, 1fr) 38px',
                 gap: 0.4,
                 alignItems: 'stretch',
+                overflow: 'hidden',
+                boxSizing: 'border-box',
               }}
             >
               <Box
@@ -851,11 +871,17 @@ function LineEditor({
                   )
                 }
                 sx={{
+                  width: '100%',
+                  maxWidth: '100%',
                   minWidth: 0,
+                  overflow: 'hidden',
                   '& .MuiInputBase-root':
                     {
+                      width: '100%',
+                      maxWidth: '100%',
                       minWidth: 0,
                       minHeight: 34,
+                      boxSizing: 'border-box',
                     },
                   '& .MuiInputBase-input':
                     {
@@ -878,8 +904,10 @@ function LineEditor({
                   !value
                 }
                 sx={{
-                  minWidth: 38,
+                  flexShrink: 0,
                   width: 38,
+                  minWidth: 38,
+                  maxWidth: 38,
                   px: 0,
                   fontSize: '0.78rem',
                   fontWeight: 900,
@@ -909,8 +937,12 @@ function ProjectEditor({
     <Paper
       variant="outlined"
       sx={{
+        width: '100%',
+        maxWidth: '100%',
+        minWidth: 0,
         mb: 1,
         overflow: 'hidden',
+        boxSizing: 'border-box',
         borderColor: '#cbd5e1',
         boxShadow: 'none',
       }}
@@ -1072,15 +1104,27 @@ function ScheduleEditor({
   onClear,
 }) {
   return (
-    <Box>
+    <Box
+      sx={{
+        width: '100%',
+        maxWidth: '100%',
+        minWidth: 0,
+        overflow: 'hidden',
+        boxSizing: 'border-box',
+      }}
+    >
       <Box
         sx={{
           mb: 0.55,
-          display: 'flex',
+          width: '100%',
+          maxWidth: '100%',
+          minWidth: 0,
+          display: 'grid',
+          gridTemplateColumns:
+            'minmax(0, 1fr) auto',
           alignItems: 'center',
-          justifyContent:
-            'space-between',
-          gap: 1,
+          gap: 0.6,
+          boxSizing: 'border-box',
         }}
       >
         <Box>
@@ -1103,10 +1147,13 @@ function ScheduleEditor({
           color="error"
           onClick={onClear}
           sx={{
-            minWidth: 54,
-            px: 0.65,
+            flexShrink: 0,
+            width: 58,
+            minWidth: 58,
+            maxWidth: 58,
+            px: 0.3,
             whiteSpace: 'nowrap',
-            fontSize: '0.61rem',
+            fontSize: '0.59rem',
             fontWeight: 800,
           }}
         >
@@ -1116,23 +1163,36 @@ function ScheduleEditor({
 
       <Box
         sx={{
-          overflowX: 'auto',
+          width: '100%',
+          maxWidth: '100%',
+          minWidth: 0,
+          overflow: 'hidden',
+          boxSizing: 'border-box',
         }}
       >
         <Box
           sx={{
-            minWidth: 700,
+            width: '100%',
+            maxWidth: '100%',
+            minWidth: 0,
             display: 'grid',
             gridTemplateColumns:
-              'repeat(7, minmax(90px, 1fr))',
-            gap: 0.55,
+              'repeat(7, minmax(0, 1fr))',
+            gap: 0.35,
+            overflow: 'hidden',
+            boxSizing: 'border-box',
           }}
         >
           {scheduleDates.map(
             (dateKey, index) => (
               <Box
                 key={dateKey}
-                sx={{ minWidth: 0 }}
+                sx={{
+                  width: '100%',
+                  maxWidth: '100%',
+                  minWidth: 0,
+                  overflow: 'hidden',
+                }}
               >
                 <Box
                   sx={{
@@ -1141,8 +1201,11 @@ function ScheduleEditor({
                     borderRadius: 0.8,
                     color: '#334155',
                     bgcolor: '#f1f5f9',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
                     textAlign: 'center',
-                    fontSize: '0.66rem',
+                    fontSize: '0.61rem',
                     fontWeight: 900,
                   }}
                 >
@@ -1170,21 +1233,34 @@ function ScheduleEditor({
                     )
                   }
                   sx={{
+                    width: '100%',
+                    maxWidth: '100%',
+                    minWidth: 0,
+                    overflow: 'hidden',
                     '& .MuiInputBase-root':
                       {
+                        width: '100%',
+                        maxWidth: '100%',
+                        minWidth: 0,
                         minHeight: 54,
                         alignItems:
                           'flex-start',
+                        boxSizing:
+                          'border-box',
                       },
                     '& .MuiInputBase-input':
                       {
-                        px: 0.65,
-                        py: 0.6,
+                        px: 0.25,
+                        py: 0.45,
+                        overflowWrap:
+                          'anywhere',
+                        wordBreak:
+                          'break-word',
                         textAlign:
                           'center',
                         fontSize:
-                          '0.67rem',
-                        lineHeight: 1.4,
+                          '0.61rem',
+                        lineHeight: 1.35,
                       },
                   }}
                 />
@@ -1212,21 +1288,30 @@ function OfficeInputCard({
     <Paper
       variant="outlined"
       sx={{
+        width: '100%',
+        maxWidth: '100%',
+        minWidth: 0,
         mb: 1,
         overflow: 'hidden',
+        boxSizing: 'border-box',
         borderColor: '#94a3b8',
         boxShadow: 'none',
       }}
     >
       <Box
         sx={{
+          width: '100%',
+          maxWidth: '100%',
+          minWidth: 0,
           px: 1,
           py: 0.8,
-          display: 'flex',
+          display: 'grid',
+          gridTemplateColumns:
+            'minmax(0, 1fr) auto',
           alignItems: 'center',
-          justifyContent:
-            'space-between',
-          gap: 1,
+          gap: 0.6,
+          overflow: 'hidden',
+          boxSizing: 'border-box',
           bgcolor: '#e2e8f0',
           borderBottom:
             '1px solid #94a3b8',
@@ -1265,10 +1350,13 @@ function OfficeInputCard({
           color="error"
           onClick={onClearOffice}
           sx={{
+            flexShrink: 0,
+            width: 64,
             minWidth: 64,
-            px: 0.65,
+            maxWidth: 64,
+            px: 0.3,
             whiteSpace: 'nowrap',
-            fontSize: '0.61rem',
+            fontSize: '0.59rem',
             fontWeight: 800,
           }}
         >
@@ -1278,9 +1366,14 @@ function OfficeInputCard({
 
       <Box
         sx={{
+          width: '100%',
+          maxWidth: '100%',
+          minWidth: 0,
           p: 0.95,
           display: 'grid',
           gap: 1.25,
+          overflow: 'hidden',
+          boxSizing: 'border-box',
         }}
       >
         {OFFICE_INPUT_SECTIONS.map(
@@ -1289,12 +1382,14 @@ function OfficeInputCard({
               key={section.title}
               sx={{
                 width: '100%',
+                maxWidth: '100%',
                 minWidth: 0,
                 p: 0.85,
                 border: SOFT_BORDER,
                 borderRadius: 1,
                 bgcolor: '#ffffff',
                 overflow: 'hidden',
+                boxSizing: 'border-box',
               }}
             >
               <Typography
@@ -1311,9 +1406,12 @@ function OfficeInputCard({
               <Box
                 sx={{
                   width: '100%',
+                  maxWidth: '100%',
                   minWidth: 0,
                   display: 'grid',
                   gap: 1.05,
+                  overflow: 'hidden',
+                  boxSizing: 'border-box',
                 }}
               >
                 {section.fields.map(
@@ -1357,10 +1455,15 @@ function OfficeInputCard({
 
         <Box
           sx={{
+            width: '100%',
+            maxWidth: '100%',
+            minWidth: 0,
             p: 0.85,
             border: SOFT_BORDER,
             borderRadius: 1,
             bgcolor: '#ffffff',
+            overflow: 'hidden',
+            boxSizing: 'border-box',
           }}
         >
           <ScheduleEditor
@@ -3480,12 +3583,17 @@ export default function WeeklyOverview({
 
         <Box
           sx={{
+            width: '100%',
+            maxWidth: '100%',
+            minWidth: 0,
             flex: 1,
             minHeight: 540,
             overflowY: 'auto',
+            overflowX: 'hidden',
             px: 1,
             py: 1,
             bgcolor: '#f8fafc',
+            boxSizing: 'border-box',
           }}
         >
           {TEMPLATE_PROJECTS.map(
