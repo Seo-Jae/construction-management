@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Box,
   Button,
@@ -10,6 +10,7 @@ import {
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import HistoricalDailyReportUpload from './HistoricalDailyReportUpload.jsx';
+import AdminDashboardReportPreview from './AdminDashboardReportPreview.jsx';
 
 export default function DailyReport({
   weekDays,
@@ -32,8 +33,31 @@ export default function DailyReport({
   userProfile,
   onHistoricalUploadComplete,
 }) {
+  const [
+    previewDateKey,
+    setPreviewDateKey,
+  ] = useState('');
+
+  const handleOpenPreview = (
+    dateKey,
+  ) => {
+    setPreviewDateKey(dateKey);
+  };
+
+  const handleClosePreview = () => {
+    setPreviewDateKey('');
+  };
+
+  const previewReport =
+    previewDateKey
+      ? savedData?.[
+          previewDateKey
+        ] || null
+      : null;
+
   return (
-    <Box
+    <>
+      <Box
       sx={{
         display: 'grid',
         gridTemplateColumns: 'repeat(4, minmax(0, 1fr))',
@@ -251,6 +275,34 @@ export default function DailyReport({
               </Box>
 
               <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                <Button
+                  onClick={() =>
+                    handleOpenPreview(
+                      day.date,
+                    )
+                  }
+                  variant="outlined"
+                  size="small"
+                  sx={{
+                    minWidth: 0,
+                    px: 1,
+                    py: 0.2,
+                    fontSize: '0.65rem',
+                    color: '#2563eb',
+                    borderColor: '#60a5fa',
+                    fontWeight: 900,
+                    bgcolor: '#eff6ff',
+                    '&:hover': {
+                      borderColor:
+                        '#2563eb',
+                      bgcolor:
+                        '#dbeafe',
+                    },
+                  }}
+                >
+                  미리보기
+                </Button>
+
                 {!closedStatus && (
                   <Button
                     onClick={() => handleOpenModal(day)}
@@ -425,6 +477,29 @@ export default function DailyReport({
           </Paper>
         );
       })}
-    </Box>
+      </Box>
+
+      <AdminDashboardReportPreview
+        open={
+          Boolean(
+            previewDateKey,
+          )
+        }
+        type="daily"
+        projectName={
+          userProfile
+            ?.project_name || ''
+        }
+        dateKey={
+          previewDateKey
+        }
+        report={
+          previewReport
+        }
+        onClose={
+          handleClosePreview
+        }
+      />
+    </>
   );
 }
