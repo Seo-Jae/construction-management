@@ -1964,6 +1964,8 @@ export default function DailyCompletionSummary({
                           : '#fbfdff',
                       '& td': {
                         height: 34,
+                        fontSize:
+                          '0.68rem',
                       },
                     }}
                   >
@@ -1978,7 +1980,7 @@ export default function DailyCompletionSummary({
                         color:
                           '#1e293b',
                         fontSize:
-                          '0.62rem',
+                          '0.66rem',
                         px: 0.45,
                       }}
                     >
@@ -2178,7 +2180,7 @@ export default function DailyCompletionSummary({
                                   ? 800
                                   : 400,
                               fontSize:
-                                '0.62rem',
+                                '0.66rem',
                               px: 0.35,
                               py: 0.62,
                             }}
