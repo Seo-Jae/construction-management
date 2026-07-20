@@ -280,6 +280,8 @@ const viewTitles = {
   'progress-daily': '일별 완료 집계',
   'progress-weekly': '주별 완료 집계',
   'progress-monthly': '월별 완료 집계',
+  'material-order': '자재발주작성',
+  'material-input-status': '자재투입현황',
   'report-weekly': '주간 업무 보고',
   'report-approval': '품의 보고',
   'report-outsourcing-approval': '외주 품의 보고',
@@ -2703,6 +2705,18 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             />
           )}
 
+
+          {currentView ===
+            'material-order' &&
+            activeProjectName && (
+              <ReportPlaceholder title="자재발주작성" />
+            )}
+
+          {currentView ===
+            'material-input-status' &&
+            activeProjectName && (
+              <ReportPlaceholder title="자재투입현황" />
+            )}
 
           {currentView === 'report-weekly' && activeProjectName && (
             <WeeklyReport

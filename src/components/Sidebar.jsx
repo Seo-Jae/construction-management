@@ -14,6 +14,7 @@ import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import AssignmentIcon from '@mui/icons-material/Assignment';
 import EngineeringIcon from '@mui/icons-material/Engineering';
 import AssessmentIcon from '@mui/icons-material/Assessment';
+import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { fetchPendingApprovalSummary } from '../utils/approvalQueries.js';
@@ -47,6 +48,17 @@ const progressMenus = [
   { value: 'progress-daily', label: '일별 완료 집계' },
   { value: 'progress-weekly', label: '주별 완료 집계' },
   { value: 'progress-monthly', label: '월별 완료 집계' },
+];
+
+const materialMenus = [
+  {
+    value: 'material-order',
+    label: '자재발주작성',
+  },
+  {
+    value: 'material-input-status',
+    label: '자재투입현황',
+  },
 ];
 
 const reportMenus = [
@@ -152,8 +164,20 @@ export default function Sidebar({
     'weekly-overview-archive',
   ].includes(currentView);
 
-  const isProgressView = currentView?.startsWith('progress-');
-  const isReportView = currentView?.startsWith('report-');
+  const isProgressView =
+    currentView?.startsWith(
+      'progress-',
+    );
+
+  const isMaterialView =
+    currentView?.startsWith(
+      'material-',
+    );
+
+  const isReportView =
+    currentView?.startsWith(
+      'report-',
+    );
 
   const [dailyOpen, setDailyOpen] = useState(isDailyView);
   const [
@@ -162,8 +186,26 @@ export default function Sidebar({
   ] = useState(
     isWeeklyOverviewView,
   );
-  const [progressOpen, setProgressOpen] = useState(isProgressView);
-  const [reportOpen, setReportOpen] = useState(isReportView);
+  const [
+    progressOpen,
+    setProgressOpen,
+  ] = useState(
+    isProgressView,
+  );
+
+  const [
+    materialOpen,
+    setMaterialOpen,
+  ] = useState(
+    isMaterialView,
+  );
+
+  const [
+    reportOpen,
+    setReportOpen,
+  ] = useState(
+    isReportView,
+  );
   const [approvalPendingCount, setApprovalPendingCount] =
     useState(0);
 
@@ -178,11 +220,21 @@ export default function Sidebar({
   }, [isWeeklyOverviewView]);
 
   useEffect(() => {
-    if (isProgressView) setProgressOpen(true);
+    if (isProgressView) {
+      setProgressOpen(true);
+    }
   }, [isProgressView]);
 
   useEffect(() => {
-    if (isReportView) setReportOpen(true);
+    if (isMaterialView) {
+      setMaterialOpen(true);
+    }
+  }, [isMaterialView]);
+
+  useEffect(() => {
+    if (isReportView) {
+      setReportOpen(true);
+    }
   }, [isReportView]);
 
   useEffect(() => {
@@ -578,6 +630,88 @@ export default function Sidebar({
           items={progressMenus}
           currentView={currentView}
           onViewChange={handleViewChange}
+        />
+      </Collapse>
+
+      <Tooltip
+        title={
+          drawerOpen
+            ? ''
+            : '자재관리'
+        }
+        placement="right"
+        arrow
+      >
+        <ListItemButton
+          selected={
+            isMaterialView
+          }
+          onClick={() =>
+            setMaterialOpen(
+              (previous) =>
+                !previous,
+            )
+          }
+          sx={topMenuSx(
+            isMaterialView,
+          )}
+        >
+          <ListItemIcon
+            sx={{
+              minWidth: 34,
+              color: 'inherit',
+              justifyContent:
+                'center',
+            }}
+          >
+            <Inventory2OutlinedIcon fontSize="small" />
+          </ListItemIcon>
+
+          <ListItemText
+            primary="자재관리"
+            primaryTypographyProps={{
+              noWrap: true,
+              fontSize: '0.8rem',
+              fontWeight:
+                isMaterialView
+                  ? 700
+                  : 500,
+            }}
+            sx={{
+              opacity:
+                drawerOpen
+                  ? 1
+                  : 0,
+            }}
+          />
+
+          {drawerOpen &&
+            (materialOpen ? (
+              <ExpandLessIcon fontSize="small" />
+            ) : (
+              <ExpandMoreIcon fontSize="small" />
+            ))}
+        </ListItemButton>
+      </Tooltip>
+
+      <Collapse
+        in={
+          drawerOpen &&
+          materialOpen
+        }
+        timeout="auto"
+        unmountOnExit
+      >
+        <SubMenuList
+          items={
+            materialMenus
+          }
+          currentView={
+            currentView
+          }
+          onViewChange={
+            handleViewChange
+          }
         />
       </Collapse>
 
