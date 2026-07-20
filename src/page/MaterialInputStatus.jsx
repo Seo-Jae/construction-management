@@ -451,16 +451,39 @@ const formatMoney = (
 const formatShortDate = (
   value,
 ) => {
-  const text =
-    String(value || '').trim();
-
-  if (!text) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === ''
+  ) {
     return '-';
   }
 
+  if (
+    value instanceof Date &&
+    !Number.isNaN(
+      value.getTime(),
+    )
+  ) {
+    return [
+      String(
+        value.getFullYear(),
+      ).slice(-2),
+      String(
+        value.getMonth() + 1,
+      ).padStart(2, '0'),
+      String(
+        value.getDate(),
+      ).padStart(2, '0'),
+    ].join('-');
+  }
+
+  const text =
+    String(value).trim();
+
   const matched =
     text.match(
-      /^(\d{4})-(\d{2})-(\d{2})$/,
+      /(\d{4})-(\d{1,2})-(\d{1,2})/,
     );
 
   if (!matched) {
@@ -469,8 +492,12 @@ const formatShortDate = (
 
   return [
     matched[1].slice(-2),
-    matched[2],
-    matched[3],
+    String(
+      matched[2],
+    ).padStart(2, '0'),
+    String(
+      matched[3],
+    ).padStart(2, '0'),
   ].join('-');
 };
 
@@ -3200,8 +3227,15 @@ export default function MaterialInputStatus({
 
                         <TableCell
                           sx={{
+                            width: 82,
+                            minWidth: 82,
+                            maxWidth: 82,
                             whiteSpace:
                               'nowrap',
+                            wordBreak:
+                              'keep-all',
+                            fontVariantNumeric:
+                              'tabular-nums',
                           }}
                         >
                           {formatShortDate(
@@ -3300,6 +3334,15 @@ export default function MaterialInputStatus({
                               900,
                             whiteSpace:
                               'nowrap',
+                            ...(
+                              index <= 1
+                                ? {
+                                    width: 82,
+                                    minWidth: 82,
+                                    maxWidth: 82,
+                                  }
+                                : {}
+                            ),
                           }}
                         >
                           {header}
@@ -3409,8 +3452,15 @@ export default function MaterialInputStatus({
                       >
                         <TableCell
                           sx={{
+                            width: 82,
+                            minWidth: 82,
+                            maxWidth: 82,
                             whiteSpace:
                               'nowrap',
+                            wordBreak:
+                              'keep-all',
+                            fontVariantNumeric:
+                              'tabular-nums',
                           }}
                         >
                           {formatShortDate(
@@ -3420,8 +3470,15 @@ export default function MaterialInputStatus({
 
                         <TableCell
                           sx={{
+                            width: 82,
+                            minWidth: 82,
+                            maxWidth: 82,
                             whiteSpace:
                               'nowrap',
+                            wordBreak:
+                              'keep-all',
+                            fontVariantNumeric:
+                              'tabular-nums',
                           }}
                         >
                           {formatShortDate(
