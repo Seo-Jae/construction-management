@@ -1765,6 +1765,9 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const suppressedEnterCellRef =
     useRef('');
 
+  const workerGridInputRefs =
+    useRef(new Map());
+
   const getWorkerCellKey = (
     rowIndex,
     columnIndex,
@@ -1777,50 +1780,108 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     event.key === 'Enter' ||
     event.code === 'NumpadEnter';
 
+  const setWorkerGridInputRef = (
+    rowIndex,
+    columnIndex,
+    node,
+  ) => {
+    const key =
+      getWorkerCellKey(
+        rowIndex,
+        columnIndex,
+      );
+
+    if (node) {
+      workerGridInputRefs.current.set(
+        key,
+        node,
+      );
+      return;
+    }
+
+    workerGridInputRefs.current.delete(
+      key,
+    );
+  };
+
+  const getWorkerGridInput = (
+    rowIndex,
+    columnIndex,
+  ) => {
+    const key =
+      getWorkerCellKey(
+        rowIndex,
+        columnIndex,
+      );
+
+    const registeredInput =
+      workerGridInputRefs.current.get(
+        key,
+      );
+
+    if (
+      registeredInput &&
+      typeof registeredInput.focus ===
+        'function'
+    ) {
+      return registeredInput;
+    }
+
+    return document.querySelector(
+      `[data-worker-grid-input="true"]` +
+        `[data-worker-row="${rowIndex}"]` +
+        `[data-worker-column="${columnIndex}"]`,
+    );
+  };
+
   const focusWorkerGridCell = (
     rowIndex,
     columnIndex,
   ) => {
-    const target =
-      document.querySelector(
-        `[data-worker-grid-input="true"]` +
-          `[data-worker-row="${rowIndex}"]` +
-          `[data-worker-column="${columnIndex}"]`,
-      );
+    const applyFocus = () => {
+      const target =
+        getWorkerGridInput(
+          rowIndex,
+          columnIndex,
+        );
 
-    if (
-      !target ||
-      typeof target.focus !==
-        'function'
-    ) {
-      return false;
-    }
+      if (
+        !target ||
+        typeof target.focus !==
+          'function'
+      ) {
+        return false;
+      }
 
-    /*
-      MUI 입력창과 한글 조합이 완전히 정리된 뒤
-      포커스를 옮기기 위해 두 단계로 지연합니다.
-    */
+      target.focus({
+        preventScroll: true,
+      });
+
+      target.scrollIntoView?.({
+        block: 'nearest',
+        inline: 'nearest',
+      });
+
+      if (
+        typeof target.select ===
+          'function'
+      ) {
+        target.select();
+      }
+
+      return true;
+    };
+
+    const focusedImmediately =
+      applyFocus();
+
     requestAnimationFrame(() => {
       setTimeout(() => {
-        target.focus({
-          preventScroll: true,
-        });
-
-        target.scrollIntoView?.({
-          block: 'nearest',
-          inline: 'nearest',
-        });
-
-        if (
-          typeof target.select ===
-          'function'
-        ) {
-          target.select();
-        }
+        applyFocus();
       }, 0);
     });
 
-    return true;
+    return focusedImmediately;
   };
 
   const handleWorkerGridKeyDown = (
@@ -1942,6 +2003,28 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     focusWorkerGridCell(
       rowIndex + 1,
       0,
+    );
+  };
+
+  const handleWorkerNameKeyDown = (
+    event,
+    rowIndex,
+  ) => {
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      event.stopPropagation();
+
+      focusWorkerGridCell(
+        rowIndex,
+        event.shiftKey ? 0 : 2,
+      );
+      return;
+    }
+
+    handleWorkerGridKeyDown(
+      event,
+      rowIndex,
+      1,
     );
   };
 
@@ -2936,16 +3019,33 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                     근로자
                   </Typography>
 
-                  <Typography
+                  <Box
                     sx={{
                       mt: 0.15,
-                      color: '#64748b',
-                      fontSize: '0.62rem',
-                      fontWeight: 700,
                     }}
                   >
-                    TAB: 오른쪽 이동 · ENTER: 아래 이동 · 숫자키패드 Enter 지원
-                  </Typography>
+                    <Typography
+                      sx={{
+                        color: '#64748b',
+                        fontSize: '0.62rem',
+                        fontWeight: 700,
+                        lineHeight: 1.35,
+                      }}
+                    >
+                      TAB / Shift+TAB: 좌우 이동 · ↑↓: 같은 열의 위·아래 행 이동 · ENTER / 숫자패드 Enter: 아래 행 이동
+                    </Typography>
+
+                    <Typography
+                      sx={{
+                        color: '#94a3b8',
+                        fontSize: '0.57rem',
+                        fontWeight: 700,
+                        lineHeight: 1.3,
+                      }}
+                    >
+                      구분·공정 목록이 열려 있을 때 ↑↓ 키는 목록 항목 선택에 사용됩니다.
+                    </Typography>
+                  </Box>
                 </Box>
 
                 <Box
@@ -3176,6 +3276,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                                     ...params.InputProps,
                                     disableUnderline: true,
                                   }}
+                                  inputRef={(node) =>
+                                    setWorkerGridInputRef(
+                                      index,
+                                      0,
+                                      node,
+                                    )
+                                  }
                                   inputProps={{
                                     ...params.inputProps,
                                     className: `${
@@ -3217,16 +3324,22 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                             <InputBase
                               className="excel-input"
                               value={row.name}
+                              inputRef={(node) =>
+                                setWorkerGridInputRef(
+                                  index,
+                                  1,
+                                  node,
+                                )
+                              }
                               inputProps={{
                                 'data-worker-grid-input': 'true',
                                 'data-worker-row': index,
                                 'data-worker-column': 1,
                               }}
                               onKeyDown={(event) =>
-                                handleWorkerGridKeyDown(
+                                handleWorkerNameKeyDown(
                                   event,
                                   index,
-                                  1,
                                 )
                               }
                               onKeyUp={(event) =>
@@ -3276,6 +3389,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                                     ...params.InputProps,
                                     disableUnderline: true,
                                   }}
+                                  inputRef={(node) =>
+                                    setWorkerGridInputRef(
+                                      index,
+                                      2,
+                                      node,
+                                    )
+                                  }
                                   inputProps={{
                                     ...params.inputProps,
                                     className: `${
@@ -3317,6 +3437,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                             <InputBase
                               className="excel-input"
                               value={row.location}
+                              inputRef={(node) =>
+                                setWorkerGridInputRef(
+                                  index,
+                                  3,
+                                  node,
+                                )
+                              }
                               inputProps={{
                                 'data-worker-grid-input': 'true',
                                 'data-worker-row': index,
@@ -3359,6 +3486,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                             <InputBase
                               className="excel-input"
                               value={row.workContent}
+                              inputRef={(node) =>
+                                setWorkerGridInputRef(
+                                  index,
+                                  4,
+                                  node,
+                                )
+                              }
                               inputProps={{
                                 'data-worker-grid-input': 'true',
                                 'data-worker-row': index,
@@ -3401,6 +3535,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                               className="excel-input"
                               type="number"
                               value={row.day}
+                              inputRef={(node) =>
+                                setWorkerGridInputRef(
+                                  index,
+                                  5,
+                                  node,
+                                )
+                              }
                               inputProps={{
                                 min: 0,
                                 step: 0.5,
@@ -3444,6 +3585,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                               className="excel-input"
                               type="number"
                               value={row.night}
+                              inputRef={(node) =>
+                                setWorkerGridInputRef(
+                                  index,
+                                  6,
+                                  node,
+                                )
+                              }
                               inputProps={{
                                 min: 0,
                                 step: 0.5,
