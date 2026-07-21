@@ -1856,6 +1856,50 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       return;
     }
 
+    if (
+      event.key === 'ArrowUp' ||
+      event.key === 'ArrowDown'
+    ) {
+      const isAutocompleteOpen =
+        event.currentTarget?.getAttribute(
+          'aria-expanded',
+        ) === 'true' ||
+        event.target?.getAttribute(
+          'aria-expanded',
+        ) === 'true';
+
+      /*
+        구분·공정 자동완성 목록이 열려 있으면
+        방향키는 목록 항목 이동에 그대로 사용합니다.
+      */
+      if (isAutocompleteOpen) {
+        return;
+      }
+
+      const nextRowIndex =
+        event.key === 'ArrowUp'
+          ? rowIndex - 1
+          : rowIndex + 1;
+
+      if (
+        nextRowIndex < 0 ||
+        nextRowIndex >=
+          workerRows.length
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      focusWorkerGridCell(
+        nextRowIndex,
+        columnIndex,
+      );
+
+      return;
+    }
+
     if (event.key !== 'Tab') {
       return;
     }
@@ -1899,6 +1943,78 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       rowIndex + 1,
       0,
     );
+  };
+
+  const handleWorkerAutocompleteKeyDown = (
+    event,
+    rowIndex,
+    columnIndex,
+    muiKeyDown,
+  ) => {
+    const popupWasOpen =
+      event.currentTarget?.getAttribute(
+        'aria-expanded',
+      ) === 'true' ||
+      event.target?.getAttribute(
+        'aria-expanded',
+      ) === 'true';
+
+    const isVerticalArrow =
+      event.key === 'ArrowUp' ||
+      event.key === 'ArrowDown';
+
+    /*
+      Tab은 자동완성 내부 처리보다 먼저 가로 이동시킵니다.
+
+      자동완성 목록이 닫힌 상태의 ↑↓도
+      목록을 새로 열지 않고 같은 열의 위·아래 행으로 이동합니다.
+    */
+    if (
+      event.key === 'Tab' ||
+      (
+        isVerticalArrow &&
+        !popupWasOpen
+      )
+    ) {
+      handleWorkerGridKeyDown(
+        event,
+        rowIndex,
+        columnIndex,
+      );
+
+      if (event.defaultPrevented) {
+        return;
+      }
+    }
+
+    muiKeyDown?.(event);
+
+    if (
+      isEnterEvent(event) &&
+      popupWasOpen
+    ) {
+      suppressedEnterCellRef.current =
+        getWorkerCellKey(
+          rowIndex,
+          columnIndex,
+        );
+    }
+
+    /*
+      Enter와 일반 키는 기존 처리 유지.
+      Tab 및 ↑↓는 위에서 이미 처리했거나
+      열린 자동완성 목록이 처리했으므로 중복 호출하지 않습니다.
+    */
+    if (
+      event.key !== 'Tab' &&
+      !isVerticalArrow
+    ) {
+      handleWorkerGridKeyDown(
+        event,
+        rowIndex,
+        columnIndex,
+      );
+    }
   };
 
   const handleWorkerGridKeyUp = (
@@ -3069,34 +3185,15 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                                     'data-worker-row': index,
                                     'data-worker-column': 0,
                                   }}
-                                  onKeyDown={(event) => {
-                                    const popupWasOpen =
-                                      event.currentTarget?.getAttribute(
-                                        'aria-expanded',
-                                      ) === 'true' ||
-                                      event.target?.getAttribute(
-                                        'aria-expanded',
-                                      ) === 'true';
-
-                                    params.inputProps?.onKeyDown?.(event);
-
-                                    if (
-                                      isEnterEvent(event) &&
-                                      popupWasOpen
-                                    ) {
-                                      suppressedEnterCellRef.current =
-                                        getWorkerCellKey(
-                                          index,
-                                          0,
-                                        );
-                                    }
-
-                                    handleWorkerGridKeyDown(
+                                  onKeyDown={(event) =>
+                                    handleWorkerAutocompleteKeyDown(
                                       event,
                                       index,
                                       0,
-                                    );
-                                  }}
+                                      params.inputProps
+                                        ?.onKeyDown,
+                                    )
+                                  }
                                   onKeyUp={(event) =>
                                     handleWorkerGridKeyUp(
                                       event,
@@ -3188,34 +3285,15 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                                     'data-worker-row': index,
                                     'data-worker-column': 2,
                                   }}
-                                  onKeyDown={(event) => {
-                                    const popupWasOpen =
-                                      event.currentTarget?.getAttribute(
-                                        'aria-expanded',
-                                      ) === 'true' ||
-                                      event.target?.getAttribute(
-                                        'aria-expanded',
-                                      ) === 'true';
-
-                                    params.inputProps?.onKeyDown?.(event);
-
-                                    if (
-                                      isEnterEvent(event) &&
-                                      popupWasOpen
-                                    ) {
-                                      suppressedEnterCellRef.current =
-                                        getWorkerCellKey(
-                                          index,
-                                          2,
-                                        );
-                                    }
-
-                                    handleWorkerGridKeyDown(
+                                  onKeyDown={(event) =>
+                                    handleWorkerAutocompleteKeyDown(
                                       event,
                                       index,
                                       2,
-                                    );
-                                  }}
+                                      params.inputProps
+                                        ?.onKeyDown,
+                                    )
+                                  }
                                   onKeyUp={(event) =>
                                     handleWorkerGridKeyUp(
                                       event,
