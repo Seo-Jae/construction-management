@@ -64,10 +64,26 @@ const materialMenus = [
 ];
 
 const reportMenus = [
-  { value: 'report-weekly', label: '주간 업무 보고' },
-  { value: 'report-approval', label: '품의 보고' },
-  { value: 'report-outsourcing-approval', label: '외주 품의 보고' },
-  { value: 'report-accident', label: '사고 경위 보고' },
+  {
+    value: 'report-weekly',
+    label: '주간 업무 보고',
+  },
+  {
+    value: 'report-approval',
+    label: '품의 보고',
+  },
+  {
+    value: 'report-outsourcing-approval',
+    label: '외주 품의 보고',
+    disabled: true,
+    statusLabel: '준비중',
+  },
+  {
+    value: 'report-accident',
+    label: '사고 경위 보고',
+    disabled: true,
+    statusLabel: '준비중',
+  },
 ];
 
 const topMenuSx = (selected) => ({
