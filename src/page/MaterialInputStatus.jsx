@@ -905,6 +905,97 @@ const formatMoney = (
     0,
   )}원`;
 
+const getRecordRecalculatedTotal = (
+  record,
+) => {
+  const supplyValue =
+    record?.supply_amount ??
+    record?.supplyAmount;
+
+  const vatValue =
+    record?.vat_amount ??
+    record?.vatAmount;
+
+  const hasSupplyOrVat =
+    supplyValue !== null &&
+    supplyValue !== undefined ||
+    vatValue !== null &&
+    vatValue !== undefined;
+
+  if (hasSupplyOrVat) {
+    return (
+      (
+        Number(
+          supplyValue,
+        ) || 0
+      ) +
+      (
+        Number(
+          vatValue,
+        ) || 0
+      )
+    );
+  }
+
+  const storedValue =
+    record
+      ?.calculated_total_amount ??
+    record
+      ?.calculatedTotalAmount;
+
+  if (
+    storedValue === null ||
+    storedValue === undefined ||
+    storedValue === ''
+  ) {
+    return null;
+  }
+
+  return (
+    Number(
+      storedValue,
+    ) || 0
+  );
+};
+
+const getSupplierIssueReasons = (
+  record,
+) => {
+  const reasons = [];
+
+  if (
+    record?.amount_mismatch
+  ) {
+    reasons.push(
+      '원본 지출합계와 공급가액+부가세가 다릅니다.',
+    );
+  }
+
+  if (
+    record?.review_required
+  ) {
+    reasons.push(
+      '업로드 당시 입고일 확인 대상으로 분류됐습니다.',
+    );
+  }
+
+  if (
+    record?.arrival_date_status &&
+    record.arrival_date_status !==
+      'confirmed'
+  ) {
+    reasons.push(
+      `입고일 상태: ${
+        DATE_STATUS_LABELS[
+          record.arrival_date_status
+        ] || '기타'
+      }`,
+    );
+  }
+
+  return reasons;
+};
+
 const formatShortDate = (
   value,
 ) => {
@@ -1573,9 +1664,10 @@ const aggregateItemRows = ({
 
       const amount =
         amountIncluded
-          ? Number(
-              record.calculated_total_amount ||
-                0,
+          ? (
+              getRecordRecalculatedTotal(
+                record,
+              ) || 0
             )
           : 0;
 
@@ -1705,6 +1797,7 @@ const aggregateSupplierMonthlyRows = ({
           excludedAmountCount: 0,
           mismatchCount: 0,
           reviewCount: 0,
+          issueCount: 0,
         });
       }
 
@@ -1733,11 +1826,9 @@ const aggregateSupplierMonthlyRows = ({
               0,
           );
 
-        target.monthlyTotalAmount +=
-          Number(
-            record.calculated_total_amount ||
-              0,
-          );
+        target.monthlyTotalAmount =
+          target.monthlySupplyAmount +
+          target.monthlyVatAmount;
       } else {
         target.excludedAmountCount +=
           1;
@@ -1754,6 +1845,16 @@ const aggregateSupplierMonthlyRows = ({
           'confirmed'
       ) {
         target.reviewCount +=
+          1;
+      }
+
+      if (
+        record.amount_mismatch ||
+        record.review_required ||
+        record.arrival_date_status !==
+          'confirmed'
+      ) {
+        target.issueCount +=
           1;
       }
     },
@@ -1799,8 +1900,9 @@ const aggregateSupplierMonthlyRows = ({
       cumulative.vatAmount +=
         row.monthlyVatAmount;
 
-      cumulative.totalAmount +=
-        row.monthlyTotalAmount;
+      cumulative.totalAmount =
+        cumulative.supplyAmount +
+        cumulative.vatAmount;
 
       cumulative.rowCount +=
         row.rowCount;
@@ -1932,6 +2034,16 @@ export default function MaterialInputStatus({
     issueDialogOpen,
     setIssueDialogOpen,
   ] = useState(false);
+
+  const [
+    supplierIssueDialogOpen,
+    setSupplierIssueDialogOpen,
+  ] = useState(false);
+
+  const [
+    selectedSupplierIssue,
+    setSelectedSupplierIssue,
+  ] = useState(null);
 
   const [
     dateReviewDialogOpen,
@@ -2375,6 +2487,111 @@ export default function MaterialInputStatus({
       ],
     );
 
+  const supplierPeriodDetailRows =
+    useMemo(
+      () =>
+        records
+          .filter(
+            (record) => {
+              const monthKey =
+                getRecordMonthKey(
+                  record,
+                );
+
+              return (
+                monthKey &&
+                monthKey >=
+                  supplierPeriodStart &&
+                monthKey <=
+                  supplierPeriodEnd &&
+                (
+                  !selectedSupplier ||
+                  record.supplier ===
+                    selectedSupplier
+                )
+              );
+            },
+          )
+          .sort(
+            (first, second) =>
+              getRecordMonthKey(
+                first,
+              ).localeCompare(
+                getRecordMonthKey(
+                  second,
+                ),
+              ) ||
+              String(
+                first.arrival_date ||
+                  '',
+              ).localeCompare(
+                String(
+                  second.arrival_date ||
+                    '',
+                ),
+              ) ||
+              Number(
+                first.source_row ||
+                  0,
+              ) -
+                Number(
+                  second.source_row ||
+                    0,
+                ),
+          ),
+      [
+        records,
+        selectedSupplier,
+        supplierPeriodEnd,
+        supplierPeriodStart,
+      ],
+    );
+
+  const selectedSupplierIssueRows =
+    useMemo(
+      () => {
+        if (
+          !selectedSupplierIssue
+        ) {
+          return [];
+        }
+
+        return records
+          .filter(
+            (record) =>
+              record.supplier ===
+                selectedSupplierIssue
+                  .supplier &&
+              getRecordMonthKey(
+                record,
+              ) ===
+                selectedSupplierIssue
+                  .monthKey &&
+              (
+                record.amount_mismatch ||
+                record.review_required ||
+                record.arrival_date_status !==
+                  'confirmed'
+              ),
+          )
+          .sort(
+            (first, second) =>
+              Number(
+                first.source_row ||
+                  0,
+              ) -
+              Number(
+                second.source_row ||
+                  0,
+              ),
+          );
+      },
+      [
+        records,
+        selectedSupplierIssue,
+      ],
+    );
+
   const supplierMonthlyRows =
     useMemo(
       () =>
@@ -2427,8 +2644,7 @@ export default function MaterialInputStatus({
                 row.excludedAmountCount,
               issueCount:
                 result.issueCount +
-                row.mismatchCount +
-                row.reviewCount,
+                row.issueCount,
               supplierCount:
                 supplierSet.size,
             };
@@ -2512,9 +2728,11 @@ export default function MaterialInputStatus({
                   record.include_in_amount ===
                   false
                     ? 0
-                    : Number(
-                        record.calculated_total_amount,
-                      ) || 0
+                    : (
+                        getRecordRecalculatedTotal(
+                          record,
+                        ) || 0
+                      )
                 ),
             };
           },
@@ -2559,16 +2777,18 @@ export default function MaterialInputStatus({
               pricedRowCount:
                 result.pricedRowCount +
                 (
-                  record.calculated_total_amount !==
-                  null
+                  getRecordRecalculatedTotal(
+                    record,
+                  ) !== null
                     ? 1
                     : 0
                 ),
               unpricedRowCount:
                 result.unpricedRowCount +
                 (
-                  record.calculated_total_amount ===
-                  null
+                  getRecordRecalculatedTotal(
+                    record,
+                  ) === null
                     ? 1
                     : 0
                 ),
@@ -2609,9 +2829,11 @@ export default function MaterialInputStatus({
                 result.totalAmount +
                 (
                   includeAmount
-                    ? Number(
-                        record.calculated_total_amount,
-                      ) || 0
+                    ? (
+                        getRecordRecalculatedTotal(
+                          record,
+                        ) || 0
+                      )
                     : 0
                 ),
               mismatchCount:
@@ -3225,7 +3447,9 @@ export default function MaterialInputStatus({
               raw_total_amount:
                 record.rawTotalAmount,
               calculated_total_amount:
-                record.calculatedTotalAmount,
+                getRecordRecalculatedTotal(
+                  record,
+                ),
               amount_mismatch:
                 record.amountMismatch,
               note:
@@ -3518,8 +3742,8 @@ export default function MaterialInputStatus({
                 totalAmount:
                   result.totalAmount +
                   (
-                    Number(
-                      record.calculated_total_amount,
+                    getRecordRecalculatedTotal(
+                      record,
                     ) || 0
                   ),
               }),
@@ -3643,8 +3867,7 @@ export default function MaterialInputStatus({
               row.cumulativeTotalAmount,
               row.rowCount,
               row.excludedAmountCount,
-              row.mismatchCount +
-                row.reviewCount,
+              row.issueCount,
             ]);
           },
         );
@@ -3686,6 +3909,160 @@ export default function MaterialInputStatus({
               '#,##0';
           },
         );
+
+        const detailWorksheet =
+          workbook.addWorksheet(
+            '월 원본 상세',
+          );
+
+        detailWorksheet.addRow([
+          '엑셀행',
+          '기준월',
+          '입고일',
+          '발주일',
+          '일자상태',
+          '금액포함',
+          '업체',
+          '품명',
+          '규격',
+          '단위',
+          '수량',
+          '단가',
+          '공급가액',
+          '부가세',
+          '재계산 합계',
+          '원본 합계',
+          '확인내용',
+          '비고',
+        ]);
+
+        supplierPeriodDetailRows.forEach(
+          (record) => {
+            detailWorksheet.addRow([
+              record.source_row,
+              getRecordMonthKey(
+                record,
+              ),
+              formatShortDate(
+                record.arrival_date,
+              ),
+              formatShortDate(
+                record.order_date,
+              ),
+              DATE_STATUS_LABELS[
+                record.arrival_date_status ||
+                  'confirmed'
+              ] || '기타',
+              record.include_in_amount ===
+                false
+                ? '제외'
+                : '포함',
+              record.supplier || '',
+              record.raw_item_name || '',
+              record.raw_specification || '',
+              record.raw_unit || '',
+              record.quantity,
+              record.unit_price,
+              record.supply_amount,
+              record.vat_amount,
+              getRecordRecalculatedTotal(
+                record,
+              ),
+              record.raw_total_amount,
+              getSupplierIssueReasons(
+                record,
+              ).join(' / '),
+              record.note || '',
+            ]);
+          },
+        );
+
+        const detailTotalRow =
+          detailWorksheet.addRow([
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '',
+            '선택기간 합계',
+            '',
+            '',
+            '',
+            '',
+            supplierPeriodSummary
+              .supplyAmount,
+            supplierPeriodSummary
+              .vatAmount,
+            supplierPeriodSummary
+              .totalAmount,
+            '',
+            '',
+            '',
+          ]);
+
+        detailTotalRow.font = {
+          bold: true,
+        };
+
+        detailWorksheet.columns.forEach(
+          (
+            column,
+            index,
+          ) => {
+            column.width =
+              [
+                10,
+                12,
+                11,
+                11,
+                12,
+                10,
+                24,
+                28,
+                30,
+                10,
+                12,
+                14,
+                18,
+                16,
+                18,
+                18,
+                34,
+                30,
+              ][index] || 14;
+          },
+        );
+
+        [
+          11,
+          12,
+          13,
+          14,
+          15,
+          16,
+        ].forEach(
+          (columnNumber) => {
+            detailWorksheet.getColumn(
+              columnNumber,
+            ).numFmt =
+              '#,##0';
+          },
+        );
+
+        detailWorksheet.getRow(
+          1,
+        ).font = {
+          bold: true,
+        };
+
+        detailWorksheet.views = [
+          {
+            state: 'frozen',
+            ySplit: 1,
+          },
+        ];
 
         downloadSuffix =
           `업체별월누계_${supplierPeriodStart}_${supplierPeriodEnd}`;
@@ -4876,16 +5253,33 @@ export default function MaterialInputStatus({
                         </TableCell>
 
                         <TableCell align="right">
-                          {row.mismatchCount +
-                            row.reviewCount >
+                          {row.issueCount >
                           0 ? (
                             <Chip
                               size="small"
                               color="warning"
+                              clickable
                               label={
-                                row.mismatchCount +
-                                row.reviewCount
+                                row.issueCount
                               }
+                              onClick={() => {
+                                setSelectedSupplierIssue({
+                                  supplier:
+                                    row.supplier,
+                                  monthKey:
+                                    row.monthKey,
+                                });
+
+                                setSupplierIssueDialogOpen(
+                                  true,
+                                );
+                              }}
+                              sx={{
+                                cursor:
+                                  'pointer',
+                                fontWeight:
+                                  900,
+                              }}
                             />
                           ) : (
                             '-'
@@ -5481,11 +5875,14 @@ export default function MaterialInputStatus({
                             fontWeight: 900,
                           }}
                         >
-                          {record.calculated_total_amount ===
-                          null
+                          {getRecordRecalculatedTotal(
+                            record,
+                          ) === null
                             ? '-'
                             : formatMoney(
-                                record.calculated_total_amount,
+                                getRecordRecalculatedTotal(
+                                  record,
+                                ),
                               )}
                         </TableCell>
 
@@ -5588,6 +5985,278 @@ export default function MaterialInputStatus({
       >
         기성청구 참고금액은 입고일 기준으로 집계하며, 원본 지출합계가 잘못된 행은 공급가액과 부가세를 더한 재계산 합계를 사용합니다. 발주일은 참고정보로 별도 보관됩니다.
       </Alert>
+
+      <Dialog
+        open={
+          supplierIssueDialogOpen
+        }
+        onClose={() =>
+          setSupplierIssueDialogOpen(
+            false,
+          )
+        }
+        fullWidth
+        maxWidth="xl"
+      >
+        <DialogTitle
+          sx={{
+            fontWeight: 900,
+          }}
+        >
+          {selectedSupplierIssue
+            ? `${selectedSupplierIssue.supplier} · ${formatMonthLabel(
+                selectedSupplierIssue.monthKey,
+              )} 확인 필요 ${selectedSupplierIssueRows.length.toLocaleString()}건`
+            : '업체 확인 필요 내역'}
+        </DialogTitle>
+
+        <DialogContent
+          dividers
+        >
+          <Alert
+            severity="warning"
+            sx={{
+              mb: 1,
+            }}
+          >
+            원본 지출합계 불일치, 입고일 검토 대상 또는 미확정·이월·입고예정 상태의 행입니다. 각 행의 확인내용을 검토해주세요.
+          </Alert>
+
+          <TableContainer
+            sx={{
+              maxHeight: 520,
+              border:
+                '1px solid #e2e8f0',
+            }}
+          >
+            <Table
+              stickyHeader
+              size="small"
+              sx={{
+                ...tableVerticalBorderSx,
+                ...COMPACT_TABLE_SX,
+              }}
+            >
+              <TableHead>
+                <TableRow>
+                  {[
+                    '엑셀행',
+                    '입고일',
+                    '일자상태',
+                    '품명',
+                    '규격',
+                    '공급가액',
+                    '부가세',
+                    '원본 합계',
+                    '재계산 합계',
+                    '금액포함',
+                    '확인내용',
+                    '수정',
+                  ].map(
+                    (
+                      header,
+                      index,
+                    ) => (
+                      <TableCell
+                        key={header}
+                        align={
+                          index >= 5 &&
+                          index <= 9
+                            ? 'right'
+                            : 'left'
+                        }
+                        sx={{
+                          bgcolor:
+                            '#f8fafc',
+                          fontWeight:
+                            900,
+                          whiteSpace:
+                            'nowrap',
+                        }}
+                      >
+                        {header}
+                      </TableCell>
+                    ),
+                  )}
+                </TableRow>
+              </TableHead>
+
+              <TableBody>
+                {selectedSupplierIssueRows.map(
+                  (record) => (
+                    <TableRow
+                      key={record.id}
+                      sx={{
+                        bgcolor:
+                          record.amount_mismatch
+                            ? '#fff7ed'
+                            : '#fffbea',
+                      }}
+                    >
+                      <TableCell>
+                        {record.source_row ||
+                          '-'}
+                      </TableCell>
+
+                      <TableCell>
+                        {formatShortDate(
+                          record.arrival_date,
+                        )}
+                      </TableCell>
+
+                      <TableCell>
+                        {DATE_STATUS_LABELS[
+                          record.arrival_date_status ||
+                            'confirmed'
+                        ] || '기타'}
+                      </TableCell>
+
+                      <TableCell
+                        sx={{
+                          minWidth: 150,
+                        }}
+                      >
+                        {record.raw_item_name ||
+                          '-'}
+                      </TableCell>
+
+                      <TableCell
+                        sx={{
+                          minWidth: 180,
+                        }}
+                      >
+                        {record.raw_specification ||
+                          '-'}
+                      </TableCell>
+
+                      <TableCell align="right">
+                        {record.supply_amount ===
+                        null
+                          ? '-'
+                          : formatMoney(
+                              record.supply_amount,
+                            )}
+                      </TableCell>
+
+                      <TableCell align="right">
+                        {record.vat_amount ===
+                        null
+                          ? '-'
+                          : formatMoney(
+                              record.vat_amount,
+                            )}
+                      </TableCell>
+
+                      <TableCell
+                        align="right"
+                        sx={{
+                          color:
+                            record.amount_mismatch
+                              ? '#dc2626'
+                              : 'inherit',
+                        }}
+                      >
+                        {record.raw_total_amount ===
+                        null
+                          ? '-'
+                          : formatMoney(
+                              record.raw_total_amount,
+                            )}
+                      </TableCell>
+
+                      <TableCell
+                        align="right"
+                        sx={{
+                          color:
+                            '#1d4ed8',
+                          fontWeight: 900,
+                        }}
+                      >
+                        {getRecordRecalculatedTotal(
+                          record,
+                        ) === null
+                          ? '-'
+                          : formatMoney(
+                              getRecordRecalculatedTotal(
+                                record,
+                              ),
+                            )}
+                      </TableCell>
+
+                      <TableCell align="right">
+                        {record.include_in_amount ===
+                        false
+                          ? '제외'
+                          : '포함'}
+                      </TableCell>
+
+                      <TableCell
+                        sx={{
+                          minWidth: 320,
+                          whiteSpace:
+                            'normal',
+                        }}
+                      >
+                        {getSupplierIssueReasons(
+                          record,
+                        ).join(' / ') ||
+                          '-'}
+                      </TableCell>
+
+                      <TableCell>
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() => {
+                            setSupplierIssueDialogOpen(
+                              false,
+                            );
+
+                            handleOpenRecordEdit(
+                              record,
+                            );
+                          }}
+                        >
+                          수정
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ),
+                )}
+
+                {selectedSupplierIssueRows.length ===
+                  0 && (
+                  <TableRow>
+                    <TableCell
+                      colSpan={12}
+                      align="center"
+                      sx={{
+                        py: 4,
+                        color:
+                          '#94a3b8',
+                      }}
+                    >
+                      확인이 필요한 자료가 없습니다.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={() =>
+              setSupplierIssueDialogOpen(
+                false,
+              )
+            }
+          >
+            닫기
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={dateReviewDialogOpen}
