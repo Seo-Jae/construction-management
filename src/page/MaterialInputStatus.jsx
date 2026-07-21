@@ -585,6 +585,22 @@ const getMonthRange = (
   };
 };
 
+const formatMonthLabel = (
+  monthKey,
+) => {
+  const [
+    year,
+    month,
+  ] = String(monthKey || '')
+    .split('-');
+
+  if (!year || !month) {
+    return '-';
+  }
+
+  return `${year}년 ${Number(month)}월`;
+};
+
 const getRecordMonthKey = (
   record,
 ) => {
@@ -1640,6 +1656,196 @@ const aggregateItemRows = ({
     );
 };
 
+const aggregateSupplierMonthlyRows = ({
+  records,
+  startMonth,
+  endMonth,
+  selectedSupplier,
+}) => {
+  const monthlyMap =
+    new Map();
+
+  (records || []).forEach(
+    (record) => {
+      const supplier =
+        normalizeText(
+          record.supplier,
+        );
+
+      const monthKey =
+        getRecordMonthKey(
+          record,
+        );
+
+      if (
+        !supplier ||
+        !monthKey ||
+        monthKey > endMonth ||
+        (
+          selectedSupplier &&
+          supplier !==
+            selectedSupplier
+        )
+      ) {
+        return;
+      }
+
+      const key =
+        `${supplier}|${monthKey}`;
+
+      if (!monthlyMap.has(key)) {
+        monthlyMap.set(key, {
+          supplier,
+          monthKey,
+          monthlySupplyAmount: 0,
+          monthlyVatAmount: 0,
+          monthlyTotalAmount: 0,
+          rowCount: 0,
+          includedAmountCount: 0,
+          excludedAmountCount: 0,
+          mismatchCount: 0,
+          reviewCount: 0,
+        });
+      }
+
+      const target =
+        monthlyMap.get(key);
+
+      const includeAmount =
+        record.include_in_amount !==
+        false;
+
+      target.rowCount += 1;
+
+      if (includeAmount) {
+        target.includedAmountCount +=
+          1;
+
+        target.monthlySupplyAmount +=
+          Number(
+            record.supply_amount ||
+              0,
+          );
+
+        target.monthlyVatAmount +=
+          Number(
+            record.vat_amount ||
+              0,
+          );
+
+        target.monthlyTotalAmount +=
+          Number(
+            record.calculated_total_amount ||
+              0,
+          );
+      } else {
+        target.excludedAmountCount +=
+          1;
+      }
+
+      if (record.amount_mismatch) {
+        target.mismatchCount +=
+          1;
+      }
+
+      if (
+        record.review_required ||
+        record.arrival_date_status !==
+          'confirmed'
+      ) {
+        target.reviewCount +=
+          1;
+      }
+    },
+  );
+
+  const ascendingRows =
+    Array.from(
+      monthlyMap.values(),
+    ).sort(
+      (first, second) =>
+        first.supplier.localeCompare(
+          second.supplier,
+          'ko',
+          {
+            numeric: true,
+          },
+        ) ||
+        first.monthKey.localeCompare(
+          second.monthKey,
+        ),
+    );
+
+  const cumulativeMap =
+    new Map();
+
+  const result = [];
+
+  ascendingRows.forEach(
+    (row) => {
+      const cumulative =
+        cumulativeMap.get(
+          row.supplier,
+        ) || {
+          supplyAmount: 0,
+          vatAmount: 0,
+          totalAmount: 0,
+          rowCount: 0,
+        };
+
+      cumulative.supplyAmount +=
+        row.monthlySupplyAmount;
+
+      cumulative.vatAmount +=
+        row.monthlyVatAmount;
+
+      cumulative.totalAmount +=
+        row.monthlyTotalAmount;
+
+      cumulative.rowCount +=
+        row.rowCount;
+
+      cumulativeMap.set(
+        row.supplier,
+        cumulative,
+      );
+
+      if (
+        row.monthKey >=
+          startMonth &&
+        row.monthKey <=
+          endMonth
+      ) {
+        result.push({
+          ...row,
+          cumulativeSupplyAmount:
+            cumulative.supplyAmount,
+          cumulativeVatAmount:
+            cumulative.vatAmount,
+          cumulativeTotalAmount:
+            cumulative.totalAmount,
+          cumulativeRowCount:
+            cumulative.rowCount,
+        });
+      }
+    },
+  );
+
+  return result.sort(
+    (first, second) =>
+      second.monthKey.localeCompare(
+        first.monthKey,
+      ) ||
+      first.supplier.localeCompare(
+        second.supplier,
+        'ko',
+        {
+          numeric: true,
+        },
+      ),
+  );
+};
+
 export default function MaterialInputStatus({
   projectName = '',
 }) {
@@ -1649,6 +1855,20 @@ export default function MaterialInputStatus({
   const [
     selectedMonth,
     setSelectedMonth,
+  ] = useState(
+    getKoreaMonthKey(),
+  );
+
+  const [
+    supplierPeriodStart,
+    setSupplierPeriodStart,
+  ] = useState(
+    getKoreaMonthKey(),
+  );
+
+  const [
+    supplierPeriodEnd,
+    setSupplierPeriodEnd,
   ] = useState(
     getKoreaMonthKey(),
   );
@@ -2154,6 +2374,90 @@ export default function MaterialInputStatus({
         selectedSupplier,
       ],
     );
+
+  const supplierMonthlyRows =
+    useMemo(
+      () =>
+        aggregateSupplierMonthlyRows({
+          records,
+          startMonth:
+            supplierPeriodStart,
+          endMonth:
+            supplierPeriodEnd,
+          selectedSupplier,
+        }),
+      [
+        records,
+        selectedSupplier,
+        supplierPeriodEnd,
+        supplierPeriodStart,
+      ],
+    );
+
+  const supplierPeriodSummary =
+    useMemo(
+      () => {
+        const supplierSet =
+          new Set();
+
+        return supplierMonthlyRows.reduce(
+          (
+            result,
+            row,
+          ) => {
+            supplierSet.add(
+              row.supplier,
+            );
+
+            return {
+              supplyAmount:
+                result.supplyAmount +
+                row.monthlySupplyAmount,
+              vatAmount:
+                result.vatAmount +
+                row.monthlyVatAmount,
+              totalAmount:
+                result.totalAmount +
+                row.monthlyTotalAmount,
+              rowCount:
+                result.rowCount +
+                row.rowCount,
+              excludedAmountCount:
+                result.excludedAmountCount +
+                row.excludedAmountCount,
+              issueCount:
+                result.issueCount +
+                row.mismatchCount +
+                row.reviewCount,
+              supplierCount:
+                supplierSet.size,
+            };
+          },
+          {
+            supplyAmount: 0,
+            vatAmount: 0,
+            totalAmount: 0,
+            rowCount: 0,
+            excludedAmountCount: 0,
+            issueCount: 0,
+            supplierCount: 0,
+          },
+        );
+      },
+      [supplierMonthlyRows],
+    );
+
+  const supplierPeriodLabel =
+    supplierPeriodStart ===
+      supplierPeriodEnd
+      ? formatMonthLabel(
+          supplierPeriodStart,
+        )
+      : `${formatMonthLabel(
+          supplierPeriodStart,
+        )} ~ ${formatMonthLabel(
+          supplierPeriodEnd,
+        )}`;
 
   const selectedSupplierMonthSummary =
     useMemo(
@@ -3303,40 +3607,158 @@ export default function MaterialInputStatus({
       const workbook =
         new ExcelJS.Workbook();
 
-      const worksheet =
-        workbook.addWorksheet(
-          '품목별 집계',
+      let worksheet;
+      let downloadSuffix;
+
+      if (tabValue === 1) {
+        worksheet =
+          workbook.addWorksheet(
+            '업체별 월누계',
+          );
+
+        worksheet.addRow([
+          '업체',
+          '기준월',
+          '월 공급가액',
+          '월 부가세',
+          '월 재계산 합계',
+          '누계 공급가액',
+          '누계 부가세',
+          '누계 재계산 합계',
+          '입고건수',
+          '금액제외',
+          '확인필요',
+        ]);
+
+        supplierMonthlyRows.forEach(
+          (row) => {
+            worksheet.addRow([
+              row.supplier,
+              row.monthKey,
+              row.monthlySupplyAmount,
+              row.monthlyVatAmount,
+              row.monthlyTotalAmount,
+              row.cumulativeSupplyAmount,
+              row.cumulativeVatAmount,
+              row.cumulativeTotalAmount,
+              row.rowCount,
+              row.excludedAmountCount,
+              row.mismatchCount +
+                row.reviewCount,
+            ]);
+          },
         );
 
-      worksheet.addRow([
-        '품명',
-        '규격',
-        '단위',
-        '업체',
-        `${monthRange.label} 수량`,
-        `${monthRange.label} 금액`,
-        '누계수량',
-        '누계금액',
-        '최근입고일',
-        '금액오류건수',
-      ]);
+        worksheet.columns.forEach(
+          (
+            column,
+            index,
+          ) => {
+            column.width =
+              [
+                24,
+                12,
+                18,
+                16,
+                18,
+                18,
+                16,
+                18,
+                12,
+                12,
+                12,
+              ][index] || 14;
+          },
+        );
 
-      filteredItemRows.forEach(
-        (row) => {
-          worksheet.addRow([
-            row.itemName,
-            row.specification,
-            row.unit,
-            row.supplierText,
-            row.monthlyQuantity,
-            row.monthlyAmount,
-            row.cumulativeQuantity,
-            row.cumulativeAmount,
-            row.latestArrivalDate,
-            row.mismatchCount,
-          ]);
-        },
-      );
+        [
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+        ].forEach(
+          (columnNumber) => {
+            worksheet.getColumn(
+              columnNumber,
+            ).numFmt =
+              '#,##0';
+          },
+        );
+
+        downloadSuffix =
+          `업체별월누계_${supplierPeriodStart}_${supplierPeriodEnd}`;
+      } else {
+        worksheet =
+          workbook.addWorksheet(
+            '품목별 집계',
+          );
+
+        worksheet.addRow([
+          '품명',
+          '규격',
+          '단위',
+          '업체',
+          `${monthRange.label} 수량`,
+          `${monthRange.label} 금액`,
+          '누계수량',
+          '누계금액',
+          '최근입고일',
+          '금액오류건수',
+        ]);
+
+        filteredItemRows.forEach(
+          (row) => {
+            worksheet.addRow([
+              row.itemName,
+              row.specification,
+              row.unit,
+              row.supplierText,
+              row.monthlyQuantity,
+              row.monthlyAmount,
+              row.cumulativeQuantity,
+              row.cumulativeAmount,
+              row.latestArrivalDate,
+              row.mismatchCount,
+            ]);
+          },
+        );
+
+        worksheet.columns.forEach(
+          (
+            column,
+            index,
+          ) => {
+            column.width =
+              [
+                28,
+                30,
+                10,
+                24,
+                16,
+                18,
+                16,
+                18,
+                14,
+                14,
+              ][index] || 14;
+          },
+        );
+
+        worksheet.getColumn(
+          6,
+        ).numFmt =
+          '#,##0';
+
+        worksheet.getColumn(
+          8,
+        ).numFmt =
+          '#,##0';
+
+        downloadSuffix =
+          `품목별월누계_${selectedMonth}`;
+      }
 
       worksheet.getRow(
         1,
@@ -3350,37 +3772,6 @@ export default function MaterialInputStatus({
           ySplit: 1,
         },
       ];
-
-      worksheet.columns.forEach(
-        (
-          column,
-          index,
-        ) => {
-          column.width =
-            [
-              28,
-              30,
-              10,
-              24,
-              16,
-              18,
-              16,
-              18,
-              14,
-              14,
-            ][index] || 14;
-        },
-      );
-
-      worksheet.getColumn(
-        6,
-      ).numFmt =
-        '#,##0';
-
-      worksheet.getColumn(
-        8,
-      ).numFmt =
-        '#,##0';
 
       const buffer =
         await workbook.xlsx.writeBuffer();
@@ -3409,7 +3800,7 @@ export default function MaterialInputStatus({
       link.download =
         `자재투입현황_${safeFileName(
           projectName,
-        )}_${selectedMonth}.xlsx`;
+        )}_${downloadSuffix}.xlsx`;
 
       document.body.appendChild(
         link,
@@ -3905,95 +4296,209 @@ export default function MaterialInputStatus({
             display: 'flex',
             alignItems: 'center',
             gap: 0.7,
+            flexWrap: 'wrap',
           }}
         >
-          <TextField
-            label="조회 월"
-            type="month"
-            size="small"
-            value={
-              selectedMonth
-            }
-            onChange={(
-              event,
-            ) =>
-              setSelectedMonth(
-                event.target.value,
-              )
-            }
-            InputLabelProps={{
-              shrink: true,
-            }}
-            sx={{
-              width: 150,
-            }}
-          />
-
-          <Autocomplete
-            freeSolo
-            options={
-              supplierOptions
-            }
-            inputValue={
-              selectedSupplier
-            }
-            onInputChange={(
-              _event,
-              value,
-            ) =>
-              setSelectedSupplier(
-                value,
-              )
-            }
-            onChange={(
-              _event,
-              value,
-            ) =>
-              setSelectedSupplier(
-                value || '',
-              )
-            }
-            sx={{
-              width: 190,
-            }}
-            renderInput={(
-              params,
-            ) => (
+          {tabValue === 1 ? (
+            <>
               <TextField
-                {...params}
-                label={
-                  tabValue === 0
-                    ? '해당 월 입고업체'
-                    : '전체 업체 검색'
-                }
-                placeholder={
-                  tabValue === 0
-                    ? `${monthRange.label} 입고업체`
-                    : '전체 누계 업체'
-                }
+                label="시작 월"
+                type="month"
                 size="small"
-              />
-            )}
-          />
+                value={
+                  supplierPeriodStart
+                }
+                onChange={(
+                  event,
+                ) => {
+                  const value =
+                    event.target.value;
 
-          <TextField
-            label="품명·규격 검색"
-            size="small"
-            value={
-              searchText
-            }
-            onChange={(
-              event,
-            ) =>
-              setSearchText(
-                event.target.value,
-              )
-            }
-            placeholder="예: 스터드"
-            sx={{
-              width: 230,
-            }}
-          />
+                  setSupplierPeriodStart(
+                    value,
+                  );
+
+                  if (
+                    value >
+                    supplierPeriodEnd
+                  ) {
+                    setSupplierPeriodEnd(
+                      value,
+                    );
+                  }
+                }}
+                InputLabelProps={{
+                  shrink: true,
+                }}
+                sx={{
+                  width: 150,
+                }}
+              />
+
+              <TextField
+                label="종료 월"
+                type="month"
+                size="small"
+                value={
+                  supplierPeriodEnd
+                }
+                onChange={(
+                  event,
+                ) => {
+                  const value =
+                    event.target.value;
+
+                  setSupplierPeriodEnd(
+                    value,
+                  );
+
+                  if (
+                    value <
+                    supplierPeriodStart
+                  ) {
+                    setSupplierPeriodStart(
+                      value,
+                    );
+                  }
+                }}
+                InputLabelProps={{
+                  shrink: true,
+                }}
+                sx={{
+                  width: 150,
+                }}
+              />
+
+              <Autocomplete
+                freeSolo
+                options={
+                  allSupplierOptions
+                }
+                inputValue={
+                  selectedSupplier
+                }
+                onInputChange={(
+                  _event,
+                  value,
+                ) =>
+                  setSelectedSupplier(
+                    value,
+                  )
+                }
+                onChange={(
+                  _event,
+                  value,
+                ) =>
+                  setSelectedSupplier(
+                    value || '',
+                  )
+                }
+                sx={{
+                  width: 220,
+                }}
+                renderInput={(
+                  params,
+                ) => (
+                  <TextField
+                    {...params}
+                    label="업체 검색"
+                    placeholder="전체 업체"
+                    size="small"
+                  />
+                )}
+              />
+            </>
+          ) : (
+            <>
+              <TextField
+                label="조회 월"
+                type="month"
+                size="small"
+                value={
+                  selectedMonth
+                }
+                onChange={(
+                  event,
+                ) =>
+                  setSelectedMonth(
+                    event.target.value,
+                  )
+                }
+                InputLabelProps={{
+                  shrink: true,
+                }}
+                sx={{
+                  width: 150,
+                }}
+              />
+
+              <Autocomplete
+                freeSolo
+                options={
+                  supplierOptions
+                }
+                inputValue={
+                  selectedSupplier
+                }
+                onInputChange={(
+                  _event,
+                  value,
+                ) =>
+                  setSelectedSupplier(
+                    value,
+                  )
+                }
+                onChange={(
+                  _event,
+                  value,
+                ) =>
+                  setSelectedSupplier(
+                    value || '',
+                  )
+                }
+                sx={{
+                  width: 190,
+                }}
+                renderInput={(
+                  params,
+                ) => (
+                  <TextField
+                    {...params}
+                    label={
+                      tabValue === 0
+                        ? '해당 월 입고업체'
+                        : '전체 업체 검색'
+                    }
+                    placeholder={
+                      tabValue === 0
+                        ? `${monthRange.label} 입고업체`
+                        : '전체 누계 업체'
+                    }
+                    size="small"
+                  />
+                )}
+              />
+
+              <TextField
+                label="품명·규격 검색"
+                size="small"
+                value={
+                  searchText
+                }
+                onChange={(
+                  event,
+                ) =>
+                  setSearchText(
+                    event.target.value,
+                  )
+                }
+                placeholder="예: 스터드"
+                sx={{
+                  width: 230,
+                }}
+              />
+            </>
+          )}
         </Box>
 
         <Button
@@ -4006,11 +4511,16 @@ export default function MaterialInputStatus({
             handleExcelDownload
           }
           disabled={
-            filteredItemRows.length ===
-              0
+            tabValue === 1
+              ? supplierMonthlyRows.length ===
+                0
+              : filteredItemRows.length ===
+                0
           }
         >
-          집계 엑셀 다운로드
+          {tabValue === 1
+            ? '업체 월누계 다운로드'
+            : '집계 엑셀 다운로드'}
         </Button>
       </Paper>
 
@@ -4022,39 +4532,72 @@ export default function MaterialInputStatus({
           gap: 0.8,
         }}
       >
-        {[
-          [
-            `${monthRange.label} 지출합계`,
-            formatMoney(
-              monthSummary.totalAmount,
-            ),
-          ],
-          [
-            '공급가액',
-            formatMoney(
-              monthSummary.supplyAmount,
-            ),
-          ],
-          [
-            '부가세',
-            formatMoney(
-              monthSummary.vatAmount,
-            ),
-          ],
-          [
-            '입고 내역',
-            `${monthSummary.rowCount.toLocaleString()}건`,
-          ],
-          [
-            '금액 확인 필요',
-            `${(
-              monthSummary.unpricedRowCount +
-              monthSummary.mismatchCount +
-              monthSummary.reviewCount +
-              monthSummary.excludedAmountCount
-            ).toLocaleString()}건`,
-          ],
-        ].map(
+        {(tabValue === 1
+          ? [
+              [
+                `${supplierPeriodLabel} 지출합계`,
+                formatMoney(
+                  supplierPeriodSummary
+                    .totalAmount,
+                ),
+              ],
+              [
+                '공급가액',
+                formatMoney(
+                  supplierPeriodSummary
+                    .supplyAmount,
+                ),
+              ],
+              [
+                '부가세',
+                formatMoney(
+                  supplierPeriodSummary
+                    .vatAmount,
+                ),
+              ],
+              [
+                '조회 업체',
+                `${supplierPeriodSummary.supplierCount.toLocaleString()}개`,
+              ],
+              [
+                '입고 내역',
+                `${supplierPeriodSummary.rowCount.toLocaleString()}건`,
+              ],
+            ]
+          : [
+              [
+                `${monthRange.label} 지출합계`,
+                formatMoney(
+                  monthSummary.totalAmount,
+                ),
+              ],
+              [
+                '공급가액',
+                formatMoney(
+                  monthSummary.supplyAmount,
+                ),
+              ],
+              [
+                '부가세',
+                formatMoney(
+                  monthSummary.vatAmount,
+                ),
+              ],
+              [
+                '입고 내역',
+                `${monthSummary.rowCount.toLocaleString()}건`,
+              ],
+              [
+                '금액 확인 필요',
+                `${(
+                  monthSummary.unpricedRowCount +
+                  monthSummary.mismatchCount +
+                  monthSummary.reviewCount +
+                  monthSummary.excludedAmountCount
+                ).toLocaleString()}건`,
+              ],
+            ]
+        ).map(
           ([
             label,
             value,
@@ -4138,6 +4681,7 @@ export default function MaterialInputStatus({
           }}
         >
           <Tab label="월 원본 상세" />
+          <Tab label="업체별 월·누계" />
           <Tab label="품목별 월·누계" />
         </Tabs>
 
@@ -4149,6 +4693,231 @@ export default function MaterialInputStatus({
           }}
         >
           {tabValue === 1 && (
+            <TableContainer
+              sx={{
+                height: '100%',
+                overflow: 'auto',
+              }}
+            >
+              <Table
+                stickyHeader
+                size="small"
+                sx={{
+                  ...tableVerticalBorderSx,
+                  ...COMPACT_TABLE_SX,
+                }}
+              >
+                <TableHead>
+                  <TableRow>
+                    {[
+                      '업체',
+                      '기준월',
+                      '월 공급가액',
+                      '월 부가세',
+                      '월 재계산 합계',
+                      '누계 공급가액',
+                      '누계 부가세',
+                      '누계 재계산 합계',
+                      '입고건수',
+                      '금액제외',
+                      '확인필요',
+                    ].map(
+                      (
+                        header,
+                        index,
+                      ) => (
+                        <TableCell
+                          key={header}
+                          align={
+                            index >= 2
+                              ? 'right'
+                              : 'left'
+                          }
+                          sx={{
+                            bgcolor:
+                              '#f8fafc',
+                            fontWeight:
+                              900,
+                            whiteSpace:
+                              'nowrap',
+                            ...(
+                              index === 0
+                                ? {
+                                    minWidth: 180,
+                                  }
+                                : index === 1
+                                  ? {
+                                      width: 92,
+                                      minWidth: 92,
+                                    }
+                                  : index >= 2 &&
+                                      index <= 7
+                                    ? {
+                                        minWidth: 105,
+                                      }
+                                    : {
+                                        minWidth: 72,
+                                      }
+                            ),
+                          }}
+                        >
+                          {header}
+                        </TableCell>
+                      ),
+                    )}
+                  </TableRow>
+                </TableHead>
+
+                <TableBody>
+                  {supplierMonthlyRows.map(
+                    (row) => (
+                      <TableRow
+                        key={`${row.supplier}|${row.monthKey}`}
+                        hover
+                        sx={{
+                          bgcolor:
+                            row.excludedAmountCount >
+                              0 ||
+                            row.reviewCount > 0
+                              ? '#fffbea'
+                              : row.mismatchCount >
+                                  0
+                                ? '#fff7ed'
+                                : 'inherit',
+                        }}
+                      >
+                        <TableCell
+                          sx={{
+                            minWidth: 180,
+                            fontWeight: 800,
+                          }}
+                        >
+                          {row.supplier}
+                        </TableCell>
+
+                        <TableCell
+                          sx={{
+                            width: 92,
+                            minWidth: 92,
+                            whiteSpace:
+                              'nowrap',
+                          }}
+                        >
+                          {formatMonthLabel(
+                            row.monthKey,
+                          )}
+                        </TableCell>
+
+                        <TableCell align="right">
+                          {formatMoney(
+                            row.monthlySupplyAmount,
+                          )}
+                        </TableCell>
+
+                        <TableCell align="right">
+                          {formatMoney(
+                            row.monthlyVatAmount,
+                          )}
+                        </TableCell>
+
+                        <TableCell
+                          align="right"
+                          sx={{
+                            color:
+                              '#1d4ed8',
+                            fontWeight: 900,
+                          }}
+                        >
+                          {formatMoney(
+                            row.monthlyTotalAmount,
+                          )}
+                        </TableCell>
+
+                        <TableCell align="right">
+                          {formatMoney(
+                            row.cumulativeSupplyAmount,
+                          )}
+                        </TableCell>
+
+                        <TableCell align="right">
+                          {formatMoney(
+                            row.cumulativeVatAmount,
+                          )}
+                        </TableCell>
+
+                        <TableCell
+                          align="right"
+                          sx={{
+                            fontWeight: 900,
+                          }}
+                        >
+                          {formatMoney(
+                            row.cumulativeTotalAmount,
+                          )}
+                        </TableCell>
+
+                        <TableCell align="right">
+                          {row.rowCount.toLocaleString()}
+                        </TableCell>
+
+                        <TableCell align="right">
+                          {row.excludedAmountCount >
+                          0 ? (
+                            <Chip
+                              size="small"
+                              color="default"
+                              label={
+                                row.excludedAmountCount
+                              }
+                            />
+                          ) : (
+                            '-'
+                          )}
+                        </TableCell>
+
+                        <TableCell align="right">
+                          {row.mismatchCount +
+                            row.reviewCount >
+                          0 ? (
+                            <Chip
+                              size="small"
+                              color="warning"
+                              label={
+                                row.mismatchCount +
+                                row.reviewCount
+                              }
+                            />
+                          ) : (
+                            '-'
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ),
+                  )}
+
+                  {!loading &&
+                    supplierMonthlyRows.length ===
+                      0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={11}
+                        align="center"
+                        sx={{
+                          py: 5,
+                          color:
+                            '#94a3b8',
+                        }}
+                      >
+                        선택한 업체와 기간에 해당하는 자료가 없습니다.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+
+          {tabValue === 2 && (
             <TableContainer
               sx={{
                 height: '100%',
@@ -4411,7 +5180,7 @@ export default function MaterialInputStatus({
                                   ? {
                                       minWidth: 145,
                                     }
-                                  : index === 14
+                                  : index === 15
                                     ? {
                                         minWidth: 220,
                                       }
