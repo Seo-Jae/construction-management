@@ -53,7 +53,8 @@ import { createLaborContractPrintWindow } from '../utils/laborContractPrint';
 
 const PAGE_SIZE = 1000;
 const CONTRACT_TEMPLATE_VERSION = 'LABOR_CONTRACT_V1';
-const CONTRACT_TEMPLATE_SHEET = '근로계약서작성자료';
+const PERSONNEL_REGISTER_VERSION = 'LABOR_PERSONNEL_REGISTER_V1';
+const PERSONNEL_REGISTER_SHEET = '근로자인적사항대장';
 const FIXED_CONTRACT_VALUES = Object.freeze({
   job: '일급제',
   process: '내장공',
@@ -63,23 +64,14 @@ const FIXED_CONTRACT_VALUES = Object.freeze({
   breakMinutes: 120,
   workDescription: '내장공',
 });
-const CONTRACT_TEMPLATE_HEADERS = [
+const PERSONNEL_REGISTER_HEADERS = [
   '근로자번호',
   '성명',
   '연락처',
   '주민등록번호',
   '주소',
-  '직종',
-  '공정',
-  '계약시작일',
-  '계약종료일',
-  '일급',
-  '근무시작',
-  '근무종료',
-  '휴게시간(분)',
-  '업무내용',
 ];
-const CONTRACT_TEMPLATE_EDITABLE_COLUMNS = new Set([3, 4, 5]);
+const PERSONNEL_REGISTER_EDITABLE_COLUMNS = new Set([3, 4, 5]);
 const UNAVAILABLE_VALUE = '없음';
 
 const STATUS_META = {
@@ -423,15 +415,19 @@ const sortRowsByContractStart = (rows, monthKey) =>
     );
   });
 
-const isContractTemplateInputTarget = (row) =>
-  ['required', 'rejected'].includes(
-    row?.status || 'required',
-  );
+const isPersonnelRegisterTarget = (row) =>
+  row?.status !== 'excluded';
 
-const populateContractTemplateRow = (
+const isPersonnelRegisterImportTarget = (row) =>
+  [
+    'required',
+    'rejected',
+    'form_ready',
+  ].includes(row?.status || 'required');
+
+const populatePersonnelRegisterRow = (
   excelRow,
   row,
-  monthKey,
 ) => {
   const form = row.contract_form || {};
 
@@ -441,31 +437,20 @@ const populateContractTemplateRow = (
     form.phone || row.phone || '',
     '',
     '',
-    FIXED_CONTRACT_VALUES.job,
-    FIXED_CONTRACT_VALUES.process,
-    getFixedContractStartDate(row, monthKey),
-    getMonthEndDate(monthKey),
-    FIXED_CONTRACT_VALUES.dailyWage,
-    FIXED_CONTRACT_VALUES.workStartTime,
-    FIXED_CONTRACT_VALUES.workEndTime,
-    FIXED_CONTRACT_VALUES.breakMinutes,
-    FIXED_CONTRACT_VALUES.workDescription,
   ];
   excelRow.getCell(3).numFmt = '@';
   excelRow.getCell(4).numFmt = '@';
-  excelRow.getCell(10).numFmt = '#,##0';
-  excelRow.getCell(13).numFmt = '0';
 
   for (
     let column = 1;
-    column <= CONTRACT_TEMPLATE_HEADERS.length;
+    column <= PERSONNEL_REGISTER_HEADERS.length;
     column += 1
   ) {
     excelRow.getCell(column).fill = {
       type: 'pattern',
       pattern: 'solid',
       fgColor: {
-        argb: CONTRACT_TEMPLATE_EDITABLE_COLUMNS.has(column)
+        argb: PERSONNEL_REGISTER_EDITABLE_COLUMNS.has(column)
           ? 'FFFFF2CC'
           : 'FFF1F5F9',
       },
@@ -709,8 +694,12 @@ export default function LaborContractManagement({
   ] = useState(false);
 
   const contractFileInputRef = useRef(null);
-  const referenceContractFilesInputRef = useRef(null);
   const updateContractFileInputRef = useRef(null);
+
+  const [
+    registerActionOpen,
+    setRegisterActionOpen,
+  ] = useState(false);
 
   const [
     templateUpdating,
@@ -788,6 +777,10 @@ export default function LaborContractManagement({
     setSelectedPrintIds([]);
     setContractPrintError('');
     setPendingImportPrintData(null);
+    setImportDialogOpen(false);
+    setImportRows([]);
+    setImportFileName('');
+    setRegisterActionOpen(false);
   }, [
     projectName,
     selectedMonth,
@@ -1256,53 +1249,74 @@ export default function LaborContractManagement({
       selectedMonth,
     ]);
 
-  const downloadContractTemplate = async () => {
+  const getPersonnelRegisterFileName = () => {
+    const safeProjectName = String(projectName || '현장')
+      .replace(/[\\/:*?"<>|]/g, '_')
+      .trim();
+
+    return `${safeProjectName}_근로자인적사항대장.xlsx`;
+  };
+
+  const downloadPersonnelRegister = async () => {
     const targetRows = sortRowsByContractStart(
-      storedRows.filter(
-        isContractTemplateInputTarget,
-      ),
+      storedRows.filter(isPersonnelRegisterTarget),
       selectedMonth,
     );
 
     if (targetRows.length === 0) {
-      setErrorMessage('대상자 EXL에 넣을 미작성·반려 대상자가 없습니다.');
+      setErrorMessage('인적사항 대장에 넣을 현재 월 근로자가 없습니다.');
       return;
     }
 
+    setRegisterActionOpen(false);
     setErrorMessage('');
+    setSuccessMessage('');
 
     try {
       const workbook = new ExcelJS.Workbook();
       workbook.creator = 'Wooklim Construction Management';
-      const worksheet = workbook.addWorksheet(CONTRACT_TEMPLATE_SHEET, {
+      const worksheet = workbook.addWorksheet(PERSONNEL_REGISTER_SHEET, {
         views: [{ state: 'frozen', ySplit: 5 }],
       });
+      worksheet.pageSetup = {
+        orientation: 'landscape',
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        paperSize: 9,
+        margins: {
+          left: 0.25,
+          right: 0.25,
+          top: 0.4,
+          bottom: 0.4,
+          header: 0.15,
+          footer: 0.15,
+        },
+      };
 
-      worksheet.mergeCells('A1:N1');
-      worksheet.getCell('A1').value = '근로계약서 작성자료';
+      worksheet.mergeCells('A1:E1');
+      worksheet.getCell('A1').value = '현장 근로자 인적사항 대장';
       worksheet.getCell('A1').font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
       worksheet.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
       worksheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
       worksheet.getRow(1).height = 28;
 
       worksheet.getCell('A2').value = '양식버전';
-      worksheet.getCell('B2').value = CONTRACT_TEMPLATE_VERSION;
+      worksheet.getCell('B2').value = PERSONNEL_REGISTER_VERSION;
       worksheet.getCell('D2').value = '현장명';
       worksheet.getCell('E2').value = projectName;
-      worksheet.getCell('G2').value = '계약대상월';
-      worksheet.getCell('H2').value = selectedMonth;
 
-      worksheet.mergeCells('A3:N3');
-      worksheet.getCell('A3').value = '노란색 3개 열(연락처, 주민등록번호, 주소)만 입력하세요. 같은 달에 새 근로자가 추가되면 홈페이지의 “업데이트”로 이 파일에 추가합니다.';
+      worksheet.mergeCells('A3:E3');
+      worksheet.getCell('A3').value = '이 파일은 현장별로 1개만 보관합니다. 새 근로자가 생기면 홈페이지의 “인적사항 대장 생성/갱신”에서 기존 파일을 선택하세요.';
       worksheet.getCell('A3').font = { bold: true, color: { argb: 'FF9A3412' } };
       worksheet.getCell('A3').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF7ED' } };
 
-      worksheet.mergeCells('A4:N4');
-      worksheet.getCell('A4').value = '필수입력: 연락처, 주민등록번호, 주소 · 자료가 없으면 해당 칸에 “없음” 입력 가능 · 계약종료일은 월말 · 일급은 180,000원';
+      worksheet.mergeCells('A4:E4');
+      worksheet.getCell('A4').value = '노란색 3개 열(연락처, 주민등록번호, 주소)만 입력 · 자료가 없으면 해당 칸에 “없음” 입력 가능 · 계약월과 계약기간은 홈페이지에서 자동 적용';
       worksheet.getCell('A4').font = { color: { argb: 'FF475569' } };
 
       const headerRow = worksheet.getRow(5);
-      CONTRACT_TEMPLATE_HEADERS.forEach((header, index) => {
+      PERSONNEL_REGISTER_HEADERS.forEach((header, index) => {
         const cell = headerRow.getCell(index + 1);
         cell.value = header;
         cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
@@ -1318,33 +1332,30 @@ export default function LaborContractManagement({
       headerRow.height = 24;
 
       targetRows.forEach((row, index) => {
-        const excelRow = worksheet.getRow(index + 6);
-        populateContractTemplateRow(
-          excelRow,
+        populatePersonnelRegisterRow(
+          worksheet.getRow(index + 6),
           row,
-          selectedMonth,
         );
       });
 
-      [16, 13, 18, 20, 34, 14, 15, 14, 14, 14, 12, 12, 14, 24].forEach((width, index) => {
+      [18, 16, 20, 22, 48].forEach((width, index) => {
         worksheet.getColumn(index + 1).width = width;
       });
-      worksheet.autoFilter = { from: 'A5', to: 'N5' };
+      worksheet.autoFilter = {
+        from: 'A5',
+        to: `E${targetRows.length + 5}`,
+      };
 
       const buffer = await workbook.xlsx.writeBuffer();
-      downloadExcelBuffer(buffer, `근로계약서작성자료_${projectName}_${selectedMonth}.xlsx`);
-      setSuccessMessage(`${formatMonthLabel(selectedMonth)} 미작성·반려 대상 ${targetRows.length.toLocaleString()}명의 대상자 EXL을 다운로드했습니다.`);
+      downloadExcelBuffer(buffer, getPersonnelRegisterFileName());
+      setSuccessMessage(`현장 인적사항 대장을 새로 만들었습니다. 현재 ${formatMonthLabel(selectedMonth)} 근로자 ${targetRows.length.toLocaleString()}명이 들어 있으며, 앞으로 같은 파일만 갱신해 사용하세요.`);
     } catch (error) {
-      console.error('근로계약서 양식 생성 오류:', error);
-      setErrorMessage(error?.message || '근로계약서 작성자료 양식을 만들지 못했습니다.');
+      console.error('근로자 인적사항 대장 생성 오류:', error);
+      setErrorMessage(error?.message || '근로자 인적사항 대장을 만들지 못했습니다.');
     }
   };
 
-  const handleDownloadTemplate = () => {
-    downloadContractTemplate();
-  };
-
-  const updateExistingContractTemplate = async (
+  const updateExistingPersonnelRegister = async (
     file,
     fileHandle = null,
   ) => {
@@ -1354,187 +1365,106 @@ export default function LaborContractManagement({
 
     try {
       const workbook = new ExcelJS.Workbook();
-      await workbook.xlsx.load(
-        await file.arrayBuffer(),
-      );
-      const worksheet = workbook.getWorksheet(
-        CONTRACT_TEMPLATE_SHEET,
-      );
+      await workbook.xlsx.load(await file.arrayBuffer());
+      const worksheet = workbook.getWorksheet(PERSONNEL_REGISTER_SHEET);
 
       if (!worksheet) {
-        throw new Error(
-          `시트 이름이 '${CONTRACT_TEMPLATE_SHEET}'인 회사 배포 양식만 업데이트할 수 있습니다.`,
-        );
+        throw new Error(`시트 이름이 '${PERSONNEL_REGISTER_SHEET}'인 인적사항 대장만 갱신할 수 있습니다.`);
       }
 
-      const templateVersion = getExcelCellText(
-        worksheet.getCell('B2').value,
-      );
-      const uploadedProject = getExcelCellText(
-        worksheet.getCell('E2').value,
-      );
-      const uploadedMonth = getExcelCellText(
-        worksheet.getCell('H2').value,
-      ).slice(0, 7);
+      const templateVersion = getExcelCellText(worksheet.getCell('B2').value);
+      const uploadedProject = getExcelCellText(worksheet.getCell('E2').value);
 
-      if (templateVersion !== CONTRACT_TEMPLATE_VERSION) {
-        throw new Error(
-          `양식 버전이 다릅니다. 현재 버전은 ${CONTRACT_TEMPLATE_VERSION}입니다.`,
-        );
+      if (templateVersion !== PERSONNEL_REGISTER_VERSION) {
+        throw new Error(`인적사항 대장 버전이 다릅니다. 현재 버전은 ${PERSONNEL_REGISTER_VERSION}입니다.`);
       }
       if (uploadedProject !== projectName) {
-        throw new Error(
-          `선택한 파일의 현장(${uploadedProject || '없음'})과 현재 현장(${projectName})이 다릅니다.`,
-        );
-      }
-      if (uploadedMonth !== selectedMonth) {
-        throw new Error(
-          `선택한 파일의 계약월(${uploadedMonth || '없음'})과 현재 선택 월(${selectedMonth})이 다릅니다.`,
-        );
+        throw new Error(`선택한 대장의 현장(${uploadedProject || '없음'})과 현재 현장(${projectName})이 다릅니다.`);
       }
 
-      const actualHeaders = CONTRACT_TEMPLATE_HEADERS.map(
-        (_, index) =>
-          getExcelCellText(
-            worksheet.getRow(5).getCell(index + 1).value,
-          ),
-      );
+      const actualHeaders = PERSONNEL_REGISTER_HEADERS.map((_, index) =>
+        getExcelCellText(worksheet.getRow(5).getCell(index + 1).value));
 
-      if (
-        CONTRACT_TEMPLATE_HEADERS.some(
-          (header, index) =>
-            actualHeaders[index] !== header,
-        )
-      ) {
-        throw new Error(
-          '양식의 열 제목이 변경되어 업데이트할 수 없습니다. 최신 대상자 EXL을 사용해주세요.',
-        );
+      if (PERSONNEL_REGISTER_HEADERS.some((header, index) => actualHeaders[index] !== header)) {
+        throw new Error('인적사항 대장의 열 제목이 변경되어 갱신할 수 없습니다.');
       }
 
       const existingCodes = new Set();
       let lastDataRow = 5;
 
-      for (
-        let rowNumber = 6;
-        rowNumber <= worksheet.rowCount;
-        rowNumber += 1
-      ) {
-        const excelRow = worksheet.getRow(
-          rowNumber,
-        );
-        const hasData = CONTRACT_TEMPLATE_HEADERS.some(
-          (_, index) =>
-            Boolean(
-              getExcelCellText(
-                excelRow.getCell(index + 1).value,
-              ),
-            ),
-        );
+      for (let rowNumber = 6; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+        const excelRow = worksheet.getRow(rowNumber);
+        const hasData = PERSONNEL_REGISTER_HEADERS.some((_, index) =>
+          Boolean(getExcelCellText(excelRow.getCell(index + 1).value)));
 
         if (!hasData) {
           continue;
         }
 
-        lastDataRow = rowNumber;
-        const workerCode = getExcelCellText(
-          excelRow.getCell(1).value,
-        );
+        const workerCode = getExcelCellText(excelRow.getCell(1).value);
+        const name = getExcelCellText(excelRow.getCell(2).value);
 
-        if (!workerCode) {
-          throw new Error(
-            `엑셀 ${rowNumber}행의 근로자번호가 비어 있어 중복 여부를 확인할 수 없습니다.`,
-          );
+        if (!workerCode || !name) {
+          throw new Error(`인적사항 대장 ${rowNumber}행의 근로자번호 또는 성명이 비어 있습니다.`);
         }
         if (existingCodes.has(workerCode)) {
-          throw new Error(
-            `엑셀에 근로자번호 ${workerCode}가 중복되어 있습니다. 중복 행을 정리한 뒤 다시 시도해주세요.`,
-          );
+          throw new Error(`인적사항 대장에 근로자번호 ${workerCode}가 중복되어 있습니다. 중복 행을 정리한 뒤 다시 시도해주세요.`);
         }
 
         existingCodes.add(workerCode);
+        lastDataRow = rowNumber;
       }
 
       const appendRows = sortRowsByContractStart(
-        storedRows.filter(
-          (row) =>
-            isContractTemplateInputTarget(row) &&
-            !existingCodes.has(
-              String(row.worker_code || '').trim(),
-            ),
-        ),
+        storedRows.filter((row) =>
+          isPersonnelRegisterTarget(row) &&
+          !existingCodes.has(String(row.worker_code || '').trim())),
         selectedMonth,
       );
 
       if (appendRows.length === 0) {
-        setSuccessMessage(
-          `${formatMonthLabel(selectedMonth)} 월별 EXL은 최신 상태입니다. 추가할 미작성·반려 근로자가 없습니다.`,
-        );
+        setSuccessMessage(`선택한 현장 인적사항 대장은 최신 상태입니다. ${formatMonthLabel(selectedMonth)} 기준으로 추가할 근로자가 없습니다.`);
         return;
       }
 
-      if (
-        !window.confirm(
-          `선택한 ${formatMonthLabel(selectedMonth)} 월별 EXL에 신규·미작성 근로자 ${appendRows.length.toLocaleString()}명을 추가할까요? 기존 개인정보는 그대로 유지됩니다.`,
-        )
-      ) {
+      if (!window.confirm(`기존 현장 인적사항 대장 마지막에 ${formatMonthLabel(selectedMonth)} 신규 대상 ${appendRows.length.toLocaleString()}명을 추가할까요? 기존 인원과 개인정보는 그대로 유지됩니다.`)) {
         return;
       }
 
       appendRows.forEach((row, index) => {
-        const excelRow = worksheet.getRow(
-          lastDataRow + index + 1,
-        );
-        populateContractTemplateRow(
-          excelRow,
+        populatePersonnelRegisterRow(
+          worksheet.getRow(lastDataRow + index + 1),
           row,
-          selectedMonth,
         );
       });
       worksheet.autoFilter = {
         from: 'A5',
-        to: `N${lastDataRow + appendRows.length}`,
+        to: `E${lastDataRow + appendRows.length}`,
       };
 
       const buffer = await workbook.xlsx.writeBuffer();
 
-      if (
-        fileHandle &&
-        typeof fileHandle.createWritable === 'function'
-      ) {
+      if (fileHandle && typeof fileHandle.createWritable === 'function') {
         const writable = await fileHandle.createWritable();
         await writable.write(buffer);
         await writable.close();
-        setSuccessMessage(
-          `${formatMonthLabel(selectedMonth)} 월별 EXL에 신규·미작성 근로자 ${appendRows.length.toLocaleString()}명을 추가했습니다. 기존 개인정보와 기존 인원은 그대로 유지했습니다.`,
-        );
+        setSuccessMessage(`현장 인적사항 대장에 신규 대상 ${appendRows.length.toLocaleString()}명을 추가했습니다. 기존 인원과 개인정보는 그대로 유지했습니다.`);
       } else {
-        downloadExcelBuffer(
-          buffer,
-          file.name ||
-            `근로계약서작성자료_${projectName}_${selectedMonth}.xlsx`,
-        );
-        setSuccessMessage(
-          `${formatMonthLabel(selectedMonth)} 월별 EXL에 신규·미작성 근로자 ${appendRows.length.toLocaleString()}명을 추가해 다운로드했습니다. 내려받은 파일로 기존 파일을 교체해주세요.`,
-        );
+        downloadExcelBuffer(buffer, file.name || getPersonnelRegisterFileName());
+        setSuccessMessage(`신규 대상 ${appendRows.length.toLocaleString()}명을 추가한 인적사항 대장을 다운로드했습니다. 내려받은 파일로 기존 파일을 교체해주세요.`);
       }
     } catch (error) {
-      console.error(
-        '근로계약서 기존 양식 업데이트 오류:',
-        error,
-      );
-      setErrorMessage(
-        error?.message ||
-          '기존 근로계약서 양식을 업데이트하지 못했습니다.',
-      );
+      console.error('근로자 인적사항 대장 갱신 오류:', error);
+      setErrorMessage(error?.message || '근로자 인적사항 대장을 갱신하지 못했습니다.');
     } finally {
       setTemplateUpdating(false);
     }
   };
 
-  const handleUpdateTemplateClick = async () => {
-    if (
-      typeof window.showOpenFilePicker !== 'function'
-    ) {
+  const handleUpdatePersonnelRegisterClick = async () => {
+    setRegisterActionOpen(false);
+
+    if (typeof window.showOpenFilePicker !== 'function') {
       updateContractFileInputRef.current?.click();
       return;
     }
@@ -1544,11 +1474,9 @@ export default function LaborContractManagement({
         multiple: false,
         types: [
           {
-            description: '근로계약서 작성자료 Excel',
+            description: '현장 근로자 인적사항 대장 Excel',
             accept: {
-              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [
-                '.xlsx',
-              ],
+              'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
             },
           },
         ],
@@ -1559,29 +1487,18 @@ export default function LaborContractManagement({
       }
 
       const file = await fileHandle.getFile();
-      await updateExistingContractTemplate(
-        file,
-        fileHandle,
-      );
+      await updateExistingPersonnelRegister(file, fileHandle);
     } catch (error) {
       if (error?.name === 'AbortError') {
         return;
       }
 
-      console.error(
-        '근로계약서 기존 파일 선택 오류:',
-        error,
-      );
-      setErrorMessage(
-        error?.message ||
-          '기존 월별 엑셀을 선택하지 못했습니다.',
-      );
+      console.error('근로자 인적사항 대장 선택 오류:', error);
+      setErrorMessage(error?.message || '기존 인적사항 대장을 선택하지 못했습니다.');
     }
   };
 
-  const handleUpdateTemplateFileSelected = async (
-    event,
-  ) => {
+  const handleUpdatePersonnelRegisterFileSelected = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = '';
 
@@ -1589,19 +1506,14 @@ export default function LaborContractManagement({
       return;
     }
 
-    await updateExistingContractTemplate(file);
+    await updateExistingPersonnelRegister(file);
   };
 
-  const handleReferenceContractFilesSelected = async (
-    event,
-  ) => {
-    const files = Array.from(
-      event.target.files || [],
-    );
-
+  const handleContractFileSelected = async (event) => {
+    const file = event.target.files?.[0];
     event.target.value = '';
 
-    if (files.length === 0) {
+    if (!file) {
       return;
     }
 
@@ -1609,488 +1521,141 @@ export default function LaborContractManagement({
     setSuccessMessage('');
 
     try {
-      const sourceRows = [];
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(await file.arrayBuffer());
+      const worksheet = workbook.getWorksheet(PERSONNEL_REGISTER_SHEET);
 
-      for (const file of files) {
-        const workbook = new ExcelJS.Workbook();
-        await workbook.xlsx.load(
-          await file.arrayBuffer(),
-        );
-        const worksheet = workbook.getWorksheet(
-          CONTRACT_TEMPLATE_SHEET,
-        );
+      if (!worksheet) {
+        throw new Error(`시트 이름이 '${PERSONNEL_REGISTER_SHEET}'인 인적사항 대장만 업로드할 수 있습니다.`);
+      }
 
-        if (!worksheet) {
-          throw new Error(
-            `${file.name}: '${CONTRACT_TEMPLATE_SHEET}' 시트를 찾지 못했습니다.`,
-          );
-        }
+      const templateVersion = getExcelCellText(worksheet.getCell('B2').value);
+      const uploadedProject = getExcelCellText(worksheet.getCell('E2').value);
 
-        const uploadedProject = getExcelCellText(
-          worksheet.getCell('E2').value,
-        );
-        const sourceMonth = getExcelCellText(
-          worksheet.getCell('H2').value,
-        ).slice(0, 7);
-        const actualHeaders = CONTRACT_TEMPLATE_HEADERS.map(
-          (_, index) =>
-            getExcelCellText(
-              worksheet.getRow(5).getCell(index + 1).value,
-            ),
-        );
+      if (templateVersion !== PERSONNEL_REGISTER_VERSION) {
+        throw new Error(`인적사항 대장 버전이 다릅니다. 현재 버전은 ${PERSONNEL_REGISTER_VERSION}입니다.`);
+      }
+      if (uploadedProject !== projectName) {
+        throw new Error(`업로드한 대장 현장(${uploadedProject || '없음'})과 현재 현장(${projectName})이 다릅니다.`);
+      }
 
-        if (uploadedProject !== projectName) {
-          throw new Error(
-            `${file.name}: 현재 현장(${projectName})과 다른 현장(${uploadedProject || '없음'})의 자료입니다.`,
-          );
-        }
+      const actualHeaders = PERSONNEL_REGISTER_HEADERS.map((_, index) =>
+        getExcelCellText(worksheet.getRow(5).getCell(index + 1).value));
 
-        if (
-          CONTRACT_TEMPLATE_HEADERS.some(
-            (header, index) =>
-              actualHeaders[index] !== header,
-          )
-        ) {
-          throw new Error(
-            `${file.name}: 근로계약서 작성자료 열 구성이 다릅니다.`,
-          );
-        }
+      if (PERSONNEL_REGISTER_HEADERS.some((header, index) => actualHeaders[index] !== header)) {
+        throw new Error('인적사항 대장의 열 제목이 변경되었습니다. 홈페이지에서 새 대장을 만든 뒤 다시 시도해주세요.');
+      }
 
-        if (!/^\d{4}-\d{2}$/.test(sourceMonth)) {
+      const registerByWorkerCode = new Map();
+
+      for (let rowNumber = 6; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+        const excelRow = worksheet.getRow(rowNumber);
+        const hasData = PERSONNEL_REGISTER_HEADERS.some((_, index) =>
+          Boolean(getExcelCellText(excelRow.getCell(index + 1).value)));
+
+        if (!hasData) {
           continue;
         }
 
-        for (
-          let rowNumber = 6;
-          rowNumber <= worksheet.rowCount;
-          rowNumber += 1
-        ) {
-          const excelRow = worksheet.getRow(rowNumber);
-          const workerCode = getExcelCellText(
-            excelRow.getCell(1).value,
-          );
-          const name = getExcelCellText(
-            excelRow.getCell(2).value,
-          );
+        const workerCode = getExcelCellText(excelRow.getCell(1).value);
+        const name = getExcelCellText(excelRow.getCell(2).value);
 
-          if (!workerCode && !name) {
-            continue;
-          }
-
-          sourceRows.push({
-            sourceMonth,
-            workerCode,
-            name,
-            phone: getExcelCellText(
-              excelRow.getCell(3).value,
-            ),
-            residentNumber: getExcelCellText(
-              excelRow.getCell(4).value,
-            ),
-            address: getExcelCellText(
-              excelRow.getCell(5).value,
-            ),
-          });
+        if (!workerCode || !name) {
+          throw new Error(`인적사항 대장 ${rowNumber}행의 근로자번호 또는 성명이 비어 있습니다.`);
         }
+        if (registerByWorkerCode.has(workerCode)) {
+          throw new Error(`인적사항 대장에 근로자번호 ${workerCode}가 중복되어 있습니다. 중복 행을 정리한 뒤 다시 시도해주세요.`);
+        }
+
+        registerByWorkerCode.set(workerCode, {
+          excelRow: rowNumber,
+          workerCode,
+          name,
+          phone: getExcelCellText(excelRow.getCell(3).value),
+          residentNumber: getExcelCellText(excelRow.getCell(4).value),
+          address: getExcelCellText(excelRow.getCell(5).value),
+        });
       }
 
-      if (sourceRows.length === 0) {
-        throw new Error(
-          '선택한 파일에서 사용할 기자료를 찾지 못했습니다.',
-        );
+      if (registerByWorkerCode.size === 0) {
+        throw new Error('업로드한 인적사항 대장에 근로자 자료가 없습니다.');
       }
 
-      const monthIndex = (month) => {
-        const [year, monthNumber] = month
-          .split('-')
-          .map(Number);
-
-        return year * 12 + monthNumber - 1;
-      };
-      const selectedMonthIndex = monthIndex(
-        selectedMonth,
-      );
-      const isBetterReference = (
-        candidate,
-        current,
-      ) => {
-        if (!current) {
-          return true;
-        }
-
-        const candidateIndex = monthIndex(
-          candidate.sourceMonth,
-        );
-        const currentIndex = monthIndex(
-          current.sourceMonth,
-        );
-        const candidateDistance = Math.abs(
-          candidateIndex - selectedMonthIndex,
-        );
-        const currentDistance = Math.abs(
-          currentIndex - selectedMonthIndex,
-        );
-
-        if (candidateDistance !== currentDistance) {
-          return candidateDistance < currentDistance;
-        }
-
-        return candidateIndex > currentIndex;
-      };
-
-      const byWorkerCode = new Map();
-      const preferredByIdentity = new Map();
-
-      sourceRows.forEach((row) => {
-        if (
-          row.workerCode &&
-          isBetterReference(
-            row,
-            byWorkerCode.get(row.workerCode),
-          )
-        ) {
-          byWorkerCode.set(
-            row.workerCode,
-            row,
-          );
-        }
-
-        const identity = row.workerCode
-          ? `code:${row.workerCode}`
-          : `legacy:${normalizeName(row.name)}:${String(row.phone || '').replace(/\D/g, '')}`;
-
-        if (
-          isBetterReference(
-            row,
-            preferredByIdentity.get(identity),
-          )
-        ) {
-          preferredByIdentity.set(
-            identity,
-            row,
-          );
-        }
-      });
-
-      const nameGroups = new Map();
-
-      preferredByIdentity.forEach((row) => {
-        const key = normalizeName(row.name);
-
-        if (!key) {
-          return;
-        }
-
-        nameGroups.set(
-          key,
-          [
-            ...(nameGroups.get(key) || []),
-            row,
-          ],
-        );
-      });
-
-      const byUniqueName = new Map(
-        [...nameGroups.entries()]
-          .filter(([, rows]) => rows.length === 1)
-          .map(([key, rows]) => [key, rows[0]]),
-      );
       const targetRows = sortRowsByContractStart(
-        storedRows.filter(
-          isContractTemplateInputTarget,
-        ),
+        storedRows.filter(isPersonnelRegisterImportTarget),
         selectedMonth,
       );
 
       if (targetRows.length === 0) {
-        throw new Error(
-          '기자료를 반영할 미작성·반려 대상자가 없습니다.',
-        );
+        throw new Error(`${formatMonthLabel(selectedMonth)}에 인적사항을 반영할 양식 미입력·반려 대상자가 없습니다.`);
       }
 
-      let matchedCount = 0;
-
-      const parsedRows = targetRows.map(
-        (stored, index) => {
-          const reference =
-            byWorkerCode.get(
-              stored.worker_code,
-            ) ||
-            byUniqueName.get(
-              normalizeName(
-                stored.name,
-              ),
-            ) ||
-            null;
-
-          if (reference) {
-            matchedCount += 1;
-          }
-
-          const rawPhone =
-            reference?.phone ||
-            stored.contract_form?.phone ||
-            stored.phone ||
-            '';
-          const rawResidentNumber =
-            reference?.residentNumber ||
-            '';
-          const rawAddress =
-            reference?.address ||
-            '';
-          const phoneUnavailable =
-            isUnavailableValue(rawPhone);
-          const residentUnavailable =
-            isUnavailableValue(
-              rawResidentNumber,
-            );
-          const addressUnavailable =
-            isUnavailableValue(
-              rawAddress,
-            );
-          const contractStartDate =
-            getFixedContractStartDate(
-              stored,
-              selectedMonth,
-            );
-          const contractEndDate =
-            getMonthEndDate(
-              selectedMonth,
-            );
-          const baseIssues = [];
-
-          if (!contractStartDate) {
-            baseIssues.push(
-              '계약시작일 오류',
-            );
-          }
-          if (!contractEndDate) {
-            baseIssues.push(
-              '계약종료일 오류',
-            );
-          }
-          if (
-            contractStartDate &&
-            contractEndDate &&
-            contractStartDate >
-              contractEndDate
-          ) {
-            baseIssues.push(
-              '계약종료일이 시작일보다 빠름',
-            );
-          }
-
-          const parsedRow = {
-            excelRow: index + 6,
-            workerCode:
-              stored.worker_code,
-            name: stored.name,
-            phone: phoneUnavailable
-              ? ''
-              : rawPhone,
-            residentNumber:
-              residentUnavailable
-                ? ''
-                : normalizeResidentNumber(
-                  rawResidentNumber,
-                ),
-            address: addressUnavailable
-              ? ''
-              : rawAddress,
-            phoneUnavailable,
-            residentUnavailable,
-            addressUnavailable,
-            job:
-              FIXED_CONTRACT_VALUES.job,
-            process:
-              FIXED_CONTRACT_VALUES.process,
-            contractStartDate,
-            contractEndDate,
-            dailyWage:
-              FIXED_CONTRACT_VALUES.dailyWage,
-            workStartTime:
-              FIXED_CONTRACT_VALUES.workStartTime,
-            workEndTime:
-              FIXED_CONTRACT_VALUES.workEndTime,
-            breakMinutes:
-              FIXED_CONTRACT_VALUES.breakMinutes,
-            workDescription:
-              FIXED_CONTRACT_VALUES.workDescription,
-            note:
-              stored.contract_form?.note ||
-              '',
-            baseIssues,
-            issues: [],
-          };
-
-          parsedRow.issues =
-            getImportRowIssues(
-              parsedRow,
-            );
-
-          return parsedRow;
-        },
-      );
-
-      if (matchedCount === 0) {
-        throw new Error(
-          '선택한 작성자료에서 현재 월 근로자와 일치하는 정보를 찾지 못했습니다.',
-        );
-      }
-
-      setImportRows(parsedRows);
-      setImportFileName(
-        `기자료 업로드 (${files.length.toLocaleString()}개 파일)`,
-      );
-      setImportDialogOpen(true);
-      setSuccessMessage(
-        `${formatMonthLabel(selectedMonth)} 작성 대상 ${targetRows.length.toLocaleString()}명 중 ${matchedCount.toLocaleString()}명의 기자료를 브라우저 검토 화면에만 반영했습니다. 저장 후 대상자 EXL을 다운로드하면 누락 인원만 포함됩니다. 개인정보가 포함된 새 EXL은 만들지 않았습니다.`,
-      );
-    } catch (error) {
-      console.error(
-        '근로계약 기자료 업로드 오류:',
-        error,
-      );
-      setErrorMessage(
-        error?.message ||
-          '기자료를 불러오지 못했습니다.',
-      );
-    }
-  };
-
-  const handleContractFileSelected = async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-
-    setErrorMessage('');
-    setSuccessMessage('');
-
-    try {
-      const workbook = new ExcelJS.Workbook();
-      await workbook.xlsx.load(await file.arrayBuffer());
-      const worksheet = workbook.getWorksheet(CONTRACT_TEMPLATE_SHEET);
-      if (!worksheet) throw new Error(`시트 이름이 '${CONTRACT_TEMPLATE_SHEET}'인 회사 배포 양식만 업로드할 수 있습니다.`);
-
-      const templateVersion = getExcelCellText(worksheet.getCell('B2').value);
-      const uploadedProject = getExcelCellText(worksheet.getCell('E2').value);
-      const uploadedMonth = getExcelCellText(worksheet.getCell('H2').value).slice(0, 7);
-      if (templateVersion !== CONTRACT_TEMPLATE_VERSION) throw new Error(`양식 버전이 다릅니다. 현재 버전은 ${CONTRACT_TEMPLATE_VERSION}입니다.`);
-      if (uploadedProject !== projectName) throw new Error(`업로드 현장(${uploadedProject || '없음'})과 현재 현장(${projectName})이 다릅니다.`);
-      if (uploadedMonth !== selectedMonth) throw new Error(`업로드 계약월(${uploadedMonth || '없음'})과 현재 선택 월(${selectedMonth})이 다릅니다.`);
-
-      const actualHeaders = CONTRACT_TEMPLATE_HEADERS.map((_, index) => getExcelCellText(worksheet.getRow(5).getCell(index + 1).value));
-      if (CONTRACT_TEMPLATE_HEADERS.some((header, index) => actualHeaders[index] !== header)) {
-        throw new Error('양식의 열 제목이 변경되었습니다. 최신 대상자 EXL을 다시 다운로드해주세요.');
-      }
-
-      const storedMap = new Map(storedRows.map((row) => [row.worker_code, row]));
-      const seenCodes = new Set();
-      const duplicateCodes = new Set();
-      const parsedRows = [];
-
-      for (let rowNumber = 6; rowNumber <= worksheet.rowCount; rowNumber += 1) {
-        const excelRow = worksheet.getRow(rowNumber);
-        const workerCode = getExcelCellText(excelRow.getCell(1).value);
-        const name = getExcelCellText(excelRow.getCell(2).value);
-        if (!workerCode && !name) continue;
-        if (seenCodes.has(workerCode)) duplicateCodes.add(workerCode);
-        seenCodes.add(workerCode);
-
-        const stored = storedMap.get(workerCode);
-        const rawPhone = getExcelCellText(
-          excelRow.getCell(3).value,
-        );
-        const rawResidentNumber = getExcelCellText(
-          excelRow.getCell(4).value,
-        );
-        const rawAddress = getExcelCellText(
-          excelRow.getCell(5).value,
-        );
-        const phoneUnavailable =
-          isUnavailableValue(rawPhone);
-        const residentUnavailable =
-          isUnavailableValue(
-            rawResidentNumber,
-          );
-        const addressUnavailable =
-          isUnavailableValue(rawAddress);
-        const phone = phoneUnavailable
-          ? ''
-          : rawPhone;
-        const residentNumber = residentUnavailable
-          ? ''
-          : normalizeResidentNumber(
-            rawResidentNumber,
-          );
-        const address = addressUnavailable
-          ? ''
-          : rawAddress;
-        const job = FIXED_CONTRACT_VALUES.job;
-        const process = FIXED_CONTRACT_VALUES.process;
-        const contractStartDate = stored
-          ? getFixedContractStartDate(stored, selectedMonth)
-          : '';
-        const contractEndDate = getMonthEndDate(selectedMonth);
-        const dailyWage = FIXED_CONTRACT_VALUES.dailyWage;
-        const workStartTime = FIXED_CONTRACT_VALUES.workStartTime;
-        const workEndTime = FIXED_CONTRACT_VALUES.workEndTime;
-        const breakMinutes = FIXED_CONTRACT_VALUES.breakMinutes;
-        const workDescription = FIXED_CONTRACT_VALUES.workDescription;
-        const note = stored?.contract_form?.note || '';
+      let missingCount = 0;
+      const parsedRows = targetRows.map((stored, index) => {
+        const registerRow = registerByWorkerCode.get(stored.worker_code) || null;
         const baseIssues = [];
 
-        if (!workerCode) baseIssues.push('근로자번호 누락');
-        if (!stored) baseIssues.push('현재 월 작성대상에 없는 근로자번호');
-        if (stored && normalizeName(stored.name) !== normalizeName(name)) baseIssues.push(`성명 불일치(등록: ${stored.name})`);
-        if (stored && ['manager_confirmed', 'excluded'].includes(stored.status)) baseIssues.push('완료 또는 제외된 대상');
-        if (!contractStartDate) baseIssues.push('계약시작일 오류');
-        if (!contractEndDate) baseIssues.push('계약종료일 오류');
-        if (contractStartDate && contractEndDate && contractStartDate > contractEndDate) baseIssues.push('계약종료일이 시작일보다 빠름');
+        if (!registerRow) {
+          missingCount += 1;
+          baseIssues.push('인적사항 대장에 없는 현재 월 대상자');
+        } else if (normalizeName(registerRow.name) !== normalizeName(stored.name)) {
+          baseIssues.push(`성명 불일치(홈페이지: ${stored.name} / 대장: ${registerRow.name})`);
+        }
+
+        const rawPhone = registerRow?.phone || '';
+        const rawResidentNumber = registerRow?.residentNumber || '';
+        const rawAddress = registerRow?.address || '';
+        const phoneUnavailable = isUnavailableValue(rawPhone);
+        const residentUnavailable = isUnavailableValue(rawResidentNumber);
+        const addressUnavailable = isUnavailableValue(rawAddress);
+        const contractStartDate = getFixedContractStartDate(stored, selectedMonth);
+        const contractEndDate = getMonthEndDate(selectedMonth);
+
+        if (!contractStartDate) {
+          baseIssues.push('계약시작일 오류');
+        }
+        if (!contractEndDate) {
+          baseIssues.push('계약종료일 오류');
+        }
+        if (contractStartDate && contractEndDate && contractStartDate > contractEndDate) {
+          baseIssues.push('계약종료일이 시작일보다 빠름');
+        }
 
         const parsedRow = {
-          excelRow: rowNumber,
-          workerCode,
-          name,
-          phone,
-          residentNumber,
-          address,
+          excelRow: registerRow?.excelRow || `대장누락-${index + 1}`,
+          workerCode: stored.worker_code,
+          name: stored.name,
+          phone: phoneUnavailable ? '' : rawPhone,
+          residentNumber: residentUnavailable ? '' : normalizeResidentNumber(rawResidentNumber),
+          address: addressUnavailable ? '' : rawAddress,
           phoneUnavailable,
           residentUnavailable,
           addressUnavailable,
-          job,
-          process,
+          job: FIXED_CONTRACT_VALUES.job,
+          process: FIXED_CONTRACT_VALUES.process,
           contractStartDate,
           contractEndDate,
-          dailyWage,
-          workStartTime,
-          workEndTime,
-          breakMinutes,
-          workDescription,
-          note,
+          dailyWage: FIXED_CONTRACT_VALUES.dailyWage,
+          workStartTime: FIXED_CONTRACT_VALUES.workStartTime,
+          workEndTime: FIXED_CONTRACT_VALUES.workEndTime,
+          breakMinutes: FIXED_CONTRACT_VALUES.breakMinutes,
+          workDescription: FIXED_CONTRACT_VALUES.workDescription,
+          note: stored.contract_form?.note || '',
           baseIssues,
           issues: [],
         };
 
-        parsedRow.issues =
-          getImportRowIssues(parsedRow);
-        parsedRows.push(parsedRow);
-      }
-
-      if (parsedRows.length === 0) throw new Error('업로드할 근로자 작성자료가 없습니다.');
-      parsedRows.forEach((row) => {
-        if (duplicateCodes.has(row.workerCode)) {
-          row.baseIssues.push('동일 근로자번호 중복');
-          row.issues = getImportRowIssues(row);
-        }
+        parsedRow.issues = getImportRowIssues(parsedRow);
+        return parsedRow;
       });
 
       setImportRows(parsedRows);
       setImportFileName(file.name);
       setImportDialogOpen(true);
+      setSuccessMessage(`${formatMonthLabel(selectedMonth)} 현재 대상 ${targetRows.length.toLocaleString()}명을 현장 인적사항 대장과 대조했습니다.${missingCount > 0 ? ` 대장에 없는 ${missingCount.toLocaleString()}명은 먼저 대장을 갱신해주세요.` : ' 전원이 대장에 있습니다.'}`);
     } catch (error) {
-      console.error('근로계약서 작성자료 분석 오류:', error);
-      setErrorMessage(error?.message || '근로계약서 작성자료를 분석하지 못했습니다.');
+      console.error('근로자 인적사항 대장 분석 오류:', error);
+      setErrorMessage(error?.message || '근로자 인적사항 대장을 분석하지 못했습니다.');
     }
   };
 
@@ -2102,58 +1667,6 @@ export default function LaborContractManagement({
     setImportDialogOpen(false);
     setImportRows([]);
     setImportFileName('');
-  };
-
-  const handleImportFieldChange = (
-    excelRow,
-    field,
-    value,
-  ) => {
-    setImportRows((previous) =>
-      previous.map((row) => {
-        if (row.excelRow !== excelRow) {
-          return row;
-        }
-
-        const next = {
-          ...row,
-          [field]:
-            field === 'residentNumber'
-              ? normalizeResidentNumber(value)
-              : value,
-        };
-
-        next.issues = getImportRowIssues(next);
-        return next;
-      }),
-    );
-  };
-
-  const handleImportUnavailableChange = (
-    excelRow,
-    field,
-    checked,
-  ) => {
-    const unavailableField = `${field}Unavailable`;
-
-    setImportRows((previous) =>
-      previous.map((row) => {
-        if (row.excelRow !== excelRow) {
-          return row;
-        }
-
-        const next = {
-          ...row,
-          [unavailableField]: checked,
-          [field]: checked
-            ? ''
-            : row[field],
-        };
-
-        next.issues = getImportRowIssues(next);
-        return next;
-      }),
-    );
   };
 
   const handleSaveContractImport = async () => {
@@ -2207,7 +1720,7 @@ export default function LaborContractManagement({
         ? ` 오류 ${invalidCount.toLocaleString()}명은 저장하지 않았습니다.`
         : '';
 
-      setSuccessMessage(`${formatMonthLabel(selectedMonth)} 근로계약 작성자료 ${savedCount.toLocaleString()}명을 저장했습니다.${skippedMessage} 계약서를 만들려면 상단의 ‘계약서 PDF 생성’ 버튼을 눌러주세요.`);
+      setSuccessMessage(`${formatMonthLabel(selectedMonth)} 대상 ${savedCount.toLocaleString()}명의 인적사항을 반영했습니다.${skippedMessage} 계약서를 만들려면 상단의 ‘계약서 PDF 생성’ 버튼을 눌러주세요.`);
       setPendingImportPrintData((previous) => {
         const currentWorkerCodes =
           importedRowsSnapshot.map(
@@ -2374,7 +1887,7 @@ export default function LaborContractManagement({
             ],
           ),
       )
-        ? 'PDF용 주민등록번호·주소는 서버에 저장하지 않습니다. 선택할 수 없는 대상자는 대상자 EXL을 다시 업로드해주세요.'
+        ? 'PDF용 주민등록번호·주소는 서버에 저장하지 않습니다. 선택할 수 없는 대상자는 현장 인적사항 대장을 다시 업로드해주세요.'
         : '',
     );
     setContractPrintOpen(true);
@@ -2387,7 +1900,7 @@ export default function LaborContractManagement({
 
     if (!isSensitivePrintDataReady(values)) {
       setContractPrintError(
-        `${row.name}의 PDF용 개인정보가 없습니다. 대상자 EXL을 다시 업로드해주세요.`,
+        `${row.name}의 PDF용 개인정보가 없습니다. 현장 인적사항 대장을 다시 업로드해주세요.`,
       );
       return;
     }
@@ -2504,7 +2017,7 @@ export default function LaborContractManagement({
 
     if (invalidRows.length > 0) {
       setContractPrintError(
-        `${invalidRows.map((row) => row.name).join(', ')}의 PDF용 개인정보가 없습니다. 대상자 EXL을 다시 업로드해주세요.`,
+        `${invalidRows.map((row) => row.name).join(', ')}의 PDF용 개인정보가 없습니다. 현장 인적사항 대장을 다시 업로드해주세요.`,
       );
       return;
     }
@@ -3152,20 +2665,11 @@ export default function LaborContractManagement({
       />
 
       <input
-        ref={referenceContractFilesInputRef}
-        type="file"
-        accept=".xlsx"
-        multiple
-        hidden
-        onChange={handleReferenceContractFilesSelected}
-      />
-
-      <input
         ref={updateContractFileInputRef}
         type="file"
         accept=".xlsx"
         hidden
-        onChange={handleUpdateTemplateFileSelected}
+        onChange={handleUpdatePersonnelRegisterFileSelected}
       />
 
       <Paper
@@ -3244,7 +2748,7 @@ export default function LaborContractManagement({
                 },
               }}
             >
-              양식에서 연락처·주민등록번호·주소만 입력하면 나머지 계약조건은 자동으로 적용됩니다.
+              현장별 인적사항 대장 1개만 보관하면 선택 월의 계약조건은 홈페이지에서 자동으로 적용됩니다.
             </Typography>
           </Box>
 
@@ -3316,57 +2820,12 @@ export default function LaborContractManagement({
                 : '작성 대상 반영'}
             </Button>
 
-            <Tooltip title="다른 계약월의 작성자료를 불러와 일치하는 근로자의 개인정보를 브라우저 검토 화면에만 반영합니다.">
-              <span>
-                <Button
-                  variant="outlined"
-                  color="success"
-                  onClick={() =>
-                    referenceContractFilesInputRef.current?.click()
-                  }
-                  disabled={
-                    !accessInfo ||
-                    !storedRows.some(
-                      isContractTemplateInputTarget,
-                    )
-                  }
-                  sx={{
-                    ...actionControlSx,
-                    minWidth: 98,
-                  }}
-                >
-                  기자료 업로드
-                </Button>
-              </span>
-            </Tooltip>
-
-            <Tooltip title="현재 미작성·반려 대상만 받습니다. 기자료를 먼저 저장했다면 일치하지 않은 누락 인원만 포함됩니다.">
-              <span>
-                <Button
-                  variant="outlined"
-                  onClick={handleDownloadTemplate}
-                  disabled={
-                    !accessInfo ||
-                    !storedRows.some(
-                      isContractTemplateInputTarget,
-                    )
-                  }
-                  sx={{
-                    ...actionControlSx,
-                    minWidth: 126,
-                  }}
-                >
-                  대상자 EXL 다운로드
-                </Button>
-              </span>
-            </Tooltip>
-
-            <Tooltip title="PC에 보관 중인 선택 월 EXL 한 개에 이후 추가된 미작성·반려 인원만 덧붙입니다.">
+            <Tooltip title="처음에는 현장 인적사항 대장을 만들고, 이후에는 같은 파일을 선택해 신규 근로자만 마지막에 추가합니다.">
               <span>
                 <Button
                   variant="outlined"
                   color="info"
-                  onClick={handleUpdateTemplateClick}
+                  onClick={() => setRegisterActionOpen(true)}
                   disabled={
                     templateUpdating ||
                     !accessInfo ||
@@ -3374,17 +2833,17 @@ export default function LaborContractManagement({
                   }
                   sx={{
                     ...actionControlSx,
-                    minWidth: 78,
+                    minWidth: 154,
                   }}
                 >
                   {templateUpdating
                     ? '처리 중'
-                    : '업데이트'}
+                    : '인적사항 대장 생성/갱신'}
                 </Button>
               </span>
             </Tooltip>
 
-            <Tooltip title="현재 선택 월의 대상자 EXL을 올려 검토하고, 정상 자료만 반영합니다.">
+            <Tooltip title="현장 인적사항 대장 1개를 올리면 현재 선택 월의 대상자만 자동으로 대조합니다.">
               <span>
                 <Button
                   variant="outlined"
@@ -3393,10 +2852,10 @@ export default function LaborContractManagement({
                   disabled={!accessInfo || storedRows.length === 0}
                   sx={{
                     ...actionControlSx,
-                    minWidth: 116,
+                    minWidth: 130,
                   }}
                 >
-                  대상자 EXL 업로드
+                  인적사항 대장 업로드
                 </Button>
               </span>
             </Tooltip>
@@ -3476,16 +2935,16 @@ export default function LaborContractManagement({
           }}
         >
           <Typography sx={{ fontSize: '0.68rem' }}>
-            <Box component="span" sx={{ color: '#334155', fontWeight: 900 }}>기본:</Box>{' '}
-            작성 대상 반영 → 대상자 EXL 다운로드 → 대상자 EXL 업로드
+            <Box component="span" sx={{ color: '#334155', fontWeight: 900 }}>기본 순서:</Box>{' '}
+            작성 대상 반영 → 인적사항 대장 생성/갱신 → 인적사항 대장 업로드 → 계약서 PDF 생성
           </Typography>
           <Typography sx={{ fontSize: '0.68rem' }}>
-            <Box component="span" sx={{ color: '#047857', fontWeight: 900 }}>기자료 활용:</Box>{' '}
-            기자료 업로드 → 저장 → 대상자 EXL 다운로드(누락 인원만) → 대상자 EXL 업로드
+            <Box component="span" sx={{ color: '#0369a1', fontWeight: 900 }}>현장별 EXL 1개:</Box>{' '}
+            계약월이 바뀌어도 같은 대장을 사용하며, 새 근로자만 마지막 행에 누적
           </Typography>
           <Typography sx={{ fontSize: '0.68rem' }}>
-            <Box component="span" sx={{ color: '#0369a1', fontWeight: 900 }}>월별 EXL 1개:</Box>{' '}
-            같은 달에 새 인원이 생기면 ‘업데이트’로 기존 파일에 추가
+            <Box component="span" sx={{ color: '#047857', fontWeight: 900 }}>새로고침 후:</Box>{' '}
+            인적사항 대장 업로드 → 계약서 PDF 생성
           </Typography>
         </Stack>
       </Paper>
@@ -4252,6 +3711,56 @@ export default function LaborContractManagement({
       </Typography>
 
       <Dialog
+        open={registerActionOpen}
+        onClose={() => {
+          if (!templateUpdating) {
+            setRegisterActionOpen(false);
+          }
+        }}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle sx={{ fontWeight: 900 }}>
+          현장 인적사항 대장 생성/갱신
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={1.2}>
+            <Alert severity="info">
+              현장마다 인적사항 대장 EXL을 1개만 보관합니다. 계약월이 바뀌어도 같은 파일을 계속 사용합니다.
+            </Alert>
+            <Typography sx={{ color: '#475569', fontSize: '0.82rem' }}>
+              처음 사용하는 현장은 ‘신규 생성’을 누르고, 이미 대장이 있는 현장은 ‘기존 대장 갱신’을 눌러 보관 중인 파일을 선택하세요. 갱신 시 기존 인원과 개인정보는 유지되고 현재 월에 새로 생긴 근로자만 마지막 행에 추가됩니다.
+            </Typography>
+            <Alert severity="warning">
+              이전의 월별 ‘대상자 EXL’은 새 인적사항 대장과 형식이 다르므로 그대로 갱신하거나 업로드할 수 없습니다.
+            </Alert>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setRegisterActionOpen(false)}
+            disabled={templateUpdating}
+          >
+            취소
+          </Button>
+          <Button
+            variant="outlined"
+            onClick={downloadPersonnelRegister}
+            disabled={templateUpdating}
+          >
+            신규 생성
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleUpdatePersonnelRegisterClick}
+            disabled={templateUpdating}
+          >
+            기존 대장 갱신
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
         open={contractPrintOpen}
         onClose={closeContractPrintDialog}
         fullWidth
@@ -4268,7 +3777,7 @@ export default function LaborContractManagement({
         <DialogContent dividers>
           <Stack spacing={1.2}>
             <Alert severity="warning">
-              이 단계에서는 주민등록번호와 주소를 다시 입력하지 않습니다. PDF 창만 닫으면 이번 작업의 임시자료는 유지되며, 기자료와 누락자 EXL을 이어서 올릴 수 있습니다. 인쇄창을 만들거나 계약월·현장을 바꾸거나 페이지를 종료하면 즉시 폐기합니다.
+              이 단계에서는 주민등록번호와 주소를 다시 입력하지 않습니다. 인적사항 대장에서 불러온 개인정보는 인쇄창을 만들거나 계약월·현장을 바꾸거나 페이지를 종료하면 즉시 폐기합니다.
             </Alert>
 
             <Stack
@@ -4290,7 +3799,7 @@ export default function LaborContractManagement({
                   fontWeight: 800,
                 }}
               >
-                이번 브라우저 작업에서 정상 저장한 기자료와 누락자 EXL이 누적됩니다. 개인정보가 ‘준비됨’인 근로자만 PDF 생성 대상으로 선택할 수 있습니다.
+                현재 선택 월 대상자만 현장 인적사항 대장과 대조됩니다. 개인정보가 ‘준비됨’인 근로자만 PDF 생성 대상으로 선택할 수 있습니다.
               </Typography>
 
               <FormControlLabel
@@ -4465,7 +3974,7 @@ export default function LaborContractManagement({
                               label={
                                 sensitiveReady
                                   ? '준비됨'
-                                  : '작성자료 재업로드 필요'
+                                  : '대장 재업로드 필요'
                               }
                             />
                           </TableCell>
@@ -4485,7 +3994,7 @@ export default function LaborContractManagement({
                           color: '#94a3b8',
                         }}
                       >
-                        PDF로 출력할 작성자료가 없습니다.
+                        PDF로 출력할 현재 월 대상자가 없습니다.
                       </TableCell>
                     </TableRow>
                   )}
@@ -4625,7 +4134,7 @@ export default function LaborContractManagement({
         maxWidth="xl"
       >
         <DialogTitle sx={{ fontWeight: 900 }}>
-          근로계약서 대상자 EXL 업로드 검토
+          현장 인적사항 대장 업로드 검토
         </DialogTitle>
         <DialogContent dividers>
           <Stack spacing={1}>
@@ -4641,13 +4150,13 @@ export default function LaborContractManagement({
               파일: {importFileName || '-'} · 전체 {importRows.length.toLocaleString()}명 · 정상 {importRows.filter((row) => row.issues.length === 0).length.toLocaleString()}명 · 오류 {importRows.filter((row) => row.issues.length > 0).length.toLocaleString()}명
             </Alert>
             <Alert severity="info">
-              누락된 연락처·주민등록번호·주소는 아래 표에서 바로 입력하거나 ‘없음’을 선택할 수 있습니다. 저장하면 정상 자료만 반영되고, 주민등록번호·주소는 PDF 생성용 브라우저 메모리에만 잠시 유지됩니다.
+              대장에 있는 사람 중 현재 선택 월 대상자만 표시합니다. 누락된 연락처·주민등록번호·주소는 대장 파일에 입력한 뒤 다시 업로드하세요. 주민등록번호·주소는 PDF 생성용 브라우저 메모리에만 잠시 유지됩니다.
             </Alert>
             <TableContainer sx={{ maxHeight: 520, border: '1px solid #e2e8f0' }}>
               <Table stickyHeader size="small" sx={{ '& th, & td': { borderRight: '1px solid #e2e8f0', fontSize: '0.68rem', whiteSpace: 'nowrap' }, '& th': { bgcolor: '#f8fafc', fontWeight: 900 } }}>
                 <TableHead>
                   <TableRow>
-                    {['엑셀행','검토결과','근로자번호','성명','연락처','주민등록번호','주소','직종','공정','계약시작','계약종료','일급','근무시간','휴게','업무내용','확인내용'].map((header) => <TableCell key={header}>{header}</TableCell>)}
+                    {['대장행','검토결과','근로자번호','성명','연락처','주민등록번호','주소','직종','공정','계약시작','계약종료','일급','근무시간','휴게','업무내용','확인내용'].map((header) => <TableCell key={header}>{header}</TableCell>)}
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -4664,13 +4173,7 @@ export default function LaborContractManagement({
                             value={row.phone}
                             disabled={row.phoneUnavailable}
                             placeholder="010-0000-0000"
-                            onChange={(event) =>
-                              handleImportFieldChange(
-                                row.excelRow,
-                                'phone',
-                                event.target.value,
-                              )
-                            }
+                            InputProps={{ readOnly: true }}
                             inputProps={{ autoComplete: 'off' }}
                             sx={{ minWidth: 135 }}
                           />
@@ -4680,13 +4183,7 @@ export default function LaborContractManagement({
                               <Checkbox
                                 size="small"
                                 checked={row.phoneUnavailable}
-                                onChange={(event) =>
-                                  handleImportUnavailableChange(
-                                    row.excelRow,
-                                    'phone',
-                                    event.target.checked,
-                                  )
-                                }
+                                disabled
                               />
                             }
                             label="없음"
@@ -4700,13 +4197,7 @@ export default function LaborContractManagement({
                             value={row.residentNumber}
                             disabled={row.residentUnavailable}
                             placeholder="000000-0000000"
-                            onChange={(event) =>
-                              handleImportFieldChange(
-                                row.excelRow,
-                                'residentNumber',
-                                event.target.value,
-                              )
-                            }
+                            InputProps={{ readOnly: true }}
                             inputProps={{ autoComplete: 'off', inputMode: 'numeric' }}
                             sx={{ minWidth: 165 }}
                           />
@@ -4716,13 +4207,7 @@ export default function LaborContractManagement({
                               <Checkbox
                                 size="small"
                                 checked={row.residentUnavailable}
-                                onChange={(event) =>
-                                  handleImportUnavailableChange(
-                                    row.excelRow,
-                                    'residentNumber',
-                                    event.target.checked,
-                                  )
-                                }
+                                disabled
                               />
                             }
                             label="없음"
@@ -4737,13 +4222,7 @@ export default function LaborContractManagement({
                             value={row.address}
                             disabled={row.addressUnavailable}
                             placeholder="상세주소까지 입력"
-                            onChange={(event) =>
-                              handleImportFieldChange(
-                                row.excelRow,
-                                'address',
-                                event.target.value,
-                              )
-                            }
+                            InputProps={{ readOnly: true }}
                             inputProps={{ autoComplete: 'off' }}
                           />
                           <FormControlLabel
@@ -4752,13 +4231,7 @@ export default function LaborContractManagement({
                               <Checkbox
                                 size="small"
                                 checked={row.addressUnavailable}
-                                onChange={(event) =>
-                                  handleImportUnavailableChange(
-                                    row.excelRow,
-                                    'address',
-                                    event.target.checked,
-                                  )
-                                }
+                                disabled
                               />
                             }
                             label="없음"
@@ -4783,7 +4256,7 @@ export default function LaborContractManagement({
             </TableContainer>
             {importRows.some((row) => row.issues.length > 0) && (
               <Alert severity="warning">
-                개인정보 누락·오류는 위 표에서 바로 보완할 수 있습니다. 근로자번호 불일치·중복처럼 수정할 수 없는 오류 행만 이번 저장에서 제외됩니다.
+                개인정보 누락·오류 또는 대장에 없는 대상자는 인적사항 대장 파일을 수정·갱신한 뒤 다시 업로드하세요. 오류가 없는 대상만 이번 저장에 반영됩니다.
               </Alert>
             )}
           </Stack>
