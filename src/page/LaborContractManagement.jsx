@@ -46,6 +46,7 @@ import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded';
 import BlockOutlinedIcon from '@mui/icons-material/BlockOutlined';
 import ReplayRoundedIcon from '@mui/icons-material/ReplayRounded';
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
+import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
 import { createLaborContractPrintWindow } from '../utils/laborContractPrint';
@@ -3095,13 +3096,12 @@ export default function LaborContractManagement({
   ].filter(Boolean).length;
 
   const actionControlSx = {
-    width: 145,
-    minWidth: 145,
+    minWidth: 112,
     height: 40,
     flexShrink: 0,
-    px: 1,
+    px: 1.1,
     py: 0,
-    fontSize: '0.72rem',
+    fontSize: '0.7rem',
     fontWeight: 800,
     lineHeight: 1.15,
     whiteSpace: 'nowrap',
@@ -3152,24 +3152,28 @@ export default function LaborContractManagement({
         <Stack
           direction={{
             xs: 'column',
-            md: 'row',
+            xl: 'row',
           }}
           justifyContent="space-between"
           alignItems={{
             xs: 'stretch',
-            md: 'center',
+            xl: 'center',
           }}
           spacing={1}
         >
           <Box
             sx={{
-              minWidth: 440,
+              minWidth: {
+                xs: 0,
+                xl: 300,
+              },
               flexShrink: 0,
             }}
           >
             <Stack
               direction="row"
               spacing={0.7}
+              useFlexGap
               alignItems="center"
               flexWrap="wrap"
             >
@@ -3208,7 +3212,10 @@ export default function LaborContractManagement({
                 mt: 0.15,
                 color: '#64748b',
                 fontSize: '0.74rem',
-                whiteSpace: 'nowrap',
+                whiteSpace: {
+                  xs: 'normal',
+                  sm: 'nowrap',
+                },
               }}
             >
               양식에서 연락처·주민등록번호·주소만 입력하면 나머지 계약조건은 자동으로 적용됩니다.
@@ -3218,11 +3225,21 @@ export default function LaborContractManagement({
           <Stack
             direction="row"
             spacing={0.6}
+            useFlexGap
             alignItems="center"
+            flexWrap="wrap"
             sx={{
               minWidth: 0,
-              overflowX: 'auto',
-              pb: 0.2,
+              width: {
+                xs: '100%',
+                xl: 'auto',
+              },
+              justifyContent: {
+                xs: 'flex-start',
+                xl: 'flex-end',
+              },
+              rowGap: 0.6,
+              overflowX: 'visible',
             }}
           >
             <TextField
@@ -3240,6 +3257,8 @@ export default function LaborContractManagement({
               }}
               sx={{
                 ...actionControlSx,
+                width: 126,
+                minWidth: 126,
                 '& .MuiInputBase-root': {
                   height: 40,
                   fontSize: '0.76rem',
@@ -3261,7 +3280,10 @@ export default function LaborContractManagement({
                 analyzedWorkers.length ===
                   0
               }
-              sx={actionControlSx}
+              sx={{
+                ...actionControlSx,
+                minWidth: 108,
+              }}
             >
               {syncing
                 ? '반영 중'
@@ -3277,7 +3299,10 @@ export default function LaborContractManagement({
                   isContractTemplateInputTarget,
                 )
               }
-              sx={actionControlSx}
+              sx={{
+                ...actionControlSx,
+                minWidth: 122,
+              }}
             >
               신규 양식 다운로드
             </Button>
@@ -3291,7 +3316,10 @@ export default function LaborContractManagement({
                 !accessInfo ||
                 storedRows.length === 0
               }
-              sx={actionControlSx}
+              sx={{
+                ...actionControlSx,
+                minWidth: 126,
+              }}
             >
               {templateUpdating
                 ? '업데이트 중'
@@ -3310,7 +3338,10 @@ export default function LaborContractManagement({
                   isContractTemplateInputTarget,
                 )
               }
-              sx={actionControlSx}
+              sx={{
+                ...actionControlSx,
+                minWidth: 132,
+              }}
             >
               작성자료 자동채우기
             </Button>
@@ -3320,7 +3351,10 @@ export default function LaborContractManagement({
               color="secondary"
               onClick={() => contractFileInputRef.current?.click()}
               disabled={!accessInfo || storedRows.length === 0}
-              sx={actionControlSx}
+              sx={{
+                ...actionControlSx,
+                minWidth: 112,
+              }}
             >
               작성자료 업로드
             </Button>
@@ -3344,24 +3378,40 @@ export default function LaborContractManagement({
                   ),
                 )
               }
-              sx={actionControlSx}
+              sx={{
+                ...actionControlSx,
+                minWidth: 116,
+              }}
             >
               계약서 PDF 생성
             </Button>
 
-            <Button
-              variant="outlined"
-              onClick={() =>
-                setRefreshKey(
-                  (previous) =>
-                    previous + 1,
-                )
-              }
-              disabled={loading}
-              sx={actionControlSx}
-            >
-              새로고침
-            </Button>
+            <Tooltip title="새로고침">
+              <IconButton
+                aria-label="새로고침"
+                onClick={() =>
+                  setRefreshKey(
+                    (previous) =>
+                      previous + 1,
+                  )
+                }
+                disabled={loading}
+                sx={{
+                  width: 40,
+                  height: 40,
+                  flexShrink: 0,
+                  border: '1px solid #cbd5e1',
+                  borderRadius: 1,
+                  color: '#475569',
+                  '&:hover': {
+                    borderColor: '#94a3b8',
+                    bgcolor: '#f8fafc',
+                  },
+                }}
+              >
+                <RefreshRoundedIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
           </Stack>
         </Stack>
       </Paper>
