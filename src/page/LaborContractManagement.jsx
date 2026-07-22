@@ -56,10 +56,21 @@ import { createLaborContractPrintWindow } from '../utils/laborContractPrint';
 const PAGE_SIZE = 1000;
 const CONTRACT_TEMPLATE_VERSION = 'LABOR_CONTRACT_V1';
 const CONTRACT_TEMPLATE_SHEET = '근로계약서작성자료';
+const FIXED_CONTRACT_VALUES = Object.freeze({
+  job: '일급제',
+  process: '내장공',
+  dailyWage: 180000,
+  workStartTime: '07:00',
+  workEndTime: '17:00',
+  breakMinutes: 120,
+  workDescription: '내장공',
+});
 const CONTRACT_TEMPLATE_HEADERS = [
   '근로자번호',
   '성명',
   '연락처',
+  '주민등록번호',
+  '주소',
   '직종',
   '공정',
   '계약시작일',
@@ -69,8 +80,8 @@ const CONTRACT_TEMPLATE_HEADERS = [
   '근무종료',
   '휴게시간(분)',
   '업무내용',
-  '비고',
 ];
+const CONTRACT_TEMPLATE_EDITABLE_COLUMNS = new Set([3, 4, 5]);
 
 const STATUS_META = {
   required: {
@@ -373,28 +384,45 @@ const parseExcelDateValue = (value) => {
   return [String(year), String(month).padStart(2, '0'), String(day).padStart(2, '0')].join('-');
 };
 
-const parseExcelNumber = (value) => {
-  if (value === null || value === undefined || value === '') return null;
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
-  const normalized = getExcelCellText(value).replace(/,/g, '');
-  if (!normalized) return null;
-  const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? parsed : null;
+const getMonthEndDate = (monthKey) => {
+  const matched = String(monthKey || '').match(/^(\d{4})-(\d{2})$/);
+
+  if (!matched) {
+    return '';
+  }
+
+  const year = Number(matched[1]);
+  const month = Number(matched[2]);
+  const lastDay = new Date(year, month, 0).getDate();
+
+  return `${matched[1]}-${matched[2]}-${String(lastDay).padStart(2, '0')}`;
 };
 
-const getExcelTimeText = (value) => {
-  if (!value) return '';
-  if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return `${String(value.getHours()).padStart(2, '0')}:${String(value.getMinutes()).padStart(2, '0')}`;
+const getFixedContractStartDate = (row, monthKey) => {
+  if (row?.requirement_type === 'continuous') {
+    return `${monthKey}-01`;
   }
-  if (typeof value === 'number' && Number.isFinite(value)) {
-    const minutes = Math.round(value * 24 * 60);
-    return `${String(Math.floor(minutes / 60) % 24).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
-  }
-  const text = getExcelCellText(value);
-  const matched = text.match(/^(\d{1,2}):(\d{2})$/);
-  return matched ? `${String(Number(matched[1])).padStart(2, '0')}:${matched[2]}` : text;
+
+  return (
+    parseExcelDateValue(row?.current_month_first_work_date) ||
+    `${monthKey}-01`
+  );
 };
+
+const sortRowsByContractStart = (rows, monthKey) =>
+  [...rows].sort((first, second) => {
+    const firstDate = getFixedContractStartDate(first, monthKey);
+    const secondDate = getFixedContractStartDate(second, monthKey);
+
+    return (
+      firstDate.localeCompare(secondDate) ||
+      String(first?.name || '').localeCompare(
+        String(second?.name || ''),
+        'ko',
+        { numeric: true },
+      )
+    );
+  });
 
 const downloadExcelBuffer = (buffer, fileName) => {
   const blob = new Blob([buffer], {
@@ -426,6 +454,18 @@ const isValidResidentNumber = (value) =>
   /^\d{6}-\d{7}$/.test(
     normalizeResidentNumber(value),
   );
+
+const maskResidentNumber = (value) => {
+  const normalized = normalizeResidentNumber(value);
+
+  if (!normalized) {
+    return '-';
+  }
+
+  return normalized.length >= 8
+    ? `${normalized.slice(0, 8)}******`
+    : normalized;
+};
 
 export default function LaborContractManagement({
   projectName = '',
@@ -672,7 +712,7 @@ export default function LaborContractManagement({
           !accessInfo
         ) {
           setStoredRows([]);
-          return;
+          return [];
         }
 
         setLoadingStoredRows(true);
@@ -715,6 +755,8 @@ export default function LaborContractManagement({
             error?.message ||
               '저장된 근로계약 상태를 불러오지 못했습니다.',
           );
+          setLoadingStoredRows(false);
+          return [];
         } else {
           const formMap = new Map(
             (formResult.data || []).map(
@@ -725,18 +767,18 @@ export default function LaborContractManagement({
             ),
           );
 
-          setStoredRows(
-            (requirementResult.data || []).map(
-              (requirement) => ({
-                ...requirement,
-                contract_form:
-                  formMap.get(requirement.requirement_id) || null,
-              }),
-            ),
+          const nextRows = (requirementResult.data || []).map(
+            (requirement) => ({
+              ...requirement,
+              contract_form:
+                formMap.get(requirement.requirement_id) || null,
+            }),
           );
-        }
 
-        setLoadingStoredRows(false);
+          setStoredRows(nextRows);
+          setLoadingStoredRows(false);
+          return nextRows;
+        }
       },
       [
         accessInfo,
@@ -1047,20 +1089,29 @@ export default function LaborContractManagement({
           },
         )
         .sort(
-          (first, second) =>
-            first.requirementType.localeCompare(
-              second.requirementType,
-            ) ||
-            first.currentMonthFirstDate.localeCompare(
-              second.currentMonthFirstDate,
-            ) ||
-            first.displayName.localeCompare(
-              second.displayName,
-              'ko',
-              {
-                numeric: true,
-              },
-            ),
+          (first, second) => {
+            const firstContractStart =
+              first.requirementType === 'continuous'
+                ? `${selectedMonth}-01`
+                : first.currentMonthFirstDate;
+            const secondContractStart =
+              second.requirementType === 'continuous'
+                ? `${selectedMonth}-01`
+                : second.currentMonthFirstDate;
+
+            return (
+              firstContractStart.localeCompare(
+                secondContractStart,
+              ) ||
+              first.displayName.localeCompare(
+                second.displayName,
+                'ko',
+                {
+                  numeric: true,
+                },
+              )
+            );
+          },
         );
     }, [
       reports,
@@ -1068,8 +1119,11 @@ export default function LaborContractManagement({
     ]);
 
   const handleDownloadTemplate = async () => {
-    const targetRows = storedRows.filter(
-      (row) => !['manager_confirmed', 'excluded'].includes(row.status),
+    const targetRows = sortRowsByContractStart(
+      storedRows.filter(
+        (row) => !['manager_confirmed', 'excluded'].includes(row.status),
+      ),
+      selectedMonth,
     );
 
     if (targetRows.length === 0) {
@@ -1086,7 +1140,7 @@ export default function LaborContractManagement({
         views: [{ state: 'frozen', ySplit: 5 }],
       });
 
-      worksheet.mergeCells('A1:M1');
+      worksheet.mergeCells('A1:N1');
       worksheet.getCell('A1').value = '근로계약서 작성자료';
       worksheet.getCell('A1').font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
       worksheet.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
@@ -1100,13 +1154,13 @@ export default function LaborContractManagement({
       worksheet.getCell('G2').value = '계약대상월';
       worksheet.getCell('H2').value = selectedMonth;
 
-      worksheet.mergeCells('A3:M3');
-      worksheet.getCell('A3').value = '근로자번호와 성명은 수정하지 마세요. 연락처부터 비고까지 작성한 뒤 업로드합니다.';
+      worksheet.mergeCells('A3:N3');
+      worksheet.getCell('A3').value = '노란색 3개 열(연락처, 주민등록번호, 주소)만 입력하세요. 회색 항목은 회사 양식에 맞춘 고정값입니다.';
       worksheet.getCell('A3').font = { bold: true, color: { argb: 'FF9A3412' } };
       worksheet.getCell('A3').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF7ED' } };
 
-      worksheet.mergeCells('A4:M4');
-      worksheet.getCell('A4').value = '필수입력: 연락처, 직종, 공정, 계약시작일, 계약종료일, 일급, 근무시작, 근무종료, 휴게시간, 업무내용';
+      worksheet.mergeCells('A4:N4');
+      worksheet.getCell('A4').value = '필수입력: 연락처, 주민등록번호, 주소 · 계약종료일은 월말 · 일급은 180,000원 · 목록은 계약시작일 과거순';
       worksheet.getCell('A4').font = { color: { argb: 'FF475569' } };
 
       const headerRow = worksheet.getRow(5);
@@ -1132,22 +1186,32 @@ export default function LaborContractManagement({
           row.worker_code,
           row.name,
           form.phone || row.phone || '',
-          form.job || row.job || '',
-          form.process || row.process || '',
-          form.contract_start_date || row.current_month_first_work_date || `${selectedMonth}-01`,
-          form.contract_end_date || '',
-          form.daily_wage ?? '',
-          form.work_start_time || '08:00',
-          form.work_end_time || '17:00',
-          form.break_minutes ?? 60,
-          form.work_description || row.process || row.job || '',
-          form.note || '',
+          '',
+          '',
+          FIXED_CONTRACT_VALUES.job,
+          FIXED_CONTRACT_VALUES.process,
+          getFixedContractStartDate(row, selectedMonth),
+          getMonthEndDate(selectedMonth),
+          FIXED_CONTRACT_VALUES.dailyWage,
+          FIXED_CONTRACT_VALUES.workStartTime,
+          FIXED_CONTRACT_VALUES.workEndTime,
+          FIXED_CONTRACT_VALUES.breakMinutes,
+          FIXED_CONTRACT_VALUES.workDescription,
         ];
-        excelRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
-        excelRow.getCell(2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
-        excelRow.getCell(8).numFmt = '#,##0';
-        excelRow.getCell(11).numFmt = '0';
-        for (let column = 1; column <= 13; column += 1) {
+        excelRow.getCell(3).numFmt = '@';
+        excelRow.getCell(4).numFmt = '@';
+        excelRow.getCell(10).numFmt = '#,##0';
+        excelRow.getCell(13).numFmt = '0';
+        for (let column = 1; column <= CONTRACT_TEMPLATE_HEADERS.length; column += 1) {
+          excelRow.getCell(column).fill = {
+            type: 'pattern',
+            pattern: 'solid',
+            fgColor: {
+              argb: CONTRACT_TEMPLATE_EDITABLE_COLUMNS.has(column)
+                ? 'FFFFF2CC'
+                : 'FFF1F5F9',
+            },
+          };
           excelRow.getCell(column).border = {
             top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
             left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
@@ -1157,10 +1221,10 @@ export default function LaborContractManagement({
         }
       });
 
-      [16, 13, 18, 15, 17, 14, 14, 14, 12, 12, 14, 28, 26].forEach((width, index) => {
+      [16, 13, 18, 20, 34, 14, 15, 14, 14, 14, 12, 12, 14, 24].forEach((width, index) => {
         worksheet.getColumn(index + 1).width = width;
       });
-      worksheet.autoFilter = { from: 'A5', to: 'M5' };
+      worksheet.autoFilter = { from: 'A5', to: 'N5' };
 
       const buffer = await workbook.xlsx.writeBuffer();
       downloadExcelBuffer(buffer, `근로계약서작성자료_${projectName}_${selectedMonth}.xlsx`);
@@ -1212,16 +1276,22 @@ export default function LaborContractManagement({
 
         const stored = storedMap.get(workerCode);
         const phone = getExcelCellText(excelRow.getCell(3).value);
-        const job = getExcelCellText(excelRow.getCell(4).value);
-        const process = getExcelCellText(excelRow.getCell(5).value);
-        const contractStartDate = parseExcelDateValue(excelRow.getCell(6).value);
-        const contractEndDate = parseExcelDateValue(excelRow.getCell(7).value);
-        const dailyWage = parseExcelNumber(excelRow.getCell(8).value);
-        const workStartTime = getExcelTimeText(excelRow.getCell(9).value);
-        const workEndTime = getExcelTimeText(excelRow.getCell(10).value);
-        const breakMinutes = parseExcelNumber(excelRow.getCell(11).value);
-        const workDescription = getExcelCellText(excelRow.getCell(12).value);
-        const note = getExcelCellText(excelRow.getCell(13).value);
+        const residentNumber = normalizeResidentNumber(
+          getExcelCellText(excelRow.getCell(4).value),
+        );
+        const address = getExcelCellText(excelRow.getCell(5).value);
+        const job = FIXED_CONTRACT_VALUES.job;
+        const process = FIXED_CONTRACT_VALUES.process;
+        const contractStartDate = stored
+          ? getFixedContractStartDate(stored, selectedMonth)
+          : '';
+        const contractEndDate = getMonthEndDate(selectedMonth);
+        const dailyWage = FIXED_CONTRACT_VALUES.dailyWage;
+        const workStartTime = FIXED_CONTRACT_VALUES.workStartTime;
+        const workEndTime = FIXED_CONTRACT_VALUES.workEndTime;
+        const breakMinutes = FIXED_CONTRACT_VALUES.breakMinutes;
+        const workDescription = FIXED_CONTRACT_VALUES.workDescription;
+        const note = stored?.contract_form?.note || '';
         const issues = [];
 
         if (!workerCode) issues.push('근로자번호 누락');
@@ -1229,22 +1299,19 @@ export default function LaborContractManagement({
         if (stored && normalizeName(stored.name) !== normalizeName(name)) issues.push(`성명 불일치(등록: ${stored.name})`);
         if (stored && ['manager_confirmed', 'excluded'].includes(stored.status)) issues.push('완료 또는 제외된 대상');
         if (!phone) issues.push('연락처 누락');
-        if (!job) issues.push('직종 누락');
-        if (!process) issues.push('공정 누락');
+        if (!isValidResidentNumber(residentNumber)) issues.push('주민등록번호 오류');
+        if (!address) issues.push('주소 누락');
         if (!contractStartDate) issues.push('계약시작일 오류');
         if (!contractEndDate) issues.push('계약종료일 오류');
         if (contractStartDate && contractEndDate && contractStartDate > contractEndDate) issues.push('계약종료일이 시작일보다 빠름');
-        if (dailyWage === null || dailyWage <= 0) issues.push('일급 오류');
-        if (!workStartTime) issues.push('근무시작 누락');
-        if (!workEndTime) issues.push('근무종료 누락');
-        if (breakMinutes === null || !Number.isInteger(breakMinutes) || breakMinutes < 0) issues.push('휴게시간 오류');
-        if (!workDescription) issues.push('업무내용 누락');
 
         parsedRows.push({
           excelRow: rowNumber,
           workerCode,
           name,
           phone,
+          residentNumber,
+          address,
           job,
           process,
           contractStartDate,
@@ -1273,6 +1340,16 @@ export default function LaborContractManagement({
     }
   };
 
+  const closeContractImportDialog = () => {
+    if (importSaving) {
+      return;
+    }
+
+    setImportDialogOpen(false);
+    setImportRows([]);
+    setImportFileName('');
+  };
+
   const handleSaveContractImport = async () => {
     const invalidCount = importRows.filter((row) => row.issues.length > 0).length;
     if (invalidCount > 0) {
@@ -1282,6 +1359,10 @@ export default function LaborContractManagement({
 
     setImportSaving(true);
     setErrorMessage('');
+
+    const importedRowsSnapshot = importRows.map((row) => ({
+      ...row,
+    }));
 
     const { data, error } = await supabase.rpc('labor_import_contract_forms', {
       p_project_name: projectName,
@@ -1309,11 +1390,29 @@ export default function LaborContractManagement({
       console.error('근로계약 작성자료 저장 오류:', error);
       setErrorMessage(error.message || '근로계약 작성자료를 저장하지 못했습니다.');
     } else {
-      setSuccessMessage(`${formatMonthLabel(selectedMonth)} 근로계약 작성자료 ${(data?.imported_count || importRows.length).toLocaleString()}명을 반영했습니다.`);
+      setSuccessMessage(`${formatMonthLabel(selectedMonth)} 근로계약 작성자료 ${(data?.imported_count || importedRowsSnapshot.length).toLocaleString()}명을 반영했습니다. 엑셀에 입력한 개인정보를 적용해 PDF 생성 화면을 열었습니다.`);
       setImportDialogOpen(false);
       setImportRows([]);
       setImportFileName('');
-      await loadStoredRows();
+      const refreshedRows = await loadStoredRows();
+      openContractPrintDialog(
+        null,
+        {
+          sourceRows: refreshedRows,
+          allowedWorkerCodes: importedRowsSnapshot.map(
+            (row) => row.workerCode,
+          ),
+          sensitiveByWorkerCode: Object.fromEntries(
+            importedRowsSnapshot.map((row) => [
+              row.workerCode,
+              {
+                residentNumber: row.residentNumber,
+                address: row.address,
+              },
+            ]),
+          ),
+        },
+      );
     }
     setImportSaving(false);
   };
@@ -1333,16 +1432,33 @@ export default function LaborContractManagement({
     clearContractPrintInputs();
   };
 
-  const openContractPrintDialog = (targetRow = null) => {
+  const openContractPrintDialog = (
+    targetRow = null,
+    options = {},
+  ) => {
+    const sourceRows = Array.isArray(options.sourceRows)
+      ? options.sourceRows
+      : storedRows;
+    const allowedWorkerCodes = options.allowedWorkerCodes
+      ? new Set(options.allowedWorkerCodes)
+      : null;
+    const sensitiveByWorkerCode = options.sensitiveByWorkerCode || {};
     const initialRows = targetRow
       ? [targetRow]
-      : storedRows.filter(
-        (row) =>
-          row.contract_form &&
-          [
-            'form_ready',
-            'rejected',
-          ].includes(row.status),
+      : sortRowsByContractStart(
+        sourceRows.filter(
+          (row) =>
+            row.contract_form &&
+            [
+              'form_ready',
+              'rejected',
+            ].includes(row.status) &&
+            (
+              !allowedWorkerCodes ||
+              allowedWorkerCodes.has(row.worker_code)
+            ),
+        ),
+        selectedMonth,
       );
 
     if (initialRows.length === 0) {
@@ -1365,8 +1481,12 @@ export default function LaborContractManagement({
         (result, row) => ({
           ...result,
           [String(row.requirement_id)]: {
-            residentNumber: '',
-            address: '',
+            residentNumber:
+              sensitiveByWorkerCode[row.worker_code]
+                ?.residentNumber || '',
+            address:
+              sensitiveByWorkerCode[row.worker_code]
+                ?.address || '',
           },
         }),
         {},
@@ -1518,11 +1638,14 @@ export default function LaborContractManagement({
   };
 
   const handleCreateContractPdf = async () => {
-    const selectedRows = storedRows.filter(
-      (row) =>
-        selectedPrintIds.includes(
-          String(row.requirement_id),
-        ),
+    const selectedRows = sortRowsByContractStart(
+      storedRows.filter(
+        (row) =>
+          selectedPrintIds.includes(
+            String(row.requirement_id),
+          ),
+      ),
+      selectedMonth,
     );
 
     if (selectedRows.length === 0) {
@@ -1545,18 +1668,14 @@ export default function LaborContractManagement({
           ) ||
           !String(
             values.address || '',
-          ).trim() ||
-          !row.contract_form
-            ?.contract_start_date ||
-          !row.contract_form
-            ?.contract_end_date
+          ).trim()
         );
       },
     );
 
     if (invalidRows.length > 0) {
       setContractPrintError(
-        `${invalidRows.map((row) => row.name).join(', ')}의 주민등록번호·주소 또는 계약기간을 확인해주세요.`,
+        `${invalidRows.map((row) => row.name).join(', ')}의 주민등록번호와 주소를 확인해주세요.`,
       );
       return;
     }
@@ -1592,11 +1711,14 @@ export default function LaborContractManagement({
                       values.address,
                     ).trim(),
                   contractStartDate:
-                    row.contract_form
-                      .contract_start_date,
+                    getFixedContractStartDate(
+                      row,
+                      selectedMonth,
+                    ),
                   contractEndDate:
-                    row.contract_form
-                      .contract_end_date,
+                    getMonthEndDate(
+                      selectedMonth,
+                    ),
                 };
               },
             ),
@@ -1965,44 +2087,48 @@ export default function LaborContractManagement({
           .trim()
           .toLowerCase();
 
-      return storedRows.filter(
-        (row) => {
-          if (
-            workerTypeFilter !==
-              'all' &&
-            row.requirement_type !==
-              workerTypeFilter
-          ) {
-            return false;
-          }
+      return sortRowsByContractStart(
+        storedRows.filter(
+          (row) => {
+            if (
+              workerTypeFilter !==
+                'all' &&
+              row.requirement_type !==
+                workerTypeFilter
+            ) {
+              return false;
+            }
 
-          if (
-            statusFilter !==
-              'all' &&
-            row.status !==
-              statusFilter
-          ) {
-            return false;
-          }
+            if (
+              statusFilter !==
+                'all' &&
+              row.status !==
+                statusFilter
+            ) {
+              return false;
+            }
 
-          if (!keyword) {
-            return true;
-          }
+            if (!keyword) {
+              return true;
+            }
 
-          return [
-            row.worker_code,
-            row.name,
-            row.phone,
-            row.job,
-            row.process,
-          ]
-            .join(' ')
-            .toLowerCase()
-            .includes(keyword);
-        },
+            return [
+              row.worker_code,
+              row.name,
+              row.phone,
+              row.job,
+              row.process,
+            ]
+              .join(' ')
+              .toLowerCase()
+              .includes(keyword);
+          },
+        ),
+        selectedMonth,
       );
     }, [
       searchText,
+      selectedMonth,
       statusFilter,
       storedRows,
       workerTypeFilter,
@@ -2011,19 +2137,23 @@ export default function LaborContractManagement({
   const contractPrintRows =
     useMemo(
       () =>
-        storedRows.filter(
-          (row) =>
-            row.contract_form &&
-            row.status !==
-              'excluded' &&
-            (
-              includeCompletedPrintRows ||
+        sortRowsByContractStart(
+          storedRows.filter(
+            (row) =>
+              row.contract_form &&
               row.status !==
-                'manager_confirmed'
-            ),
+                'excluded' &&
+              (
+                includeCompletedPrintRows ||
+                row.status !==
+                  'manager_confirmed'
+              ),
+          ),
+          selectedMonth,
         ),
       [
         includeCompletedPrintRows,
+        selectedMonth,
         storedRows,
       ],
     );
@@ -2214,7 +2344,7 @@ export default function LaborContractManagement({
                 fontSize: '0.78rem',
               }}
             >
-              출력일보 대상 반영 후 회사 배포 양식을 내려받아 작성자료를 업로드합니다.
+              양식에서 연락처·주민등록번호·주소만 입력하면 나머지 계약조건은 자동으로 적용됩니다.
             </Typography>
           </Box>
 
@@ -2680,7 +2810,7 @@ export default function LaborContractManagement({
                     '연락처',
                     '직종',
                     '공정',
-                    '최초근무일',
+                    '계약시작일',
                     '계약대상월',
                     '작성사유',
                     '양식입력일',
@@ -2787,7 +2917,10 @@ export default function LaborContractManagement({
 
                         <TableCell>
                           {formatShortDate(
-                            row.first_work_date,
+                            getFixedContractStartDate(
+                              row,
+                              selectedMonth,
+                            ),
                           )}
                         </TableCell>
 
@@ -3037,7 +3170,7 @@ export default function LaborContractManagement({
         <DialogContent dividers>
           <Stack spacing={1.2}>
             <Alert severity="warning">
-              주민등록번호와 주소는 이 화면의 임시 메모리에만 입력됩니다. 계약서 인쇄창을 만든 직후 입력값을 초기화하고, Supabase와 서버에는 저장하지 않습니다.
+              엑셀 업로드 직후에는 주민등록번호와 주소가 자동으로 채워집니다. 이 정보는 브라우저 임시 메모리에서만 사용되며, 계약서 인쇄창을 만들거나 창을 닫으면 즉시 초기화됩니다.
             </Alert>
 
             <Stack
@@ -3059,7 +3192,7 @@ export default function LaborContractManagement({
                   fontWeight: 800,
                 }}
               >
-                양식입력완료·반려 대상은 처음부터 선택됩니다. 이미 PDF를 만든 대상은 필요할 때 직접 선택해 재출력할 수 있습니다.
+                엑셀 업로드 직후에는 이번에 반영한 대상만 선택됩니다. 일반 실행 시에는 양식입력완료·반려 대상이 선택되며, 기존 대상도 필요할 때 재출력할 수 있습니다.
               </Typography>
 
               <FormControlLabel
@@ -3205,13 +3338,16 @@ export default function LaborContractManagement({
 
                           <TableCell>
                             {formatShortDate(
-                              row.contract_form
-                                ?.contract_start_date,
+                              getFixedContractStartDate(
+                                row,
+                                selectedMonth,
+                              ),
                             )}{' '}
                             ~{' '}
                             {formatShortDate(
-                              row.contract_form
-                                ?.contract_end_date,
+                              getMonthEndDate(
+                                selectedMonth,
+                              ),
                             )}
                           </TableCell>
 
@@ -3423,9 +3559,7 @@ export default function LaborContractManagement({
 
       <Dialog
         open={importDialogOpen}
-        onClose={() => {
-          if (!importSaving) setImportDialogOpen(false);
-        }}
+        onClose={closeContractImportDialog}
         fullWidth
         maxWidth="xl"
       >
@@ -3437,11 +3571,14 @@ export default function LaborContractManagement({
             <Alert severity={importRows.some((row) => row.issues.length > 0) ? 'error' : 'success'}>
               파일: {importFileName || '-'} · 전체 {importRows.length.toLocaleString()}명 · 정상 {importRows.filter((row) => row.issues.length === 0).length.toLocaleString()}명 · 오류 {importRows.filter((row) => row.issues.length > 0).length.toLocaleString()}명
             </Alert>
+            <Alert severity="info">
+              연락처는 근로자 정보에 반영하고, 주민등록번호·주소는 PDF 생성 화면에만 임시 전달합니다. 직종·공정·계약기간·일급·근무조건은 회사 고정값으로 처리합니다.
+            </Alert>
             <TableContainer sx={{ maxHeight: 520, border: '1px solid #e2e8f0' }}>
               <Table stickyHeader size="small" sx={{ '& th, & td': { borderRight: '1px solid #e2e8f0', fontSize: '0.68rem', whiteSpace: 'nowrap' }, '& th': { bgcolor: '#f8fafc', fontWeight: 900 } }}>
                 <TableHead>
                   <TableRow>
-                    {['엑셀행','검토결과','근로자번호','성명','연락처','직종','공정','계약시작','계약종료','일급','근무시간','휴게','업무내용','확인내용'].map((header) => <TableCell key={header}>{header}</TableCell>)}
+                    {['엑셀행','검토결과','근로자번호','성명','연락처','주민등록번호','주소','직종','공정','계약시작','계약종료','일급','근무시간','휴게','업무내용','확인내용'].map((header) => <TableCell key={header}>{header}</TableCell>)}
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -3452,6 +3589,8 @@ export default function LaborContractManagement({
                       <TableCell>{row.workerCode || '-'}</TableCell>
                       <TableCell sx={{ fontWeight: 900 }}>{row.name || '-'}</TableCell>
                       <TableCell>{row.phone || '-'}</TableCell>
+                      <TableCell>{maskResidentNumber(row.residentNumber)}</TableCell>
+                      <TableCell sx={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.address || '-'}</TableCell>
                       <TableCell>{row.job || '-'}</TableCell>
                       <TableCell>{row.process || '-'}</TableCell>
                       <TableCell>{row.contractStartDate || '-'}</TableCell>
@@ -3472,9 +3611,9 @@ export default function LaborContractManagement({
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setImportDialogOpen(false)} disabled={importSaving}>취소</Button>
+          <Button onClick={closeContractImportDialog} disabled={importSaving}>취소</Button>
           <Button variant="contained" startIcon={<FactCheckOutlinedIcon />} onClick={handleSaveContractImport} disabled={importSaving || importRows.length === 0 || importRows.some((row) => row.issues.length > 0)}>
-            정상 자료 반영
+            정상 자료 반영 후 PDF 준비
           </Button>
         </DialogActions>
       </Dialog>
