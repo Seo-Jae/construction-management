@@ -820,6 +820,10 @@ export default function LaborContractManagement({
       accessInfo?.can_manage,
     );
 
+  const canUseLegacyCompletion =
+    canManage &&
+    selectedMonth < getKoreaMonthKey();
+
   const loadAccess =
     useCallback(
       async () => {
@@ -2215,16 +2219,6 @@ export default function LaborContractManagement({
         return;
       }
 
-      if (
-        analyzedWorkers.length ===
-        0
-      ) {
-        setErrorMessage(
-          '선택한 월에 반영할 출력일보 근로자가 없습니다.',
-        );
-        return;
-      }
-
       setSyncing(true);
       setErrorMessage('');
       setSuccessMessage('');
@@ -2278,26 +2272,62 @@ export default function LaborContractManagement({
       } else {
         const result =
           data || {};
-
-        setSuccessMessage(
-          [
-            `${formatMonthLabel(
+        const {
+          data: cleanupData,
+          error: cleanupError,
+        } = await supabase.rpc(
+          'labor_cleanup_contract_month',
+          {
+            p_project_name:
+              projectName,
+            p_contract_month:
               selectedMonth,
-            )} 작성대상 반영 완료`,
-            `신규 근로자 ${
-              result.inserted_workers ||
-              0
-            }명`,
-            `신규 월별대상 ${
-              result.inserted_requirements ||
-              0
-            }명`,
-            `기존 대상 ${
-              result.existing_requirements ||
-              0
-            }명`,
-          ].join(' · '),
+            p_active_normalized_names:
+              analyzedWorkers.map(
+                (worker) =>
+                  worker.normalizedName,
+              ),
+          },
         );
+
+        if (cleanupError) {
+          console.error(
+            '근로계약 작성대상 정리 오류:',
+            cleanupError,
+          );
+          setErrorMessage(
+            cleanupError.message ||
+              '출력일보에서 삭제된 미입력 대상자를 정리하지 못했습니다.',
+          );
+        } else {
+          const removedCount =
+            Number(
+              cleanupData
+                ?.removed_requirements ||
+                0,
+            );
+
+          setSuccessMessage(
+            [
+              `${formatMonthLabel(
+                selectedMonth,
+              )} 작성대상 갱신 완료`,
+              `신규 근로자 ${
+                result.inserted_workers ||
+                0
+              }명`,
+              `신규 월별대상 ${
+                result.inserted_requirements ||
+                0
+              }명`,
+              `기존 대상 ${
+                result.existing_requirements ||
+                0
+              }명`,
+              `삭제된 미입력 대상 ${removedCount}명`,
+            ].join(' · '),
+          );
+        }
 
         await loadStoredRows();
       }
@@ -2423,19 +2453,36 @@ export default function LaborContractManagement({
     row,
     nextStatus,
     title,
+    options = {},
   ) => {
     const sourceStatus =
       nextStatus === 'scan_verified'
         ? 'pdf_generated'
         : 'scan_verified';
+    const legacyMode =
+      options.mode === 'legacy';
+    const sourceStatuses = legacyMode
+      ? [
+        'required',
+        'form_ready',
+        'pdf_generated',
+        'scan_verified',
+        'rejected',
+      ]
+      : [sourceStatus];
 
     setBatchActionDialog({
       nextStatus,
       sourceStatus,
+      sourceStatuses,
       title,
+      mode: legacyMode
+        ? 'legacy'
+        : 'standard',
     });
     setSelectedBatchActionIds(
-      row?.status === sourceStatus
+      row &&
+      sourceStatuses.includes(row.status)
         ? [String(row.requirement_id)]
         : [],
     );
@@ -2549,7 +2596,11 @@ export default function LaborContractManagement({
                         row.requirement_id,
                       p_next_status:
                         batchActionDialog.nextStatus,
-                      p_reason: '',
+                      p_reason:
+                        batchActionDialog.mode ===
+                          'legacy'
+                          ? '시스템 도입 전 작성분'
+                          : '',
                       p_scan_file_name:
                         batchActionDialog.nextStatus ===
                           'scan_verified'
@@ -2710,8 +2761,9 @@ export default function LaborContractManagement({
         return sortRowsByContractStart(
           storedRows.filter(
             (row) =>
-              row.status ===
-              batchActionDialog.sourceStatus,
+              batchActionDialog.sourceStatuses.includes(
+                row.status,
+              ),
           ),
           selectedMonth,
         );
@@ -3060,9 +3112,7 @@ export default function LaborContractManagement({
               }
               disabled={
                 syncing ||
-                !accessInfo ||
-                analyzedWorkers.length ===
-                  0
+                !accessInfo
               }
               sx={{
                 ...actionControlSx,
@@ -3140,6 +3190,41 @@ export default function LaborContractManagement({
             >
               계약서 PDF 생성
             </Button>
+
+            {canManage && (
+              <Tooltip title="시스템 도입 전에 이미 작성한 과거 월 계약서를 선택하여 작성완료로 일괄 처리합니다.">
+                <span>
+                  <Button
+                    variant="outlined"
+                    color="success"
+                    onClick={() =>
+                      openBatchStatusAction(
+                        null,
+                        'manager_confirmed',
+                        '기존 작성분 완료 처리',
+                        { mode: 'legacy' },
+                      )
+                    }
+                    disabled={
+                      !canUseLegacyCompletion ||
+                      !storedRows.some(
+                        (row) =>
+                          ![
+                            'manager_confirmed',
+                            'excluded',
+                          ].includes(row.status),
+                      )
+                    }
+                    sx={{
+                      ...actionControlSx,
+                      minWidth: 126,
+                    }}
+                  >
+                    기존 작성분 완료
+                  </Button>
+                </span>
+              </Tooltip>
+            )}
 
             <Tooltip title="새로고침">
               <IconButton
@@ -4637,7 +4722,10 @@ export default function LaborContractManagement({
           {batchActionDialog && (
             <Stack spacing={1.2}>
               <Alert severity="info">
-                {batchActionDialog.nextStatus ===
+                {batchActionDialog.mode ===
+                  'legacy'
+                  ? `현재 현장·${formatMonthLabel(selectedMonth)}의 미완료 대상자만 표시합니다. 작성 대상이 없다면 먼저 상단의 ‘작성 대상 반영’을 눌러주세요.`
+                  : batchActionDialog.nextStatus ===
                   'scan_verified'
                   ? `현재 현장·${formatMonthLabel(selectedMonth)}의 PDF 생성 완료자만 표시합니다.`
                   : `현재 현장·${formatMonthLabel(selectedMonth)}의 서명본 확인 완료자만 표시합니다.`}
@@ -4690,7 +4778,10 @@ export default function LaborContractManagement({
               {batchActionDialog.nextStatus ===
                 'manager_confirmed' && (
                 <Alert severity="warning">
-                  선택한 인원을 관리자 확인 처리하면 모두 작성완료로 변경되고 기본 미작성 경고에서 제외됩니다.
+                  {batchActionDialog.mode ===
+                    'legacy'
+                    ? '선택한 인원은 PDF 생성·서명본 확인 단계를 새로 기록하지 않고 작성완료로 변경됩니다. 처리이력에는 “시스템 도입 전 작성분”으로 남습니다.'
+                    : '선택한 인원을 관리자 확인 처리하면 모두 작성완료로 변경되고 기본 미작성 경고에서 제외됩니다.'}
                 </Alert>
               )}
 
@@ -4771,7 +4862,10 @@ export default function LaborContractManagement({
                       <TableCell>성명</TableCell>
                       <TableCell>계약기간</TableCell>
                       <TableCell>
-                        {batchActionDialog.nextStatus ===
+                        {batchActionDialog.mode ===
+                          'legacy'
+                          ? '완료 처리 사유'
+                          : batchActionDialog.nextStatus ===
                           'scan_verified'
                           ? 'PDF 생성일'
                           : '서명본 확인일'}
@@ -4873,12 +4967,15 @@ export default function LaborContractManagement({
                               )}
                             </TableCell>
                             <TableCell>
-                              {formatDateTime(
-                                batchActionDialog.nextStatus ===
-                                  'scan_verified'
-                                  ? row.pdf_generated_at
-                                  : row.scan_verified_at,
-                              )}
+                              {batchActionDialog.mode ===
+                                'legacy'
+                                ? '시스템 도입 전 작성분'
+                                : formatDateTime(
+                                  batchActionDialog.nextStatus ===
+                                    'scan_verified'
+                                    ? row.pdf_generated_at
+                                    : row.scan_verified_at,
+                                )}
                             </TableCell>
                           </TableRow>
                         );
@@ -4953,7 +5050,10 @@ export default function LaborContractManagement({
               selectedBatchActionIds.length === 0
             }
           >
-            선택 {selectedBatchActionIds.length.toLocaleString()}명 일괄 처리
+            {batchActionDialog?.mode ===
+              'legacy'
+              ? `선택 ${selectedBatchActionIds.length.toLocaleString()}명 작성완료`
+              : `선택 ${selectedBatchActionIds.length.toLocaleString()}명 일괄 처리`}
           </Button>
         </DialogActions>
       </Dialog>

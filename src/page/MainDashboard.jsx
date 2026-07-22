@@ -148,6 +148,7 @@ const EMPTY_LABOR_SUMMARY = {
   progress: 0,
   completed: 0,
   unsynced: 0,
+  allPeriodMissing: 0,
   missingNames: [],
 };
 
@@ -260,7 +261,11 @@ const fetchAllProgressRows = async (projectName) => {
 
 const fetchLaborContractSummary = async (projectName) => {
   const period = getCurrentContractPeriod();
-  const [requirementResult, reportResult] = await Promise.all([
+  const [
+    requirementResult,
+    reportResult,
+    allPeriodResult,
+  ] = await Promise.all([
     supabase.rpc('labor_get_contract_month', {
       p_project_name: projectName,
       p_contract_month: period.monthKey,
@@ -271,6 +276,9 @@ const fetchLaborContractSummary = async (projectName) => {
       .eq('project_name', projectName)
       .gte('date', period.reportStart)
       .lte('date', period.reportEnd),
+    supabase.rpc('labor_get_all_period_missing_count', {
+      p_project_name: projectName,
+    }),
   ]);
 
   if (requirementResult.error) {
@@ -279,6 +287,10 @@ const fetchLaborContractSummary = async (projectName) => {
 
   if (reportResult.error) {
     throw reportResult.error;
+  }
+
+  if (allPeriodResult.error) {
+    throw allPeriodResult.error;
   }
 
   const requirementRows = requirementResult.data || [];
@@ -323,6 +335,9 @@ const fetchLaborContractSummary = async (projectName) => {
   ).length;
   const missingNames = [];
   const missingNameKeys = new Set();
+  const allPeriodRow = Array.isArray(allPeriodResult.data)
+    ? allPeriodResult.data[0]
+    : allPeriodResult.data;
 
   [
     ...missingRows.map(getRequirementName),
@@ -346,6 +361,9 @@ const fetchLaborContractSummary = async (projectName) => {
     progress: progressCount,
     completed: completedCount,
     unsynced: unsyncedNames.length,
+    allPeriodMissing: Number(
+      allPeriodRow?.missing_count || 0,
+    ),
     missingNames,
   };
 };
@@ -549,7 +567,12 @@ function LaborContractCard({
   onNavigate,
 }) {
   const hasMissing = summary.missing > 0;
-  const needsAttention = Boolean(errorMessage) || hasMissing;
+  const hasAllPeriodMissing =
+    summary.allPeriodMissing > 0;
+  const needsAttention =
+    Boolean(errorMessage) ||
+    hasMissing ||
+    hasAllPeriodMissing;
   const visibleNames = summary.missingNames.slice(0, 3);
   const hiddenNameCount = Math.max(
     summary.missingNames.length - visibleNames.length,
@@ -560,7 +583,7 @@ function LaborContractCard({
     <Paper
       variant="outlined"
       sx={{
-        minHeight: 146,
+        minHeight: 164,
         p: 1.7,
         borderColor: needsAttention ? '#fecaca' : '#bbf7d0',
         background: needsAttention
@@ -715,6 +738,21 @@ function LaborContractCard({
                 }}
               >
                 작성 대상 반영 필요 {summary.unsynced.toLocaleString()}명 포함
+              </Typography>
+            )}
+
+            {!errorMessage && (
+              <Typography
+                sx={{
+                  mt: 0.22,
+                  color: hasAllPeriodMissing
+                    ? '#b91c1c'
+                    : '#15803d',
+                  fontSize: '0.66rem',
+                  fontWeight: 900,
+                }}
+              >
+                전체기간 미입력 {summary.allPeriodMissing.toLocaleString()}건
               </Typography>
             )}
           </Box>
