@@ -147,7 +147,9 @@ const fetchAllDailyReportRows = async (projectName) => {
   while (true) {
     const { data, error } = await supabase
       .from('daily_reports')
-      .select('*')
+      .select(
+        'date, workers, tasks, today_task, tomorrow_task, status',
+      )
       .eq('project_name', projectName)
       .order('date', { ascending: true })
       .range(from, from + SUPABASE_PAGE_SIZE - 1);
@@ -167,6 +169,33 @@ const fetchAllDailyReportRows = async (projectName) => {
   }
 
   return allRows;
+};
+
+const fetchMonthlyDailyReportRows = async ({
+  projectName,
+  year,
+  monthIndex,
+}) => {
+  const shortYear = String(year).slice(-2);
+  const month = String(monthIndex + 1).padStart(2, '0');
+  const monthStart = `${shortYear}.${month}.01`;
+  const monthEnd = `${shortYear}.${month}.31`;
+
+  const { data, error } = await supabase
+    .from('daily_reports')
+    .select(
+      'date, workers, tasks, today_task, tomorrow_task, status',
+    )
+    .eq('project_name', projectName)
+    .gte('date', monthStart)
+    .lte('date', monthEnd)
+    .order('date', { ascending: true });
+
+  if (error) {
+    throw error;
+  }
+
+  return data || [];
 };
 
 const getKoreaDateTimeParts = (date = new Date()) => {
@@ -861,36 +890,62 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   useEffect(() => {
     if (!activeProjectName) {
       setBuildingConfigs({});
-      setUnitProgressData({});
-      setSavedData({});
-      setManualStatus({});
-      return;
+      return undefined;
     }
 
+    let active = true;
+
     const fetchBuildingConfigs = async () => {
-        const { data, error } = await supabase.from("building_settings").select("*").eq("project_name", activeProjectName);
-        if (error) return console.error(error);
-        const configs = {};
-        data.forEach(row => { configs[row.building_name] = row.config_json; });
-        setBuildingConfigs(configs);
+      const { data, error } = await supabase
+        .from('building_settings')
+        .select('building_name, config_json')
+        .eq('project_name', activeProjectName);
+
+      if (error) {
+        console.error('동 설정 조회 오류:', error);
+        return;
+      }
+
+      if (!active) return;
+
+      const configs = {};
+
+      (data || []).forEach((row) => {
+        configs[row.building_name] = row.config_json;
+      });
+
+      setBuildingConfigs(configs);
     };
 
-    const fetchUnitProgress = async () => {
-      // 공정이 바뀔 때 이전 공정 색상이 잠시 남지 않도록 먼저 비웁니다.
+    fetchBuildingConfigs();
+
+    return () => {
+      active = false;
+    };
+  }, [activeProjectName]);
+
+  useEffect(() => {
+    if (!activeProjectName) {
       setUnitProgressData({});
+      return undefined;
+    }
 
+    // Main 등 다른 메뉴에서는 세대별 공정 원본을 내려받지 않습니다.
+    if (currentView !== 'progress-input') {
+      return undefined;
+    }
+
+    let active = true;
+    setUnitProgressData({});
+
+    const fetchUnitProgress = async () => {
       try {
-        /*
-          Supabase REST 조회는 프로젝트 설정에 따라 한 번에
-          최대 1,000행까지만 반환될 수 있습니다.
-
-          1,275세대처럼 1,000건을 넘는 현장도 전부 표시되도록
-          1,000건 단위로 마지막 페이지까지 반복 조회합니다.
-        */
         const data = await fetchAllProgressRows({
           projectName: activeProjectName,
           processType: selectedProcess,
         });
+
+        if (!active) return;
 
         const mapped = {};
 
@@ -907,11 +962,52 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       }
     };
 
+    fetchUnitProgress();
+
+    return () => {
+      active = false;
+    };
+  }, [activeProjectName, currentView, selectedProcess]);
+
+  const dailyReportLoadKey =
+    currentView === 'daily'
+      ? `${activeProjectName}:all`
+      : ['main', 'daily-monthly-workers'].includes(currentView)
+        ? `${activeProjectName}:${viewYear}:${viewMonth}`
+        : `${activeProjectName}:skip`;
+
+  useEffect(() => {
+    if (!activeProjectName) {
+      setSavedData({});
+      setManualStatus({});
+      return undefined;
+    }
+
+    const monthlyReportViews = new Set([
+      'main',
+      'daily-monthly-workers',
+    ]);
+    const needsAllReports = currentView === 'daily';
+
+    if (!monthlyReportViews.has(currentView) && !needsAllReports) {
+      return undefined;
+    }
+
+    let active = true;
+    setSavedData({});
+    setManualStatus({});
+
     const fetchReports = async () => {
       try {
-        const data = await fetchAllDailyReportRows(
-          activeProjectName,
-        );
+        const data = needsAllReports
+          ? await fetchAllDailyReportRows(activeProjectName)
+          : await fetchMonthlyDailyReportRows({
+              projectName: activeProjectName,
+              year: viewYear,
+              monthIndex: viewMonth,
+            });
+
+        if (!active) return;
 
         const newData = {};
         const newStatus = {};
@@ -932,15 +1028,16 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         setSavedData(newData);
         setManualStatus(newStatus);
       } catch (error) {
-        console.error('공사일보 전체 조회 오류:', error);
+        console.error('공사일보 조회 오류:', error);
       }
     };
 
-    fetchBuildingConfigs();
-    fetchUnitProgress();
     fetchReports();
 
-  }, [activeProjectName, selectedProcess]);
+    return () => {
+      active = false;
+    };
+  }, [dailyReportLoadKey]);
 
   const syncDataToDB = async (
     dateKey,
@@ -2502,6 +2599,23 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
         setSelectedCells(new Set());
 
+        try {
+          window.sessionStorage.setItem(
+            `main-progress-changed:${activeProjectName}`,
+            String(Date.now()),
+          );
+        } catch {
+          // 저장소를 사용할 수 없는 브라우저에서도 화면 갱신은 계속합니다.
+        }
+
+        window.dispatchEvent(
+          new CustomEvent('unit-progress-changed', {
+            detail: {
+              projectName: activeProjectName,
+            },
+          }),
+        );
+
         const protectedMessage =
           protectedCompletedCellKeys.length >
           0
@@ -2565,6 +2679,23 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       });
 
       setSelectedCells(new Set());
+
+      try {
+        window.sessionStorage.setItem(
+          `main-progress-changed:${activeProjectName}`,
+          String(Date.now()),
+        );
+      } catch {
+        // 저장소를 사용할 수 없는 브라우저에서도 화면 갱신은 계속합니다.
+      }
+
+      window.dispatchEvent(
+        new CustomEvent('unit-progress-changed', {
+          detail: {
+            projectName: activeProjectName,
+          },
+        }),
+      );
 
       const protectedMessage =
         protectedCompletedCellKeys.length >

@@ -2,6 +2,7 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -34,7 +35,44 @@ import { supabase } from '../supabaseClient';
 import { getProjectCellKeys } from '../utils/buildingUnits.js';
 import MainWorkAlertDialog from './MainWorkAlertDialog.jsx';
 
-const PAGE_SIZE = 1000;
+const MAIN_PROGRESS_CACHE = new Map();
+const MAIN_LABOR_CACHE = new Map();
+const MAIN_NOTICE_CACHE_KEY = 'system-notices';
+const MAIN_NOTICE_CACHE = new Map();
+const PROGRESS_CACHE_TTL_MS = 5 * 60 * 1000;
+const LABOR_CACHE_TTL_MS = 20 * 1000;
+const NOTICE_CACHE_TTL_MS = 5 * 60 * 1000;
+
+const getCachedValue = (cache, key, ttlMs) => {
+  const cached = cache.get(key);
+
+  if (!cached) return null;
+
+  if (Date.now() - cached.savedAt > ttlMs) {
+    return null;
+  }
+
+  return cached.value;
+};
+
+const setCachedValue = (cache, key, value) => {
+  cache.set(key, {
+    value,
+    savedAt: Date.now(),
+  });
+};
+
+const getProgressChangedAt = (projectName) => {
+  try {
+    return Number(
+      window.sessionStorage.getItem(
+        `main-progress-changed:${projectName}`,
+      ) || 0,
+    );
+  } catch {
+    return 0;
+  }
+};
 
 const PROJECT_SCHEDULES = {
   '한라건설 용인금어지구': {
@@ -225,38 +263,22 @@ const hasMeaningfulReport = (report) => {
   );
 };
 
-const fetchAllProgressRows = async (projectName) => {
-  const rows = [];
-  let from = 0;
+const fetchProgressSummary = async (projectName) => {
+  const { data, error } = await supabase.rpc(
+    'main_get_progress_summary',
+    {
+      p_project_name: projectName,
+    },
+  );
 
-  while (true) {
-    const { data, error } = await supabase
-      .from('unit_progress')
-      .select(
-        'building, unit, process_type, status, completion_date',
-      )
-      .eq('project_name', projectName)
-      .neq('status', '작업전')
-      .order('process_type', { ascending: true })
-      .order('building', { ascending: true })
-      .order('unit', { ascending: true })
-      .range(from, from + PAGE_SIZE - 1);
-
-    if (error) {
-      throw error;
-    }
-
-    const pageRows = data || [];
-    rows.push(...pageRows);
-
-    if (pageRows.length < PAGE_SIZE) {
-      break;
-    }
-
-    from += PAGE_SIZE;
+  if (error) {
+    throw error;
   }
 
-  return rows;
+  return (data || []).map((row) => ({
+    process_type: row.process_type,
+    completed_count: Number(row.completed_count || 0),
+  }));
 };
 
 const fetchLaborContractSummary = async (projectName) => {
@@ -1568,7 +1590,8 @@ export default function MainDashboard({
   workAlertOpen = false,
   onCloseWorkAlert,
 }) {
-  const [progressRows, setProgressRows] = useState([]);
+  const [progressSummaryRows, setProgressSummaryRows] =
+    useState([]);
   const [laborSummary, setLaborSummary] = useState(
     EMPTY_LABOR_SUMMARY,
   );
@@ -1577,7 +1600,6 @@ export default function MainDashboard({
     useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [refreshKey, setRefreshKey] = useState(0);
   const [notices, setNotices] = useState(DEFAULT_NOTICES);
   const [noticeDialogOpen, setNoticeDialogOpen] =
     useState(false);
@@ -1585,10 +1607,23 @@ export default function MainDashboard({
   const [noticeSaving, setNoticeSaving] = useState(false);
   const [noticeErrorMessage, setNoticeErrorMessage] =
     useState('');
+  const progressRequestIdRef = useRef(0);
+  const laborRequestIdRef = useRef(0);
 
   const isSuperAdmin = userRole === '최고관리자';
 
-  const loadNotices = useCallback(async () => {
+  const loadNotices = useCallback(async ({ force = false } = {}) => {
+    const cachedNotices = getCachedValue(
+      MAIN_NOTICE_CACHE,
+      MAIN_NOTICE_CACHE_KEY,
+      NOTICE_CACHE_TTL_MS,
+    );
+
+    if (!force && cachedNotices) {
+      setNotices(cachedNotices);
+      return;
+    }
+
     const { data, error } = await supabase
       .from('system_notices')
       .select('id, category, title, content, updated_at')
@@ -1599,6 +1634,11 @@ export default function MainDashboard({
     }
 
     if (Array.isArray(data) && data.length > 0) {
+      setCachedValue(
+        MAIN_NOTICE_CACHE,
+        MAIN_NOTICE_CACHE_KEY,
+        data,
+      );
       setNotices(data);
     }
   }, []);
@@ -1704,11 +1744,16 @@ export default function MainDashboard({
         savedNotices.map((notice) => [notice.id, notice]),
       );
 
-      setNotices((previous) =>
-        previous.map(
-          (notice) => savedById.get(notice.id) || notice,
-        ),
+      const nextNotices = notices.map(
+        (notice) => savedById.get(notice.id) || notice,
       );
+
+      setCachedValue(
+        MAIN_NOTICE_CACHE,
+        MAIN_NOTICE_CACHE_KEY,
+        nextNotices,
+      );
+      setNotices(nextNotices);
       setNoticeDialogOpen(false);
     } catch (error) {
       console.error('Main 공지사항 저장 오류:', error);
@@ -1717,7 +1762,7 @@ export default function MainDashboard({
           '공지사항을 저장하지 못했습니다. 잠시 후 다시 시도해주세요.',
       );
 
-      loadNotices().catch((loadError) => {
+      loadNotices({ force: true }).catch((loadError) => {
         console.error(
           'Main 공지사항 재조회 오류:',
           loadError,
@@ -1728,11 +1773,31 @@ export default function MainDashboard({
     }
   };
 
-  const loadLaborSummary = useCallback(async () => {
+  const loadLaborSummary = useCallback(async ({ force = false } = {}) => {
+    const requestId = laborRequestIdRef.current + 1;
+    laborRequestIdRef.current = requestId;
+
     if (!projectName) {
       setLaborSummary(EMPTY_LABOR_SUMMARY);
       setLaborErrorMessage('');
       return;
+    }
+
+    const cachedSummary = getCachedValue(
+      MAIN_LABOR_CACHE,
+      projectName,
+      LABOR_CACHE_TTL_MS,
+    );
+
+    if (!force && cachedSummary) {
+      setLaborSummary(cachedSummary);
+      setLaborErrorMessage('');
+      setLaborLoading(false);
+      return;
+    }
+
+    if (!cachedSummary) {
+      setLaborSummary(EMPTY_LABOR_SUMMARY);
     }
 
     setLaborLoading(true);
@@ -1742,8 +1807,18 @@ export default function MainDashboard({
       const nextSummary =
         await fetchLaborContractSummary(projectName);
 
+      setCachedValue(
+        MAIN_LABOR_CACHE,
+        projectName,
+        nextSummary,
+      );
+
+      if (requestId !== laborRequestIdRef.current) return;
+
       setLaborSummary(nextSummary);
     } catch (error) {
+      if (requestId !== laborRequestIdRef.current) return;
+
       console.error(
         'Main 근로계약서 작성 현황 조회 오류:',
         error,
@@ -1753,47 +1828,96 @@ export default function MainDashboard({
         error?.message || '근로계약 현황을 불러오지 못했습니다.',
       );
     } finally {
-      setLaborLoading(false);
+      if (requestId === laborRequestIdRef.current) {
+        setLaborLoading(false);
+      }
     }
   }, [projectName]);
 
-  const loadProgress = useCallback(async () => {
+  const loadProgress = useCallback(async ({ force = false } = {}) => {
+    const requestId = progressRequestIdRef.current + 1;
+    progressRequestIdRef.current = requestId;
+
     if (!projectName) {
-      setProgressRows([]);
+      setProgressSummaryRows([]);
+      setLoading(false);
       return;
     }
 
-    setLoading(true);
+    const cachedEntry = MAIN_PROGRESS_CACHE.get(projectName);
+    const progressChangedAt = getProgressChangedAt(projectName);
+    const cachedSummary =
+      cachedEntry &&
+      Date.now() - cachedEntry.savedAt <= PROGRESS_CACHE_TTL_MS &&
+      cachedEntry.savedAt >= progressChangedAt
+        ? cachedEntry.value
+        : null;
+
+    if (!force && cachedSummary) {
+      setProgressSummaryRows(cachedSummary);
+      setErrorMessage('');
+      setLoading(false);
+      return;
+    }
+
+    const staleCache =
+      cachedEntry?.savedAt >= progressChangedAt
+        ? cachedEntry.value
+        : null;
+
+    if (staleCache) {
+      setProgressSummaryRows(staleCache);
+    } else {
+      setProgressSummaryRows([]);
+    }
+
+    setLoading(!staleCache);
     setErrorMessage('');
 
     try {
-      const rows = await fetchAllProgressRows(projectName);
-      setProgressRows(rows);
+      const rows = await fetchProgressSummary(projectName);
+      setCachedValue(
+        MAIN_PROGRESS_CACHE,
+        projectName,
+        rows,
+      );
+
+      if (requestId !== progressRequestIdRef.current) return;
+
+      setProgressSummaryRows(rows);
     } catch (error) {
+      if (requestId !== progressRequestIdRef.current) return;
+
       console.error('Main 공정현황 조회 오류:', error);
       setErrorMessage(
         error?.message || '공정현황을 불러오지 못했습니다.',
       );
     } finally {
-      setLoading(false);
+      if (requestId === progressRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, [projectName]);
 
   useEffect(() => {
     loadProgress();
+  }, [loadProgress]);
+
+  useEffect(() => {
     loadLaborSummary();
 
     const timer = window.setInterval(
-      loadLaborSummary,
+      () => loadLaborSummary({ force: true }),
       20 * 1000,
     );
 
     const handleFocus = () => {
-      loadLaborSummary();
+      loadLaborSummary({ force: true });
     };
 
     const handleLaborChanged = () => {
-      loadLaborSummary();
+      MAIN_LABOR_CACHE.delete(projectName);
+      loadLaborSummary({ force: true });
     };
 
     window.addEventListener('focus', handleFocus);
@@ -1812,9 +1936,38 @@ export default function MainDashboard({
     };
   }, [
     loadLaborSummary,
-    loadProgress,
-    refreshKey,
+    projectName,
   ]);
+
+  useEffect(() => {
+    const handleProgressChanged = (event) => {
+      const changedProjectName = String(
+        event?.detail?.projectName || '',
+      ).trim();
+
+      if (
+        changedProjectName &&
+        changedProjectName !== projectName
+      ) {
+        return;
+      }
+
+      MAIN_PROGRESS_CACHE.delete(projectName);
+      loadProgress({ force: true });
+    };
+
+    window.addEventListener(
+      'unit-progress-changed',
+      handleProgressChanged,
+    );
+
+    return () => {
+      window.removeEventListener(
+        'unit-progress-changed',
+        handleProgressChanged,
+      );
+    };
+  }, [loadProgress, projectName]);
 
   const totalUnits = useMemo(
     () => getProjectCellKeys(buildingConfigs).size,
@@ -1822,30 +1975,18 @@ export default function MainDashboard({
   );
 
   const processStats = useMemo(() => {
-    const allowedProcesses = new Set(processOptions);
-
     const completedMap = new Map();
 
-    progressRows.forEach((row) => {
-      if (
-        row?.status !== '작업완료' ||
-        !allowedProcesses.has(row?.process_type)
-      ) {
-        return;
-      }
-
-      if (!completedMap.has(row.process_type)) {
-        completedMap.set(row.process_type, new Set());
-      }
-
-      completedMap
-        .get(row.process_type)
-        .add(`${row.building}-${row.unit}`);
+    progressSummaryRows.forEach((row) => {
+      completedMap.set(
+        row.process_type,
+        Number(row.completed_count || 0),
+      );
     });
 
     return processOptions.map((processName) => {
       const completed =
-        completedMap.get(processName)?.size || 0;
+        completedMap.get(processName) || 0;
       const percentage =
         totalUnits === 0
           ? 0
@@ -1858,7 +1999,7 @@ export default function MainDashboard({
         percentage,
       };
     });
-  }, [processOptions, progressRows, totalUnits]);
+  }, [processOptions, progressSummaryRows, totalUnits]);
 
   const completedCount = processStats.reduce(
     (total, process) => total + process.completed,
@@ -1973,9 +2114,7 @@ export default function MainDashboard({
           <MainProcessPanel
             processStats={processStats}
             loading={loading}
-            onRefresh={() =>
-              setRefreshKey((previous) => previous + 1)
-            }
+            onRefresh={() => loadProgress({ force: true })}
           />
         )}
       </Box>

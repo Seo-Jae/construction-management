@@ -413,7 +413,7 @@ export default function Sidebar({
         handleApprovalChanged,
       );
     };
-  }, [currentView]);
+  }, []);
 
   useEffect(() => {
     if (!isSuperAdmin) {
