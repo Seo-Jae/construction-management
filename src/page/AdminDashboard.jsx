@@ -206,6 +206,22 @@ function PrinterIcon(props) {
   );
 }
 
+function RefreshIcon(props) {
+  return (
+    <SvgIcon {...props} viewBox="0 0 24 24">
+      <path d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.75 10h-2.1A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35Z" />
+    </SvgIcon>
+  );
+}
+
+function CollapseIcon(props) {
+  return (
+    <SvgIcon {...props} viewBox="0 0 24 24">
+      <path d="m7.41 14.59 4.59-4.58 4.59 4.58L18 13.17l-6-6-6 6 1.41 1.42Z" />
+    </SvgIcon>
+  );
+}
+
 const hasMeaningfulDailyReport = (report) => {
   const workers = Array.isArray(report?.workers)
     ? report.workers
@@ -848,6 +864,16 @@ export default function AdminDashboard({
     : '*';
 
   const [
+    headerCollapsed,
+    setHeaderCollapsed,
+  ] = useState(
+    () =>
+      window.localStorage.getItem(
+        'admin-dashboard-header-collapsed',
+      ) === 'true',
+  );
+
+  const [
     summaryCollapsed,
     setSummaryCollapsed,
   ] = useState(
@@ -866,6 +892,13 @@ export default function AdminDashboard({
         'admin-dashboard-projects-collapsed',
       ) === 'true',
   );
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      'admin-dashboard-header-collapsed',
+      String(headerCollapsed),
+    );
+  }, [headerCollapsed]);
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -1178,6 +1211,11 @@ export default function AdminDashboard({
     [koreaTodayKey],
   );
 
+  const koreaTodayIsoLabel = useMemo(
+    () => formatKoreaISODate(new Date()),
+    [koreaTodayKey],
+  );
+
   const totals = useMemo(() => {
     const totalProjects = projects.length;
     const todayWorkers = projects.reduce(
@@ -1315,106 +1353,202 @@ export default function AdminDashboard({
       <Paper
         variant="outlined"
         sx={{
-          p: 1.5,
           mb: 1.5,
           borderColor: '#cbd5e1',
           bgcolor: '#ffffff',
+          overflow: 'hidden',
         }}
       >
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 1,
-          }}
-        >
-          <Box>
-            <Typography
-              fontWeight={900}
-              sx={{
-                color: '#0f172a',
-                fontSize: '1.18rem',
-                lineHeight: 1.2,
-              }}
-            >
-              욱림건설
-            </Typography>
-            <Typography
-              fontWeight={800}
-              sx={{
-                mt: 0.15,
-                color: '#334155',
-                fontSize: '0.93rem',
-              }}
-            >
-              전체 현장 Dashboard
-            </Typography>
-            <Typography sx={{ mt: 0.35, color: '#64748b', fontSize: '0.73rem' }}>
-              등록된 모든 현장의 금일 출력과 공정 현황을 확인합니다.
-            </Typography>
-          </Box>
-
-          <Box
-            sx={{
-              flexShrink: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'flex-end',
-              gap: 0.45,
-            }}
-          >
-            <Typography
-              sx={{
-                color: '#334155',
-                fontSize: '0.74rem',
-                fontWeight: 900,
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {koreaTodayLabel}
-            </Typography>
-
+        {headerCollapsed ? (
+          <Tooltip title="전체현장 Dashboard 펼치기">
             <Box
-              className="admin-dashboard-no-print"
+              role="button"
+              tabIndex={0}
+              aria-label="전체현장 Dashboard 펼치기"
+              onClick={() => setHeaderCollapsed(false)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  setHeaderCollapsed(false);
+                }
+              }}
               sx={{
+                px: 1.2,
+                py: 0.85,
+                minHeight: 42,
                 display: 'flex',
                 alignItems: 'center',
-                gap: 0.7,
+                justifyContent: 'space-between',
+                gap: 1,
+                cursor: 'pointer',
+                bgcolor: '#f8fafc',
+                '&:hover': {
+                  bgcolor: '#f1f5f9',
+                },
+                '&:focus-visible': {
+                  outline: '2px solid #60a5fa',
+                  outlineOffset: -2,
+                },
               }}
             >
-              <Tooltip title="Dashboard 인쇄">
-                <IconButton
-                  size="small"
-                  aria-label="Dashboard 인쇄"
-                  onClick={handlePrintDashboard}
-                  sx={{
-                    width: 32,
-                    height: 32,
-                    border: '1px solid #93c5fd',
-                    borderRadius: 1,
-                    color: '#2563eb',
-                    bgcolor: '#ffffff',
-                    '&:hover': {
-                      bgcolor: '#eff6ff',
-                      borderColor: '#60a5fa',
-                    },
-                  }}
-                >
-                  <PrinterIcon sx={{ fontSize: 18 }} />
-                </IconButton>
-              </Tooltip>
-
-              <Button
-                size="small"
-                variant="outlined"
-                onClick={loadDashboard}
+              <Typography
+                sx={{
+                  minWidth: 0,
+                  color: '#0f172a',
+                  fontSize: '0.82rem',
+                  fontWeight: 900,
+                  whiteSpace: 'nowrap',
+                }}
               >
-                새로고침
-              </Button>
+                전체현장 Dashboard
+              </Typography>
+
+              <Typography
+                sx={{
+                  flexShrink: 0,
+                  color: '#475569',
+                  fontSize: '0.74rem',
+                  fontWeight: 900,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {koreaTodayIsoLabel}
+              </Typography>
+            </Box>
+          </Tooltip>
+        ) : (
+          <Box
+            sx={{
+              p: 1.5,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 1,
+            }}
+          >
+            <Box>
+              <Typography
+                fontWeight={900}
+                sx={{
+                  color: '#0f172a',
+                  fontSize: '1.18rem',
+                  lineHeight: 1.2,
+                }}
+              >
+                욱림건설
+              </Typography>
+              <Typography
+                fontWeight={800}
+                sx={{
+                  mt: 0.15,
+                  color: '#334155',
+                  fontSize: '0.93rem',
+                }}
+              >
+                전체 현장 Dashboard
+              </Typography>
+              <Typography sx={{ mt: 0.35, color: '#64748b', fontSize: '0.73rem' }}>
+                등록된 모든 현장의 금일 출력과 공정 현황을 확인합니다.
+              </Typography>
+            </Box>
+
+            <Box
+              sx={{
+                flexShrink: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-end',
+                gap: 0.45,
+              }}
+            >
+              <Typography
+                sx={{
+                  color: '#334155',
+                  fontSize: '0.74rem',
+                  fontWeight: 900,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {koreaTodayLabel}
+              </Typography>
+
+              <Box
+                className="admin-dashboard-no-print"
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 0.7,
+                }}
+              >
+                <Tooltip title="Dashboard 인쇄">
+                  <IconButton
+                    size="small"
+                    aria-label="Dashboard 인쇄"
+                    onClick={handlePrintDashboard}
+                    sx={{
+                      width: 32,
+                      height: 32,
+                      border: '1px solid #93c5fd',
+                      borderRadius: 1,
+                      color: '#2563eb',
+                      bgcolor: '#ffffff',
+                      '&:hover': {
+                        bgcolor: '#eff6ff',
+                        borderColor: '#60a5fa',
+                      },
+                    }}
+                  >
+                    <PrinterIcon sx={{ fontSize: 18 }} />
+                  </IconButton>
+                </Tooltip>
+
+                <Tooltip title="Dashboard 새로고침">
+                  <IconButton
+                    size="small"
+                    aria-label="Dashboard 새로고침"
+                    onClick={loadDashboard}
+                    sx={{
+                      width: 32,
+                      height: 32,
+                      border: '1px solid #cbd5e1',
+                      borderRadius: 1,
+                      color: '#475569',
+                      bgcolor: '#ffffff',
+                      '&:hover': {
+                        bgcolor: '#f8fafc',
+                        borderColor: '#94a3b8',
+                      },
+                    }}
+                  >
+                    <RefreshIcon sx={{ fontSize: 18 }} />
+                  </IconButton>
+                </Tooltip>
+
+                <Tooltip title="상단 Dashboard 최소화">
+                  <IconButton
+                    size="small"
+                    aria-label="상단 Dashboard 최소화"
+                    onClick={() => setHeaderCollapsed(true)}
+                    sx={{
+                      width: 32,
+                      height: 32,
+                      border: '1px solid #cbd5e1',
+                      borderRadius: 1,
+                      color: '#475569',
+                      bgcolor: '#ffffff',
+                      '&:hover': {
+                        bgcolor: '#f8fafc',
+                        borderColor: '#94a3b8',
+                      },
+                    }}
+                  >
+                    <CollapseIcon sx={{ fontSize: 19 }} />
+                  </IconButton>
+                </Tooltip>
+              </Box>
             </Box>
           </Box>
-        </Box>
+        )}
       </Paper>
 
       {errorMessage && (
