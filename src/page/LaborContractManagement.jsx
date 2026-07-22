@@ -652,7 +652,7 @@ export default function LaborContractManagement({
   ] = useState(false);
 
   const contractFileInputRef = useRef(null);
-  const previousContractFilesInputRef = useRef(null);
+  const referenceContractFilesInputRef = useRef(null);
 
   const [
     importDialogOpen,
@@ -1227,7 +1227,7 @@ export default function LaborContractManagement({
 
       worksheet.mergeCells('A4:N4');
       worksheet.getCell('A4').value = carryoverData
-        ? `이전 작성자료 ${carryoverData.fileCount.toLocaleString()}개 파일을 브라우저에서만 확인해 ${carryoverData.matchedCount.toLocaleString()}명의 개인정보를 자동 입력했습니다. 서버에는 전송하거나 저장하지 않았습니다.`
+        ? `참고 작성자료 ${carryoverData.fileCount.toLocaleString()}개 파일을 브라우저에서만 확인해 ${carryoverData.matchedCount.toLocaleString()}명의 개인정보를 자동 입력했습니다. 서버에는 전송하거나 저장하지 않았습니다.`
         : '필수입력: 연락처, 주민등록번호, 주소 · 자료가 없으면 해당 칸에 “없음” 입력 가능 · 계약종료일은 월말 · 일급은 180,000원';
       worksheet.getCell('A4').font = { color: { argb: 'FF475569' } };
 
@@ -1306,7 +1306,7 @@ export default function LaborContractManagement({
       downloadExcelBuffer(buffer, `근로계약서작성자료_${projectName}_${selectedMonth}.xlsx`);
       setSuccessMessage(
         carryoverData
-          ? `${formatMonthLabel(selectedMonth)} 작성 대상 ${targetRows.length.toLocaleString()}명 중 이전 자료와 일치한 ${carryoverData.matchedCount.toLocaleString()}명의 필수값을 자동 입력해 다운로드했습니다.`
+          ? `${formatMonthLabel(selectedMonth)} 작성 대상 ${targetRows.length.toLocaleString()}명 중 참고 자료와 일치한 ${carryoverData.matchedCount.toLocaleString()}명의 필수값을 자동 입력해 다운로드했습니다.`
           : `${formatMonthLabel(selectedMonth)} 작성 대상 ${targetRows.length.toLocaleString()}명의 양식을 다운로드했습니다.`,
       );
     } catch (error) {
@@ -1319,7 +1319,7 @@ export default function LaborContractManagement({
     downloadContractTemplate();
   };
 
-  const handlePreviousContractFilesSelected = async (
+  const handleReferenceContractFilesSelected = async (
     event,
   ) => {
     const files = Array.from(
@@ -1383,10 +1383,7 @@ export default function LaborContractManagement({
           );
         }
 
-        if (
-          !/^\d{4}-\d{2}$/.test(sourceMonth) ||
-          sourceMonth >= selectedMonth
-        ) {
+        if (!/^\d{4}-\d{2}$/.test(sourceMonth)) {
           continue;
         }
 
@@ -1426,22 +1423,59 @@ export default function LaborContractManagement({
 
       if (sourceRows.length === 0) {
         throw new Error(
-          '선택한 파일에서 현재 계약월보다 이전인 작성자료를 찾지 못했습니다.',
+          '선택한 파일에서 자동채우기에 사용할 작성자료를 찾지 못했습니다.',
         );
       }
 
-      sourceRows.sort(
-        (first, second) =>
-          first.sourceMonth.localeCompare(
-            second.sourceMonth,
-          ),
+      const monthIndex = (month) => {
+        const [year, monthNumber] = month
+          .split('-')
+          .map(Number);
+
+        return year * 12 + monthNumber - 1;
+      };
+      const selectedMonthIndex = monthIndex(
+        selectedMonth,
       );
+      const isBetterReference = (
+        candidate,
+        current,
+      ) => {
+        if (!current) {
+          return true;
+        }
+
+        const candidateIndex = monthIndex(
+          candidate.sourceMonth,
+        );
+        const currentIndex = monthIndex(
+          current.sourceMonth,
+        );
+        const candidateDistance = Math.abs(
+          candidateIndex - selectedMonthIndex,
+        );
+        const currentDistance = Math.abs(
+          currentIndex - selectedMonthIndex,
+        );
+
+        if (candidateDistance !== currentDistance) {
+          return candidateDistance < currentDistance;
+        }
+
+        return candidateIndex > currentIndex;
+      };
 
       const byWorkerCode = new Map();
-      const latestByIdentity = new Map();
+      const preferredByIdentity = new Map();
 
       sourceRows.forEach((row) => {
-        if (row.workerCode) {
+        if (
+          row.workerCode &&
+          isBetterReference(
+            row,
+            byWorkerCode.get(row.workerCode),
+          )
+        ) {
           byWorkerCode.set(
             row.workerCode,
             row,
@@ -1452,12 +1486,22 @@ export default function LaborContractManagement({
           ? `code:${row.workerCode}`
           : `legacy:${normalizeName(row.name)}:${String(row.phone || '').replace(/\D/g, '')}`;
 
-        latestByIdentity.set(identity, row);
+        if (
+          isBetterReference(
+            row,
+            preferredByIdentity.get(identity),
+          )
+        ) {
+          preferredByIdentity.set(
+            identity,
+            row,
+          );
+        }
       });
 
       const nameGroups = new Map();
 
-      latestByIdentity.forEach((row) => {
+      preferredByIdentity.forEach((row) => {
         const key = normalizeName(row.name);
 
         if (!key) {
@@ -1494,12 +1538,12 @@ export default function LaborContractManagement({
       });
     } catch (error) {
       console.error(
-        '이전 근로계약 작성자료 자동입력 오류:',
+        '근로계약 작성자료 자동입력 오류:',
         error,
       );
       setErrorMessage(
         error?.message ||
-          '이전 작성자료를 불러오지 못했습니다.',
+          '작성자료를 불러오지 못했습니다.',
       );
     }
   };
@@ -2683,12 +2727,12 @@ export default function LaborContractManagement({
       />
 
       <input
-        ref={previousContractFilesInputRef}
+        ref={referenceContractFilesInputRef}
         type="file"
         accept=".xlsx"
         multiple
         hidden
-        onChange={handlePreviousContractFilesSelected}
+        onChange={handleReferenceContractFilesSelected}
       />
 
       <Paper
@@ -2830,12 +2874,12 @@ export default function LaborContractManagement({
               variant="outlined"
               color="success"
               onClick={() =>
-                previousContractFilesInputRef.current?.click()
+                referenceContractFilesInputRef.current?.click()
               }
               disabled={!accessInfo || storedRows.length === 0}
               sx={actionControlSx}
             >
-              이전자료 자동채우기
+              작성자료 자동채우기
             </Button>
 
             <Button
