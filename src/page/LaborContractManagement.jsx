@@ -1182,9 +1182,7 @@ export default function LaborContractManagement({
       selectedMonth,
     ]);
 
-  const downloadContractTemplate = async (
-    carryoverData = null,
-  ) => {
+  const downloadContractTemplate = async () => {
     const targetRows = sortRowsByContractStart(
       storedRows.filter(
         (row) => !['manager_confirmed', 'excluded'].includes(row.status),
@@ -1226,9 +1224,7 @@ export default function LaborContractManagement({
       worksheet.getCell('A3').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF7ED' } };
 
       worksheet.mergeCells('A4:N4');
-      worksheet.getCell('A4').value = carryoverData
-        ? `참고 작성자료 ${carryoverData.fileCount.toLocaleString()}개 파일을 브라우저에서만 확인해 ${carryoverData.matchedCount.toLocaleString()}명의 개인정보를 자동 입력했습니다. 서버에는 전송하거나 저장하지 않았습니다.`
-        : '필수입력: 연락처, 주민등록번호, 주소 · 자료가 없으면 해당 칸에 “없음” 입력 가능 · 계약종료일은 월말 · 일급은 180,000원';
+      worksheet.getCell('A4').value = '필수입력: 연락처, 주민등록번호, 주소 · 자료가 없으면 해당 칸에 “없음” 입력 가능 · 계약종료일은 월말 · 일급은 180,000원';
       worksheet.getCell('A4').font = { color: { argb: 'FF475569' } };
 
       const headerRow = worksheet.getRow(5);
@@ -1250,20 +1246,12 @@ export default function LaborContractManagement({
       targetRows.forEach((row, index) => {
         const excelRow = worksheet.getRow(index + 6);
         const form = row.contract_form || {};
-        const previous =
-          carryoverData?.byWorkerCode.get(
-            row.worker_code,
-          ) ||
-          carryoverData?.byUniqueName.get(
-            normalizeName(row.name),
-          ) ||
-          null;
         excelRow.values = [
           row.worker_code,
           row.name,
-          form.phone || row.phone || previous?.phone || '',
-          previous?.residentNumber || '',
-          previous?.address || '',
+          form.phone || row.phone || '',
+          '',
+          '',
           FIXED_CONTRACT_VALUES.job,
           FIXED_CONTRACT_VALUES.process,
           getFixedContractStartDate(row, selectedMonth),
@@ -1304,11 +1292,7 @@ export default function LaborContractManagement({
 
       const buffer = await workbook.xlsx.writeBuffer();
       downloadExcelBuffer(buffer, `근로계약서작성자료_${projectName}_${selectedMonth}.xlsx`);
-      setSuccessMessage(
-        carryoverData
-          ? `${formatMonthLabel(selectedMonth)} 작성 대상 ${targetRows.length.toLocaleString()}명 중 참고 자료와 일치한 ${carryoverData.matchedCount.toLocaleString()}명의 필수값을 자동 입력해 다운로드했습니다.`
-          : `${formatMonthLabel(selectedMonth)} 작성 대상 ${targetRows.length.toLocaleString()}명의 양식을 다운로드했습니다.`,
-      );
+      setSuccessMessage(`${formatMonthLabel(selectedMonth)} 작성 대상 ${targetRows.length.toLocaleString()}명의 양식을 다운로드했습니다.`);
     } catch (error) {
       console.error('근로계약서 양식 생성 오류:', error);
       setErrorMessage(error?.message || '근로계약서 작성자료 양식을 만들지 못했습니다.');
@@ -1522,20 +1506,155 @@ export default function LaborContractManagement({
           .filter(([, rows]) => rows.length === 1)
           .map(([key, rows]) => [key, rows[0]]),
       );
-      const matchedCount = storedRows.filter(
-        (row) =>
-          byWorkerCode.has(row.worker_code) ||
-          byUniqueName.has(
-            normalizeName(row.name),
-          ),
-      ).length;
+      const targetRows = sortRowsByContractStart(
+        storedRows.filter(
+          (row) =>
+            ![
+              'manager_confirmed',
+              'excluded',
+            ].includes(row.status),
+        ),
+        selectedMonth,
+      );
+      let matchedCount = 0;
 
-      await downloadContractTemplate({
-        fileCount: files.length,
-        matchedCount,
-        byWorkerCode,
-        byUniqueName,
-      });
+      const parsedRows = targetRows.map(
+        (stored, index) => {
+          const reference =
+            byWorkerCode.get(
+              stored.worker_code,
+            ) ||
+            byUniqueName.get(
+              normalizeName(
+                stored.name,
+              ),
+            ) ||
+            null;
+
+          if (reference) {
+            matchedCount += 1;
+          }
+
+          const rawPhone =
+            reference?.phone ||
+            stored.contract_form?.phone ||
+            stored.phone ||
+            '';
+          const rawResidentNumber =
+            reference?.residentNumber ||
+            '';
+          const rawAddress =
+            reference?.address ||
+            '';
+          const phoneUnavailable =
+            isUnavailableValue(rawPhone);
+          const residentUnavailable =
+            isUnavailableValue(
+              rawResidentNumber,
+            );
+          const addressUnavailable =
+            isUnavailableValue(
+              rawAddress,
+            );
+          const contractStartDate =
+            getFixedContractStartDate(
+              stored,
+              selectedMonth,
+            );
+          const contractEndDate =
+            getMonthEndDate(
+              selectedMonth,
+            );
+          const baseIssues = [];
+
+          if (!contractStartDate) {
+            baseIssues.push(
+              '계약시작일 오류',
+            );
+          }
+          if (!contractEndDate) {
+            baseIssues.push(
+              '계약종료일 오류',
+            );
+          }
+          if (
+            contractStartDate &&
+            contractEndDate &&
+            contractStartDate >
+              contractEndDate
+          ) {
+            baseIssues.push(
+              '계약종료일이 시작일보다 빠름',
+            );
+          }
+
+          const parsedRow = {
+            excelRow: index + 6,
+            workerCode:
+              stored.worker_code,
+            name: stored.name,
+            phone: phoneUnavailable
+              ? ''
+              : rawPhone,
+            residentNumber:
+              residentUnavailable
+                ? ''
+                : normalizeResidentNumber(
+                  rawResidentNumber,
+                ),
+            address: addressUnavailable
+              ? ''
+              : rawAddress,
+            phoneUnavailable,
+            residentUnavailable,
+            addressUnavailable,
+            job:
+              FIXED_CONTRACT_VALUES.job,
+            process:
+              FIXED_CONTRACT_VALUES.process,
+            contractStartDate,
+            contractEndDate,
+            dailyWage:
+              FIXED_CONTRACT_VALUES.dailyWage,
+            workStartTime:
+              FIXED_CONTRACT_VALUES.workStartTime,
+            workEndTime:
+              FIXED_CONTRACT_VALUES.workEndTime,
+            breakMinutes:
+              FIXED_CONTRACT_VALUES.breakMinutes,
+            workDescription:
+              FIXED_CONTRACT_VALUES.workDescription,
+            note:
+              stored.contract_form?.note ||
+              '',
+            baseIssues,
+            issues: [],
+          };
+
+          parsedRow.issues =
+            getImportRowIssues(
+              parsedRow,
+            );
+
+          return parsedRow;
+        },
+      );
+
+      if (matchedCount === 0) {
+        throw new Error(
+          '선택한 작성자료에서 현재 월 근로자와 일치하는 정보를 찾지 못했습니다.',
+        );
+      }
+
+      setPendingImportPrintData(null);
+      setImportRows(parsedRows);
+      setImportFileName(
+        `작성자료 자동채우기 (${files.length.toLocaleString()}개 파일)`,
+      );
+      setImportDialogOpen(true);
+      setSuccessMessage(
+        `${formatMonthLabel(selectedMonth)} 작성 대상 ${targetRows.length.toLocaleString()}명 중 ${matchedCount.toLocaleString()}명의 개인정보를 브라우저 검토 화면에만 자동 입력했습니다. 개인정보가 포함된 새 엑셀은 다운로드하지 않았습니다.`,
+      );
     } catch (error) {
       console.error(
         '근로계약 작성자료 자동입력 오류:',
