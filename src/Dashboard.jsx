@@ -45,6 +45,7 @@ import WeeklyOverview from './page/WeeklyOverview.jsx';
 import WeeklyOverviewArchive from './page/WeeklyOverviewArchive.jsx';
 import MaterialOrderUpload from './page/MaterialOrderUpload.jsx';
 import MaterialInputStatus from './page/MaterialInputStatus.jsx';
+import LaborContractManagement from './page/LaborContractManagement.jsx';
 import AdminDashboard from './page/AdminDashboard.jsx';
 
 const drawerWidth = 240;
@@ -284,6 +285,7 @@ const viewTitles = {
   'progress-monthly': '월별 완료 집계',
   'material-order': '자재발주작성',
   'material-input-status': '자재투입현황',
+  'labor-contract': '근로계약서작성',
   'report-weekly': '주간 업무 보고',
   'report-approval': '품의 보고',
   'report-outsourcing-approval': '외주 품의 보고',
@@ -2921,6 +2923,15 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             activeProjectName && (
               <MaterialInputStatus
                 projectName={activeProjectName}
+              />
+            )}
+
+          {currentView ===
+            'labor-contract' &&
+            activeProjectName && (
+              <LaborContractManagement
+                projectName={activeProjectName}
+                userProfile={activeUserProfile}
               />
             )}
 

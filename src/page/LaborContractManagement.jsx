@@ -9,6 +9,7 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
@@ -16,6 +17,7 @@ import {
   DialogContent,
   DialogTitle,
   FormControl,
+  FormControlLabel,
   IconButton,
   InputLabel,
   MenuItem,
@@ -49,6 +51,7 @@ import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
+import { createLaborContractPrintWindow } from '../utils/laborContractPrint';
 
 const PAGE_SIZE = 1000;
 const CONTRACT_TEMPLATE_VERSION = 'LABOR_CONTRACT_V1';
@@ -407,6 +410,23 @@ const downloadExcelBuffer = (buffer, fileName) => {
   URL.revokeObjectURL(url);
 };
 
+const normalizeResidentNumber = (value) => {
+  const digits = String(value || '')
+    .replace(/\D/g, '')
+    .slice(0, 13);
+
+  if (digits.length <= 6) {
+    return digits;
+  }
+
+  return `${digits.slice(0, 6)}-${digits.slice(6)}`;
+};
+
+const isValidResidentNumber = (value) =>
+  /^\d{6}-\d{7}$/.test(
+    normalizeResidentNumber(value),
+  );
+
 export default function LaborContractManagement({
   projectName = '',
   userProfile = null,
@@ -553,6 +573,46 @@ export default function LaborContractManagement({
   const [
     importSaving,
     setImportSaving,
+  ] = useState(false);
+
+  const [
+    contractPrintOpen,
+    setContractPrintOpen,
+  ] = useState(false);
+
+  const [
+    contractPrintLoading,
+    setContractPrintLoading,
+  ] = useState(false);
+
+  const [
+    includeCompletedPrintRows,
+    setIncludeCompletedPrintRows,
+  ] = useState(false);
+
+  const [
+    selectedPrintIds,
+    setSelectedPrintIds,
+  ] = useState([]);
+
+  const [
+    sensitivePrintInputs,
+    setSensitivePrintInputs,
+  ] = useState({});
+
+  const [
+    contractPrintError,
+    setContractPrintError,
+  ] = useState('');
+
+  const [
+    pendingPrintBatch,
+    setPendingPrintBatch,
+  ] = useState(null);
+
+  const [
+    printRecordSaving,
+    setPrintRecordSaving,
   ] = useState(false);
 
   const canManage =
@@ -1258,6 +1318,397 @@ export default function LaborContractManagement({
     setImportSaving(false);
   };
 
+  const clearContractPrintInputs = () => {
+    setSensitivePrintInputs({});
+    setSelectedPrintIds([]);
+    setContractPrintError('');
+  };
+
+  const closeContractPrintDialog = () => {
+    if (contractPrintLoading) {
+      return;
+    }
+
+    setContractPrintOpen(false);
+    clearContractPrintInputs();
+  };
+
+  const openContractPrintDialog = (targetRow = null) => {
+    const initialRows = targetRow
+      ? [targetRow]
+      : storedRows.filter(
+        (row) =>
+          row.contract_form &&
+          [
+            'form_ready',
+            'rejected',
+          ].includes(row.status),
+      );
+
+    if (initialRows.length === 0) {
+      setErrorMessage(
+        'PDF로 출력할 양식입력완료 또는 반려 대상자가 없습니다.',
+      );
+      return;
+    }
+
+    setIncludeCompletedPrintRows(
+      targetRow?.status === 'manager_confirmed',
+    );
+    setSelectedPrintIds(
+      initialRows.map(
+        (row) => String(row.requirement_id),
+      ),
+    );
+    setSensitivePrintInputs(
+      initialRows.reduce(
+        (result, row) => ({
+          ...result,
+          [String(row.requirement_id)]: {
+            residentNumber: '',
+            address: '',
+          },
+        }),
+        {},
+      ),
+    );
+    setContractPrintError('');
+    setContractPrintOpen(true);
+  };
+
+  const handlePrintRowToggle = (row) => {
+    const rowId = String(row.requirement_id);
+    const wasSelected =
+      selectedPrintIds.includes(rowId);
+
+    setSelectedPrintIds((previous) => {
+      if (previous.includes(rowId)) {
+        return previous.filter(
+          (id) => id !== rowId,
+        );
+      }
+
+      return [
+        ...previous,
+        rowId,
+      ];
+    });
+
+    setSensitivePrintInputs((previous) => {
+      if (wasSelected) {
+        const next = {
+          ...previous,
+        };
+
+        delete next[rowId];
+        return next;
+      }
+
+      return {
+        ...previous,
+        [rowId]: previous[rowId] || {
+          residentNumber: '',
+          address: '',
+        },
+      };
+    });
+  };
+
+  const handleSensitivePrintInput = (
+    rowId,
+    field,
+    value,
+  ) => {
+    setSensitivePrintInputs(
+      (previous) => ({
+        ...previous,
+        [rowId]: {
+          residentNumber:
+            previous[rowId]
+              ?.residentNumber || '',
+          address:
+            previous[rowId]
+              ?.address || '',
+          [field]:
+            field === 'residentNumber'
+              ? normalizeResidentNumber(value)
+              : value,
+        },
+      }),
+    );
+  };
+
+  const handleSelectAllPrintRows = (
+    checked,
+  ) => {
+    if (!checked) {
+      clearContractPrintInputs();
+      return;
+    }
+
+    setSelectedPrintIds(
+      contractPrintRows.map(
+        (row) => String(row.requirement_id),
+      ),
+    );
+    setSensitivePrintInputs(
+      (previous) =>
+        contractPrintRows.reduce(
+          (result, row) => {
+            const rowId =
+              String(row.requirement_id);
+
+            return {
+              ...result,
+              [rowId]:
+                previous[rowId] || {
+                  residentNumber: '',
+                  address: '',
+                },
+            };
+          },
+          {},
+        ),
+    );
+  };
+
+  const handleIncludeCompletedPrintRows = (
+    checked,
+  ) => {
+    setIncludeCompletedPrintRows(
+      checked,
+    );
+
+    if (checked) {
+      return;
+    }
+
+    const completedIds = new Set(
+      storedRows
+        .filter(
+          (row) =>
+            row.status ===
+            'manager_confirmed',
+        )
+        .map(
+          (row) =>
+            String(
+              row.requirement_id,
+            ),
+        ),
+    );
+
+    setSelectedPrintIds(
+      (previous) =>
+        previous.filter(
+          (id) =>
+            !completedIds.has(id),
+        ),
+    );
+    setSensitivePrintInputs(
+      (previous) =>
+        Object.fromEntries(
+          Object.entries(previous)
+            .filter(
+              ([id]) =>
+                !completedIds.has(id),
+            ),
+        ),
+    );
+  };
+
+  const handleCreateContractPdf = async () => {
+    const selectedRows = storedRows.filter(
+      (row) =>
+        selectedPrintIds.includes(
+          String(row.requirement_id),
+        ),
+    );
+
+    if (selectedRows.length === 0) {
+      setContractPrintError(
+        'PDF로 출력할 근로자를 한 명 이상 선택해주세요.',
+      );
+      return;
+    }
+
+    const invalidRows = selectedRows.filter(
+      (row) => {
+        const values =
+          sensitivePrintInputs[
+            String(row.requirement_id)
+          ] || {};
+
+        return (
+          !isValidResidentNumber(
+            values.residentNumber,
+          ) ||
+          !String(
+            values.address || '',
+          ).trim() ||
+          !row.contract_form
+            ?.contract_start_date ||
+          !row.contract_form
+            ?.contract_end_date
+        );
+      },
+    );
+
+    if (invalidRows.length > 0) {
+      setContractPrintError(
+        `${invalidRows.map((row) => row.name).join(', ')}의 주민등록번호·주소 또는 계약기간을 확인해주세요.`,
+      );
+      return;
+    }
+
+    setContractPrintLoading(true);
+    setContractPrintError('');
+
+    try {
+      const batchId =
+        window.crypto
+          ?.randomUUID?.() ||
+        `labor-${Date.now()}`;
+      const printResult =
+        await createLaborContractPrintWindow({
+          workers:
+            selectedRows.map(
+              (row) => {
+                const values =
+                  sensitivePrintInputs[
+                    String(
+                      row.requirement_id,
+                    )
+                  ];
+
+                return {
+                  name: row.name,
+                  residentNumber:
+                    normalizeResidentNumber(
+                      values.residentNumber,
+                    ),
+                  address:
+                    String(
+                      values.address,
+                    ).trim(),
+                  contractStartDate:
+                    row.contract_form
+                      .contract_start_date,
+                  contractEndDate:
+                    row.contract_form
+                      .contract_end_date,
+                };
+              },
+            ),
+          projectName,
+          selectedMonth,
+          batchId,
+        });
+
+      setPendingPrintBatch({
+        batchId,
+        fileName:
+          printResult.fileName,
+        rows:
+          selectedRows.map(
+            (row) => ({
+              requirementId:
+                row.requirement_id,
+              name: row.name,
+            }),
+          ),
+      });
+
+      setContractPrintOpen(false);
+      clearContractPrintInputs();
+      setSuccessMessage(
+        `${selectedRows.length.toLocaleString()}명의 계약서 인쇄창을 열었습니다. PDF로 저장한 뒤 완료 기록 여부를 확인해주세요.`,
+      );
+    } catch (error) {
+      console.error(
+        '근로계약서 PDF 출력 오류:',
+        error,
+      );
+      setContractPrintError(
+        error?.message ||
+          '근로계약서 인쇄창을 만들지 못했습니다.',
+      );
+    }
+
+    setContractPrintLoading(false);
+  };
+
+  const handleConfirmPrintRecord = async () => {
+    if (!pendingPrintBatch) {
+      return;
+    }
+
+    setPrintRecordSaving(true);
+    setErrorMessage('');
+
+    const results = await Promise.all(
+      pendingPrintBatch.rows.map(
+        async (row) => {
+          const {
+            error,
+          } = await supabase.rpc(
+            'labor_update_contract_status',
+            {
+              p_project_name:
+                projectName,
+              p_requirement_id:
+                row.requirementId,
+              p_next_status:
+                'pdf_generated',
+              p_reason: '',
+              p_scan_file_name:
+                pendingPrintBatch.fileName,
+              p_scan_file_hash: '',
+            },
+          );
+
+          return {
+            ...row,
+            error,
+          };
+        },
+      ),
+    );
+    const failedRows = results.filter(
+      (row) => row.error,
+    );
+    const successCount =
+      results.length -
+      failedRows.length;
+
+    if (failedRows.length > 0) {
+      setErrorMessage(
+        `${successCount.toLocaleString()}명은 PDF 생성으로 기록했고, ${failedRows.map((row) => row.name).join(', ')} 기록은 실패했습니다. 다시 시도해주세요.`,
+      );
+      setPendingPrintBatch(
+        (previous) => ({
+          ...previous,
+          rows:
+            failedRows.map(
+              (row) => ({
+                requirementId:
+                  row.requirementId,
+                name: row.name,
+              }),
+            ),
+        }),
+      );
+    } else {
+      setSuccessMessage(
+        `${successCount.toLocaleString()}명을 PDF 생성 상태로 기록했습니다.`,
+      );
+      setPendingPrintBatch(null);
+    }
+
+    await loadStoredRows();
+    setPrintRecordSaving(false);
+  };
+
   const handleSync =
     async () => {
       if (!accessInfo) {
@@ -1557,6 +2008,35 @@ export default function LaborContractManagement({
       workerTypeFilter,
     ]);
 
+  const contractPrintRows =
+    useMemo(
+      () =>
+        storedRows.filter(
+          (row) =>
+            row.contract_form &&
+            row.status !==
+              'excluded' &&
+            (
+              includeCompletedPrintRows ||
+              row.status !==
+                'manager_confirmed'
+            ),
+        ),
+      [
+        includeCompletedPrintRows,
+        storedRows,
+      ],
+    );
+
+  const allPrintRowsSelected =
+    contractPrintRows.length > 0 &&
+    contractPrintRows.every(
+      (row) =>
+        selectedPrintIds.includes(
+          String(row.requirement_id),
+        ),
+    );
+
   const summary =
     useMemo(
       () =>
@@ -1806,6 +2286,32 @@ export default function LaborContractManagement({
               disabled={!accessInfo || storedRows.length === 0}
             >
               작성자료 업로드
+            </Button>
+
+            <Button
+              variant="contained"
+              color="error"
+              startIcon={
+                <PictureAsPdfOutlinedIcon />
+              }
+              onClick={() =>
+                openContractPrintDialog()
+              }
+              disabled={
+                !accessInfo ||
+                !storedRows.some(
+                  (row) =>
+                    row.contract_form &&
+                    [
+                      'form_ready',
+                      'rejected',
+                    ].includes(
+                      row.status,
+                    ),
+                )
+              }
+            >
+              계약서 PDF 생성
             </Button>
 
             <Button
@@ -2364,15 +2870,13 @@ export default function LaborContractManagement({
                                 'rejected' ||
                               row.status ===
                                 'pdf_generated') && (
-                              <Tooltip title="PDF 생성 기록">
+                              <Tooltip title="계약서 PDF 생성·재출력">
                                 <IconButton
                                   size="small"
                                   color="primary"
                                   onClick={() =>
-                                    openStatusAction(
+                                    openContractPrintDialog(
                                       row,
-                                      'pdf_generated',
-                                      'PDF 생성 기록',
                                     )
                                   }
                                 >
@@ -2515,6 +3019,407 @@ export default function LaborContractManagement({
       >
         접속자: {userProfile?.manager_name || '-'} · 현장: {projectName || '-'}
       </Typography>
+
+      <Dialog
+        open={contractPrintOpen}
+        onClose={closeContractPrintDialog}
+        fullWidth
+        maxWidth="xl"
+      >
+        <DialogTitle
+          sx={{
+            fontWeight: 900,
+          }}
+        >
+          실제 근로계약서 PDF 생성
+        </DialogTitle>
+
+        <DialogContent dividers>
+          <Stack spacing={1.2}>
+            <Alert severity="warning">
+              주민등록번호와 주소는 이 화면의 임시 메모리에만 입력됩니다. 계약서 인쇄창을 만든 직후 입력값을 초기화하고, Supabase와 서버에는 저장하지 않습니다.
+            </Alert>
+
+            <Stack
+              direction={{
+                xs: 'column',
+                md: 'row',
+              }}
+              spacing={1}
+              alignItems={{
+                xs: 'flex-start',
+                md: 'center',
+              }}
+              justifyContent="space-between"
+            >
+              <Typography
+                sx={{
+                  color: '#475569',
+                  fontSize: '0.78rem',
+                  fontWeight: 800,
+                }}
+              >
+                양식입력완료·반려 대상은 처음부터 선택됩니다. 이미 PDF를 만든 대상은 필요할 때 직접 선택해 재출력할 수 있습니다.
+              </Typography>
+
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={
+                      includeCompletedPrintRows
+                    }
+                    onChange={(event) =>
+                      handleIncludeCompletedPrintRows(
+                        event.target.checked,
+                      )
+                    }
+                  />
+                }
+                label="작성완료자 포함"
+              />
+            </Stack>
+
+            {contractPrintError && (
+              <Alert severity="error">
+                {contractPrintError}
+              </Alert>
+            )}
+
+            <TableContainer
+              sx={{
+                maxHeight: 560,
+                border:
+                  '1px solid #cbd5e1',
+              }}
+            >
+              <Table
+                stickyHeader
+                size="small"
+                sx={{
+                  '& th, & td': {
+                    borderRight:
+                      '1px solid #e2e8f0',
+                    fontSize: '0.7rem',
+                    whiteSpace: 'nowrap',
+                  },
+                  '& th': {
+                    bgcolor: '#f8fafc',
+                    fontWeight: 900,
+                  },
+                }}
+              >
+                <TableHead>
+                  <TableRow>
+                    <TableCell padding="checkbox">
+                      <Checkbox
+                        checked={
+                          allPrintRowsSelected
+                        }
+                        indeterminate={
+                          selectedPrintIds.length > 0 &&
+                          !allPrintRowsSelected
+                        }
+                        onChange={(event) =>
+                          handleSelectAllPrintRows(
+                            event.target.checked,
+                          )
+                        }
+                      />
+                    </TableCell>
+                    <TableCell>상태</TableCell>
+                    <TableCell>성명</TableCell>
+                    <TableCell>계약기간</TableCell>
+                    <TableCell>
+                      주민등록번호
+                    </TableCell>
+                    <TableCell>주소</TableCell>
+                  </TableRow>
+                </TableHead>
+
+                <TableBody>
+                  {contractPrintRows.map(
+                    (row) => {
+                      const rowId =
+                        String(
+                          row.requirement_id,
+                        );
+                      const checked =
+                        selectedPrintIds.includes(
+                          rowId,
+                        );
+                      const inputs =
+                        sensitivePrintInputs[
+                          rowId
+                        ] || {
+                          residentNumber: '',
+                          address: '',
+                        };
+
+                      return (
+                        <TableRow
+                          key={rowId}
+                          hover
+                          sx={{
+                            bgcolor: checked
+                              ? '#eff6ff'
+                              : '#ffffff',
+                            opacity: checked
+                              ? 1
+                              : 0.62,
+                          }}
+                        >
+                          <TableCell padding="checkbox">
+                            <Checkbox
+                              checked={checked}
+                              onChange={() =>
+                                handlePrintRowToggle(
+                                  row,
+                                )
+                              }
+                            />
+                          </TableCell>
+
+                          <TableCell>
+                            <Chip
+                              size="small"
+                              color={
+                                getStatusMeta(
+                                  row.status,
+                                ).color
+                              }
+                              label={
+                                getStatusMeta(
+                                  row.status,
+                                ).label
+                              }
+                            />
+                          </TableCell>
+
+                          <TableCell
+                            sx={{
+                              fontWeight: 900,
+                            }}
+                          >
+                            {row.name}
+                          </TableCell>
+
+                          <TableCell>
+                            {formatShortDate(
+                              row.contract_form
+                                ?.contract_start_date,
+                            )}{' '}
+                            ~{' '}
+                            {formatShortDate(
+                              row.contract_form
+                                ?.contract_end_date,
+                            )}
+                          </TableCell>
+
+                          <TableCell>
+                            <TextField
+                              size="small"
+                              value={
+                                inputs.residentNumber
+                              }
+                              onChange={(event) =>
+                                handleSensitivePrintInput(
+                                  rowId,
+                                  'residentNumber',
+                                  event.target.value,
+                                )
+                              }
+                              placeholder="000000-0000000"
+                              disabled={!checked}
+                              error={
+                                checked &&
+                                Boolean(
+                                  inputs.residentNumber,
+                                ) &&
+                                !isValidResidentNumber(
+                                  inputs.residentNumber,
+                                )
+                              }
+                              inputProps={{
+                                autoComplete: 'off',
+                                inputMode: 'numeric',
+                              }}
+                              sx={{
+                                minWidth: 180,
+                              }}
+                            />
+                          </TableCell>
+
+                          <TableCell>
+                            <TextField
+                              size="small"
+                              value={
+                                inputs.address
+                              }
+                              onChange={(event) =>
+                                handleSensitivePrintInput(
+                                  rowId,
+                                  'address',
+                                  event.target.value,
+                                )
+                              }
+                              placeholder="상세주소까지 입력"
+                              disabled={!checked}
+                              inputProps={{
+                                autoComplete: 'off',
+                              }}
+                              sx={{
+                                minWidth: 360,
+                              }}
+                            />
+                          </TableCell>
+                        </TableRow>
+                      );
+                    },
+                  )}
+
+                  {contractPrintRows.length ===
+                    0 && (
+                    <TableRow>
+                      <TableCell
+                        colSpan={6}
+                        align="center"
+                        sx={{
+                          py: 5,
+                          color: '#94a3b8',
+                        }}
+                      >
+                        PDF로 출력할 작성자료가 없습니다.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+
+            <Alert severity="info">
+              실제 양식의 C6·G6·C7·C10:D10·E10:F10·C13:E13·G30:H30·H34·G39:H39에 값을 넣습니다. 일급 등 나머지 내용은 원본 고정값을 유지합니다.
+            </Alert>
+          </Stack>
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={
+              closeContractPrintDialog
+            }
+            disabled={
+              contractPrintLoading
+            }
+          >
+            취소
+          </Button>
+
+          <Button
+            variant="contained"
+            color="error"
+            startIcon={
+              contractPrintLoading
+                ? (
+                  <CircularProgress
+                    size={16}
+                    color="inherit"
+                  />
+                )
+                : (
+                  <PictureAsPdfOutlinedIcon />
+                )
+            }
+            onClick={
+              handleCreateContractPdf
+            }
+            disabled={
+              contractPrintLoading ||
+              selectedPrintIds.length === 0
+            }
+          >
+            선택 {selectedPrintIds.length.toLocaleString()}명 인쇄창 열기
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(pendingPrintBatch)}
+        onClose={() => {
+          if (!printRecordSaving) {
+            setPendingPrintBatch(null);
+          }
+        }}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle
+          sx={{
+            fontWeight: 900,
+          }}
+        >
+          PDF 저장 완료 확인
+        </DialogTitle>
+
+        <DialogContent dividers>
+          {pendingPrintBatch && (
+            <Stack spacing={1.2}>
+              <Alert severity="warning">
+                인쇄창에서 ‘PDF로 저장’을 완료한 경우에만 아래 완료 버튼을 눌러주세요.
+              </Alert>
+
+              <Typography>
+                대상 {pendingPrintBatch.rows.length.toLocaleString()}명: {pendingPrintBatch.rows.map((row) => row.name).join(', ')}
+              </Typography>
+
+              <Typography
+                sx={{
+                  color: '#64748b',
+                  fontSize: '0.76rem',
+                }}
+              >
+                기록 파일명: {pendingPrintBatch.fileName}
+              </Typography>
+
+              <Alert severity="info">
+                PDF 파일 원본과 주민등록번호·주소는 서버에 저장하지 않습니다. 완료 처리 시 대상자의 상태와 생성 시각만 기록됩니다.
+              </Alert>
+            </Stack>
+          )}
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={() =>
+              setPendingPrintBatch(null)
+            }
+            disabled={printRecordSaving}
+          >
+            기록하지 않음
+          </Button>
+
+          <Button
+            variant="contained"
+            startIcon={
+              printRecordSaving
+                ? (
+                  <CircularProgress
+                    size={16}
+                    color="inherit"
+                  />
+                )
+                : (
+                  <TaskAltRoundedIcon />
+                )
+            }
+            onClick={
+              handleConfirmPrintRecord
+            }
+            disabled={printRecordSaving}
+          >
+            PDF 저장 완료 처리
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={importDialogOpen}
