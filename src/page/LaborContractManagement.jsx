@@ -34,8 +34,6 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import SyncRoundedIcon from '@mui/icons-material/SyncRounded';
 import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
 import PersonAddAlt1RoundedIcon from '@mui/icons-material/PersonAddAlt1Rounded';
 import GroupsRoundedIcon from '@mui/icons-material/GroupsRounded';
@@ -47,7 +45,6 @@ import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded';
 import BlockOutlinedIcon from '@mui/icons-material/BlockOutlined';
 import ReplayRoundedIcon from '@mui/icons-material/ReplayRounded';
-import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
@@ -578,6 +575,11 @@ export default function LaborContractManagement({
     successMessage,
     setSuccessMessage,
   ] = useState('');
+
+  const [
+    notificationsMinimized,
+    setNotificationsMinimized,
+  ] = useState(false);
 
   const [
     searchText,
@@ -2477,8 +2479,6 @@ export default function LaborContractManagement({
               row.worker_code,
               row.name,
               row.phone,
-              row.job,
-              row.process,
             ]
               .join(' ')
               .toLowerCase()
@@ -2634,6 +2634,36 @@ export default function LaborContractManagement({
     loadingReports ||
     loadingStoredRows;
 
+  const notificationCount = [
+    Boolean(successMessage),
+    Boolean(errorMessage),
+    Boolean(
+      accessInfo &&
+      analyzedWorkers.length > storedRows.length,
+    ),
+    Boolean(
+      accessInfo &&
+      summary.warning > 0,
+    ),
+    Boolean(
+      accessInfo &&
+      summary.formReady > 0,
+    ),
+  ].filter(Boolean).length;
+
+  const actionControlSx = {
+    width: 145,
+    minWidth: 145,
+    height: 40,
+    flexShrink: 0,
+    px: 1,
+    py: 0,
+    fontSize: '0.72rem',
+    fontWeight: 800,
+    lineHeight: 1.15,
+    whiteSpace: 'nowrap',
+  };
+
   return (
     <Box
       sx={{
@@ -2664,7 +2694,7 @@ export default function LaborContractManagement({
       <Paper
         variant="outlined"
         sx={{
-          p: 1.4,
+          p: 1,
           borderColor: '#cbd5e1',
         }}
       >
@@ -2680,7 +2710,12 @@ export default function LaborContractManagement({
           }}
           spacing={1}
         >
-          <Box>
+          <Box
+            sx={{
+              minWidth: 440,
+              flexShrink: 0,
+            }}
+          >
             <Stack
               direction="row"
               spacing={0.7}
@@ -2721,7 +2756,8 @@ export default function LaborContractManagement({
               sx={{
                 mt: 0.15,
                 color: '#64748b',
-                fontSize: '0.78rem',
+                fontSize: '0.74rem',
+                whiteSpace: 'nowrap',
               }}
             >
               양식에서 연락처·주민등록번호·주소만 입력하면 나머지 계약조건은 자동으로 적용됩니다.
@@ -2730,9 +2766,13 @@ export default function LaborContractManagement({
 
           <Stack
             direction="row"
-            spacing={0.7}
+            spacing={0.6}
             alignItems="center"
-            flexWrap="wrap"
+            sx={{
+              minWidth: 0,
+              overflowX: 'auto',
+              pb: 0.2,
+            }}
           >
             <TextField
               type="month"
@@ -2748,24 +2788,19 @@ export default function LaborContractManagement({
                 shrink: true,
               }}
               sx={{
-                width: 155,
+                ...actionControlSx,
+                '& .MuiInputBase-root': {
+                  height: 40,
+                  fontSize: '0.76rem',
+                },
+                '& .MuiInputLabel-root': {
+                  fontSize: '0.76rem',
+                },
               }}
             />
 
             <Button
               variant="contained"
-              startIcon={
-                syncing
-                  ? (
-                    <CircularProgress
-                      size={16}
-                      color="inherit"
-                    />
-                  )
-                  : (
-                    <SyncRoundedIcon />
-                  )
-              }
               onClick={
                 handleSync
               }
@@ -2775,15 +2810,18 @@ export default function LaborContractManagement({
                 analyzedWorkers.length ===
                   0
               }
+              sx={actionControlSx}
             >
-              작성 대상 반영
+              {syncing
+                ? '반영 중'
+                : '작성 대상 반영'}
             </Button>
 
             <Button
               variant="outlined"
-              startIcon={<DownloadOutlinedIcon />}
               onClick={handleDownloadTemplate}
               disabled={!accessInfo || storedRows.length === 0}
+              sx={actionControlSx}
             >
               양식 다운로드
             </Button>
@@ -2791,11 +2829,11 @@ export default function LaborContractManagement({
             <Button
               variant="outlined"
               color="success"
-              startIcon={<DownloadOutlinedIcon />}
               onClick={() =>
                 previousContractFilesInputRef.current?.click()
               }
               disabled={!accessInfo || storedRows.length === 0}
+              sx={actionControlSx}
             >
               이전자료 자동채우기
             </Button>
@@ -2803,9 +2841,9 @@ export default function LaborContractManagement({
             <Button
               variant="outlined"
               color="secondary"
-              startIcon={<UploadFileOutlinedIcon />}
               onClick={() => contractFileInputRef.current?.click()}
               disabled={!accessInfo || storedRows.length === 0}
+              sx={actionControlSx}
             >
               작성자료 업로드
             </Button>
@@ -2813,9 +2851,6 @@ export default function LaborContractManagement({
             <Button
               variant="contained"
               color="error"
-              startIcon={
-                <PictureAsPdfOutlinedIcon />
-              }
               onClick={() =>
                 openContractPrintDialog()
               }
@@ -2829,18 +2864,16 @@ export default function LaborContractManagement({
                       'rejected',
                     ].includes(
                       row.status,
-                    ),
+                  ),
                 )
               }
+              sx={actionControlSx}
             >
               계약서 PDF 생성
             </Button>
 
             <Button
               variant="outlined"
-              startIcon={
-                <RefreshIcon />
-              }
               onClick={() =>
                 setRefreshKey(
                   (previous) =>
@@ -2848,6 +2881,7 @@ export default function LaborContractManagement({
                 )
               }
               disabled={loading}
+              sx={actionControlSx}
             >
               새로고침
             </Button>
@@ -2890,60 +2924,142 @@ export default function LaborContractManagement({
         </Alert>
       )}
 
-      {successMessage && (
-        <Alert
-          severity="success"
-          onClose={() =>
-            setSuccessMessage('')
-          }
-        >
-          {successMessage}
-        </Alert>
-      )}
-
-      {errorMessage && (
-        <Alert
-          severity="error"
-          onClose={() =>
-            setErrorMessage('')
-          }
-        >
-          {errorMessage}
-        </Alert>
-      )}
-
-      {accessInfo &&
-        analyzedWorkers.length >
-          storedRows.length && (
-          <Alert
-            severity="warning"
-            icon={
-              <WarningAmberRoundedIcon />
-            }
-          >
-            출력일보 분석 인원은 {analyzedWorkers.length.toLocaleString()}명이고, DB에 저장된 작성 대상은 {storedRows.length.toLocaleString()}명입니다. 상단의 ‘작성 대상 반영’을 눌러 신규 인원을 저장해주세요.
-          </Alert>
-        )}
-
-      {accessInfo &&
-        summary.warning > 0 && (
-          <Alert
-            severity="warning"
+      {notificationCount > 0 && (
+        notificationsMinimized ? (
+          <Paper
+            variant="outlined"
             sx={{
-              py: 0.35,
-              fontWeight: 800,
+              minHeight: 32,
+              px: 1.2,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              borderColor: '#bfdbfe',
+              bgcolor: '#eff6ff',
             }}
           >
-            {formatMonthLabel(
-              selectedMonth,
-            )} 양식 미입력 또는 반려 대상자가 {summary.warning.toLocaleString()}명 있습니다.
-          </Alert>
-        )}
+            <Typography
+              sx={{
+                color: '#1e40af',
+                fontSize: '0.72rem',
+                fontWeight: 800,
+              }}
+            >
+              알림 {notificationCount}건이 최소화되어 있습니다.
+            </Typography>
 
-      {accessInfo && summary.formReady > 0 && (
-        <Alert severity="info" sx={{ py: 0.35, fontWeight: 800 }}>
-          작성자료 입력이 끝나 PDF 출력이 가능한 인원이 {summary.formReady.toLocaleString()}명 있습니다.
-        </Alert>
+            <Button
+              size="small"
+              onClick={() =>
+                setNotificationsMinimized(false)
+              }
+              sx={{
+                minWidth: 70,
+                py: 0.15,
+                fontSize: '0.7rem',
+                fontWeight: 900,
+              }}
+            >
+              알림 펼치기
+            </Button>
+          </Paper>
+        ) : (
+          <Box
+            sx={{
+              position: 'relative',
+              display: 'grid',
+              gap: 1,
+            }}
+          >
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() =>
+                setNotificationsMinimized(true)
+              }
+              sx={{
+                position: 'absolute',
+                top: 6,
+                right: 44,
+                zIndex: 2,
+                minWidth: 82,
+                height: 28,
+                bgcolor: '#ffffff',
+                fontSize: '0.68rem',
+                fontWeight: 900,
+              }}
+            >
+              알림 최소화
+            </Button>
+
+            {successMessage && (
+              <Alert
+                severity="success"
+                onClose={() =>
+                  setSuccessMessage('')
+                }
+                sx={{ pr: 16 }}
+              >
+                {successMessage}
+              </Alert>
+            )}
+
+            {errorMessage && (
+              <Alert
+                severity="error"
+                onClose={() =>
+                  setErrorMessage('')
+                }
+                sx={{ pr: 16 }}
+              >
+                {errorMessage}
+              </Alert>
+            )}
+
+            {accessInfo &&
+              analyzedWorkers.length >
+                storedRows.length && (
+                <Alert
+                  severity="warning"
+                  icon={
+                    <WarningAmberRoundedIcon />
+                  }
+                  sx={{ pr: 16 }}
+                >
+                  출력일보 분석 인원은 {analyzedWorkers.length.toLocaleString()}명이고, DB에 저장된 작성 대상은 {storedRows.length.toLocaleString()}명입니다. 상단의 ‘작성 대상 반영’을 눌러 신규 인원을 저장해주세요.
+                </Alert>
+              )}
+
+            {accessInfo &&
+              summary.warning > 0 && (
+                <Alert
+                  severity="warning"
+                  sx={{
+                    py: 0.35,
+                    pr: 16,
+                    fontWeight: 800,
+                  }}
+                >
+                  {formatMonthLabel(
+                    selectedMonth,
+                  )} 양식 미입력 또는 반려 대상자가 {summary.warning.toLocaleString()}명 있습니다.
+                </Alert>
+              )}
+
+            {accessInfo && summary.formReady > 0 && (
+              <Alert
+                severity="info"
+                sx={{
+                  py: 0.35,
+                  pr: 16,
+                  fontWeight: 800,
+                }}
+              >
+                작성자료 입력이 끝나 PDF 출력이 가능한 인원이 {summary.formReady.toLocaleString()}명 있습니다.
+              </Alert>
+            )}
+          </Box>
+        )
       )}
 
       <Box
@@ -3037,7 +3153,7 @@ export default function LaborContractManagement({
         >
           <TextField
             size="small"
-            label="성명·연락처·직종·공정 검색"
+            label="성명·연락처 검색"
             value={searchText}
             onChange={(event) =>
               setSearchText(
@@ -3200,8 +3316,6 @@ export default function LaborContractManagement({
                     '근로자번호',
                     '성명',
                     '연락처',
-                    '직종',
-                    '공정',
                     '계약시작일',
                     '계약대상월',
                     '작성사유',
@@ -3296,15 +3410,6 @@ export default function LaborContractManagement({
                           {maskPhone(
                             row.phone,
                           )}
-                        </TableCell>
-
-                        <TableCell>
-                          {row.job || '-'}
-                        </TableCell>
-
-                        <TableCell>
-                          {row.process ||
-                            '-'}
                         </TableCell>
 
                         <TableCell>
@@ -4164,39 +4269,6 @@ export default function LaborContractManagement({
                 placeholder="010-0000-0000"
               />
 
-              <TextField
-                label="직종"
-                value={
-                  workerEditForm.job ||
-                  ''
-                }
-                onChange={(event) =>
-                  setWorkerEditForm(
-                    (previous) => ({
-                      ...previous,
-                      job:
-                        event.target.value,
-                    }),
-                  )
-                }
-              />
-
-              <TextField
-                label="공정"
-                value={
-                  workerEditForm.process ||
-                  ''
-                }
-                onChange={(event) =>
-                  setWorkerEditForm(
-                    (previous) => ({
-                      ...previous,
-                      process:
-                        event.target.value,
-                    }),
-                  )
-                }
-              />
             </Stack>
           )}
         </DialogContent>

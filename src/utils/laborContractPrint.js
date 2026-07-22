@@ -151,10 +151,9 @@ const buildFieldLayer = (
     }),
     createText({
       value: name,
-      x: 393.644,
+      x: 453.479,
       y: 661.75,
-      anchor: 'start',
-      maxWidth: 88,
+      maxWidth: 96,
     }),
     createText({
       value: name,
