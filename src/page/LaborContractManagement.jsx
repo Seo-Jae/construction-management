@@ -3318,7 +3318,7 @@ export default function LaborContractManagement({
               fontSize: '0.76rem',
             }}
           >
-            SQL 적용 후 labor_project_access에 현재 로그인 이메일과 현장명을 등록해야 합니다. 권한은 현장 담당자(site_manager), 노임 관리자(labor_manager), 최고관리자(admin)로 구분됩니다.
+            최고관리자 계정으로 회원관리에서 이 사용자의 접근 현장을 지정한 뒤 권한저장을 눌러주세요. 본사 관리자·최고관리자는 전체현장을 선택할 수 있습니다.
           </Typography>
         </Alert>
       )}

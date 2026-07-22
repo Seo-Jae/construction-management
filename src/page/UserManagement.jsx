@@ -22,6 +22,7 @@ import {
 import { supabase } from '../supabaseClient';
 
 const ROLE_OPTIONS = ['담당자', '관리자', '최고관리자'];
+const ALL_PROJECTS_OPTION = '전체현장';
 
 const STATUS_INFO = {
   pending: { label: '승인대기', color: 'warning' },
@@ -35,29 +36,57 @@ const normalizeSearchText = (value) =>
     .toLowerCase()
     .replace(/\s+/g, '');
 
-const normalizeProjectNames = (values) =>
-  [...new Set(
+const normalizeProjectNames = (values) => {
+  const normalized = [...new Set(
     (Array.isArray(values) ? values : [])
       .map((value) => String(value || '').trim())
       .filter((value) => value && value !== '본사'),
   )];
 
+  return normalized.includes(ALL_PROJECTS_OPTION)
+    ? [ALL_PROJECTS_OPTION]
+    : normalized;
+};
+
+const normalizeProjectSelection = (nextValues, previousValues) => {
+  const next = [...new Set(
+    (Array.isArray(nextValues) ? nextValues : [])
+      .map((value) => String(value || '').trim())
+      .filter((value) => value && value !== '본사'),
+  )];
+  const previous = normalizeProjectNames(previousValues);
+  const nextHasAll = next.includes(ALL_PROJECTS_OPTION);
+  const previousHadAll = previous.includes(ALL_PROJECTS_OPTION);
+
+  if (nextHasAll && !previousHadAll) {
+    return [ALL_PROJECTS_OPTION];
+  }
+
+  if (nextHasAll && next.length > 1) {
+    return next.filter((value) => value !== ALL_PROJECTS_OPTION);
+  }
+
+  return next;
+};
+
 const createDraft = (account) => {
   const organizationType =
     account?.organization_type === '본사' ? '본사' : '현장';
+  const role = account?.role || '담당자';
+  const isManagementRole = ['관리자', '최고관리자'].includes(role);
   const savedProjectNames = normalizeProjectNames(account?.project_names);
   const fallbackProjectName = String(
     account?.project_name || account?.requested_project_name || '',
   ).trim();
 
   return {
-    role: account?.role || '담당자',
+    role,
     organizationType,
     projectNames:
-      organizationType === '본사'
-        ? ['본사']
-        : savedProjectNames.length > 0
+      savedProjectNames.length > 0
           ? savedProjectNames
+          : organizationType === '본사' && isManagementRole
+            ? [ALL_PROJECTS_OPTION]
           : fallbackProjectName && fallbackProjectName !== '본사'
             ? [fallbackProjectName]
             : [],
@@ -124,7 +153,12 @@ export default function UserManagement({ currentUserId = '' }) {
             .map((row) =>
               String(row?.project_name || row || '').trim(),
             )
-            .filter(Boolean),
+            .filter(
+              (projectName) =>
+                projectName &&
+                projectName !== '본사' &&
+                projectName !== ALL_PROJECTS_OPTION,
+            ),
         )].sort((first, second) =>
           first.localeCompare(second, 'ko', { numeric: true }),
         ),
@@ -186,14 +220,58 @@ export default function UserManagement({ currentUserId = '' }) {
     setDrafts((previous) => {
       const current = previous[userId] || {};
 
-      return {
+      const nextDraft = {
         ...previous,
         [userId]: {
           ...current,
           [field]: value,
           ...(field === 'organizationType'
-            ? { projectNames: value === '본사' ? ['본사'] : [] }
+            ? {
+                projectNames:
+                  value === '본사' &&
+                  ['관리자', '최고관리자'].includes(current.role)
+                    ? [ALL_PROJECTS_OPTION]
+                    : [],
+              }
             : {}),
+        },
+      };
+
+      if (
+        field === 'role' &&
+        value === '담당자' &&
+        normalizeProjectNames(current.projectNames).includes(
+          ALL_PROJECTS_OPTION,
+        )
+      ) {
+        nextDraft[userId].projectNames = [];
+      }
+
+      if (
+        field === 'role' &&
+        ['관리자', '최고관리자'].includes(value) &&
+        current.organizationType === '본사' &&
+        normalizeProjectNames(current.projectNames).length === 0
+      ) {
+        nextDraft[userId].projectNames = [ALL_PROJECTS_OPTION];
+      }
+
+      return nextDraft;
+    });
+  };
+
+  const changeProjectSelection = (userId, values) => {
+    setDrafts((previous) => {
+      const current = previous[userId] || {};
+
+      return {
+        ...previous,
+        [userId]: {
+          ...current,
+          projectNames: normalizeProjectSelection(
+            values,
+            current.projectNames,
+          ),
         },
       };
     });
@@ -202,13 +280,21 @@ export default function UserManagement({ currentUserId = '' }) {
   const updateAccount = async (account, nextStatus) => {
     const userId = account.auth_user_id;
     const draft = drafts[userId] || createDraft(account);
-    const projectNames =
-      draft.organizationType === '본사'
-        ? ['본사']
-        : normalizeProjectNames(draft.projectNames);
+    const projectNames = normalizeProjectNames(draft.projectNames);
 
     if (projectNames.length === 0) {
       setErrorMessage(`${account.manager_name || account.email}의 접근 현장을 하나 이상 선택해주세요.`);
+      return;
+    }
+
+    if (
+      projectNames.includes(ALL_PROJECTS_OPTION) &&
+      (
+        draft.organizationType !== '본사' ||
+        !['관리자', '최고관리자'].includes(draft.role)
+      )
+    ) {
+      setErrorMessage('전체현장은 본사 관리자·최고관리자에게만 지정할 수 있습니다.');
       return;
     }
 
@@ -448,33 +534,43 @@ export default function UserManagement({ currentUserId = '' }) {
                           <MenuItem value="현장">현장</MenuItem>
                         </TextField>
 
-                        {draft.organizationType === '본사' ? (
+                        {draft.organizationType === '본사' && (
                           <TextField size="small" fullWidth label="근무처" value="본사" disabled />
-                        ) : (
-                          <Autocomplete
-                            multiple
-                            disableCloseOnSelect
-                            limitTags={2}
-                            size="small"
-                            options={projectOptions}
-                            value={draft.projectNames || []}
-                            onChange={(_event, value) => changeDraft(userId, 'projectNames', value)}
-                            disabled={isProcessing}
-                            filterOptions={(options, state) => {
-                              const keyword = normalizeSearchText(state.inputValue);
-                              if (!keyword) return options;
-                              return options.filter((option) => normalizeSearchText(option).includes(keyword));
-                            }}
-                            noOptionsText="검색되는 현장이 없습니다."
-                            renderInput={(params) => (
-                              <TextField
-                                {...params}
-                                label="접근 현장"
-                                placeholder={(draft.projectNames || []).length === 0 ? '여러 현장 선택 가능' : ''}
-                              />
-                            )}
-                          />
                         )}
+
+                        <Autocomplete
+                          multiple
+                          disableCloseOnSelect
+                          limitTags={2}
+                          size="small"
+                          options={
+                            draft.organizationType === '본사' &&
+                            ['관리자', '최고관리자'].includes(draft.role)
+                              ? [ALL_PROJECTS_OPTION, ...projectOptions]
+                              : projectOptions
+                          }
+                          value={draft.projectNames || []}
+                          onChange={(_event, value) => changeProjectSelection(userId, value)}
+                          disabled={isProcessing}
+                          filterOptions={(options, state) => {
+                            const keyword = normalizeSearchText(state.inputValue);
+                            if (!keyword) return options;
+                            return options.filter((option) => normalizeSearchText(option).includes(keyword));
+                          }}
+                          noOptionsText="검색되는 현장이 없습니다."
+                          renderInput={(params) => (
+                            <TextField
+                              {...params}
+                              label="접근 현장"
+                              placeholder={(draft.projectNames || []).length === 0 ? '현장 또는 전체현장 선택' : ''}
+                              helperText={
+                                (draft.projectNames || []).includes(ALL_PROJECTS_OPTION)
+                                  ? '현재 등록 현장과 앞으로 추가될 현장까지 자동으로 접근합니다.'
+                                  : '필요한 현장을 여러 개 선택할 수 있습니다.'
+                              }
+                            />
+                          )}
+                        />
                       </Box>
                       {account.requested_project_name &&
                         account.requested_project_name !== '본사' &&

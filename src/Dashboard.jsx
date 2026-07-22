@@ -414,6 +414,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const userRole = resolveUserRole(userProfile);
   const isSuperAdmin = userRole === '최고관리자';
   const isManagementRole = ['관리자', '최고관리자'].includes(userRole);
+  const hasAllProjectAccess =
+    isSuperAdmin ||
+    (Array.isArray(userProfile?.project_names) &&
+      userProfile.project_names.some(
+        (projectName) =>
+          String(projectName || '').trim() === ALL_PROJECTS_OPTION,
+      ));
   const assignedProjectNames = sortProjectNames(
     Array.from(
       new Set(
@@ -424,13 +431,18 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           userProfile?.project_name,
         ]
           .map((projectName) => String(projectName || '').trim())
-          .filter((projectName) => projectName && projectName !== '본사'),
+          .filter(
+            (projectName) =>
+              projectName &&
+              projectName !== '본사' &&
+              projectName !== ALL_PROJECTS_OPTION,
+          ),
       ),
     ),
   );
   const assignedProjectsKey = assignedProjectNames.join('\u0001');
   const canSwitchProject =
-    isManagementRole || assignedProjectNames.length > 1;
+    hasAllProjectAccess || assignedProjectNames.length > 1;
 
   const [selectedProjectName, setSelectedProjectName] =
     useState('');
@@ -442,7 +454,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
   const [projectOptions, setProjectOptions] =
     useState(() =>
-      isManagementRole ? [] : assignedProjectNames,
+      hasAllProjectAccess ? [] : assignedProjectNames,
     );
   const [projectOptionsLoading, setProjectOptionsLoading] =
     useState(false);
@@ -450,21 +462,16 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const defaultAssignedProjectName =
     assignedProjectNames[0] || '';
 
-  const activeProjectName = isManagementRole
-    ? (
-        selectedProjectName === ALL_PROJECTS_OPTION
-          ? ''
-          : selectedProjectName
-      )
-    : selectedProjectName || defaultAssignedProjectName;
+  const activeProjectName =
+    selectedProjectName === ALL_PROJECTS_OPTION
+      ? ''
+      : selectedProjectName || defaultAssignedProjectName;
 
   const cumulativeProjectScope =
-    isManagementRole
-      ? (
-          selectedProjectName ||
-          ALL_PROJECTS_OPTION
-      )
-      : activeProjectName;
+    selectedProjectName ||
+    (hasAllProjectAccess
+      ? ALL_PROJECTS_OPTION
+      : defaultAssignedProjectName);
 
   const activeProcessOptions =
     getProjectProcessOptions(
@@ -567,9 +574,14 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   }, []);
 
   useEffect(() => {
-    if (!isManagementRole) {
+    if (!hasAllProjectAccess) {
       setProjectOptions(assignedProjectNames);
       setProjectOptionsLoading(false);
+      setSelectedProjectName((previousProjectName) =>
+        assignedProjectNames.includes(previousProjectName)
+          ? previousProjectName
+          : defaultAssignedProjectName,
+      );
       return undefined;
     }
 
@@ -657,7 +669,11 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         handleFocus,
       );
     };
-  }, [assignedProjectsKey, isManagementRole]);
+  }, [
+    assignedProjectsKey,
+    defaultAssignedProjectName,
+    hasAllProjectAccess,
+  ]);
 
   useEffect(() => {
     const requestedView = new URLSearchParams(
@@ -2792,7 +2808,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                 options={
                   currentView ===
                     'daily-cumulative-workers' &&
-                  isManagementRole
+                  hasAllProjectAccess
                     ? [
                         ALL_PROJECTS_OPTION,
                         ...projectOptions,
@@ -2944,6 +2960,11 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             <AdminDashboard
               processOptions={processOptions}
               onOpenProject={handleOpenAdminProject}
+              allowedProjectNames={
+                hasAllProjectAccess
+                  ? null
+                  : assignedProjectNames
+              }
             />
           )}
 

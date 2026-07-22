@@ -820,6 +820,7 @@ function ProjectCard({
 export default function AdminDashboard({
   processOptions = [],
   onOpenProject,
+  allowedProjectNames = null,
 }) {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -834,6 +835,17 @@ export default function AdminDashboard({
   const [koreaTodayKey, setKoreaTodayKey] = useState(() =>
     formatKoreaYYMMDD(),
   );
+  const allowedProjectsKey = Array.isArray(allowedProjectNames)
+    ? [...new Set(
+        allowedProjectNames
+          .map((projectName) => String(projectName || '').trim())
+          .filter(Boolean),
+      )]
+        .sort((first, second) =>
+          first.localeCompare(second, 'ko', { numeric: true }),
+        )
+        .join('\u0001')
+    : '*';
 
   const [
     summaryCollapsed,
@@ -891,6 +903,19 @@ export default function AdminDashboard({
       const todayKey = koreaTodayKey;
 
       const currentWeek = getKoreaWeekRange();
+      const scopedProjectNames =
+        allowedProjectsKey === '*'
+          ? null
+          : allowedProjectsKey
+            ? allowedProjectsKey.split('\u0001')
+            : [];
+      const applyProjectScope = (query) => {
+        if (scopedProjectNames === null) return query;
+        if (scopedProjectNames.length === 0) {
+          return query.eq('project_name', '__NO_PROJECT_ACCESS__');
+        }
+        return query.in('project_name', scopedProjectNames);
+      };
 
       const [
         buildingRows,
@@ -901,20 +926,23 @@ export default function AdminDashboard({
         fetchAllRows(
           'building_settings',
           'project_name, building_name, config_json',
+          applyProjectScope,
         ),
         fetchAllRows(
           'daily_reports',
           'project_name, date, workers, tasks, today_task, tomorrow_task, status',
+          applyProjectScope,
         ),
         fetchAllRows(
           'unit_progress',
           'project_name, building, unit, process_type, status',
+          applyProjectScope,
         ),
         fetchAllRows(
           'weekly_reports',
           'id, project_name, week_start, week_end, display_period, author_name, payload, status, completed_at, created_at',
           (query) =>
-            query.eq(
+            applyProjectScope(query).eq(
               'week_start',
               currentWeek.weekStart,
             ),
@@ -1136,7 +1164,7 @@ export default function AdminDashboard({
     } finally {
       setLoading(false);
     }
-  }, [processOptions, koreaTodayKey]);
+  }, [processOptions, koreaTodayKey, allowedProjectsKey]);
 
   useEffect(() => {
     loadDashboard();
