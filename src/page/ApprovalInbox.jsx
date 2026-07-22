@@ -23,7 +23,6 @@ import {
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import RefreshIcon from '@mui/icons-material/Refresh';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { supabase } from '../supabaseClient';
 import { invokeApprovalFunction } from '../utils/approvalFunction.js';
 import {
@@ -1141,9 +1140,10 @@ export default function ApprovalInbox() {
                     {userRole === '최고관리자' && (
                       <Tooltip title="최고관리자 결재 내역 삭제">
                         <span>
-                          <IconButton
+                          <Button
                             size="small"
                             color="error"
+                            variant="outlined"
                             onClick={() =>
                               handleDeleteDocument(request)
                             }
@@ -1151,10 +1151,14 @@ export default function ApprovalInbox() {
                               deletingRequestId === request?.id
                             }
                             sx={{
-                              width: 29,
                               height: 29,
+                              minWidth: 42,
+                              px: 0.8,
                               border: '1px solid #fecaca',
                               borderRadius: 1,
+                              fontSize: '0.66rem',
+                              fontWeight: 900,
+                              whiteSpace: 'nowrap',
                             }}
                           >
                             {deletingRequestId === request?.id ? (
@@ -1163,11 +1167,9 @@ export default function ApprovalInbox() {
                                 color="inherit"
                               />
                             ) : (
-                              <DeleteOutlineIcon
-                                sx={{ fontSize: 17 }}
-                              />
+                              '삭제'
                             )}
-                          </IconButton>
+                          </Button>
                         </span>
                       </Tooltip>
                     )}
