@@ -80,7 +80,7 @@ const normalizeSearchText = (value) =>
     .toLowerCase()
     .replace(/\s+/g, '');
 
-export default function Login() {
+export default function Login({ loginNotice = '' }) {
   const [mode, setMode] = useState('login');
   const [email, setEmail] = useState(() =>
     window.localStorage.getItem(REMEMBERED_EMAIL_KEY) || '',
@@ -94,7 +94,11 @@ export default function Login() {
   const [projectLoading, setProjectLoading] = useState(false);
   const [projectError, setProjectError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState(null);
+  const [message, setMessage] = useState(() =>
+    loginNotice
+      ? { severity: 'warning', text: loginNotice }
+      : null,
+  );
   const [logoError, setLogoError] = useState(false);
   const [notices, setNotices] = useState(DEFAULT_NOTICES);
 

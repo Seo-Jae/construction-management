@@ -1,4 +1,9 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import {
   Alert,
   Box,
@@ -7,9 +12,19 @@ import {
   Paper,
   Typography,
 } from '@mui/material';
-import { supabase } from './supabaseClient';
+import {
+  supabase,
+  SUPABASE_AUTH_STORAGE_KEY,
+} from './supabaseClient';
 import Dashboard from './Dashboard';
 import Login from './Login';
+
+const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
+const ACTIVITY_WRITE_INTERVAL_MS = 15 * 1000;
+const LAST_ACTIVITY_STORAGE_KEY =
+  'wooklim-construction-last-activity';
+const AUTO_LOGOUT_MESSAGE =
+  '30분 동안 사용 기록이 없어 보안을 위해 자동 로그아웃되었습니다.';
 
 const STATUS_CONTENT = {
   pending: {
@@ -110,6 +125,8 @@ export default function App() {
   const [userProfile, setUserProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(true);
   const [profileError, setProfileError] = useState('');
+  const [loginNotice, setLoginNotice] = useState('');
+  const logoutInProgressRef = useRef(false);
 
   const fetchProfile = useCallback(async (user, options = {}) => {
     const silent = options.silent === true;
@@ -153,6 +170,39 @@ export default function App() {
     setProfileLoading(false);
   }, []);
 
+  const resetLocalSessionState = useCallback(() => {
+    window.sessionStorage.removeItem(LAST_ACTIVITY_STORAGE_KEY);
+    window.sessionStorage.removeItem(SUPABASE_AUTH_STORAGE_KEY);
+    setSession(null);
+    setUserProfile(null);
+    setProfileError('');
+    setProfileLoading(false);
+  }, []);
+
+  const performLogout = useCallback(async ({ automatic = false } = {}) => {
+    if (logoutInProgressRef.current) return;
+
+    logoutInProgressRef.current = true;
+    setLoginNotice(automatic ? AUTO_LOGOUT_MESSAGE : '');
+
+    try {
+      const { error } = automatic
+        ? await supabase.auth.signOut({ scope: 'local' })
+        : await supabase.auth.signOut();
+
+      if (error) throw error;
+    } catch (error) {
+      console.error('로그아웃 오류:', error);
+    } finally {
+      resetLocalSessionState();
+      logoutInProgressRef.current = false;
+    }
+  }, [resetLocalSessionState]);
+
+  const handleLogout = useCallback(() => {
+    performLogout();
+  }, [performLogout]);
+
   useEffect(() => {
     let active = true;
 
@@ -191,6 +241,120 @@ export default function App() {
   useEffect(() => {
     if (!session?.user) return undefined;
 
+    let idleTimer = null;
+    let lastRecordedAt = 0;
+
+    const readLastActivity = () => {
+      const storedValue = Number(
+        window.sessionStorage.getItem(
+          LAST_ACTIVITY_STORAGE_KEY,
+        ),
+      );
+
+      return Number.isFinite(storedValue) && storedValue > 0
+        ? storedValue
+        : 0;
+    };
+
+    const scheduleLogout = () => {
+      if (idleTimer) window.clearTimeout(idleTimer);
+
+      const lastActivity = readLastActivity();
+      const elapsed = lastActivity
+        ? Date.now() - lastActivity
+        : 0;
+      const remaining = INACTIVITY_TIMEOUT_MS - elapsed;
+
+      if (lastActivity && remaining <= 0) {
+        performLogout({ automatic: true });
+        return;
+      }
+
+      idleTimer = window.setTimeout(() => {
+        const latestActivity = readLastActivity();
+
+        if (
+          latestActivity &&
+          Date.now() - latestActivity >= INACTIVITY_TIMEOUT_MS
+        ) {
+          performLogout({ automatic: true });
+        } else {
+          scheduleLogout();
+        }
+      }, Math.max(remaining, 1000));
+    };
+
+    const recordActivity = () => {
+      const now = Date.now();
+
+      if (
+        lastRecordedAt &&
+        now - lastRecordedAt < ACTIVITY_WRITE_INTERVAL_MS
+      ) {
+        return;
+      }
+
+      lastRecordedAt = now;
+      window.sessionStorage.setItem(
+        LAST_ACTIVITY_STORAGE_KEY,
+        String(now),
+      );
+      scheduleLogout();
+    };
+
+    const checkWhenReturning = () => {
+      if (
+        document.visibilityState === 'visible' ||
+        document.hasFocus()
+      ) {
+        scheduleLogout();
+      }
+    };
+
+    const previousActivity = readLastActivity();
+
+    if (!previousActivity) {
+      recordActivity();
+    } else {
+      lastRecordedAt = previousActivity;
+      scheduleLogout();
+    }
+
+    const activityEvents = [
+      'pointerdown',
+      'pointermove',
+      'keydown',
+      'scroll',
+      'touchstart',
+    ];
+
+    activityEvents.forEach((eventName) => {
+      window.addEventListener(eventName, recordActivity, {
+        passive: true,
+      });
+    });
+    window.addEventListener('focus', checkWhenReturning);
+    document.addEventListener(
+      'visibilitychange',
+      checkWhenReturning,
+    );
+
+    return () => {
+      if (idleTimer) window.clearTimeout(idleTimer);
+      activityEvents.forEach((eventName) => {
+        window.removeEventListener(eventName, recordActivity);
+      });
+      window.removeEventListener('focus', checkWhenReturning);
+      document.removeEventListener(
+        'visibilitychange',
+        checkWhenReturning,
+      );
+    };
+  }, [performLogout, session]);
+
+  useEffect(() => {
+    if (!session?.user) return undefined;
+
     const refreshSilently = () => {
       fetchProfile(session.user, { silent: true });
     };
@@ -204,12 +368,12 @@ export default function App() {
     };
   }, [fetchProfile, session]);
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
-  };
-
   if (!session) {
-    return profileLoading ? <LoadingScreen /> : <Login />;
+    return profileLoading ? (
+      <LoadingScreen />
+    ) : (
+      <Login loginNotice={loginNotice} />
+    );
   }
 
   if (profileLoading) {
