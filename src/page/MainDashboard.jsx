@@ -26,13 +26,12 @@ import CampaignOutlinedIcon from '@mui/icons-material/CampaignOutlined';
 import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
-import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import TrendingUpOutlinedIcon from '@mui/icons-material/TrendingUpOutlined';
 import { supabase } from '../supabaseClient';
 import { getProjectCellKeys } from '../utils/buildingUnits.js';
-import { fetchPendingApprovalSummary } from '../utils/approvalQueries.js';
 import MainWorkAlertDialog from './MainWorkAlertDialog.jsx';
 
 const PAGE_SIZE = 1000;
@@ -131,6 +130,54 @@ const getKoreaDateParts = (date = new Date()) => {
   };
 };
 
+const LABOR_MISSING_STATUSES = new Set([
+  'required',
+  'rejected',
+]);
+
+const LABOR_PROGRESS_STATUSES = new Set([
+  'form_ready',
+  'pdf_generated',
+  'scan_verified',
+]);
+
+const EMPTY_LABOR_SUMMARY = {
+  monthLabel: '',
+  total: 0,
+  missing: 0,
+  progress: 0,
+  completed: 0,
+  unsynced: 0,
+  missingNames: [],
+};
+
+const normalizeWorkerName = (value) =>
+  String(value || '')
+    .trim()
+    .replace(/\s+/g, '')
+    .toLowerCase();
+
+const getRequirementName = (row) =>
+  String(
+    row?.name ||
+      row?.worker_name ||
+      row?.normalized_name ||
+      '',
+  ).trim();
+
+const getCurrentContractPeriod = () => {
+  const { year, month } = getKoreaDateParts();
+  const monthText = pad2(month);
+  const shortYear = String(year).slice(-2);
+
+  return {
+    monthKey: `${year}-${monthText}`,
+    monthLabel: `${year}년 ${month}월`,
+    reportStart: `${shortYear}.${monthText}.01`,
+    reportEnd: `${shortYear}.${monthText}.31`,
+  };
+};
+
 const hasMeaningfulReport = (report) => {
   if (!report) return false;
 
@@ -209,6 +256,98 @@ const fetchAllProgressRows = async (projectName) => {
   }
 
   return rows;
+};
+
+const fetchLaborContractSummary = async (projectName) => {
+  const period = getCurrentContractPeriod();
+  const [requirementResult, reportResult] = await Promise.all([
+    supabase.rpc('labor_get_contract_month', {
+      p_project_name: projectName,
+      p_contract_month: period.monthKey,
+    }),
+    supabase
+      .from('daily_reports')
+      .select('workers')
+      .eq('project_name', projectName)
+      .gte('date', period.reportStart)
+      .lte('date', period.reportEnd),
+  ]);
+
+  if (requirementResult.error) {
+    throw requirementResult.error;
+  }
+
+  if (reportResult.error) {
+    throw reportResult.error;
+  }
+
+  const requirementRows = requirementResult.data || [];
+  const activeRows = requirementRows.filter(
+    (row) => row?.status !== 'excluded',
+  );
+  const requirementNames = new Set(
+    requirementRows
+      .map((row) => normalizeWorkerName(getRequirementName(row)))
+      .filter(Boolean),
+  );
+  const monthlyWorkers = new Map();
+
+  (reportResult.data || []).forEach((report) => {
+    const workers = Array.isArray(report?.workers)
+      ? report.workers
+      : [];
+
+    workers.forEach((worker) => {
+      const displayName = String(worker?.name || '').trim();
+      const normalizedName = normalizeWorkerName(displayName);
+
+      if (normalizedName && !monthlyWorkers.has(normalizedName)) {
+        monthlyWorkers.set(normalizedName, displayName);
+      }
+    });
+  });
+
+  const unsyncedNames = Array.from(monthlyWorkers.entries())
+    .filter(([normalizedName]) =>
+      !requirementNames.has(normalizedName),
+    )
+    .map(([, displayName]) => displayName);
+  const missingRows = activeRows.filter((row) =>
+    LABOR_MISSING_STATUSES.has(row?.status),
+  );
+  const progressCount = activeRows.filter((row) =>
+    LABOR_PROGRESS_STATUSES.has(row?.status),
+  ).length;
+  const completedCount = activeRows.filter(
+    (row) => row?.status === 'manager_confirmed',
+  ).length;
+  const missingNames = [];
+  const missingNameKeys = new Set();
+
+  [
+    ...missingRows.map(getRequirementName),
+    ...unsyncedNames,
+  ].forEach((name) => {
+    const normalizedName = normalizeWorkerName(name);
+
+    if (
+      normalizedName &&
+      !missingNameKeys.has(normalizedName)
+    ) {
+      missingNameKeys.add(normalizedName);
+      missingNames.push(String(name).trim());
+    }
+  });
+
+  return {
+    monthLabel: period.monthLabel,
+    total: activeRows.length + unsyncedNames.length,
+    missing: missingRows.length + unsyncedNames.length,
+    progress: progressCount,
+    completed: completedCount,
+    unsynced: unsyncedNames.length,
+    missingNames,
+  };
 };
 
 const getProcessState = (percentage) => {
@@ -403,16 +542,30 @@ function ProgressSummaryCard({
   );
 }
 
-function ApprovalCard({ counts, onNavigate }) {
+function LaborContractCard({
+  summary,
+  loading,
+  errorMessage,
+  onNavigate,
+}) {
+  const hasMissing = summary.missing > 0;
+  const needsAttention = Boolean(errorMessage) || hasMissing;
+  const visibleNames = summary.missingNames.slice(0, 3);
+  const hiddenNameCount = Math.max(
+    summary.missingNames.length - visibleNames.length,
+    0,
+  );
+
   return (
     <Paper
       variant="outlined"
       sx={{
         minHeight: 146,
         p: 1.7,
-        borderColor: '#fed7aa',
-        bgcolor:
-          'linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)',
+        borderColor: needsAttention ? '#fecaca' : '#bbf7d0',
+        background: needsAttention
+          ? 'linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)'
+          : 'linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%)',
         boxShadow: '0 3px 12px rgba(15, 23, 42, 0.05)',
       }}
     >
@@ -438,8 +591,11 @@ function ApprovalCard({ counts, onNavigate }) {
               gap: 0.7,
             }}
           >
-            <FactCheckOutlinedIcon
-              sx={{ color: '#ea580c', fontSize: 22 }}
+            <DescriptionOutlinedIcon
+              sx={{
+                color: needsAttention ? '#dc2626' : '#15803d',
+                fontSize: 22,
+              }}
             />
             <Typography
               sx={{
@@ -448,20 +604,30 @@ function ApprovalCard({ counts, onNavigate }) {
                 fontWeight: 900,
               }}
             >
-              결재승인 요청
+              근로계약서 작성 현황
             </Typography>
           </Box>
 
-          <Typography
-            sx={{
-              color: '#9a3412',
-              fontSize: '1.45rem',
-              fontWeight: 900,
-              letterSpacing: '-0.04em',
-            }}
-          >
-            {counts.total.toLocaleString()}건
-          </Typography>
+          {loading ? (
+            <CircularProgress size={22} thickness={5} />
+          ) : (
+            <Typography
+              sx={{
+                color: needsAttention ? '#b91c1c' : '#15803d',
+                fontSize: '1.2rem',
+                fontWeight: 900,
+                letterSpacing: '-0.04em',
+              }}
+            >
+              {errorMessage
+                ? '확인 필요'
+                : hasMissing
+                  ? `${summary.missing.toLocaleString()}명 미작성`
+                  : summary.total > 0
+                    ? '전체 작성완료'
+                    : '작성 대상 없음'}
+            </Typography>
+          )}
         </Box>
 
         <Box
@@ -473,17 +639,17 @@ function ApprovalCard({ counts, onNavigate }) {
           }}
         >
           {[
-            ['주간 보고', counts.weekly],
-            ['품의 보고', counts.proposal],
-            ['기타', counts.other],
-          ].map(([label, count]) => (
+            ['양식 미입력', summary.missing, '#b91c1c'],
+            ['작성 진행', summary.progress, '#0369a1'],
+            ['작성 완료', summary.completed, '#15803d'],
+          ].map(([label, count, color]) => (
             <Box
               key={label}
               sx={{
                 px: 0.7,
                 py: 0.7,
                 borderRadius: 1.1,
-                border: '1px solid #ffedd5',
+                border: '1px solid #e2e8f0',
                 bgcolor: '#ffffff',
                 textAlign: 'center',
               }}
@@ -500,12 +666,12 @@ function ApprovalCard({ counts, onNavigate }) {
               <Typography
                 sx={{
                   mt: 0.2,
-                  color: '#9a3412',
+                  color,
                   fontSize: '0.76rem',
                   fontWeight: 900,
                 }}
               >
-                {Number(count || 0).toLocaleString()}건
+                {Number(count || 0).toLocaleString()}명
               </Typography>
             </Box>
           ))}
@@ -521,35 +687,58 @@ function ApprovalCard({ counts, onNavigate }) {
             gap: 1,
           }}
         >
-          <Typography
-            sx={{
-              color: '#78716c',
-              fontSize: '0.66rem',
-            }}
-          >
-            현재 로그인 이메일에 배정된 결재 대기 건수입니다.
-          </Typography>
+          <Box sx={{ minWidth: 0 }}>
+            <Typography
+              noWrap
+              sx={{
+                color: errorMessage ? '#b91c1c' : '#78716c',
+                fontSize: '0.66rem',
+                fontWeight: errorMessage ? 800 : 500,
+              }}
+            >
+              {errorMessage
+                ? errorMessage
+                : hasMissing
+                  ? visibleNames.length > 0
+                    ? `미작성: ${visibleNames.join(', ')}${hiddenNameCount > 0 ? ` 외 ${hiddenNameCount}명` : ''}`
+                    : '미작성 인원을 관리 화면에서 확인해주세요.'
+                  : `${summary.monthLabel} 대상 ${summary.total.toLocaleString()}명`}
+            </Typography>
+
+            {!errorMessage && summary.unsynced > 0 && (
+              <Typography
+                sx={{
+                  mt: 0.15,
+                  color: '#c2410c',
+                  fontSize: '0.61rem',
+                  fontWeight: 800,
+                }}
+              >
+                작성 대상 반영 필요 {summary.unsynced.toLocaleString()}명 포함
+              </Typography>
+            )}
+          </Box>
 
           <Button
             size="small"
             variant="outlined"
-            onClick={() => onNavigate?.('approval-inbox')}
+            onClick={() => onNavigate?.('labor-contract')}
             sx={{
               flexShrink: 0,
               minWidth: 0,
               px: 1,
               py: 0.35,
-              color: '#c2410c',
-              borderColor: '#fdba74',
+              color: needsAttention ? '#c2410c' : '#15803d',
+              borderColor: needsAttention ? '#fdba74' : '#86efac',
               fontSize: '0.67rem',
               fontWeight: 800,
               '&:hover': {
-                borderColor: '#fb923c',
-                bgcolor: '#fff7ed',
+                borderColor: needsAttention ? '#fb923c' : '#4ade80',
+                bgcolor: needsAttention ? '#fff7ed' : '#f0fdf4',
               },
             }}
           >
-            결재 처리
+            관리 화면
           </Button>
         </Box>
       </Box>
@@ -1342,12 +1531,12 @@ export default function MainDashboard({
   onCloseWorkAlert,
 }) {
   const [progressRows, setProgressRows] = useState([]);
-  const [approvalCounts, setApprovalCounts] = useState({
-    total: 0,
-    weekly: 0,
-    proposal: 0,
-    other: 0,
-  });
+  const [laborSummary, setLaborSummary] = useState(
+    EMPTY_LABOR_SUMMARY,
+  );
+  const [laborLoading, setLaborLoading] = useState(false);
+  const [laborErrorMessage, setLaborErrorMessage] =
+    useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
@@ -1501,27 +1690,34 @@ export default function MainDashboard({
     }
   };
 
-  const loadApprovalCounts =
-    useCallback(async () => {
-      try {
-        const result =
-          await fetchPendingApprovalSummary();
+  const loadLaborSummary = useCallback(async () => {
+    if (!projectName) {
+      setLaborSummary(EMPTY_LABOR_SUMMARY);
+      setLaborErrorMessage('');
+      return;
+    }
 
-        setApprovalCounts(result.counts);
-      } catch (error) {
-        console.error(
-          'Main 결재 대기 건수 조회 오류:',
-          error,
-        );
+    setLaborLoading(true);
+    setLaborErrorMessage('');
 
-        setApprovalCounts({
-          total: 0,
-          weekly: 0,
-          proposal: 0,
-          other: 0,
-        });
-      }
-    }, []);
+    try {
+      const nextSummary =
+        await fetchLaborContractSummary(projectName);
+
+      setLaborSummary(nextSummary);
+    } catch (error) {
+      console.error(
+        'Main 근로계약서 작성 현황 조회 오류:',
+        error,
+      );
+      setLaborSummary(EMPTY_LABOR_SUMMARY);
+      setLaborErrorMessage(
+        error?.message || '근로계약 현황을 불러오지 못했습니다.',
+      );
+    } finally {
+      setLaborLoading(false);
+    }
+  }, [projectName]);
 
   const loadProgress = useCallback(async () => {
     if (!projectName) {
@@ -1547,37 +1743,37 @@ export default function MainDashboard({
 
   useEffect(() => {
     loadProgress();
-    loadApprovalCounts();
+    loadLaborSummary();
 
     const timer = window.setInterval(
-      loadApprovalCounts,
+      loadLaborSummary,
       20 * 1000,
     );
 
     const handleFocus = () => {
-      loadApprovalCounts();
+      loadLaborSummary();
     };
 
-    const handleApprovalChanged = () => {
-      loadApprovalCounts();
+    const handleLaborChanged = () => {
+      loadLaborSummary();
     };
 
     window.addEventListener('focus', handleFocus);
     window.addEventListener(
-      'approval-workflow-changed',
-      handleApprovalChanged,
+      'labor-contract-changed',
+      handleLaborChanged,
     );
 
     return () => {
       window.clearInterval(timer);
       window.removeEventListener('focus', handleFocus);
       window.removeEventListener(
-        'approval-workflow-changed',
-        handleApprovalChanged,
+        'labor-contract-changed',
+        handleLaborChanged,
       );
     };
   }, [
-    loadApprovalCounts,
+    loadLaborSummary,
     loadProgress,
     refreshKey,
   ]);
@@ -1685,8 +1881,10 @@ export default function MainDashboard({
           totalCount={totalCount}
         />
 
-        <ApprovalCard
-          counts={approvalCounts}
+        <LaborContractCard
+          summary={laborSummary}
+          loading={laborLoading}
+          errorMessage={laborErrorMessage}
           onNavigate={onNavigate}
         />
       </Box>

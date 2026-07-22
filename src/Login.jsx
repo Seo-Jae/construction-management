@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   Button,
@@ -9,23 +9,26 @@ import {
 } from '@mui/material';
 import { supabase } from './supabaseClient';
 
-const notices = [
+const DEFAULT_NOTICES = [
   {
-    date: '2026.07.14',
+    id: 1,
+    updated_at: '2026-07-14T00:00:00+09:00',
     category: '공지',
     title: '공사관리 시스템 테스트운영을 시작합니다.',
     content:
       '현장별 공사일보, 공정 진척, 업무 보고 기능을 순차적으로 적용합니다.',
   },
   {
-    date: '2026.07.14',
+    id: 2,
+    updated_at: '2026-07-14T00:00:00+09:00',
     category: '안내',
     title: '계정 및 권한 관련 안내',
     content:
       '로그인 계정과 현장 권한에 문제가 있는 경우 최고관리자에게 문의해주세요.',
   },
   {
-    date: '2026.07.14',
+    id: 3,
+    updated_at: '2026-07-14T00:00:00+09:00',
     category: '업데이트',
     title: '관리자 전체 현장 Dashboard 적용',
     content:
@@ -33,11 +36,58 @@ const notices = [
   },
 ];
 
+const formatNoticeDate = (value) => {
+  if (!value) return '';
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value).slice(0, 10).replace(/-/g, '.');
+  }
+
+  return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+    .format(date)
+    .replace(/\. /g, '.')
+    .replace(/\.$/, '');
+};
+
 export default function Login() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [logoError, setLogoError] = useState(false);
+  const [notices, setNotices] = useState(DEFAULT_NOTICES);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadNotices = async () => {
+      const { data, error } = await supabase
+        .from('system_notices')
+        .select('id, category, title, content, updated_at')
+        .order('id', { ascending: true });
+
+      if (error) {
+        console.error('로그인 공지사항 조회 오류:', error);
+        return;
+      }
+
+      if (active && Array.isArray(data) && data.length > 0) {
+        setNotices(data);
+      }
+    };
+
+    loadNotices();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handleLogin = async (event) => {
     event.preventDefault();
@@ -417,7 +467,7 @@ export default function Login() {
             >
               {notices.map((notice, index) => (
                 <Box
-                  key={`${notice.date}-${notice.title}`}
+                  key={notice.id}
                   sx={{
                     p: 2,
                     borderRadius: 2,
@@ -463,7 +513,7 @@ export default function Login() {
                         fontSize: '0.66rem',
                       }}
                     >
-                      {notice.date}
+                      {formatNoticeDate(notice.updated_at)}
                     </Typography>
                   </Box>
 
