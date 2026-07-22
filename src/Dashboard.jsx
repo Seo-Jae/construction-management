@@ -437,6 +437,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   );
 
   const [open, setOpen] = useState(true);
+  const [workAlertOpen, setWorkAlertOpen] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [buildingConfigs, setBuildingConfigs] = useState({});
   const [selectedDateKey, setSelectedDateKey] = useState('');
@@ -457,7 +458,10 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       window.location.search,
     ).get('view');
 
-    if (requestedView === 'approval-inbox') {
+    if (
+      requestedView === 'approval-inbox' &&
+      isManagementRole
+    ) {
       return 'approval-inbox';
     }
 
@@ -605,6 +609,18 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       window.location.search,
     ).get('view');
 
+    /*
+      담당자는 로그인할 때마다 현장 Main을 가장 먼저 봅니다.
+      URL에 이전 화면의 view 값이 남아 있더라도 Main을 우선합니다.
+    */
+    if (!isManagementRole) {
+      setSelectedProjectName(
+        userProfile?.project_name || '',
+      );
+      setCurrentView('main');
+      return;
+    }
+
     if (requestedView === 'approval-inbox') {
       setCurrentView('approval-inbox');
       return;
@@ -625,25 +641,17 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       return;
     }
 
-    if (isManagementRole) {
-      /*
-        이미 관리 전용 전역 화면에 들어와 있다면
-        프로필 갱신으로 Dashboard로 되돌리지 않습니다.
-      */
-      setCurrentView((previousView) =>
-        MANAGEMENT_ONLY_VIEWS.includes(
-          previousView,
-        )
-          ? previousView
-          : 'admin-dashboard',
-      );
-      return;
-    }
-
-    setSelectedProjectName(
-      userProfile?.project_name || '',
+    /*
+      이미 관리 전용 전역 화면에 들어와 있다면
+      프로필 갱신으로 Dashboard로 되돌리지 않습니다.
+    */
+    setCurrentView((previousView) =>
+      MANAGEMENT_ONLY_VIEWS.includes(
+        previousView,
+      )
+        ? previousView
+        : 'admin-dashboard',
     );
-    setCurrentView('main');
   }, [isManagementRole, userProfile?.project_name]);
 
   const handleOpenAdminProject = (projectName) => {
@@ -2796,6 +2804,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               handlePrevMonth={handlePrevMonth}
               handleNextMonth={handleNextMonth}
               onNavigate={setCurrentView}
+              workAlertOpen={
+                userRole === '담당자' &&
+                workAlertOpen
+              }
+              onCloseWorkAlert={() =>
+                setWorkAlertOpen(false)
+              }
             />
           )}
 

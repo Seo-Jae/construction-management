@@ -25,6 +25,7 @@ import TrendingUpOutlinedIcon from '@mui/icons-material/TrendingUpOutlined';
 import { supabase } from '../supabaseClient';
 import { getProjectCellKeys } from '../utils/buildingUnits.js';
 import { fetchPendingApprovalSummary } from '../utils/approvalQueries.js';
+import MainWorkAlertDialog from './MainWorkAlertDialog.jsx';
 
 const PAGE_SIZE = 1000;
 
@@ -1110,6 +1111,8 @@ export default function MainDashboard({
   handlePrevMonth,
   handleNextMonth,
   onNavigate,
+  workAlertOpen = false,
+  onCloseWorkAlert,
 }) {
   const [progressRows, setProgressRows] = useState([]);
   const [approvalCounts, setApprovalCounts] = useState({
@@ -1272,6 +1275,13 @@ export default function MainDashboard({
         pr: 0.4,
       }}
     >
+      <MainWorkAlertDialog
+        open={workAlertOpen}
+        projectName={projectName}
+        onClose={onCloseWorkAlert}
+        onNavigate={onNavigate}
+      />
+
       <Box
         sx={{
           display: 'grid',
