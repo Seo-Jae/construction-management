@@ -82,6 +82,7 @@ const CONTRACT_TEMPLATE_HEADERS = [
   '업무내용',
 ];
 const CONTRACT_TEMPLATE_EDITABLE_COLUMNS = new Set([3, 4, 5]);
+const UNAVAILABLE_VALUE = '없음';
 
 const STATUS_META = {
   required: {
@@ -467,6 +468,61 @@ const maskResidentNumber = (value) => {
     : normalized;
 };
 
+const isUnavailableValue = (value) =>
+  normalizeName(value) === normalizeName(UNAVAILABLE_VALUE);
+
+const getImportRowIssues = (row) => {
+  const issues = [
+    ...(row?.baseIssues || []),
+  ];
+
+  if (
+    !row?.phoneUnavailable &&
+    !String(row?.phone || '').trim()
+  ) {
+    issues.push('연락처 누락');
+  }
+
+  if (
+    !row?.residentUnavailable &&
+    !isValidResidentNumber(
+      row?.residentNumber,
+    )
+  ) {
+    issues.push(
+      row?.residentNumber
+        ? '주민등록번호 오류'
+        : '주민등록번호 누락',
+    );
+  }
+
+  if (
+    !row?.addressUnavailable &&
+    !String(row?.address || '').trim()
+  ) {
+    issues.push('주소 누락');
+  }
+
+  return issues;
+};
+
+const isSensitivePrintDataReady = (values) =>
+  Boolean(values?.loaded) &&
+  (
+    values.residentUnavailable ||
+    isValidResidentNumber(
+      values.residentNumber,
+    )
+  ) &&
+  (
+    values.addressUnavailable ||
+    Boolean(
+      String(
+        values.address || '',
+      ).trim(),
+    )
+  );
+
 export default function LaborContractManagement({
   projectName = '',
   userProfile = null,
@@ -594,6 +650,7 @@ export default function LaborContractManagement({
   ] = useState(false);
 
   const contractFileInputRef = useRef(null);
+  const previousContractFilesInputRef = useRef(null);
 
   const [
     importDialogOpen,
@@ -1123,7 +1180,9 @@ export default function LaborContractManagement({
       selectedMonth,
     ]);
 
-  const handleDownloadTemplate = async () => {
+  const downloadContractTemplate = async (
+    carryoverData = null,
+  ) => {
     const targetRows = sortRowsByContractStart(
       storedRows.filter(
         (row) => !['manager_confirmed', 'excluded'].includes(row.status),
@@ -1165,7 +1224,9 @@ export default function LaborContractManagement({
       worksheet.getCell('A3').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF7ED' } };
 
       worksheet.mergeCells('A4:N4');
-      worksheet.getCell('A4').value = '필수입력: 연락처, 주민등록번호, 주소 · 계약종료일은 월말 · 일급은 180,000원 · 목록은 계약시작일 과거순';
+      worksheet.getCell('A4').value = carryoverData
+        ? `이전 작성자료 ${carryoverData.fileCount.toLocaleString()}개 파일을 브라우저에서만 확인해 ${carryoverData.matchedCount.toLocaleString()}명의 개인정보를 자동 입력했습니다. 서버에는 전송하거나 저장하지 않았습니다.`
+        : '필수입력: 연락처, 주민등록번호, 주소 · 자료가 없으면 해당 칸에 “없음” 입력 가능 · 계약종료일은 월말 · 일급은 180,000원';
       worksheet.getCell('A4').font = { color: { argb: 'FF475569' } };
 
       const headerRow = worksheet.getRow(5);
@@ -1187,12 +1248,20 @@ export default function LaborContractManagement({
       targetRows.forEach((row, index) => {
         const excelRow = worksheet.getRow(index + 6);
         const form = row.contract_form || {};
+        const previous =
+          carryoverData?.byWorkerCode.get(
+            row.worker_code,
+          ) ||
+          carryoverData?.byUniqueName.get(
+            normalizeName(row.name),
+          ) ||
+          null;
         excelRow.values = [
           row.worker_code,
           row.name,
-          form.phone || row.phone || '',
-          '',
-          '',
+          form.phone || row.phone || previous?.phone || '',
+          previous?.residentNumber || '',
+          previous?.address || '',
           FIXED_CONTRACT_VALUES.job,
           FIXED_CONTRACT_VALUES.process,
           getFixedContractStartDate(row, selectedMonth),
@@ -1233,10 +1302,203 @@ export default function LaborContractManagement({
 
       const buffer = await workbook.xlsx.writeBuffer();
       downloadExcelBuffer(buffer, `근로계약서작성자료_${projectName}_${selectedMonth}.xlsx`);
-      setSuccessMessage(`${formatMonthLabel(selectedMonth)} 작성 대상 ${targetRows.length.toLocaleString()}명의 양식을 다운로드했습니다.`);
+      setSuccessMessage(
+        carryoverData
+          ? `${formatMonthLabel(selectedMonth)} 작성 대상 ${targetRows.length.toLocaleString()}명 중 이전 자료와 일치한 ${carryoverData.matchedCount.toLocaleString()}명의 필수값을 자동 입력해 다운로드했습니다.`
+          : `${formatMonthLabel(selectedMonth)} 작성 대상 ${targetRows.length.toLocaleString()}명의 양식을 다운로드했습니다.`,
+      );
     } catch (error) {
       console.error('근로계약서 양식 생성 오류:', error);
       setErrorMessage(error?.message || '근로계약서 작성자료 양식을 만들지 못했습니다.');
+    }
+  };
+
+  const handleDownloadTemplate = () => {
+    downloadContractTemplate();
+  };
+
+  const handlePreviousContractFilesSelected = async (
+    event,
+  ) => {
+    const files = Array.from(
+      event.target.files || [],
+    );
+
+    event.target.value = '';
+
+    if (files.length === 0) {
+      return;
+    }
+
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    try {
+      const sourceRows = [];
+
+      for (const file of files) {
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(
+          await file.arrayBuffer(),
+        );
+        const worksheet = workbook.getWorksheet(
+          CONTRACT_TEMPLATE_SHEET,
+        );
+
+        if (!worksheet) {
+          throw new Error(
+            `${file.name}: '${CONTRACT_TEMPLATE_SHEET}' 시트를 찾지 못했습니다.`,
+          );
+        }
+
+        const uploadedProject = getExcelCellText(
+          worksheet.getCell('E2').value,
+        );
+        const sourceMonth = getExcelCellText(
+          worksheet.getCell('H2').value,
+        ).slice(0, 7);
+        const actualHeaders = CONTRACT_TEMPLATE_HEADERS.map(
+          (_, index) =>
+            getExcelCellText(
+              worksheet.getRow(5).getCell(index + 1).value,
+            ),
+        );
+
+        if (uploadedProject !== projectName) {
+          throw new Error(
+            `${file.name}: 현재 현장(${projectName})과 다른 현장(${uploadedProject || '없음'})의 자료입니다.`,
+          );
+        }
+
+        if (
+          CONTRACT_TEMPLATE_HEADERS.some(
+            (header, index) =>
+              actualHeaders[index] !== header,
+          )
+        ) {
+          throw new Error(
+            `${file.name}: 근로계약서 작성자료 열 구성이 다릅니다.`,
+          );
+        }
+
+        if (
+          !/^\d{4}-\d{2}$/.test(sourceMonth) ||
+          sourceMonth >= selectedMonth
+        ) {
+          continue;
+        }
+
+        for (
+          let rowNumber = 6;
+          rowNumber <= worksheet.rowCount;
+          rowNumber += 1
+        ) {
+          const excelRow = worksheet.getRow(rowNumber);
+          const workerCode = getExcelCellText(
+            excelRow.getCell(1).value,
+          );
+          const name = getExcelCellText(
+            excelRow.getCell(2).value,
+          );
+
+          if (!workerCode && !name) {
+            continue;
+          }
+
+          sourceRows.push({
+            sourceMonth,
+            workerCode,
+            name,
+            phone: getExcelCellText(
+              excelRow.getCell(3).value,
+            ),
+            residentNumber: getExcelCellText(
+              excelRow.getCell(4).value,
+            ),
+            address: getExcelCellText(
+              excelRow.getCell(5).value,
+            ),
+          });
+        }
+      }
+
+      if (sourceRows.length === 0) {
+        throw new Error(
+          '선택한 파일에서 현재 계약월보다 이전인 작성자료를 찾지 못했습니다.',
+        );
+      }
+
+      sourceRows.sort(
+        (first, second) =>
+          first.sourceMonth.localeCompare(
+            second.sourceMonth,
+          ),
+      );
+
+      const byWorkerCode = new Map();
+      const latestByIdentity = new Map();
+
+      sourceRows.forEach((row) => {
+        if (row.workerCode) {
+          byWorkerCode.set(
+            row.workerCode,
+            row,
+          );
+        }
+
+        const identity = row.workerCode
+          ? `code:${row.workerCode}`
+          : `legacy:${normalizeName(row.name)}:${String(row.phone || '').replace(/\D/g, '')}`;
+
+        latestByIdentity.set(identity, row);
+      });
+
+      const nameGroups = new Map();
+
+      latestByIdentity.forEach((row) => {
+        const key = normalizeName(row.name);
+
+        if (!key) {
+          return;
+        }
+
+        nameGroups.set(
+          key,
+          [
+            ...(nameGroups.get(key) || []),
+            row,
+          ],
+        );
+      });
+
+      const byUniqueName = new Map(
+        [...nameGroups.entries()]
+          .filter(([, rows]) => rows.length === 1)
+          .map(([key, rows]) => [key, rows[0]]),
+      );
+      const matchedCount = storedRows.filter(
+        (row) =>
+          byWorkerCode.has(row.worker_code) ||
+          byUniqueName.has(
+            normalizeName(row.name),
+          ),
+      ).length;
+
+      await downloadContractTemplate({
+        fileCount: files.length,
+        matchedCount,
+        byWorkerCode,
+        byUniqueName,
+      });
+    } catch (error) {
+      console.error(
+        '이전 근로계약 작성자료 자동입력 오류:',
+        error,
+      );
+      setErrorMessage(
+        error?.message ||
+          '이전 작성자료를 불러오지 못했습니다.',
+      );
     }
   };
 
@@ -1280,11 +1542,34 @@ export default function LaborContractManagement({
         seenCodes.add(workerCode);
 
         const stored = storedMap.get(workerCode);
-        const phone = getExcelCellText(excelRow.getCell(3).value);
-        const residentNumber = normalizeResidentNumber(
-          getExcelCellText(excelRow.getCell(4).value),
+        const rawPhone = getExcelCellText(
+          excelRow.getCell(3).value,
         );
-        const address = getExcelCellText(excelRow.getCell(5).value);
+        const rawResidentNumber = getExcelCellText(
+          excelRow.getCell(4).value,
+        );
+        const rawAddress = getExcelCellText(
+          excelRow.getCell(5).value,
+        );
+        const phoneUnavailable =
+          isUnavailableValue(rawPhone);
+        const residentUnavailable =
+          isUnavailableValue(
+            rawResidentNumber,
+          );
+        const addressUnavailable =
+          isUnavailableValue(rawAddress);
+        const phone = phoneUnavailable
+          ? ''
+          : rawPhone;
+        const residentNumber = residentUnavailable
+          ? ''
+          : normalizeResidentNumber(
+            rawResidentNumber,
+          );
+        const address = addressUnavailable
+          ? ''
+          : rawAddress;
         const job = FIXED_CONTRACT_VALUES.job;
         const process = FIXED_CONTRACT_VALUES.process;
         const contractStartDate = stored
@@ -1297,26 +1582,26 @@ export default function LaborContractManagement({
         const breakMinutes = FIXED_CONTRACT_VALUES.breakMinutes;
         const workDescription = FIXED_CONTRACT_VALUES.workDescription;
         const note = stored?.contract_form?.note || '';
-        const issues = [];
+        const baseIssues = [];
 
-        if (!workerCode) issues.push('근로자번호 누락');
-        if (!stored) issues.push('현재 월 작성대상에 없는 근로자번호');
-        if (stored && normalizeName(stored.name) !== normalizeName(name)) issues.push(`성명 불일치(등록: ${stored.name})`);
-        if (stored && ['manager_confirmed', 'excluded'].includes(stored.status)) issues.push('완료 또는 제외된 대상');
-        if (!phone) issues.push('연락처 누락');
-        if (!isValidResidentNumber(residentNumber)) issues.push('주민등록번호 오류');
-        if (!address) issues.push('주소 누락');
-        if (!contractStartDate) issues.push('계약시작일 오류');
-        if (!contractEndDate) issues.push('계약종료일 오류');
-        if (contractStartDate && contractEndDate && contractStartDate > contractEndDate) issues.push('계약종료일이 시작일보다 빠름');
+        if (!workerCode) baseIssues.push('근로자번호 누락');
+        if (!stored) baseIssues.push('현재 월 작성대상에 없는 근로자번호');
+        if (stored && normalizeName(stored.name) !== normalizeName(name)) baseIssues.push(`성명 불일치(등록: ${stored.name})`);
+        if (stored && ['manager_confirmed', 'excluded'].includes(stored.status)) baseIssues.push('완료 또는 제외된 대상');
+        if (!contractStartDate) baseIssues.push('계약시작일 오류');
+        if (!contractEndDate) baseIssues.push('계약종료일 오류');
+        if (contractStartDate && contractEndDate && contractStartDate > contractEndDate) baseIssues.push('계약종료일이 시작일보다 빠름');
 
-        parsedRows.push({
+        const parsedRow = {
           excelRow: rowNumber,
           workerCode,
           name,
           phone,
           residentNumber,
           address,
+          phoneUnavailable,
+          residentUnavailable,
+          addressUnavailable,
           job,
           process,
           contractStartDate,
@@ -1327,13 +1612,21 @@ export default function LaborContractManagement({
           breakMinutes,
           workDescription,
           note,
-          issues,
-        });
+          baseIssues,
+          issues: [],
+        };
+
+        parsedRow.issues =
+          getImportRowIssues(parsedRow);
+        parsedRows.push(parsedRow);
       }
 
       if (parsedRows.length === 0) throw new Error('업로드할 근로자 작성자료가 없습니다.');
       parsedRows.forEach((row) => {
-        if (duplicateCodes.has(row.workerCode)) row.issues.push('동일 근로자번호 중복');
+        if (duplicateCodes.has(row.workerCode)) {
+          row.baseIssues.push('동일 근로자번호 중복');
+          row.issues = getImportRowIssues(row);
+        }
       });
 
       setPendingImportPrintData(null);
@@ -1354,6 +1647,58 @@ export default function LaborContractManagement({
     setImportDialogOpen(false);
     setImportRows([]);
     setImportFileName('');
+  };
+
+  const handleImportFieldChange = (
+    excelRow,
+    field,
+    value,
+  ) => {
+    setImportRows((previous) =>
+      previous.map((row) => {
+        if (row.excelRow !== excelRow) {
+          return row;
+        }
+
+        const next = {
+          ...row,
+          [field]:
+            field === 'residentNumber'
+              ? normalizeResidentNumber(value)
+              : value,
+        };
+
+        next.issues = getImportRowIssues(next);
+        return next;
+      }),
+    );
+  };
+
+  const handleImportUnavailableChange = (
+    excelRow,
+    field,
+    checked,
+  ) => {
+    const unavailableField = `${field}Unavailable`;
+
+    setImportRows((previous) =>
+      previous.map((row) => {
+        if (row.excelRow !== excelRow) {
+          return row;
+        }
+
+        const next = {
+          ...row,
+          [unavailableField]: checked,
+          [field]: checked
+            ? ''
+            : row[field],
+        };
+
+        next.issues = getImportRowIssues(next);
+        return next;
+      }),
+    );
   };
 
   const handleSaveContractImport = async () => {
@@ -1382,7 +1727,9 @@ export default function LaborContractManagement({
       p_rows: importedRowsSnapshot.map((row) => ({
         worker_code: row.workerCode,
         name: row.name,
-        phone: row.phone,
+        phone: row.phoneUnavailable
+          ? UNAVAILABLE_VALUE
+          : row.phone,
         job: row.job,
         process: row.process,
         contract_start_date: row.contractStartDate,
@@ -1416,6 +1763,11 @@ export default function LaborContractManagement({
             {
               residentNumber: row.residentNumber,
               address: row.address,
+              residentUnavailable:
+                row.residentUnavailable,
+              addressUnavailable:
+                row.addressUnavailable,
+              loaded: true,
             },
           ]),
         ),
@@ -1448,12 +1800,10 @@ export default function LaborContractManagement({
     targetRow = null,
     options = {},
   ) => {
-    const resolvedOptions = targetRow
-      ? options
-      : {
-        ...(pendingImportPrintData || {}),
-        ...options,
-      };
+    const resolvedOptions = {
+      ...(pendingImportPrintData || {}),
+      ...options,
+    };
     const sourceRows = Array.isArray(resolvedOptions.sourceRows)
       ? resolvedOptions.sourceRows
       : storedRows;
@@ -1489,35 +1839,86 @@ export default function LaborContractManagement({
     setIncludeCompletedPrintRows(
       targetRow?.status === 'manager_confirmed',
     );
-    setSelectedPrintIds(
-      initialRows.map(
-        (row) => String(row.requirement_id),
-      ),
-    );
-    setSensitivePrintInputs(
+    const initialSensitiveInputs =
       initialRows.reduce(
-        (result, row) => ({
-          ...result,
-          [String(row.requirement_id)]: {
-            residentNumber:
-              sensitiveByWorkerCode[row.worker_code]
-                ?.residentNumber || '',
-            address:
-              sensitiveByWorkerCode[row.worker_code]
-                ?.address || '',
-          },
-        }),
+        (result, row) => {
+          const values =
+            sensitiveByWorkerCode[
+              row.worker_code
+            ];
+
+          return {
+            ...result,
+            [String(row.requirement_id)]: values
+              ? {
+                residentNumber:
+                  values.residentNumber || '',
+                address:
+                  values.address || '',
+                residentUnavailable:
+                  Boolean(
+                    values.residentUnavailable,
+                  ),
+                addressUnavailable:
+                  Boolean(
+                    values.addressUnavailable,
+                  ),
+                loaded: true,
+              }
+              : {
+                residentNumber: '',
+                address: '',
+                residentUnavailable: false,
+                addressUnavailable: false,
+                loaded: false,
+              },
+          };
+        },
         {},
-      ),
+      );
+
+    setSensitivePrintInputs(
+      initialSensitiveInputs,
     );
-    setContractPrintError('');
+    setSelectedPrintIds(
+      initialRows
+        .filter((row) =>
+          isSensitivePrintDataReady(
+            initialSensitiveInputs[
+              String(row.requirement_id)
+            ],
+          ),
+        )
+        .map((row) =>
+          String(row.requirement_id),
+        ),
+    );
+    setContractPrintError(
+      initialRows.some(
+        (row) =>
+          !isSensitivePrintDataReady(
+            initialSensitiveInputs[
+              String(row.requirement_id)
+            ],
+          ),
+      )
+        ? 'PDF용 주민등록번호·주소는 서버에 저장하지 않습니다. 선택할 수 없는 대상자는 작성자료 엑셀을 다시 업로드해주세요.'
+        : '',
+    );
     setContractPrintOpen(true);
   };
 
   const handlePrintRowToggle = (row) => {
     const rowId = String(row.requirement_id);
-    const wasSelected =
-      selectedPrintIds.includes(rowId);
+    const values =
+      sensitivePrintInputs[rowId];
+
+    if (!isSensitivePrintDataReady(values)) {
+      setContractPrintError(
+        `${row.name}의 PDF용 개인정보가 없습니다. 작성자료 엑셀을 다시 업로드해주세요.`,
+      );
+      return;
+    }
 
     setSelectedPrintIds((previous) => {
       if (previous.includes(rowId)) {
@@ -1531,81 +1932,28 @@ export default function LaborContractManagement({
         rowId,
       ];
     });
-
-    setSensitivePrintInputs((previous) => {
-      if (wasSelected) {
-        const next = {
-          ...previous,
-        };
-
-        delete next[rowId];
-        return next;
-      }
-
-      return {
-        ...previous,
-        [rowId]: previous[rowId] || {
-          residentNumber: '',
-          address: '',
-        },
-      };
-    });
-  };
-
-  const handleSensitivePrintInput = (
-    rowId,
-    field,
-    value,
-  ) => {
-    setSensitivePrintInputs(
-      (previous) => ({
-        ...previous,
-        [rowId]: {
-          residentNumber:
-            previous[rowId]
-              ?.residentNumber || '',
-          address:
-            previous[rowId]
-              ?.address || '',
-          [field]:
-            field === 'residentNumber'
-              ? normalizeResidentNumber(value)
-              : value,
-        },
-      }),
-    );
   };
 
   const handleSelectAllPrintRows = (
     checked,
   ) => {
     if (!checked) {
-      clearContractPrintInputs();
+      setSelectedPrintIds([]);
+      setContractPrintError('');
       return;
     }
 
     setSelectedPrintIds(
-      contractPrintRows.map(
-        (row) => String(row.requirement_id),
-      ),
-    );
-    setSensitivePrintInputs(
-      (previous) =>
-        contractPrintRows.reduce(
-          (result, row) => {
-            const rowId =
-              String(row.requirement_id);
-
-            return {
-              ...result,
-              [rowId]:
-                previous[rowId] || {
-                  residentNumber: '',
-                  address: '',
-                },
-            };
-          },
-          {},
+      contractPrintRows
+        .filter((row) =>
+          isSensitivePrintDataReady(
+            sensitivePrintInputs[
+              String(row.requirement_id)
+            ],
+          ),
+        )
+        .map((row) =>
+          String(row.requirement_id),
         ),
     );
   };
@@ -1674,26 +2022,17 @@ export default function LaborContractManagement({
     }
 
     const invalidRows = selectedRows.filter(
-      (row) => {
-        const values =
+      (row) =>
+        !isSensitivePrintDataReady(
           sensitivePrintInputs[
             String(row.requirement_id)
-          ] || {};
-
-        return (
-          !isValidResidentNumber(
-            values.residentNumber,
-          ) ||
-          !String(
-            values.address || '',
-          ).trim()
-        );
-      },
+          ],
+        ),
     );
 
     if (invalidRows.length > 0) {
       setContractPrintError(
-        `${invalidRows.map((row) => row.name).join(', ')}의 주민등록번호와 주소를 확인해주세요.`,
+        `${invalidRows.map((row) => row.name).join(', ')}의 PDF용 개인정보가 없습니다. 작성자료 엑셀을 다시 업로드해주세요.`,
       );
       return;
     }
@@ -1721,13 +2060,17 @@ export default function LaborContractManagement({
                 return {
                   name: row.name,
                   residentNumber:
-                    normalizeResidentNumber(
-                      values.residentNumber,
-                    ),
+                    values.residentUnavailable
+                      ? ''
+                      : normalizeResidentNumber(
+                        values.residentNumber,
+                      ),
                   address:
-                    String(
-                      values.address,
-                    ).trim(),
+                    values.addressUnavailable
+                      ? ''
+                      : String(
+                        values.address,
+                      ).trim(),
                   contractStartDate:
                     getFixedContractStartDate(
                       row,
@@ -2176,9 +2519,19 @@ export default function LaborContractManagement({
       ],
     );
 
+  const selectableContractPrintRows =
+    contractPrintRows.filter(
+      (row) =>
+        isSensitivePrintDataReady(
+          sensitivePrintInputs[
+            String(row.requirement_id)
+          ],
+        ),
+    );
+
   const allPrintRowsSelected =
-    contractPrintRows.length > 0 &&
-    contractPrintRows.every(
+    selectableContractPrintRows.length > 0 &&
+    selectableContractPrintRows.every(
       (row) =>
         selectedPrintIds.includes(
           String(row.requirement_id),
@@ -2297,6 +2650,15 @@ export default function LaborContractManagement({
         accept=".xlsx"
         hidden
         onChange={handleContractFileSelected}
+      />
+
+      <input
+        ref={previousContractFilesInputRef}
+        type="file"
+        accept=".xlsx"
+        multiple
+        hidden
+        onChange={handlePreviousContractFilesSelected}
       />
 
       <Paper
@@ -2424,6 +2786,18 @@ export default function LaborContractManagement({
               disabled={!accessInfo || storedRows.length === 0}
             >
               양식 다운로드
+            </Button>
+
+            <Button
+              variant="outlined"
+              color="success"
+              startIcon={<DownloadOutlinedIcon />}
+              onClick={() =>
+                previousContractFilesInputRef.current?.click()
+              }
+              disabled={!accessInfo || storedRows.length === 0}
+            >
+              이전자료 자동채우기
             </Button>
 
             <Button
@@ -3188,7 +3562,7 @@ export default function LaborContractManagement({
         <DialogContent dividers>
           <Stack spacing={1.2}>
             <Alert severity="warning">
-              작성자료 저장 후 상단의 ‘계약서 PDF 생성’ 버튼으로 열면 주민등록번호와 주소가 자동으로 채워집니다. 이 정보는 브라우저 임시 메모리에서만 사용되며, 계약서 인쇄창을 만들거나 창을 닫으면 즉시 초기화됩니다.
+              이 단계에서는 주민등록번호와 주소를 다시 입력하지 않습니다. 작성자료 업로드 때 확인한 임시값으로 바로 계약서를 만들며, 인쇄창을 만들거나 창을 닫으면 즉시 폐기합니다.
             </Alert>
 
             <Stack
@@ -3210,7 +3584,7 @@ export default function LaborContractManagement({
                   fontWeight: 800,
                 }}
               >
-                작성자료 저장 직후에는 이번에 정상 저장된 대상만 선택됩니다. 일반 실행 시에는 양식입력완료·반려 대상이 선택되며, 기존 대상도 필요할 때 재출력할 수 있습니다.
+                작성자료 저장 직후에는 이번에 정상 저장된 대상만 선택됩니다. 개인정보가 ‘준비됨’인 근로자만 PDF 생성 대상으로 선택할 수 있습니다.
               </Typography>
 
               <FormControlLabel
@@ -3280,10 +3654,7 @@ export default function LaborContractManagement({
                     <TableCell>상태</TableCell>
                     <TableCell>성명</TableCell>
                     <TableCell>계약기간</TableCell>
-                    <TableCell>
-                      주민등록번호
-                    </TableCell>
-                    <TableCell>주소</TableCell>
+                    <TableCell>PDF용 개인정보</TableCell>
                   </TableRow>
                 </TableHead>
 
@@ -3304,7 +3675,14 @@ export default function LaborContractManagement({
                         ] || {
                           residentNumber: '',
                           address: '',
+                          residentUnavailable: false,
+                          addressUnavailable: false,
+                          loaded: false,
                         };
+                      const sensitiveReady =
+                        isSensitivePrintDataReady(
+                          inputs,
+                        );
 
                       return (
                         <TableRow
@@ -3322,6 +3700,7 @@ export default function LaborContractManagement({
                           <TableCell padding="checkbox">
                             <Checkbox
                               checked={checked}
+                              disabled={!sensitiveReady}
                               onChange={() =>
                                 handlePrintRowToggle(
                                   row,
@@ -3370,60 +3749,18 @@ export default function LaborContractManagement({
                           </TableCell>
 
                           <TableCell>
-                            <TextField
+                            <Chip
                               size="small"
-                              value={
-                                inputs.residentNumber
+                              color={
+                                sensitiveReady
+                                  ? 'success'
+                                  : 'warning'
                               }
-                              onChange={(event) =>
-                                handleSensitivePrintInput(
-                                  rowId,
-                                  'residentNumber',
-                                  event.target.value,
-                                )
+                              label={
+                                sensitiveReady
+                                  ? '준비됨'
+                                  : '작성자료 재업로드 필요'
                               }
-                              placeholder="000000-0000000"
-                              disabled={!checked}
-                              error={
-                                checked &&
-                                Boolean(
-                                  inputs.residentNumber,
-                                ) &&
-                                !isValidResidentNumber(
-                                  inputs.residentNumber,
-                                )
-                              }
-                              inputProps={{
-                                autoComplete: 'off',
-                                inputMode: 'numeric',
-                              }}
-                              sx={{
-                                minWidth: 180,
-                              }}
-                            />
-                          </TableCell>
-
-                          <TableCell>
-                            <TextField
-                              size="small"
-                              value={
-                                inputs.address
-                              }
-                              onChange={(event) =>
-                                handleSensitivePrintInput(
-                                  rowId,
-                                  'address',
-                                  event.target.value,
-                                )
-                              }
-                              placeholder="상세주소까지 입력"
-                              disabled={!checked}
-                              inputProps={{
-                                autoComplete: 'off',
-                              }}
-                              sx={{
-                                minWidth: 360,
-                              }}
                             />
                           </TableCell>
                         </TableRow>
@@ -3435,7 +3772,7 @@ export default function LaborContractManagement({
                     0 && (
                     <TableRow>
                       <TableCell
-                        colSpan={6}
+                        colSpan={5}
                         align="center"
                         sx={{
                           py: 5,
@@ -3451,7 +3788,7 @@ export default function LaborContractManagement({
             </TableContainer>
 
             <Alert severity="info">
-              실제 양식의 C6·G6·C7·C10:D10·E10:F10·C13:E13·G30:H30·H34·G39:H39에 값을 넣습니다. 일급 등 나머지 내용은 원본 고정값을 유지합니다.
+              원본 계약서의 병합 셀·행높이·글꼴·빨간색 선택 원을 그대로 유지하고, 성명·주민등록번호·주소·계약기간·현장명만 정확한 위치에 넣습니다. ‘없음’을 선택한 개인정보 칸은 PDF에서 빈칸으로 둡니다.
             </Alert>
           </Stack>
         </DialogContent>
@@ -3598,7 +3935,7 @@ export default function LaborContractManagement({
               파일: {importFileName || '-'} · 전체 {importRows.length.toLocaleString()}명 · 정상 {importRows.filter((row) => row.issues.length === 0).length.toLocaleString()}명 · 오류 {importRows.filter((row) => row.issues.length > 0).length.toLocaleString()}명
             </Alert>
             <Alert severity="info">
-              저장하면 정상 자료만 반영되고 오류 자료는 제외됩니다. 연락처는 근로자 정보에 반영하며, 주민등록번호·주소는 상단의 ‘계약서 PDF 생성’ 화면에만 임시 전달합니다. 직종·공정·계약기간·일급·근무조건은 회사 고정값으로 처리합니다.
+              누락된 연락처·주민등록번호·주소는 아래 표에서 바로 입력하거나 ‘없음’을 선택할 수 있습니다. 저장하면 정상 자료만 반영되고, 주민등록번호·주소는 PDF 생성용 브라우저 메모리에만 잠시 유지됩니다.
             </Alert>
             <TableContainer sx={{ maxHeight: 520, border: '1px solid #e2e8f0' }}>
               <Table stickyHeader size="small" sx={{ '& th, & td': { borderRight: '1px solid #e2e8f0', fontSize: '0.68rem', whiteSpace: 'nowrap' }, '& th': { bgcolor: '#f8fafc', fontWeight: 900 } }}>
@@ -3614,9 +3951,114 @@ export default function LaborContractManagement({
                       <TableCell><Chip size="small" color={row.issues.length > 0 ? 'error' : 'success'} label={row.issues.length > 0 ? '오류' : '정상'} /></TableCell>
                       <TableCell>{row.workerCode || '-'}</TableCell>
                       <TableCell sx={{ fontWeight: 900 }}>{row.name || '-'}</TableCell>
-                      <TableCell>{row.phone || '-'}</TableCell>
-                      <TableCell>{maskResidentNumber(row.residentNumber)}</TableCell>
-                      <TableCell sx={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.address || '-'}</TableCell>
+                      <TableCell sx={{ minWidth: 245 }}>
+                        <Stack direction="row" spacing={0.5} alignItems="center">
+                          <TextField
+                            size="small"
+                            value={row.phone}
+                            disabled={row.phoneUnavailable}
+                            placeholder="010-0000-0000"
+                            onChange={(event) =>
+                              handleImportFieldChange(
+                                row.excelRow,
+                                'phone',
+                                event.target.value,
+                              )
+                            }
+                            inputProps={{ autoComplete: 'off' }}
+                            sx={{ minWidth: 135 }}
+                          />
+                          <FormControlLabel
+                            sx={{ m: 0 }}
+                            control={
+                              <Checkbox
+                                size="small"
+                                checked={row.phoneUnavailable}
+                                onChange={(event) =>
+                                  handleImportUnavailableChange(
+                                    row.excelRow,
+                                    'phone',
+                                    event.target.checked,
+                                  )
+                                }
+                              />
+                            }
+                            label="없음"
+                          />
+                        </Stack>
+                      </TableCell>
+                      <TableCell sx={{ minWidth: 275 }}>
+                        <Stack direction="row" spacing={0.5} alignItems="center">
+                          <TextField
+                            size="small"
+                            value={row.residentNumber}
+                            disabled={row.residentUnavailable}
+                            placeholder="000000-0000000"
+                            onChange={(event) =>
+                              handleImportFieldChange(
+                                row.excelRow,
+                                'residentNumber',
+                                event.target.value,
+                              )
+                            }
+                            inputProps={{ autoComplete: 'off', inputMode: 'numeric' }}
+                            sx={{ minWidth: 165 }}
+                          />
+                          <FormControlLabel
+                            sx={{ m: 0 }}
+                            control={
+                              <Checkbox
+                                size="small"
+                                checked={row.residentUnavailable}
+                                onChange={(event) =>
+                                  handleImportUnavailableChange(
+                                    row.excelRow,
+                                    'residentNumber',
+                                    event.target.checked,
+                                  )
+                                }
+                              />
+                            }
+                            label="없음"
+                          />
+                        </Stack>
+                      </TableCell>
+                      <TableCell sx={{ minWidth: 410 }}>
+                        <Stack direction="row" spacing={0.5} alignItems="center">
+                          <TextField
+                            size="small"
+                            fullWidth
+                            value={row.address}
+                            disabled={row.addressUnavailable}
+                            placeholder="상세주소까지 입력"
+                            onChange={(event) =>
+                              handleImportFieldChange(
+                                row.excelRow,
+                                'address',
+                                event.target.value,
+                              )
+                            }
+                            inputProps={{ autoComplete: 'off' }}
+                          />
+                          <FormControlLabel
+                            sx={{ m: 0, flexShrink: 0 }}
+                            control={
+                              <Checkbox
+                                size="small"
+                                checked={row.addressUnavailable}
+                                onChange={(event) =>
+                                  handleImportUnavailableChange(
+                                    row.excelRow,
+                                    'address',
+                                    event.target.checked,
+                                  )
+                                }
+                              />
+                            }
+                            label="없음"
+                          />
+                        </Stack>
+                      </TableCell>
                       <TableCell>{row.job || '-'}</TableCell>
                       <TableCell>{row.process || '-'}</TableCell>
                       <TableCell>{row.contractStartDate || '-'}</TableCell>
@@ -3635,7 +4077,7 @@ export default function LaborContractManagement({
             </TableContainer>
             {importRows.some((row) => row.issues.length > 0) && (
               <Alert severity="warning">
-                오류 행은 이번 저장에서 제외됩니다. 필요한 경우 엑셀에서 해당 행을 수정한 뒤 다시 업로드할 수 있습니다.
+                개인정보 누락·오류는 위 표에서 바로 보완할 수 있습니다. 근로자번호 불일치·중복처럼 수정할 수 없는 오류 행만 이번 저장에서 제외됩니다.
               </Alert>
             )}
           </Stack>
