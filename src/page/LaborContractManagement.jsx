@@ -674,6 +674,31 @@ export default function LaborContractManagement({
   ] = useState(false);
 
   const [
+    batchActionDialog,
+    setBatchActionDialog,
+  ] = useState(null);
+
+  const [
+    selectedBatchActionIds,
+    setSelectedBatchActionIds,
+  ] = useState([]);
+
+  const [
+    batchActionFileName,
+    setBatchActionFileName,
+  ] = useState('');
+
+  const [
+    batchActionError,
+    setBatchActionError,
+  ] = useState('');
+
+  const [
+    batchActionSaving,
+    setBatchActionSaving,
+  ] = useState(false);
+
+  const [
     eventDialogOpen,
     setEventDialogOpen,
   ] = useState(false);
@@ -781,6 +806,10 @@ export default function LaborContractManagement({
     setImportRows([]);
     setImportFileName('');
     setRegisterActionOpen(false);
+    setBatchActionDialog(null);
+    setSelectedBatchActionIds([]);
+    setBatchActionFileName('');
+    setBatchActionError('');
   }, [
     projectName,
     selectedMonth,
@@ -2390,6 +2419,199 @@ export default function LaborContractManagement({
       setActionSaving(false);
     };
 
+  const openBatchStatusAction = (
+    row,
+    nextStatus,
+    title,
+  ) => {
+    const sourceStatus =
+      nextStatus === 'scan_verified'
+        ? 'pdf_generated'
+        : 'scan_verified';
+
+    setBatchActionDialog({
+      nextStatus,
+      sourceStatus,
+      title,
+    });
+    setSelectedBatchActionIds(
+      row?.status === sourceStatus
+        ? [String(row.requirement_id)]
+        : [],
+    );
+    setBatchActionFileName('');
+    setBatchActionError('');
+  };
+
+  const closeBatchStatusAction = () => {
+    if (batchActionSaving) {
+      return;
+    }
+
+    setBatchActionDialog(null);
+    setSelectedBatchActionIds([]);
+    setBatchActionFileName('');
+    setBatchActionError('');
+  };
+
+  const handleBatchActionRowToggle = (
+    requirementId,
+  ) => {
+    const rowId = String(requirementId);
+
+    setSelectedBatchActionIds(
+      (previous) =>
+        previous.includes(rowId)
+          ? previous.filter(
+            (id) => id !== rowId,
+          )
+          : [...previous, rowId],
+    );
+  };
+
+  const handleSelectAllBatchActionRows = (
+    checked,
+  ) => {
+    setSelectedBatchActionIds(
+      checked
+        ? batchActionRows.map(
+          (row) =>
+            String(row.requirement_id),
+        )
+        : [],
+    );
+  };
+
+  const handleBatchStatusAction =
+    async () => {
+      if (!batchActionDialog) {
+        return;
+      }
+
+      if (
+        batchActionDialog.nextStatus ===
+          'manager_confirmed' &&
+        !canManage
+      ) {
+        setBatchActionError(
+          '관리자 확인 권한이 없습니다.',
+        );
+        return;
+      }
+
+      const selectedRows =
+        batchActionRows.filter(
+          (row) =>
+            selectedBatchActionIds.includes(
+              String(
+                row.requirement_id,
+              ),
+            ),
+        );
+
+      if (selectedRows.length === 0) {
+        setBatchActionError(
+          '처리할 근로자를 1명 이상 선택해주세요.',
+        );
+        return;
+      }
+
+      setBatchActionSaving(true);
+      setBatchActionError('');
+      setErrorMessage('');
+
+      const results = [];
+      const requestBatchSize = 20;
+
+      for (
+        let index = 0;
+        index < selectedRows.length;
+        index += requestBatchSize
+      ) {
+        const requestRows =
+          selectedRows.slice(
+            index,
+            index + requestBatchSize,
+          );
+        const requestResults =
+          await Promise.all(
+            requestRows.map(
+              async (row) => {
+                try {
+                  const {
+                    error,
+                  } = await supabase.rpc(
+                    'labor_update_contract_status',
+                    {
+                      p_project_name:
+                        projectName,
+                      p_requirement_id:
+                        row.requirement_id,
+                      p_next_status:
+                        batchActionDialog.nextStatus,
+                      p_reason: '',
+                      p_scan_file_name:
+                        batchActionDialog.nextStatus ===
+                          'scan_verified'
+                          ? batchActionFileName.trim()
+                          : '',
+                      p_scan_file_hash: '',
+                    },
+                  );
+
+                  return {
+                    row,
+                    error,
+                  };
+                } catch (error) {
+                  return {
+                    row,
+                    error,
+                  };
+                }
+              },
+            ),
+          );
+
+        results.push(...requestResults);
+      }
+
+      const failedResults =
+        results.filter(
+          (result) => Boolean(result.error),
+        );
+      const successCount =
+        results.length -
+        failedResults.length;
+
+      if (successCount > 0) {
+        setSuccessMessage(
+          `${batchActionDialog.title} ${successCount.toLocaleString()}명 처리했습니다.`,
+        );
+      }
+
+      await loadStoredRows();
+
+      if (failedResults.length > 0) {
+        setSelectedBatchActionIds(
+          failedResults.map(
+            ({ row }) =>
+              String(row.requirement_id),
+          ),
+        );
+        setBatchActionError(
+          `${failedResults.length.toLocaleString()}명은 처리하지 못했습니다: ${failedResults.map(({ row }) => row.name).join(', ')}`,
+        );
+      } else {
+        setBatchActionDialog(null);
+        setSelectedBatchActionIds([]);
+        setBatchActionFileName('');
+        setBatchActionError('');
+      }
+
+      setBatchActionSaving(false);
+    };
+
   const handleOpenEvents =
     async (row) => {
       setEventTarget(row);
@@ -2477,6 +2699,38 @@ export default function LaborContractManagement({
       storedRows,
       workerTypeFilter,
     ]);
+
+  const batchActionRows =
+    useMemo(
+      () => {
+        if (!batchActionDialog) {
+          return [];
+        }
+
+        return sortRowsByContractStart(
+          storedRows.filter(
+            (row) =>
+              row.status ===
+              batchActionDialog.sourceStatus,
+          ),
+          selectedMonth,
+        );
+      },
+      [
+        batchActionDialog,
+        selectedMonth,
+        storedRows,
+      ],
+    );
+
+  const allBatchActionRowsSelected =
+    batchActionRows.length > 0 &&
+    batchActionRows.every(
+      (row) =>
+        selectedBatchActionIds.includes(
+          String(row.requirement_id),
+        ),
+    );
 
   const contractPrintRows =
     useMemo(
@@ -3575,18 +3829,14 @@ export default function LaborContractManagement({
                               </Tooltip>
                             )}
 
-                            {(row.status ===
-                              'pdf_generated' ||
-                              row.status ===
-                                'rejected' ||
-                              row.status ===
-                                'scan_verified') && (
+                            {row.status ===
+                              'pdf_generated' && (
                               <Tooltip title="서명본 업로드 확인">
                                 <IconButton
                                   size="small"
                                   color="secondary"
                                   onClick={() =>
-                                    openStatusAction(
+                                    openBatchStatusAction(
                                       row,
                                       'scan_verified',
                                       '서명본 업로드 확인',
@@ -3607,7 +3857,7 @@ export default function LaborContractManagement({
                                       size="small"
                                       color="success"
                                       onClick={() =>
-                                        openStatusAction(
+                                        openBatchStatusAction(
                                           row,
                                           'manager_confirmed',
                                           '관리자 확인',
@@ -4364,6 +4614,346 @@ export default function LaborContractManagement({
             disabled={actionSaving}
           >
             저장
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(batchActionDialog)}
+        onClose={closeBatchStatusAction}
+        fullWidth
+        maxWidth="lg"
+      >
+        <DialogTitle
+          sx={{
+            fontWeight: 900,
+          }}
+        >
+          {batchActionDialog?.title ||
+            '일괄 상태 변경'}
+        </DialogTitle>
+
+        <DialogContent dividers>
+          {batchActionDialog && (
+            <Stack spacing={1.2}>
+              <Alert severity="info">
+                {batchActionDialog.nextStatus ===
+                  'scan_verified'
+                  ? `현재 현장·${formatMonthLabel(selectedMonth)}의 PDF 생성 완료자만 표시합니다.`
+                  : `현재 현장·${formatMonthLabel(selectedMonth)}의 서명본 확인 완료자만 표시합니다.`}
+              </Alert>
+
+              <Stack
+                direction={{
+                  xs: 'column',
+                  sm: 'row',
+                }}
+                spacing={1}
+                alignItems={{
+                  xs: 'stretch',
+                  sm: 'center',
+                }}
+                justifyContent="space-between"
+              >
+                <Typography
+                  sx={{
+                    color: '#475569',
+                    fontSize: '0.8rem',
+                    fontWeight: 800,
+                  }}
+                >
+                  처리 가능 {batchActionRows.length.toLocaleString()}명 · 선택 {selectedBatchActionIds.length.toLocaleString()}명
+                </Typography>
+
+                {batchActionDialog.nextStatus ===
+                  'scan_verified' && (
+                  <TextField
+                    size="small"
+                    label="공통 스캔 파일명 (선택)"
+                    value={batchActionFileName}
+                    onChange={(event) =>
+                      setBatchActionFileName(
+                        event.target.value,
+                      )
+                    }
+                    placeholder="예: 2026-07_서명본묶음.pdf"
+                    sx={{
+                      width: {
+                        xs: '100%',
+                        sm: 330,
+                      },
+                    }}
+                  />
+                )}
+              </Stack>
+
+              {batchActionDialog.nextStatus ===
+                'manager_confirmed' && (
+                <Alert severity="warning">
+                  선택한 인원을 관리자 확인 처리하면 모두 작성완료로 변경되고 기본 미작성 경고에서 제외됩니다.
+                </Alert>
+              )}
+
+              {batchActionError && (
+                <Alert severity="error">
+                  {batchActionError}
+                </Alert>
+              )}
+
+              <TableContainer
+                sx={{
+                  maxHeight: 520,
+                  border:
+                    '1px solid #cbd5e1',
+                }}
+              >
+                <Table
+                  stickyHeader
+                  size="small"
+                  sx={{
+                    '& th, & td': {
+                      borderRight:
+                        '1px solid #e2e8f0',
+                      fontSize: '0.7rem',
+                      whiteSpace: 'nowrap',
+                    },
+                    '& th': {
+                      bgcolor: '#f8fafc',
+                      fontWeight: 900,
+                    },
+                  }}
+                >
+                  <TableHead>
+                    <TableRow>
+                      <TableCell
+                        padding="checkbox"
+                        sx={{
+                          minWidth: 96,
+                        }}
+                      >
+                        <Stack
+                          direction="row"
+                          spacing={0.25}
+                          alignItems="center"
+                        >
+                          <Checkbox
+                            size="small"
+                            checked={
+                              allBatchActionRowsSelected
+                            }
+                            indeterminate={
+                              selectedBatchActionIds.length > 0 &&
+                              !allBatchActionRowsSelected
+                            }
+                            onChange={(event) =>
+                              handleSelectAllBatchActionRows(
+                                event.target.checked,
+                              )
+                            }
+                            inputProps={{
+                              'aria-label':
+                                '전체선택',
+                            }}
+                          />
+                          <Typography
+                            component="span"
+                            sx={{
+                              fontSize: '0.68rem',
+                              fontWeight: 900,
+                            }}
+                          >
+                            전체선택
+                          </Typography>
+                        </Stack>
+                      </TableCell>
+                      <TableCell>현재 상태</TableCell>
+                      <TableCell>근로자번호</TableCell>
+                      <TableCell>성명</TableCell>
+                      <TableCell>계약기간</TableCell>
+                      <TableCell>
+                        {batchActionDialog.nextStatus ===
+                          'scan_verified'
+                          ? 'PDF 생성일'
+                          : '서명본 확인일'}
+                      </TableCell>
+                    </TableRow>
+                  </TableHead>
+
+                  <TableBody>
+                    {batchActionRows.map(
+                      (row) => {
+                        const rowId =
+                          String(
+                            row.requirement_id,
+                          );
+                        const checked =
+                          selectedBatchActionIds.includes(
+                            rowId,
+                          );
+
+                        return (
+                          <TableRow
+                            key={rowId}
+                            hover
+                            selected={checked}
+                            sx={{
+                              cursor: 'pointer',
+                              '&.Mui-selected': {
+                                bgcolor:
+                                  '#eff6ff',
+                              },
+                            }}
+                            onClick={() =>
+                              handleBatchActionRowToggle(
+                                rowId,
+                              )
+                            }
+                          >
+                            <TableCell padding="checkbox">
+                              <Checkbox
+                                size="small"
+                                checked={checked}
+                                onClick={(event) =>
+                                  event.stopPropagation()
+                                }
+                                onChange={() =>
+                                  handleBatchActionRowToggle(
+                                    rowId,
+                                  )
+                                }
+                                inputProps={{
+                                  'aria-label':
+                                    `${row.name} 선택`,
+                                }}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <Chip
+                                size="small"
+                                color={
+                                  getStatusMeta(
+                                    row.status,
+                                  ).color
+                                }
+                                label={
+                                  getStatusMeta(
+                                    row.status,
+                                  ).label
+                                }
+                              />
+                            </TableCell>
+                            <TableCell
+                              sx={{
+                                fontFamily:
+                                  'monospace',
+                                fontWeight: 800,
+                              }}
+                            >
+                              {row.worker_code}
+                            </TableCell>
+                            <TableCell
+                              sx={{
+                                fontWeight: 900,
+                              }}
+                            >
+                              {row.name}
+                            </TableCell>
+                            <TableCell>
+                              {formatShortDate(
+                                getFixedContractStartDate(
+                                  row,
+                                  selectedMonth,
+                                ),
+                              )}{' '}
+                              ~{' '}
+                              {formatShortDate(
+                                getMonthEndDate(
+                                  selectedMonth,
+                                ),
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {formatDateTime(
+                                batchActionDialog.nextStatus ===
+                                  'scan_verified'
+                                  ? row.pdf_generated_at
+                                  : row.scan_verified_at,
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      },
+                    )}
+
+                    {batchActionRows.length ===
+                      0 && (
+                      <TableRow>
+                        <TableCell
+                          colSpan={6}
+                          align="center"
+                          sx={{
+                            py: 5,
+                            color: '#94a3b8',
+                          }}
+                        >
+                          현재 단계에서 처리할 수 있는 인원이 없습니다.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+
+              {batchActionDialog.nextStatus ===
+                'scan_verified' && (
+                <Typography
+                  sx={{
+                    color: '#64748b',
+                    fontSize: '0.72rem',
+                  }}
+                >
+                  여러 사람의 서명본을 한 PDF로 묶은 경우에만 공통 파일명을 입력하세요. 사람별 파일명이 다르면 비워둔 채 확인 처리할 수 있습니다.
+                </Typography>
+              )}
+            </Stack>
+          )}
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={closeBatchStatusAction}
+            disabled={batchActionSaving}
+          >
+            취소
+          </Button>
+
+          <Button
+            variant="contained"
+            color={
+              batchActionDialog?.nextStatus ===
+                'manager_confirmed'
+                ? 'success'
+                : 'secondary'
+            }
+            startIcon={
+              batchActionSaving
+                ? (
+                  <CircularProgress
+                    size={16}
+                    color="inherit"
+                  />
+                )
+                : (
+                  <TaskAltRoundedIcon />
+                )
+            }
+            onClick={handleBatchStatusAction}
+            disabled={
+              batchActionSaving ||
+              selectedBatchActionIds.length === 0
+            }
+          >
+            선택 {selectedBatchActionIds.length.toLocaleString()}명 일괄 처리
           </Button>
         </DialogActions>
       </Dialog>
