@@ -5,13 +5,20 @@ import React, {
   useState,
 } from 'react';
 import {
+  Alert,
   Box,
   Button,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   IconButton,
   LinearProgress,
+  MenuItem,
   Paper,
+  TextField,
   Tooltip,
   Typography,
 } from '@mui/material';
@@ -19,6 +26,7 @@ import CampaignOutlinedIcon from '@mui/icons-material/CampaignOutlined';
 import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import TrendingUpOutlinedIcon from '@mui/icons-material/TrendingUpOutlined';
@@ -44,29 +52,54 @@ const PROJECT_SCHEDULES = {
   },
 };
 
-const NOTICES = [
+const DEFAULT_NOTICES = [
   {
-    date: '2026.07.14',
+    id: 1,
+    updated_at: '2026-07-14T00:00:00+09:00',
     category: '공지',
     title: '공사관리 시스템 테스트운영을 시작합니다.',
     content:
       '현장별 공사일보, 공정 진척, 업무 보고 기능을 순차적으로 적용합니다.',
   },
   {
-    date: '2026.07.14',
+    id: 2,
+    updated_at: '2026-07-14T00:00:00+09:00',
     category: '안내',
     title: '계정 및 권한 관련 안내',
     content:
       '로그인 계정과 현장 권한에 문제가 있는 경우 최고관리자에게 문의해주세요.',
   },
   {
-    date: '2026.07.14',
+    id: 3,
+    updated_at: '2026-07-14T00:00:00+09:00',
     category: '업데이트',
     title: '관리자 전체 현장 Dashboard 적용',
     content:
       '관리자와 최고관리자는 전체 현장의 금일 출력과 공정 현황을 확인할 수 있습니다.',
   },
 ];
+
+const NOTICE_CATEGORIES = ['공지', '안내', '업데이트'];
+
+const formatNoticeDate = (value) => {
+  if (!value) return '';
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value).slice(0, 10).replace(/-/g, '.');
+  }
+
+  return new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+    .format(date)
+    .replace(/\. /g, '.')
+    .replace(/\.$/, '');
+};
 
 const pad2 = (value) => String(value).padStart(2, '0');
 
@@ -524,7 +557,7 @@ function ApprovalCard({ counts, onNavigate }) {
   );
 }
 
-function NoticePanel() {
+function NoticePanel({ notices, canEdit, onEdit }) {
   return (
     <Paper
       variant="outlined"
@@ -545,18 +578,50 @@ function NoticePanel() {
           borderBottom: '1px solid #e2e8f0',
         }}
       >
-        <CampaignOutlinedIcon
-          sx={{ color: '#2563eb', fontSize: 21 }}
-        />
-        <Typography
+        <Box
           sx={{
-            color: '#0f172a',
-            fontSize: '0.88rem',
-            fontWeight: 900,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.7,
+            minWidth: 0,
           }}
         >
-          공지사항
-        </Typography>
+          <CampaignOutlinedIcon
+            sx={{ color: '#2563eb', fontSize: 21 }}
+          />
+          <Typography
+            sx={{
+              color: '#0f172a',
+              fontSize: '0.88rem',
+              fontWeight: 900,
+            }}
+          >
+            공지사항
+          </Typography>
+        </Box>
+
+        {canEdit && (
+          <Tooltip title="공지사항 수정">
+            <IconButton
+              size="small"
+              aria-label="공지사항 수정"
+              onClick={onEdit}
+              sx={{
+                ml: 'auto',
+                width: 28,
+                height: 28,
+                color: '#2563eb',
+                border: '1px solid #bfdbfe',
+                bgcolor: '#eff6ff',
+                '&:hover': {
+                  bgcolor: '#dbeafe',
+                },
+              }}
+            >
+              <EditOutlinedIcon sx={{ fontSize: 17 }} />
+            </IconButton>
+          </Tooltip>
+        )}
       </Box>
 
       <Box
@@ -566,13 +631,13 @@ function NoticePanel() {
           flexDirection: 'column',
         }}
       >
-        {NOTICES.map((notice, index) => (
+        {notices.map((notice, index) => (
           <Box
-            key={`${notice.date}-${notice.title}`}
+            key={notice.id}
             sx={{
               py: 1.15,
               borderBottom:
-                index === NOTICES.length - 1
+                index === notices.length - 1
                   ? 'none'
                   : '1px solid #eef2f7',
             }}
@@ -581,7 +646,6 @@ function NoticePanel() {
               sx={{
                 display: 'flex',
                 alignItems: 'center',
-                justifyContent: 'space-between',
                 gap: 1,
               }}
             >
@@ -606,15 +670,6 @@ function NoticePanel() {
                   fontWeight: 900,
                 }}
               />
-
-              <Typography
-                sx={{
-                  color: '#94a3b8',
-                  fontSize: '0.62rem',
-                }}
-              >
-                {notice.date}
-              </Typography>
             </Box>
 
             <Typography
@@ -638,10 +693,181 @@ function NoticePanel() {
             >
               {notice.content}
             </Typography>
+
+            <Typography
+              sx={{
+                mt: 0.35,
+                color: '#94a3b8',
+                fontSize: '0.62rem',
+                textAlign: 'right',
+              }}
+            >
+              {formatNoticeDate(notice.updated_at)}
+            </Typography>
           </Box>
         ))}
       </Box>
     </Paper>
+  );
+}
+
+function NoticeEditDialog({
+  open,
+  drafts,
+  saving,
+  errorMessage,
+  onChange,
+  onClose,
+  onSave,
+}) {
+  return (
+    <Dialog
+      open={open}
+      onClose={saving ? undefined : onClose}
+      fullWidth
+      maxWidth="md"
+    >
+      <DialogTitle
+        sx={{
+          pb: 1,
+          fontSize: '1.05rem',
+          fontWeight: 900,
+        }}
+      >
+        공지사항 수정
+      </DialogTitle>
+
+      <DialogContent dividers>
+        <Typography
+          sx={{
+            mb: 1.5,
+            color: '#64748b',
+            fontSize: '0.76rem',
+          }}
+        >
+          수정한 공지만 저장일이 오늘 날짜로 변경됩니다.
+        </Typography>
+
+        {errorMessage && (
+          <Alert severity="error" sx={{ mb: 1.5 }}>
+            {errorMessage}
+          </Alert>
+        )}
+
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1.4,
+          }}
+        >
+          {drafts.map((notice, index) => (
+            <Paper
+              key={notice.id}
+              variant="outlined"
+              sx={{
+                p: 1.5,
+                borderColor: '#dbe3ee',
+                bgcolor: '#f8fafc',
+              }}
+            >
+              <Typography
+                sx={{
+                  mb: 1,
+                  color: '#334155',
+                  fontSize: '0.76rem',
+                  fontWeight: 900,
+                }}
+              >
+                공지 {index + 1}
+              </Typography>
+
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: {
+                    xs: '1fr',
+                    sm: '130px minmax(0, 1fr)',
+                  },
+                  gap: 1,
+                }}
+              >
+                <TextField
+                  select
+                  size="small"
+                  label="분류"
+                  value={notice.category}
+                  disabled={saving}
+                  onChange={(event) =>
+                    onChange(
+                      notice.id,
+                      'category',
+                      event.target.value,
+                    )
+                  }
+                >
+                  {NOTICE_CATEGORIES.map((category) => (
+                    <MenuItem key={category} value={category}>
+                      {category}
+                    </MenuItem>
+                  ))}
+                </TextField>
+
+                <TextField
+                  size="small"
+                  label="제목"
+                  value={notice.title}
+                  disabled={saving}
+                  inputProps={{ maxLength: 120 }}
+                  onChange={(event) =>
+                    onChange(
+                      notice.id,
+                      'title',
+                      event.target.value,
+                    )
+                  }
+                />
+
+                <TextField
+                  multiline
+                  minRows={2}
+                  label="내용"
+                  value={notice.content}
+                  disabled={saving}
+                  inputProps={{ maxLength: 500 }}
+                  onChange={(event) =>
+                    onChange(
+                      notice.id,
+                      'content',
+                      event.target.value,
+                    )
+                  }
+                  sx={{
+                    gridColumn: {
+                      xs: 'auto',
+                      sm: '1 / -1',
+                    },
+                  }}
+                />
+              </Box>
+            </Paper>
+          ))}
+        </Box>
+      </DialogContent>
+
+      <DialogActions sx={{ px: 2.5, py: 1.5 }}>
+        <Button onClick={onClose} disabled={saving}>
+          취소
+        </Button>
+        <Button
+          variant="contained"
+          onClick={onSave}
+          disabled={saving}
+        >
+          {saving ? '저장 중...' : '저장'}
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 }
 
@@ -1103,6 +1329,7 @@ function MainProcessPanel({
 
 export default function MainDashboard({
   projectName = '',
+  userRole = '담당자',
   buildingConfigs = {},
   processOptions = [],
   savedData = {},
@@ -1124,6 +1351,155 @@ export default function MainDashboard({
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
+  const [notices, setNotices] = useState(DEFAULT_NOTICES);
+  const [noticeDialogOpen, setNoticeDialogOpen] =
+    useState(false);
+  const [noticeDrafts, setNoticeDrafts] = useState([]);
+  const [noticeSaving, setNoticeSaving] = useState(false);
+  const [noticeErrorMessage, setNoticeErrorMessage] =
+    useState('');
+
+  const isSuperAdmin = userRole === '최고관리자';
+
+  const loadNotices = useCallback(async () => {
+    const { data, error } = await supabase
+      .from('system_notices')
+      .select('id, category, title, content, updated_at')
+      .order('id', { ascending: true });
+
+    if (error) {
+      throw error;
+    }
+
+    if (Array.isArray(data) && data.length > 0) {
+      setNotices(data);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadNotices().catch((error) => {
+      console.error('Main 공지사항 조회 오류:', error);
+    });
+  }, [loadNotices]);
+
+  const handleOpenNoticeEditor = () => {
+    if (!isSuperAdmin) return;
+
+    setNoticeDrafts(
+      notices.map((notice) => ({ ...notice })),
+    );
+    setNoticeErrorMessage('');
+    setNoticeDialogOpen(true);
+  };
+
+  const handleChangeNoticeDraft = (
+    noticeId,
+    field,
+    value,
+  ) => {
+    setNoticeDrafts((previous) =>
+      previous.map((notice) =>
+        notice.id === noticeId
+          ? { ...notice, [field]: value }
+          : notice,
+      ),
+    );
+  };
+
+  const handleSaveNotices = async () => {
+    if (!isSuperAdmin || noticeSaving) return;
+
+    const preparedDrafts = noticeDrafts.map((notice) => ({
+      ...notice,
+      category: String(notice.category || '').trim(),
+      title: String(notice.title || '').trim(),
+      content: String(notice.content || '').trim(),
+    }));
+
+    if (
+      preparedDrafts.some(
+        (notice) =>
+          !notice.category || !notice.title || !notice.content,
+      )
+    ) {
+      setNoticeErrorMessage(
+        '각 공지의 분류, 제목, 내용을 모두 입력해주세요.',
+      );
+      return;
+    }
+
+    const changedNotices = preparedDrafts.filter((draft) => {
+      const original = notices.find(
+        (notice) => notice.id === draft.id,
+      );
+
+      return Boolean(
+        !original ||
+          draft.category !== original.category ||
+          draft.title !== original.title ||
+          draft.content !== original.content,
+      );
+    });
+
+    if (changedNotices.length === 0) {
+      setNoticeDialogOpen(false);
+      return;
+    }
+
+    setNoticeSaving(true);
+    setNoticeErrorMessage('');
+
+    try {
+      const savedNotices = [];
+
+      for (const notice of changedNotices) {
+        const { data, error } = await supabase
+          .from('system_notices')
+          .update({
+            category: notice.category,
+            title: notice.title,
+            content: notice.content,
+          })
+          .eq('id', notice.id)
+          .select(
+            'id, category, title, content, updated_at',
+          )
+          .single();
+
+        if (error) {
+          throw error;
+        }
+
+        savedNotices.push(data);
+      }
+
+      const savedById = new Map(
+        savedNotices.map((notice) => [notice.id, notice]),
+      );
+
+      setNotices((previous) =>
+        previous.map(
+          (notice) => savedById.get(notice.id) || notice,
+        ),
+      );
+      setNoticeDialogOpen(false);
+    } catch (error) {
+      console.error('Main 공지사항 저장 오류:', error);
+      setNoticeErrorMessage(
+        error?.message ||
+          '공지사항을 저장하지 못했습니다. 잠시 후 다시 시도해주세요.',
+      );
+
+      loadNotices().catch((loadError) => {
+        console.error(
+          'Main 공지사항 재조회 오류:',
+          loadError,
+        );
+      });
+    } finally {
+      setNoticeSaving(false);
+    }
+  };
 
   const loadApprovalCounts =
     useCallback(async () => {
@@ -1282,6 +1658,16 @@ export default function MainDashboard({
         onNavigate={onNavigate}
       />
 
+      <NoticeEditDialog
+        open={noticeDialogOpen}
+        drafts={noticeDrafts}
+        saving={noticeSaving}
+        errorMessage={noticeErrorMessage}
+        onChange={handleChangeNoticeDraft}
+        onClose={() => setNoticeDialogOpen(false)}
+        onSave={handleSaveNotices}
+      />
+
       <Box
         sx={{
           display: 'grid',
@@ -1317,7 +1703,11 @@ export default function MainDashboard({
           alignItems: 'stretch',
         }}
       >
-        <NoticePanel />
+        <NoticePanel
+          notices={notices}
+          canEdit={isSuperAdmin}
+          onEdit={handleOpenNoticeEditor}
+        />
 
         <CalendarPanel
           viewYear={viewYear}
