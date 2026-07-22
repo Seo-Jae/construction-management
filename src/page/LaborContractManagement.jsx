@@ -1254,7 +1254,7 @@ export default function LaborContractManagement({
     );
 
     if (targetRows.length === 0) {
-      setErrorMessage('신규 양식에 넣을 미입력·반려 대상자가 없습니다.');
+      setErrorMessage('대상자 EXL에 넣을 미작성·반려 대상자가 없습니다.');
       return;
     }
 
@@ -1282,7 +1282,7 @@ export default function LaborContractManagement({
       worksheet.getCell('H2').value = selectedMonth;
 
       worksheet.mergeCells('A3:N3');
-      worksheet.getCell('A3').value = '노란색 3개 열(연락처, 주민등록번호, 주소)만 입력하세요. 새 근로자는 홈페이지의 “기존 양식 업데이트”로 이 파일에 추가합니다.';
+      worksheet.getCell('A3').value = '노란색 3개 열(연락처, 주민등록번호, 주소)만 입력하세요. 같은 달에 새 근로자가 추가되면 홈페이지의 “업데이트”로 이 파일에 추가합니다.';
       worksheet.getCell('A3').font = { bold: true, color: { argb: 'FF9A3412' } };
       worksheet.getCell('A3').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF7ED' } };
 
@@ -1322,7 +1322,7 @@ export default function LaborContractManagement({
 
       const buffer = await workbook.xlsx.writeBuffer();
       downloadExcelBuffer(buffer, `근로계약서작성자료_${projectName}_${selectedMonth}.xlsx`);
-      setSuccessMessage(`${formatMonthLabel(selectedMonth)} 미입력·반려 대상 ${targetRows.length.toLocaleString()}명의 신규 양식을 다운로드했습니다.`);
+      setSuccessMessage(`${formatMonthLabel(selectedMonth)} 미작성·반려 대상 ${targetRows.length.toLocaleString()}명의 대상자 EXL을 다운로드했습니다.`);
     } catch (error) {
       console.error('근로계약서 양식 생성 오류:', error);
       setErrorMessage(error?.message || '근로계약서 작성자료 양식을 만들지 못했습니다.');
@@ -1396,7 +1396,7 @@ export default function LaborContractManagement({
         )
       ) {
         throw new Error(
-          '양식의 열 제목이 변경되어 업데이트할 수 없습니다. 최신 신규 양식을 사용해주세요.',
+          '양식의 열 제목이 변경되어 업데이트할 수 없습니다. 최신 대상자 EXL을 사용해주세요.',
         );
       }
 
@@ -1456,14 +1456,14 @@ export default function LaborContractManagement({
 
       if (appendRows.length === 0) {
         setSuccessMessage(
-          `${formatMonthLabel(selectedMonth)} 통합 엑셀은 최신 상태입니다. 추가할 미입력·반려 근로자가 없습니다.`,
+          `${formatMonthLabel(selectedMonth)} 월별 EXL은 최신 상태입니다. 추가할 미작성·반려 근로자가 없습니다.`,
         );
         return;
       }
 
       if (
         !window.confirm(
-          `선택한 ${formatMonthLabel(selectedMonth)} 통합 엑셀에 신규·미작성 근로자 ${appendRows.length.toLocaleString()}명을 추가할까요? 기존 개인정보는 그대로 유지됩니다.`,
+          `선택한 ${formatMonthLabel(selectedMonth)} 월별 EXL에 신규·미작성 근로자 ${appendRows.length.toLocaleString()}명을 추가할까요? 기존 개인정보는 그대로 유지됩니다.`,
         )
       ) {
         return;
@@ -1494,7 +1494,7 @@ export default function LaborContractManagement({
         await writable.write(buffer);
         await writable.close();
         setSuccessMessage(
-          `${formatMonthLabel(selectedMonth)} 통합 엑셀에 신규·미작성 근로자 ${appendRows.length.toLocaleString()}명을 추가했습니다. 기존 개인정보와 기존 인원은 그대로 유지했습니다.`,
+          `${formatMonthLabel(selectedMonth)} 월별 EXL에 신규·미작성 근로자 ${appendRows.length.toLocaleString()}명을 추가했습니다. 기존 개인정보와 기존 인원은 그대로 유지했습니다.`,
         );
       } else {
         downloadExcelBuffer(
@@ -1503,7 +1503,7 @@ export default function LaborContractManagement({
             `근로계약서작성자료_${projectName}_${selectedMonth}.xlsx`,
         );
         setSuccessMessage(
-          `${formatMonthLabel(selectedMonth)} 통합 엑셀에 신규·미작성 근로자 ${appendRows.length.toLocaleString()}명을 추가해 다운로드했습니다. 내려받은 파일로 기존 파일을 교체해주세요.`,
+          `${formatMonthLabel(selectedMonth)} 월별 EXL에 신규·미작성 근로자 ${appendRows.length.toLocaleString()}명을 추가해 다운로드했습니다. 내려받은 파일로 기존 파일을 교체해주세요.`,
         );
       }
     } catch (error) {
@@ -1685,7 +1685,7 @@ export default function LaborContractManagement({
 
       if (sourceRows.length === 0) {
         throw new Error(
-          '선택한 파일에서 자동채우기에 사용할 작성자료를 찾지 못했습니다.',
+          '선택한 파일에서 사용할 기자료를 찾지 못했습니다.',
         );
       }
 
@@ -1793,7 +1793,7 @@ export default function LaborContractManagement({
 
       if (targetRows.length === 0) {
         throw new Error(
-          '자동채우기할 미입력·반려 대상자가 없습니다.',
+          '기자료를 반영할 미작성·반려 대상자가 없습니다.',
         );
       }
 
@@ -1930,20 +1930,20 @@ export default function LaborContractManagement({
       setPendingImportPrintData(null);
       setImportRows(parsedRows);
       setImportFileName(
-        `작성자료 자동채우기 (${files.length.toLocaleString()}개 파일)`,
+        `기자료 업로드 (${files.length.toLocaleString()}개 파일)`,
       );
       setImportDialogOpen(true);
       setSuccessMessage(
-        `${formatMonthLabel(selectedMonth)} 작성 대상 ${targetRows.length.toLocaleString()}명 중 ${matchedCount.toLocaleString()}명의 개인정보를 브라우저 검토 화면에만 자동 입력했습니다. 개인정보가 포함된 새 엑셀은 다운로드하지 않았습니다.`,
+        `${formatMonthLabel(selectedMonth)} 작성 대상 ${targetRows.length.toLocaleString()}명 중 ${matchedCount.toLocaleString()}명의 기자료를 브라우저 검토 화면에만 반영했습니다. 저장 후 대상자 EXL을 다운로드하면 누락 인원만 포함됩니다. 개인정보가 포함된 새 EXL은 만들지 않았습니다.`,
       );
     } catch (error) {
       console.error(
-        '근로계약 작성자료 자동입력 오류:',
+        '근로계약 기자료 업로드 오류:',
         error,
       );
       setErrorMessage(
         error?.message ||
-          '작성자료를 불러오지 못했습니다.',
+          '기자료를 불러오지 못했습니다.',
       );
     }
   };
@@ -1971,7 +1971,7 @@ export default function LaborContractManagement({
 
       const actualHeaders = CONTRACT_TEMPLATE_HEADERS.map((_, index) => getExcelCellText(worksheet.getRow(5).getCell(index + 1).value));
       if (CONTRACT_TEMPLATE_HEADERS.some((header, index) => actualHeaders[index] !== header)) {
-        throw new Error('양식의 열 제목이 변경되었습니다. 최신 양식을 다시 다운로드해주세요.');
+        throw new Error('양식의 열 제목이 변경되었습니다. 최신 대상자 EXL을 다시 다운로드해주세요.');
       }
 
       const storedMap = new Map(storedRows.map((row) => [row.worker_code, row]));
@@ -2348,7 +2348,7 @@ export default function LaborContractManagement({
             ],
           ),
       )
-        ? 'PDF용 주민등록번호·주소는 서버에 저장하지 않습니다. 선택할 수 없는 대상자는 작성자료 엑셀을 다시 업로드해주세요.'
+        ? 'PDF용 주민등록번호·주소는 서버에 저장하지 않습니다. 선택할 수 없는 대상자는 대상자 EXL을 다시 업로드해주세요.'
         : '',
     );
     setContractPrintOpen(true);
@@ -2361,7 +2361,7 @@ export default function LaborContractManagement({
 
     if (!isSensitivePrintDataReady(values)) {
       setContractPrintError(
-        `${row.name}의 PDF용 개인정보가 없습니다. 작성자료 엑셀을 다시 업로드해주세요.`,
+        `${row.name}의 PDF용 개인정보가 없습니다. 대상자 EXL을 다시 업로드해주세요.`,
       );
       return;
     }
@@ -2478,7 +2478,7 @@ export default function LaborContractManagement({
 
     if (invalidRows.length > 0) {
       setContractPrintError(
-        `${invalidRows.map((row) => row.name).join(', ')}의 PDF용 개인정보가 없습니다. 작성자료 엑셀을 다시 업로드해주세요.`,
+        `${invalidRows.map((row) => row.name).join(', ')}의 PDF용 개인정보가 없습니다. 대상자 EXL을 다시 업로드해주세요.`,
       );
       return;
     }
@@ -3290,74 +3290,90 @@ export default function LaborContractManagement({
                 : '작성 대상 반영'}
             </Button>
 
-            <Button
-              variant="outlined"
-              onClick={handleDownloadTemplate}
-              disabled={
-                !accessInfo ||
-                !storedRows.some(
-                  isContractTemplateInputTarget,
-                )
-              }
-              sx={{
-                ...actionControlSx,
-                minWidth: 122,
-              }}
-            >
-              신규 양식 다운로드
-            </Button>
+            <Tooltip title="다른 계약월의 작성자료를 불러와 일치하는 근로자의 개인정보를 브라우저 검토 화면에만 반영합니다.">
+              <span>
+                <Button
+                  variant="outlined"
+                  color="success"
+                  onClick={() =>
+                    referenceContractFilesInputRef.current?.click()
+                  }
+                  disabled={
+                    !accessInfo ||
+                    !storedRows.some(
+                      isContractTemplateInputTarget,
+                    )
+                  }
+                  sx={{
+                    ...actionControlSx,
+                    minWidth: 98,
+                  }}
+                >
+                  기자료 업로드
+                </Button>
+              </span>
+            </Tooltip>
 
-            <Button
-              variant="outlined"
-              color="info"
-              onClick={handleUpdateTemplateClick}
-              disabled={
-                templateUpdating ||
-                !accessInfo ||
-                storedRows.length === 0
-              }
-              sx={{
-                ...actionControlSx,
-                minWidth: 126,
-              }}
-            >
-              {templateUpdating
-                ? '업데이트 중'
-                : '기존 양식 업데이트'}
-            </Button>
+            <Tooltip title="현재 미작성·반려 대상만 받습니다. 기자료를 먼저 저장했다면 일치하지 않은 누락 인원만 포함됩니다.">
+              <span>
+                <Button
+                  variant="outlined"
+                  onClick={handleDownloadTemplate}
+                  disabled={
+                    !accessInfo ||
+                    !storedRows.some(
+                      isContractTemplateInputTarget,
+                    )
+                  }
+                  sx={{
+                    ...actionControlSx,
+                    minWidth: 126,
+                  }}
+                >
+                  대상자 EXL 다운로드
+                </Button>
+              </span>
+            </Tooltip>
 
-            <Button
-              variant="outlined"
-              color="success"
-              onClick={() =>
-                referenceContractFilesInputRef.current?.click()
-              }
-              disabled={
-                !accessInfo ||
-                !storedRows.some(
-                  isContractTemplateInputTarget,
-                )
-              }
-              sx={{
-                ...actionControlSx,
-                minWidth: 132,
-              }}
-            >
-              작성자료 자동채우기
-            </Button>
+            <Tooltip title="PC에 보관 중인 선택 월 EXL 한 개에 이후 추가된 미작성·반려 인원만 덧붙입니다.">
+              <span>
+                <Button
+                  variant="outlined"
+                  color="info"
+                  onClick={handleUpdateTemplateClick}
+                  disabled={
+                    templateUpdating ||
+                    !accessInfo ||
+                    storedRows.length === 0
+                  }
+                  sx={{
+                    ...actionControlSx,
+                    minWidth: 78,
+                  }}
+                >
+                  {templateUpdating
+                    ? '처리 중'
+                    : '업데이트'}
+                </Button>
+              </span>
+            </Tooltip>
 
-            <Button
-              variant="outlined"
-              color="secondary"
-              onClick={() => contractFileInputRef.current?.click()}
-              disabled={!accessInfo || storedRows.length === 0}
-              sx={{
-                ...actionControlSx,
-                minWidth: 112,
-              }}
-            >
-              작성자료 업로드
-            </Button>
+            <Tooltip title="현재 선택 월의 대상자 EXL을 올려 검토하고, 정상 자료만 반영합니다.">
+              <span>
+                <Button
+                  variant="outlined"
+                  color="secondary"
+                  onClick={() => contractFileInputRef.current?.click()}
+                  disabled={!accessInfo || storedRows.length === 0}
+                  sx={{
+                    ...actionControlSx,
+                    minWidth: 116,
+                  }}
+                >
+                  대상자 EXL 업로드
+                </Button>
+              </span>
+            </Tooltip>
 
             <Button
               variant="contained"
@@ -3413,6 +3429,38 @@ export default function LaborContractManagement({
               </IconButton>
             </Tooltip>
           </Stack>
+        </Stack>
+
+        <Stack
+          direction={{
+            xs: 'column',
+            lg: 'row',
+          }}
+          spacing={{
+            xs: 0.25,
+            lg: 1.4,
+          }}
+          useFlexGap
+          flexWrap="wrap"
+          sx={{
+            mt: 0.8,
+            pt: 0.7,
+            borderTop: '1px solid #e2e8f0',
+            color: '#64748b',
+          }}
+        >
+          <Typography sx={{ fontSize: '0.68rem' }}>
+            <Box component="span" sx={{ color: '#334155', fontWeight: 900 }}>기본:</Box>{' '}
+            작성 대상 반영 → 대상자 EXL 다운로드 → 대상자 EXL 업로드
+          </Typography>
+          <Typography sx={{ fontSize: '0.68rem' }}>
+            <Box component="span" sx={{ color: '#047857', fontWeight: 900 }}>기자료 활용:</Box>{' '}
+            기자료 업로드 → 저장 → 대상자 EXL 다운로드(누락 인원만) → 대상자 EXL 업로드
+          </Typography>
+          <Typography sx={{ fontSize: '0.68rem' }}>
+            <Box component="span" sx={{ color: '#0369a1', fontWeight: 900 }}>월별 EXL 1개:</Box>{' '}
+            같은 달에 새 인원이 생기면 ‘업데이트’로 기존 파일에 추가
+          </Typography>
         </Stack>
       </Paper>
 
@@ -4194,7 +4242,7 @@ export default function LaborContractManagement({
         <DialogContent dividers>
           <Stack spacing={1.2}>
             <Alert severity="warning">
-              이 단계에서는 주민등록번호와 주소를 다시 입력하지 않습니다. 작성자료 업로드 때 확인한 임시값으로 바로 계약서를 만들며, 인쇄창을 만들거나 창을 닫으면 즉시 폐기합니다.
+              이 단계에서는 주민등록번호와 주소를 다시 입력하지 않습니다. 대상자 EXL 업로드 때 확인한 임시값으로 바로 계약서를 만들며, 인쇄창을 만들거나 창을 닫으면 즉시 폐기합니다.
             </Alert>
 
             <Stack
@@ -4551,7 +4599,7 @@ export default function LaborContractManagement({
         maxWidth="xl"
       >
         <DialogTitle sx={{ fontWeight: 900 }}>
-          근로계약서 작성자료 업로드 검토
+          근로계약서 대상자 EXL 업로드 검토
         </DialogTitle>
         <DialogContent dividers>
           <Stack spacing={1}>
