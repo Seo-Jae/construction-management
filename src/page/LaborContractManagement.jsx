@@ -2,6 +2,7 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -44,15 +45,40 @@ import UploadFileOutlinedIcon from '@mui/icons-material/UploadFileOutlined';
 import TaskAltRoundedIcon from '@mui/icons-material/TaskAltRounded';
 import BlockOutlinedIcon from '@mui/icons-material/BlockOutlined';
 import ReplayRoundedIcon from '@mui/icons-material/ReplayRounded';
+import DownloadOutlinedIcon from '@mui/icons-material/DownloadOutlined';
+import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
+import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
 
 const PAGE_SIZE = 1000;
+const CONTRACT_TEMPLATE_VERSION = 'LABOR_CONTRACT_V1';
+const CONTRACT_TEMPLATE_SHEET = '근로계약서작성자료';
+const CONTRACT_TEMPLATE_HEADERS = [
+  '근로자번호',
+  '성명',
+  '연락처',
+  '직종',
+  '공정',
+  '계약시작일',
+  '계약종료일',
+  '일급',
+  '근무시작',
+  '근무종료',
+  '휴게시간(분)',
+  '업무내용',
+  '비고',
+];
 
 const STATUS_META = {
   required: {
-    label: '미작성',
+    label: '양식 미입력',
     color: 'error',
     screenGroup: 'missing',
+  },
+  form_ready: {
+    label: '양식입력완료',
+    color: 'info',
+    screenGroup: 'progress',
   },
   pdf_generated: {
     label: 'PDF 생성',
@@ -305,6 +331,82 @@ const getStatusMeta = (
   STATUS_META[status] ||
   STATUS_META.required;
 
+const getExcelCellText = (value) => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'object') {
+    if (Array.isArray(value.richText)) {
+      return value.richText.map((part) => part.text || '').join('');
+    }
+    if (value.text !== undefined) return String(value.text);
+    if (value.result !== undefined) return String(value.result);
+  }
+  return String(value).trim();
+};
+
+const parseExcelDateValue = (value) => {
+  if (!value) return '';
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return [
+      value.getFullYear(),
+      String(value.getMonth() + 1).padStart(2, '0'),
+      String(value.getDate()).padStart(2, '0'),
+    ].join('-');
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const date = new Date(Date.UTC(1899, 11, 30) + value * 86400000);
+    return [
+      date.getUTCFullYear(),
+      String(date.getUTCMonth() + 1).padStart(2, '0'),
+      String(date.getUTCDate()).padStart(2, '0'),
+    ].join('-');
+  }
+  const matched = getExcelCellText(value).match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
+  if (!matched) return '';
+  const year = Number(matched[1]);
+  const month = Number(matched[2]);
+  const day = Number(matched[3]);
+  const date = new Date(year, month - 1, day);
+  if (date.getFullYear() !== year || date.getMonth() + 1 !== month || date.getDate() !== day) return '';
+  return [String(year), String(month).padStart(2, '0'), String(day).padStart(2, '0')].join('-');
+};
+
+const parseExcelNumber = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  const normalized = getExcelCellText(value).replace(/,/g, '');
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const getExcelTimeText = (value) => {
+  if (!value) return '';
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return `${String(value.getHours()).padStart(2, '0')}:${String(value.getMinutes()).padStart(2, '0')}`;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    const minutes = Math.round(value * 24 * 60);
+    return `${String(Math.floor(minutes / 60) % 24).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`;
+  }
+  const text = getExcelCellText(value);
+  const matched = text.match(/^(\d{1,2}):(\d{2})$/);
+  return matched ? `${String(Number(matched[1])).padStart(2, '0')}:${matched[2]}` : text;
+};
+
+const downloadExcelBuffer = (buffer, fileName) => {
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+};
+
 export default function LaborContractManagement({
   projectName = '',
   userProfile = null,
@@ -431,6 +533,28 @@ export default function LaborContractManagement({
     setEventLoading,
   ] = useState(false);
 
+  const contractFileInputRef = useRef(null);
+
+  const [
+    importDialogOpen,
+    setImportDialogOpen,
+  ] = useState(false);
+
+  const [
+    importFileName,
+    setImportFileName,
+  ] = useState('');
+
+  const [
+    importRows,
+    setImportRows,
+  ] = useState([]);
+
+  const [
+    importSaving,
+    setImportSaving,
+  ] = useState(false);
+
   const canManage =
     Boolean(
       accessInfo?.can_manage,
@@ -493,20 +617,34 @@ export default function LaborContractManagement({
 
         setLoadingStoredRows(true);
 
-        const {
-          data,
-          error,
-        } = await supabase.rpc(
-          'labor_get_contract_month',
-          {
-            p_project_name:
-              projectName,
-            p_contract_month:
-              selectedMonth,
-          },
-        );
+        const [
+          requirementResult,
+          formResult,
+        ] = await Promise.all([
+          supabase.rpc(
+            'labor_get_contract_month',
+            {
+              p_project_name: projectName,
+              p_contract_month: selectedMonth,
+            },
+          ),
+          supabase.rpc(
+            'labor_get_contract_forms',
+            {
+              p_project_name: projectName,
+              p_contract_month: selectedMonth,
+            },
+          ),
+        ]);
 
-        if (error) {
+        if (
+          requirementResult.error ||
+          formResult.error
+        ) {
+          const error =
+            requirementResult.error ||
+            formResult.error;
+
           console.error(
             '근로계약 월별 상태 조회 오류:',
             error,
@@ -514,12 +652,27 @@ export default function LaborContractManagement({
 
           setStoredRows([]);
           setErrorMessage(
-            error.message ||
+            error?.message ||
               '저장된 근로계약 상태를 불러오지 못했습니다.',
           );
         } else {
+          const formMap = new Map(
+            (formResult.data || []).map(
+              (formRow) => [
+                formRow.requirement_id,
+                formRow,
+              ],
+            ),
+          );
+
           setStoredRows(
-            data || [],
+            (requirementResult.data || []).map(
+              (requirement) => ({
+                ...requirement,
+                contract_form:
+                  formMap.get(requirement.requirement_id) || null,
+              }),
+            ),
           );
         }
 
@@ -854,6 +1007,257 @@ export default function LaborContractManagement({
       selectedMonth,
     ]);
 
+  const handleDownloadTemplate = async () => {
+    const targetRows = storedRows.filter(
+      (row) => !['manager_confirmed', 'excluded'].includes(row.status),
+    );
+
+    if (targetRows.length === 0) {
+      setErrorMessage('양식에 넣을 작성 대상자가 없습니다. 먼저 작성 대상을 반영해주세요.');
+      return;
+    }
+
+    setErrorMessage('');
+
+    try {
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'Wooklim Construction Management';
+      const worksheet = workbook.addWorksheet(CONTRACT_TEMPLATE_SHEET, {
+        views: [{ state: 'frozen', ySplit: 5 }],
+      });
+
+      worksheet.mergeCells('A1:M1');
+      worksheet.getCell('A1').value = '근로계약서 작성자료';
+      worksheet.getCell('A1').font = { bold: true, size: 16, color: { argb: 'FFFFFFFF' } };
+      worksheet.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
+      worksheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } };
+      worksheet.getRow(1).height = 28;
+
+      worksheet.getCell('A2').value = '양식버전';
+      worksheet.getCell('B2').value = CONTRACT_TEMPLATE_VERSION;
+      worksheet.getCell('D2').value = '현장명';
+      worksheet.getCell('E2').value = projectName;
+      worksheet.getCell('G2').value = '계약대상월';
+      worksheet.getCell('H2').value = selectedMonth;
+
+      worksheet.mergeCells('A3:M3');
+      worksheet.getCell('A3').value = '근로자번호와 성명은 수정하지 마세요. 연락처부터 비고까지 작성한 뒤 업로드합니다.';
+      worksheet.getCell('A3').font = { bold: true, color: { argb: 'FF9A3412' } };
+      worksheet.getCell('A3').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF7ED' } };
+
+      worksheet.mergeCells('A4:M4');
+      worksheet.getCell('A4').value = '필수입력: 연락처, 직종, 공정, 계약시작일, 계약종료일, 일급, 근무시작, 근무종료, 휴게시간, 업무내용';
+      worksheet.getCell('A4').font = { color: { argb: 'FF475569' } };
+
+      const headerRow = worksheet.getRow(5);
+      CONTRACT_TEMPLATE_HEADERS.forEach((header, index) => {
+        const cell = headerRow.getCell(index + 1);
+        cell.value = header;
+        cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF334155' } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+          right: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+        };
+      });
+      headerRow.height = 24;
+
+      targetRows.forEach((row, index) => {
+        const excelRow = worksheet.getRow(index + 6);
+        const form = row.contract_form || {};
+        excelRow.values = [
+          row.worker_code,
+          row.name,
+          form.phone || row.phone || '',
+          form.job || row.job || '',
+          form.process || row.process || '',
+          form.contract_start_date || row.current_month_first_work_date || `${selectedMonth}-01`,
+          form.contract_end_date || '',
+          form.daily_wage ?? '',
+          form.work_start_time || '08:00',
+          form.work_end_time || '17:00',
+          form.break_minutes ?? 60,
+          form.work_description || row.process || row.job || '',
+          form.note || '',
+        ];
+        excelRow.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+        excelRow.getCell(2).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+        excelRow.getCell(8).numFmt = '#,##0';
+        excelRow.getCell(11).numFmt = '0';
+        for (let column = 1; column <= 13; column += 1) {
+          excelRow.getCell(column).border = {
+            top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+            right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+          };
+        }
+      });
+
+      [16, 13, 18, 15, 17, 14, 14, 14, 12, 12, 14, 28, 26].forEach((width, index) => {
+        worksheet.getColumn(index + 1).width = width;
+      });
+      worksheet.autoFilter = { from: 'A5', to: 'M5' };
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      downloadExcelBuffer(buffer, `근로계약서작성자료_${projectName}_${selectedMonth}.xlsx`);
+      setSuccessMessage(`${formatMonthLabel(selectedMonth)} 작성 대상 ${targetRows.length.toLocaleString()}명의 양식을 다운로드했습니다.`);
+    } catch (error) {
+      console.error('근로계약서 양식 생성 오류:', error);
+      setErrorMessage(error?.message || '근로계약서 작성자료 양식을 만들지 못했습니다.');
+    }
+  };
+
+  const handleContractFileSelected = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    try {
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(await file.arrayBuffer());
+      const worksheet = workbook.getWorksheet(CONTRACT_TEMPLATE_SHEET);
+      if (!worksheet) throw new Error(`시트 이름이 '${CONTRACT_TEMPLATE_SHEET}'인 회사 배포 양식만 업로드할 수 있습니다.`);
+
+      const templateVersion = getExcelCellText(worksheet.getCell('B2').value);
+      const uploadedProject = getExcelCellText(worksheet.getCell('E2').value);
+      const uploadedMonth = getExcelCellText(worksheet.getCell('H2').value).slice(0, 7);
+      if (templateVersion !== CONTRACT_TEMPLATE_VERSION) throw new Error(`양식 버전이 다릅니다. 현재 버전은 ${CONTRACT_TEMPLATE_VERSION}입니다.`);
+      if (uploadedProject !== projectName) throw new Error(`업로드 현장(${uploadedProject || '없음'})과 현재 현장(${projectName})이 다릅니다.`);
+      if (uploadedMonth !== selectedMonth) throw new Error(`업로드 계약월(${uploadedMonth || '없음'})과 현재 선택 월(${selectedMonth})이 다릅니다.`);
+
+      const actualHeaders = CONTRACT_TEMPLATE_HEADERS.map((_, index) => getExcelCellText(worksheet.getRow(5).getCell(index + 1).value));
+      if (CONTRACT_TEMPLATE_HEADERS.some((header, index) => actualHeaders[index] !== header)) {
+        throw new Error('양식의 열 제목이 변경되었습니다. 최신 양식을 다시 다운로드해주세요.');
+      }
+
+      const storedMap = new Map(storedRows.map((row) => [row.worker_code, row]));
+      const seenCodes = new Set();
+      const duplicateCodes = new Set();
+      const parsedRows = [];
+
+      for (let rowNumber = 6; rowNumber <= worksheet.rowCount; rowNumber += 1) {
+        const excelRow = worksheet.getRow(rowNumber);
+        const workerCode = getExcelCellText(excelRow.getCell(1).value);
+        const name = getExcelCellText(excelRow.getCell(2).value);
+        if (!workerCode && !name) continue;
+        if (seenCodes.has(workerCode)) duplicateCodes.add(workerCode);
+        seenCodes.add(workerCode);
+
+        const stored = storedMap.get(workerCode);
+        const phone = getExcelCellText(excelRow.getCell(3).value);
+        const job = getExcelCellText(excelRow.getCell(4).value);
+        const process = getExcelCellText(excelRow.getCell(5).value);
+        const contractStartDate = parseExcelDateValue(excelRow.getCell(6).value);
+        const contractEndDate = parseExcelDateValue(excelRow.getCell(7).value);
+        const dailyWage = parseExcelNumber(excelRow.getCell(8).value);
+        const workStartTime = getExcelTimeText(excelRow.getCell(9).value);
+        const workEndTime = getExcelTimeText(excelRow.getCell(10).value);
+        const breakMinutes = parseExcelNumber(excelRow.getCell(11).value);
+        const workDescription = getExcelCellText(excelRow.getCell(12).value);
+        const note = getExcelCellText(excelRow.getCell(13).value);
+        const issues = [];
+
+        if (!workerCode) issues.push('근로자번호 누락');
+        if (!stored) issues.push('현재 월 작성대상에 없는 근로자번호');
+        if (stored && normalizeName(stored.name) !== normalizeName(name)) issues.push(`성명 불일치(등록: ${stored.name})`);
+        if (stored && ['manager_confirmed', 'excluded'].includes(stored.status)) issues.push('완료 또는 제외된 대상');
+        if (!phone) issues.push('연락처 누락');
+        if (!job) issues.push('직종 누락');
+        if (!process) issues.push('공정 누락');
+        if (!contractStartDate) issues.push('계약시작일 오류');
+        if (!contractEndDate) issues.push('계약종료일 오류');
+        if (contractStartDate && contractEndDate && contractStartDate > contractEndDate) issues.push('계약종료일이 시작일보다 빠름');
+        if (dailyWage === null || dailyWage <= 0) issues.push('일급 오류');
+        if (!workStartTime) issues.push('근무시작 누락');
+        if (!workEndTime) issues.push('근무종료 누락');
+        if (breakMinutes === null || !Number.isInteger(breakMinutes) || breakMinutes < 0) issues.push('휴게시간 오류');
+        if (!workDescription) issues.push('업무내용 누락');
+
+        parsedRows.push({
+          excelRow: rowNumber,
+          workerCode,
+          name,
+          phone,
+          job,
+          process,
+          contractStartDate,
+          contractEndDate,
+          dailyWage,
+          workStartTime,
+          workEndTime,
+          breakMinutes,
+          workDescription,
+          note,
+          issues,
+        });
+      }
+
+      if (parsedRows.length === 0) throw new Error('업로드할 근로자 작성자료가 없습니다.');
+      parsedRows.forEach((row) => {
+        if (duplicateCodes.has(row.workerCode)) row.issues.push('동일 근로자번호 중복');
+      });
+
+      setImportRows(parsedRows);
+      setImportFileName(file.name);
+      setImportDialogOpen(true);
+    } catch (error) {
+      console.error('근로계약서 작성자료 분석 오류:', error);
+      setErrorMessage(error?.message || '근로계약서 작성자료를 분석하지 못했습니다.');
+    }
+  };
+
+  const handleSaveContractImport = async () => {
+    const invalidCount = importRows.filter((row) => row.issues.length > 0).length;
+    if (invalidCount > 0) {
+      setErrorMessage(`오류가 있는 ${invalidCount.toLocaleString()}개 행을 수정한 뒤 다시 업로드해주세요.`);
+      return;
+    }
+
+    setImportSaving(true);
+    setErrorMessage('');
+
+    const { data, error } = await supabase.rpc('labor_import_contract_forms', {
+      p_project_name: projectName,
+      p_contract_month: selectedMonth,
+      p_template_version: CONTRACT_TEMPLATE_VERSION,
+      p_file_name: importFileName,
+      p_rows: importRows.map((row) => ({
+        worker_code: row.workerCode,
+        name: row.name,
+        phone: row.phone,
+        job: row.job,
+        process: row.process,
+        contract_start_date: row.contractStartDate,
+        contract_end_date: row.contractEndDate,
+        daily_wage: row.dailyWage,
+        work_start_time: row.workStartTime,
+        work_end_time: row.workEndTime,
+        break_minutes: row.breakMinutes,
+        work_description: row.workDescription,
+        note: row.note,
+      })),
+    });
+
+    if (error) {
+      console.error('근로계약 작성자료 저장 오류:', error);
+      setErrorMessage(error.message || '근로계약 작성자료를 저장하지 못했습니다.');
+    } else {
+      setSuccessMessage(`${formatMonthLabel(selectedMonth)} 근로계약 작성자료 ${(data?.imported_count || importRows.length).toLocaleString()}명을 반영했습니다.`);
+      setImportDialogOpen(false);
+      setImportRows([]);
+      setImportFileName('');
+      await loadStoredRows();
+    }
+    setImportSaving(false);
+  };
+
   const handleSync =
     async () => {
       if (!accessInfo) {
@@ -1181,6 +1585,10 @@ export default function LaborContractManagement({
               result.warning += 1;
             }
 
+            if (row.status === 'form_ready') {
+              result.formReady += 1;
+            }
+
             if (
               row.status ===
               'manager_confirmed'
@@ -1195,6 +1603,7 @@ export default function LaborContractManagement({
             newCount: 0,
             continuous: 0,
             warning: 0,
+            formReady: 0,
             completed: 0,
           },
         ),
@@ -1254,6 +1663,14 @@ export default function LaborContractManagement({
         gap: 1,
       }}
     >
+      <input
+        ref={contractFileInputRef}
+        type="file"
+        accept=".xlsx"
+        hidden
+        onChange={handleContractFileSelected}
+      />
+
       <Paper
         variant="outlined"
         sx={{
@@ -1317,7 +1734,7 @@ export default function LaborContractManagement({
                 fontSize: '0.78rem',
               }}
             >
-              출력일보 분석 결과를 근로자 고유번호와 월별 계약상태로 저장합니다.
+              출력일보 대상 반영 후 회사 배포 양식을 내려받아 작성자료를 업로드합니다.
             </Typography>
           </Box>
 
@@ -1370,6 +1787,25 @@ export default function LaborContractManagement({
               }
             >
               작성 대상 반영
+            </Button>
+
+            <Button
+              variant="outlined"
+              startIcon={<DownloadOutlinedIcon />}
+              onClick={handleDownloadTemplate}
+              disabled={!accessInfo || storedRows.length === 0}
+            >
+              양식 다운로드
+            </Button>
+
+            <Button
+              variant="outlined"
+              color="secondary"
+              startIcon={<UploadFileOutlinedIcon />}
+              onClick={() => contractFileInputRef.current?.click()}
+              disabled={!accessInfo || storedRows.length === 0}
+            >
+              작성자료 업로드
             </Button>
 
             <Button
@@ -1472,9 +1908,15 @@ export default function LaborContractManagement({
           >
             {formatMonthLabel(
               selectedMonth,
-            )} 미작성 또는 반려 대상자가 {summary.warning.toLocaleString()}명 있습니다.
+            )} 양식 미입력 또는 반려 대상자가 {summary.warning.toLocaleString()}명 있습니다.
           </Alert>
         )}
+
+      {accessInfo && summary.formReady > 0 && (
+        <Alert severity="info" sx={{ py: 0.35, fontWeight: 800 }}>
+          작성자료 입력이 끝나 PDF 출력이 가능한 인원이 {summary.formReady.toLocaleString()}명 있습니다.
+        </Alert>
+      )}
 
       <Box
         sx={{
@@ -1735,6 +2177,7 @@ export default function LaborContractManagement({
                     '최초근무일',
                     '계약대상월',
                     '작성사유',
+                    '양식입력일',
                     'PDF 생성일',
                     '서명본 확인일',
                     '관리자 확인일',
@@ -1774,6 +2217,9 @@ export default function LaborContractManagement({
                                 'required'
                                 ? '#fff7ed'
                                 : row.status ===
+                                  'form_ready'
+                                  ? '#eff6ff'
+                                  : row.status ===
                                   'manager_confirmed'
                                   ? '#f0fdf4'
                                   : 'inherit',
@@ -1867,6 +2313,12 @@ export default function LaborContractManagement({
 
                         <TableCell>
                           {formatDateTime(
+                            row.contract_form?.imported_at,
+                          )}
+                        </TableCell>
+
+                        <TableCell>
+                          {formatDateTime(
                             row.pdf_generated_at,
                           )}
                         </TableCell>
@@ -1907,7 +2359,7 @@ export default function LaborContractManagement({
                             </Tooltip>
 
                             {(row.status ===
-                              'required' ||
+                              'form_ready' ||
                               row.status ===
                                 'rejected' ||
                               row.status ===
@@ -2035,7 +2487,7 @@ export default function LaborContractManagement({
                   0 && (
                   <TableRow>
                     <TableCell
-                      colSpan={13}
+                      colSpan={14}
                       align="center"
                       sx={{
                         py: 6,
@@ -2063,6 +2515,64 @@ export default function LaborContractManagement({
       >
         접속자: {userProfile?.manager_name || '-'} · 현장: {projectName || '-'}
       </Typography>
+
+      <Dialog
+        open={importDialogOpen}
+        onClose={() => {
+          if (!importSaving) setImportDialogOpen(false);
+        }}
+        fullWidth
+        maxWidth="xl"
+      >
+        <DialogTitle sx={{ fontWeight: 900 }}>
+          근로계약서 작성자료 업로드 검토
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={1}>
+            <Alert severity={importRows.some((row) => row.issues.length > 0) ? 'error' : 'success'}>
+              파일: {importFileName || '-'} · 전체 {importRows.length.toLocaleString()}명 · 정상 {importRows.filter((row) => row.issues.length === 0).length.toLocaleString()}명 · 오류 {importRows.filter((row) => row.issues.length > 0).length.toLocaleString()}명
+            </Alert>
+            <TableContainer sx={{ maxHeight: 520, border: '1px solid #e2e8f0' }}>
+              <Table stickyHeader size="small" sx={{ '& th, & td': { borderRight: '1px solid #e2e8f0', fontSize: '0.68rem', whiteSpace: 'nowrap' }, '& th': { bgcolor: '#f8fafc', fontWeight: 900 } }}>
+                <TableHead>
+                  <TableRow>
+                    {['엑셀행','검토결과','근로자번호','성명','연락처','직종','공정','계약시작','계약종료','일급','근무시간','휴게','업무내용','확인내용'].map((header) => <TableCell key={header}>{header}</TableCell>)}
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {importRows.map((row) => (
+                    <TableRow key={`${row.excelRow}-${row.workerCode}`} sx={{ bgcolor: row.issues.length > 0 ? '#fff1f2' : '#f0fdf4' }}>
+                      <TableCell>{row.excelRow}</TableCell>
+                      <TableCell><Chip size="small" color={row.issues.length > 0 ? 'error' : 'success'} label={row.issues.length > 0 ? '오류' : '정상'} /></TableCell>
+                      <TableCell>{row.workerCode || '-'}</TableCell>
+                      <TableCell sx={{ fontWeight: 900 }}>{row.name || '-'}</TableCell>
+                      <TableCell>{row.phone || '-'}</TableCell>
+                      <TableCell>{row.job || '-'}</TableCell>
+                      <TableCell>{row.process || '-'}</TableCell>
+                      <TableCell>{row.contractStartDate || '-'}</TableCell>
+                      <TableCell>{row.contractEndDate || '-'}</TableCell>
+                      <TableCell align="right">{row.dailyWage === null ? '-' : Number(row.dailyWage).toLocaleString()}</TableCell>
+                      <TableCell>{row.workStartTime || '-'} ~ {row.workEndTime || '-'}</TableCell>
+                      <TableCell align="right">{row.breakMinutes === null ? '-' : `${row.breakMinutes}분`}</TableCell>
+                      <TableCell sx={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis' }}>{row.workDescription || '-'}</TableCell>
+                      <TableCell sx={{ minWidth: 260, whiteSpace: 'normal !important', color: row.issues.length > 0 ? '#b91c1c' : '#047857', fontWeight: 800 }}>
+                        {row.issues.length > 0 ? row.issues.join(' · ') : '정상 반영 가능'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+            {importRows.some((row) => row.issues.length > 0) && <Alert severity="warning">오류가 있는 행은 엑셀에서 수정한 뒤 다시 업로드해야 합니다.</Alert>}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setImportDialogOpen(false)} disabled={importSaving}>취소</Button>
+          <Button variant="contained" startIcon={<FactCheckOutlinedIcon />} onClick={handleSaveContractImport} disabled={importSaving || importRows.length === 0 || importRows.some((row) => row.issues.length > 0)}>
+            정상 자료 반영
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={workerEditOpen}

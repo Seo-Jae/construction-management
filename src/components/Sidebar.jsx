@@ -15,6 +15,7 @@ import AssignmentIcon from '@mui/icons-material/Assignment';
 import EngineeringIcon from '@mui/icons-material/Engineering';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
+import BadgeOutlinedIcon from '@mui/icons-material/BadgeOutlined';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { fetchPendingApprovalSummary } from '../utils/approvalQueries.js';
@@ -60,6 +61,19 @@ const materialMenus = [
   {
     value: 'material-input-status',
     label: '자재투입현황',
+  },
+];
+
+const laborMenus = [
+  {
+    value: 'labor-contract',
+    label: '근로계약서작성',
+  },
+  {
+    value: 'labor-documents',
+    label: '노임서류작성',
+    disabled: true,
+    statusLabel: '작성중',
   },
 ];
 
@@ -258,6 +272,11 @@ export default function Sidebar({
       'material-',
     );
 
+  const isLaborView =
+    currentView?.startsWith(
+      'labor-',
+    );
+
   const isReportView =
     currentView?.startsWith(
       'report-',
@@ -282,6 +301,13 @@ export default function Sidebar({
     setMaterialOpen,
   ] = useState(
     isMaterialView,
+  );
+
+  const [
+    laborOpen,
+    setLaborOpen,
+  ] = useState(
+    isLaborView,
   );
 
   const [
@@ -314,6 +340,12 @@ export default function Sidebar({
       setMaterialOpen(true);
     }
   }, [isMaterialView]);
+
+  useEffect(() => {
+    if (isLaborView) {
+      setLaborOpen(true);
+    }
+  }, [isLaborView]);
 
   useEffect(() => {
     if (isReportView) {
@@ -796,6 +828,63 @@ export default function Sidebar({
           onViewChange={
             handleViewChange
           }
+        />
+      </Collapse>
+
+      <Tooltip
+        title={drawerOpen ? '' : '노임관리'}
+        placement="right"
+        arrow
+      >
+        <ListItemButton
+          selected={isLaborView}
+          onClick={() =>
+            setLaborOpen(
+              (previous) => !previous,
+            )
+          }
+          sx={topMenuSx(isLaborView)}
+        >
+          <ListItemIcon
+            sx={{
+              minWidth: 34,
+              color: 'inherit',
+              justifyContent: 'center',
+            }}
+          >
+            <BadgeOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+
+          <ListItemText
+            primary="노임관리"
+            primaryTypographyProps={{
+              noWrap: true,
+              fontSize: '0.8rem',
+              fontWeight: isLaborView ? 700 : 500,
+            }}
+            sx={{
+              opacity: drawerOpen ? 1 : 0,
+            }}
+          />
+
+          {drawerOpen &&
+            (laborOpen ? (
+              <ExpandLessIcon fontSize="small" />
+            ) : (
+              <ExpandMoreIcon fontSize="small" />
+            ))}
+        </ListItemButton>
+      </Tooltip>
+
+      <Collapse
+        in={drawerOpen && laborOpen}
+        timeout="auto"
+        unmountOnExit
+      >
+        <SubMenuList
+          items={laborMenus}
+          currentView={currentView}
+          onViewChange={handleViewChange}
         />
       </Collapse>
 
