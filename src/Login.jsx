@@ -7,6 +7,7 @@ import {
   Checkbox,
   Divider,
   FormControlLabel,
+  MenuItem,
   Paper,
   TextField,
   ToggleButton,
@@ -304,7 +305,7 @@ export default function Login() {
         severity: 'success',
         text: data?.user?.identities?.length === 0
           ? '이미 가입된 이메일입니다. 로그인하거나 비밀번호 찾기를 이용해주세요.'
-          : '가입 요청이 접수되었습니다. 이메일 확인 후 최고관리자에게 승인을 요청해주세요.',
+          : '가입 요청이 접수되었습니다. 최고관리자에게 회원 승인을 요청해주세요.',
       });
     } catch (error) {
       console.error('회원가입 오류:', error);
@@ -613,23 +614,23 @@ export default function Login() {
                 />
               </Box>
 
-              <ToggleButtonGroup
-                exclusive
-                fullWidth
-                size="small"
+              <TextField
+                select
+                label="구분"
                 value={signupForm.organizationType}
-                onChange={(_event, value) => {
-                  if (value) handleSignupChange('organizationType', value);
-                }}
+                onChange={(event) =>
+                  handleSignupChange('organizationType', event.target.value)
+                }
+                fullWidth
                 disabled={loading}
               >
-                <ToggleButton value="본사">구분(1) · 본사</ToggleButton>
-                <ToggleButton value="현장">구분(1) · 현장</ToggleButton>
-              </ToggleButtonGroup>
+                <MenuItem value="본사">본사</MenuItem>
+                <MenuItem value="현장">현장</MenuItem>
+              </TextField>
 
               {signupForm.organizationType === '본사' ? (
                 <TextField
-                  label="구분(2)"
+                  label="근무처"
                   value="본사"
                   fullWidth
                   disabled
@@ -656,7 +657,7 @@ export default function Login() {
                   renderInput={(params) => (
                     <TextField
                       {...params}
-                      label="구분(2) · 현장 검색"
+                      label="근무 현장 검색"
                       placeholder="예: 용인금어"
                       required
                       error={Boolean(projectError)}
@@ -691,9 +692,9 @@ export default function Login() {
           <Box sx={{ mt: 2.5 }}>
             <Divider />
             <Typography sx={{ mt: 1.6, color: '#94a3b8', fontSize: '0.7rem', lineHeight: 1.65 }}>
-              회원가입 후 이메일 확인과 최고관리자 승인이 모두 완료되어야 이용할 수 있습니다.
+              회원가입 후 최고관리자 승인이 완료되어야 이용할 수 있습니다.
               <br />
-              역할과 현장 접근 권한은 최고관리자가 최종 지정합니다.
+              인증메일이 발송된 경우 메일의 링크를 먼저 눌러주세요. 역할과 현장 접근 권한은 최고관리자가 최종 지정합니다.
             </Typography>
           </Box>
         </Box>

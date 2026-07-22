@@ -20,6 +20,7 @@ import ManageAccountsOutlinedIcon from '@mui/icons-material/ManageAccountsOutlin
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { fetchPendingApprovalSummary } from '../utils/approvalQueries.js';
+import { supabase } from '../supabaseClient';
 
 const dailyMenus = [
   { value: 'daily', label: '출력일보작성' },
@@ -320,6 +321,8 @@ export default function Sidebar({
   );
   const [approvalPendingCount, setApprovalPendingCount] =
     useState(0);
+  const [registrationPendingCount, setRegistrationPendingCount] =
+    useState(0);
 
   useEffect(() => {
     if (isDailyView) setDailyOpen(true);
@@ -412,6 +415,63 @@ export default function Sidebar({
     };
   }, [currentView]);
 
+  useEffect(() => {
+    if (!isSuperAdmin) {
+      setRegistrationPendingCount(0);
+      return undefined;
+    }
+
+    let active = true;
+
+    const loadRegistrationCount = async () => {
+      try {
+        const { data, error } = await supabase.rpc(
+          'admin_get_pending_user_count',
+        );
+
+        if (error) throw error;
+
+        if (active) {
+          setRegistrationPendingCount(
+            Number(data || 0),
+          );
+        }
+      } catch (error) {
+        console.error(
+          '회원 승인대기 건수 조회 오류:',
+          error,
+        );
+
+        if (active) {
+          setRegistrationPendingCount(0);
+        }
+      }
+    };
+
+    loadRegistrationCount();
+
+    const timer = window.setInterval(
+      loadRegistrationCount,
+      20 * 1000,
+    );
+
+    window.addEventListener('focus', loadRegistrationCount);
+    window.addEventListener(
+      'user-account-changed',
+      loadRegistrationCount,
+    );
+
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', loadRegistrationCount);
+      window.removeEventListener(
+        'user-account-changed',
+        loadRegistrationCount,
+      );
+    };
+  }, [isSuperAdmin]);
+
   const handleViewChange = (view) => {
     if (typeof onViewChange === 'function') onViewChange(view);
   };
@@ -455,7 +515,15 @@ export default function Sidebar({
 
       {isSuperAdmin && (
         <Tooltip
-          title={drawerOpen ? '' : '회원관리'}
+          title={
+            drawerOpen
+              ? ''
+              : `회원관리${
+                  registrationPendingCount > 0
+                    ? ` (${registrationPendingCount})`
+                    : ''
+                }`
+          }
           placement="right"
           arrow
         >
@@ -471,7 +539,23 @@ export default function Sidebar({
                 justifyContent: 'center',
               }}
             >
-              <ManageAccountsOutlinedIcon fontSize="small" />
+              <Badge
+                badgeContent={registrationPendingCount}
+                color="error"
+                max={99}
+                invisible={registrationPendingCount === 0}
+                sx={{
+                  '& .MuiBadge-badge': {
+                    minWidth: 16,
+                    height: 16,
+                    px: 0.35,
+                    fontSize: '0.58rem',
+                    fontWeight: 900,
+                  },
+                }}
+              >
+                <ManageAccountsOutlinedIcon fontSize="small" />
+              </Badge>
             </ListItemIcon>
 
             <ListItemText

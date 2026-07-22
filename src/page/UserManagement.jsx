@@ -35,15 +35,34 @@ const normalizeSearchText = (value) =>
     .toLowerCase()
     .replace(/\s+/g, '');
 
-const createDraft = (account) => ({
-  role: account?.role || '담당자',
-  organizationType:
-    account?.organization_type === '본사' ? '본사' : '현장',
-  projectName:
-    account?.project_name ||
-    account?.requested_project_name ||
-    '',
-});
+const normalizeProjectNames = (values) =>
+  [...new Set(
+    (Array.isArray(values) ? values : [])
+      .map((value) => String(value || '').trim())
+      .filter((value) => value && value !== '본사'),
+  )];
+
+const createDraft = (account) => {
+  const organizationType =
+    account?.organization_type === '본사' ? '본사' : '현장';
+  const savedProjectNames = normalizeProjectNames(account?.project_names);
+  const fallbackProjectName = String(
+    account?.project_name || account?.requested_project_name || '',
+  ).trim();
+
+  return {
+    role: account?.role || '담당자',
+    organizationType,
+    projectNames:
+      organizationType === '본사'
+        ? ['본사']
+        : savedProjectNames.length > 0
+          ? savedProjectNames
+          : fallbackProjectName && fallbackProjectName !== '본사'
+            ? [fallbackProjectName]
+            : [],
+  };
+};
 
 const formatDateTime = (value) => {
   if (!value) return '-';
@@ -155,6 +174,9 @@ export default function UserManagement({ currentUserId = '' }) {
         account.position_title,
         account.requested_project_name,
         account.project_name,
+        ...(Array.isArray(account.project_names)
+          ? account.project_names
+          : []),
         account.role,
       ].some((value) => normalizeSearchText(value).includes(keyword));
     });
@@ -170,7 +192,7 @@ export default function UserManagement({ currentUserId = '' }) {
           ...current,
           [field]: value,
           ...(field === 'organizationType'
-            ? { projectName: value === '본사' ? '본사' : '' }
+            ? { projectNames: value === '본사' ? ['본사'] : [] }
             : {}),
         },
       };
@@ -180,13 +202,13 @@ export default function UserManagement({ currentUserId = '' }) {
   const updateAccount = async (account, nextStatus) => {
     const userId = account.auth_user_id;
     const draft = drafts[userId] || createDraft(account);
-    const projectName =
+    const projectNames =
       draft.organizationType === '본사'
-        ? '본사'
-        : String(draft.projectName || '').trim();
+        ? ['본사']
+        : normalizeProjectNames(draft.projectNames);
 
-    if (!projectName) {
-      setErrorMessage(`${account.manager_name || account.email}의 현장을 선택해주세요.`);
+    if (projectNames.length === 0) {
+      setErrorMessage(`${account.manager_name || account.email}의 접근 현장을 하나 이상 선택해주세요.`);
       return;
     }
 
@@ -222,12 +244,12 @@ export default function UserManagement({ currentUserId = '' }) {
 
     try {
       const { error } = await supabase.rpc(
-        'admin_update_user_account',
+        'admin_update_user_account_projects',
         {
           p_user_id: userId,
           p_role: draft.role,
           p_organization_type: draft.organizationType,
-          p_project_name: projectName,
+          p_project_names: projectNames,
           p_account_status: nextStatus,
         },
       );
@@ -305,7 +327,7 @@ export default function UserManagement({ currentUserId = '' }) {
             회원관리
           </Typography>
           <Typography sx={{ mt: 0.25, color: '#64748b', fontSize: '0.7rem' }}>
-            가입 요청을 확인하고 역할·근무 구분·접근 현장을 승인합니다.
+            가입 요청을 확인하고 역할·구분·복수 접근 현장을 승인합니다.
           </Typography>
         </Box>
 
@@ -356,14 +378,13 @@ export default function UserManagement({ currentUserId = '' }) {
       </Box>
 
       <TableContainer sx={{ flexGrow: 1, minHeight: 0 }}>
-        <Table stickyHeader size="small" sx={{ minWidth: 1230 }}>
+        <Table stickyHeader size="small" sx={{ minWidth: 1190 }}>
           <TableHead>
             <TableRow>
               <TableCell sx={{ fontWeight: 900, width: 86 }}>상태</TableCell>
               <TableCell sx={{ fontWeight: 900, minWidth: 190 }}>가입자</TableCell>
               <TableCell sx={{ fontWeight: 900, width: 100 }}>직책</TableCell>
-              <TableCell sx={{ fontWeight: 900, width: 115 }}>구분(1)</TableCell>
-              <TableCell sx={{ fontWeight: 900, minWidth: 260 }}>구분(2)·현장</TableCell>
+              <TableCell sx={{ fontWeight: 900, minWidth: 330 }}>구분·접근 현장</TableCell>
               <TableCell sx={{ fontWeight: 900, width: 140 }}>시스템 역할</TableCell>
               <TableCell sx={{ fontWeight: 900, width: 120 }}>가입일</TableCell>
               <TableCell align="center" sx={{ fontWeight: 900, width: 210 }}>처리</TableCell>
@@ -373,13 +394,13 @@ export default function UserManagement({ currentUserId = '' }) {
           <TableBody>
             {loading ? (
               <TableRow>
-                <TableCell colSpan={8} align="center" sx={{ py: 9 }}>
+                <TableCell colSpan={7} align="center" sx={{ py: 9 }}>
                   <CircularProgress size={30} />
                 </TableCell>
               </TableRow>
             ) : visibleAccounts.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} align="center" sx={{ py: 9, color: '#94a3b8' }}>
+                <TableCell colSpan={7} align="center" sx={{ py: 9, color: '#94a3b8' }}>
                   해당 조건의 계정이 없습니다.
                 </TableCell>
               </TableRow>
@@ -413,38 +434,51 @@ export default function UserManagement({ currentUserId = '' }) {
                       {account.position_title || '-'}
                     </TableCell>
                     <TableCell>
-                      <TextField
-                        select
-                        size="small"
-                        fullWidth
-                        value={draft.organizationType}
-                        onChange={(event) => changeDraft(userId, 'organizationType', event.target.value)}
-                        disabled={isProcessing}
-                      >
-                        <MenuItem value="본사">본사</MenuItem>
-                        <MenuItem value="현장">현장</MenuItem>
-                      </TextField>
-                    </TableCell>
-                    <TableCell>
-                      {draft.organizationType === '본사' ? (
-                        <TextField size="small" fullWidth value="본사" disabled />
-                      ) : (
-                        <Autocomplete
+                      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.8 }}>
+                        <TextField
+                          select
                           size="small"
-                          options={projectOptions}
-                          value={draft.projectName || null}
-                          onChange={(_event, value) => changeDraft(userId, 'projectName', value || '')}
+                          fullWidth
+                          label="구분"
+                          value={draft.organizationType}
+                          onChange={(event) => changeDraft(userId, 'organizationType', event.target.value)}
                           disabled={isProcessing}
-                          filterOptions={(options, state) => {
-                            const keyword = normalizeSearchText(state.inputValue);
-                            if (!keyword) return options;
-                            return options.filter((option) => normalizeSearchText(option).includes(keyword));
-                          }}
-                          noOptionsText="검색되는 현장이 없습니다."
-                          renderInput={(params) => <TextField {...params} placeholder="현장 검색" />}
-                        />
-                      )}
-                      {account.requested_project_name && account.requested_project_name !== draft.projectName && (
+                        >
+                          <MenuItem value="본사">본사</MenuItem>
+                          <MenuItem value="현장">현장</MenuItem>
+                        </TextField>
+
+                        {draft.organizationType === '본사' ? (
+                          <TextField size="small" fullWidth label="근무처" value="본사" disabled />
+                        ) : (
+                          <Autocomplete
+                            multiple
+                            disableCloseOnSelect
+                            limitTags={2}
+                            size="small"
+                            options={projectOptions}
+                            value={draft.projectNames || []}
+                            onChange={(_event, value) => changeDraft(userId, 'projectNames', value)}
+                            disabled={isProcessing}
+                            filterOptions={(options, state) => {
+                              const keyword = normalizeSearchText(state.inputValue);
+                              if (!keyword) return options;
+                              return options.filter((option) => normalizeSearchText(option).includes(keyword));
+                            }}
+                            noOptionsText="검색되는 현장이 없습니다."
+                            renderInput={(params) => (
+                              <TextField
+                                {...params}
+                                label="접근 현장"
+                                placeholder={(draft.projectNames || []).length === 0 ? '여러 현장 선택 가능' : ''}
+                              />
+                            )}
+                          />
+                        )}
+                      </Box>
+                      {account.requested_project_name &&
+                        account.requested_project_name !== '본사' &&
+                        !(draft.projectNames || []).includes(account.requested_project_name) && (
                         <Typography sx={{ mt: 0.35, color: '#b45309', fontSize: '0.62rem' }}>
                           가입 신청: {account.requested_project_name}
                         </Typography>

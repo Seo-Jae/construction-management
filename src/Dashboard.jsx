@@ -385,6 +385,23 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const userRole = resolveUserRole(userProfile);
   const isSuperAdmin = userRole === '최고관리자';
   const isManagementRole = ['관리자', '최고관리자'].includes(userRole);
+  const assignedProjectNames = sortProjectNames(
+    Array.from(
+      new Set(
+        [
+          ...(Array.isArray(userProfile?.project_names)
+            ? userProfile.project_names
+            : []),
+          userProfile?.project_name,
+        ]
+          .map((projectName) => String(projectName || '').trim())
+          .filter((projectName) => projectName && projectName !== '본사'),
+      ),
+    ),
+  );
+  const assignedProjectsKey = assignedProjectNames.join('\u0001');
+  const canSwitchProject =
+    isManagementRole || assignedProjectNames.length > 1;
 
   const [selectedProjectName, setSelectedProjectName] =
     useState('');
@@ -395,26 +412,30 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   ] = useState('');
 
   const [projectOptions, setProjectOptions] =
-    useState([]);
+    useState(() =>
+      isManagementRole ? [] : assignedProjectNames,
+    );
   const [projectOptionsLoading, setProjectOptionsLoading] =
     useState(false);
 
+  const defaultAssignedProjectName =
+    assignedProjectNames[0] || '';
+
   const activeProjectName = isManagementRole
     ? (
-        selectedProjectName ===
-        ALL_PROJECTS_OPTION
+        selectedProjectName === ALL_PROJECTS_OPTION
           ? ''
           : selectedProjectName
       )
-    : userProfile?.project_name || '';
+    : selectedProjectName || defaultAssignedProjectName;
 
   const cumulativeProjectScope =
     isManagementRole
       ? (
           selectedProjectName ||
           ALL_PROJECTS_OPTION
-        )
-      : userProfile?.project_name || '';
+      )
+      : activeProjectName;
 
   const activeProcessOptions =
     getProjectProcessOptions(
@@ -518,7 +539,8 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
   useEffect(() => {
     if (!isManagementRole) {
-      setProjectOptions([]);
+      setProjectOptions(assignedProjectNames);
+      setProjectOptionsLoading(false);
       return undefined;
     }
 
@@ -606,7 +628,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         handleFocus,
       );
     };
-  }, [isManagementRole]);
+  }, [assignedProjectsKey, isManagementRole]);
 
   useEffect(() => {
     const requestedView = new URLSearchParams(
@@ -618,8 +640,10 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       URL에 이전 화면의 view 값이 남아 있더라도 Main을 우선합니다.
     */
     if (!isManagementRole) {
-      setSelectedProjectName(
-        userProfile?.project_name || '',
+      setSelectedProjectName((previousProjectName) =>
+        assignedProjectNames.includes(previousProjectName)
+          ? previousProjectName
+          : defaultAssignedProjectName,
       );
       setCurrentView('main');
       return;
@@ -656,7 +680,12 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         ? previousView
         : 'admin-dashboard',
     );
-  }, [isManagementRole, userProfile?.project_name]);
+  }, [
+    assignedProjectsKey,
+    defaultAssignedProjectName,
+    isManagementRole,
+    userProfile?.project_name,
+  ]);
 
   const handleOpenAdminProject = (projectName) => {
     setSelectedProjectName(projectName);
@@ -2604,7 +2633,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             - {viewTitles[currentView] || '현장 관리'}
           </Typography>
 
-          {isManagementRole &&
+          {canSwitchProject &&
             ![
               'weekly-overview',
               'weekly-overview-archive',
@@ -2631,7 +2660,8 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                 size="small"
                 options={
                   currentView ===
-                  'daily-cumulative-workers'
+                    'daily-cumulative-workers' &&
+                  isManagementRole
                     ? [
                         ALL_PROJECTS_OPTION,
                         ...projectOptions,
