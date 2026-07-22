@@ -616,6 +616,11 @@ export default function LaborContractManagement({
   ] = useState(false);
 
   const [
+    pendingImportPrintData,
+    setPendingImportPrintData,
+  ] = useState(null);
+
+  const [
     contractPrintOpen,
     setContractPrintOpen,
   ] = useState(false);
@@ -1331,6 +1336,7 @@ export default function LaborContractManagement({
         if (duplicateCodes.has(row.workerCode)) row.issues.push('동일 근로자번호 중복');
       });
 
+      setPendingImportPrintData(null);
       setImportRows(parsedRows);
       setImportFileName(file.name);
       setImportDialogOpen(true);
@@ -1351,16 +1357,20 @@ export default function LaborContractManagement({
   };
 
   const handleSaveContractImport = async () => {
-    const invalidCount = importRows.filter((row) => row.issues.length > 0).length;
-    if (invalidCount > 0) {
-      setErrorMessage(`오류가 있는 ${invalidCount.toLocaleString()}개 행을 수정한 뒤 다시 업로드해주세요.`);
+    const validRows = importRows.filter(
+      (row) => row.issues.length === 0,
+    );
+    const invalidCount = importRows.length - validRows.length;
+
+    if (validRows.length === 0) {
+      setErrorMessage('저장할 정상 자료가 없습니다. 오류 내용을 수정한 뒤 다시 업로드해주세요.');
       return;
     }
 
     setImportSaving(true);
     setErrorMessage('');
 
-    const importedRowsSnapshot = importRows.map((row) => ({
+    const importedRowsSnapshot = validRows.map((row) => ({
       ...row,
     }));
 
@@ -1369,7 +1379,7 @@ export default function LaborContractManagement({
       p_contract_month: selectedMonth,
       p_template_version: CONTRACT_TEMPLATE_VERSION,
       p_file_name: importFileName,
-      p_rows: importRows.map((row) => ({
+      p_rows: importedRowsSnapshot.map((row) => ({
         worker_code: row.workerCode,
         name: row.name,
         phone: row.phone,
@@ -1390,29 +1400,30 @@ export default function LaborContractManagement({
       console.error('근로계약 작성자료 저장 오류:', error);
       setErrorMessage(error.message || '근로계약 작성자료를 저장하지 못했습니다.');
     } else {
-      setSuccessMessage(`${formatMonthLabel(selectedMonth)} 근로계약 작성자료 ${(data?.imported_count || importedRowsSnapshot.length).toLocaleString()}명을 반영했습니다. 엑셀에 입력한 개인정보를 적용해 PDF 생성 화면을 열었습니다.`);
+      const savedCount = data?.imported_count ?? importedRowsSnapshot.length;
+      const skippedMessage = invalidCount > 0
+        ? ` 오류 ${invalidCount.toLocaleString()}명은 저장하지 않았습니다.`
+        : '';
+
+      setSuccessMessage(`${formatMonthLabel(selectedMonth)} 근로계약 작성자료 ${savedCount.toLocaleString()}명을 저장했습니다.${skippedMessage} 계약서를 만들려면 상단의 ‘계약서 PDF 생성’ 버튼을 눌러주세요.`);
+      setPendingImportPrintData({
+        allowedWorkerCodes: importedRowsSnapshot.map(
+          (row) => row.workerCode,
+        ),
+        sensitiveByWorkerCode: Object.fromEntries(
+          importedRowsSnapshot.map((row) => [
+            row.workerCode,
+            {
+              residentNumber: row.residentNumber,
+              address: row.address,
+            },
+          ]),
+        ),
+      });
       setImportDialogOpen(false);
       setImportRows([]);
       setImportFileName('');
-      const refreshedRows = await loadStoredRows();
-      openContractPrintDialog(
-        null,
-        {
-          sourceRows: refreshedRows,
-          allowedWorkerCodes: importedRowsSnapshot.map(
-            (row) => row.workerCode,
-          ),
-          sensitiveByWorkerCode: Object.fromEntries(
-            importedRowsSnapshot.map((row) => [
-              row.workerCode,
-              {
-                residentNumber: row.residentNumber,
-                address: row.address,
-              },
-            ]),
-          ),
-        },
-      );
+      await loadStoredRows();
     }
     setImportSaving(false);
   };
@@ -1421,6 +1432,7 @@ export default function LaborContractManagement({
     setSensitivePrintInputs({});
     setSelectedPrintIds([]);
     setContractPrintError('');
+    setPendingImportPrintData(null);
   };
 
   const closeContractPrintDialog = () => {
@@ -1436,13 +1448,19 @@ export default function LaborContractManagement({
     targetRow = null,
     options = {},
   ) => {
-    const sourceRows = Array.isArray(options.sourceRows)
-      ? options.sourceRows
+    const resolvedOptions = targetRow
+      ? options
+      : {
+        ...(pendingImportPrintData || {}),
+        ...options,
+      };
+    const sourceRows = Array.isArray(resolvedOptions.sourceRows)
+      ? resolvedOptions.sourceRows
       : storedRows;
-    const allowedWorkerCodes = options.allowedWorkerCodes
-      ? new Set(options.allowedWorkerCodes)
+    const allowedWorkerCodes = resolvedOptions.allowedWorkerCodes
+      ? new Set(resolvedOptions.allowedWorkerCodes)
       : null;
-    const sensitiveByWorkerCode = options.sensitiveByWorkerCode || {};
+    const sensitiveByWorkerCode = resolvedOptions.sensitiveByWorkerCode || {};
     const initialRows = targetRow
       ? [targetRow]
       : sortRowsByContractStart(
@@ -3170,7 +3188,7 @@ export default function LaborContractManagement({
         <DialogContent dividers>
           <Stack spacing={1.2}>
             <Alert severity="warning">
-              엑셀 업로드 직후에는 주민등록번호와 주소가 자동으로 채워집니다. 이 정보는 브라우저 임시 메모리에서만 사용되며, 계약서 인쇄창을 만들거나 창을 닫으면 즉시 초기화됩니다.
+              작성자료 저장 후 상단의 ‘계약서 PDF 생성’ 버튼으로 열면 주민등록번호와 주소가 자동으로 채워집니다. 이 정보는 브라우저 임시 메모리에서만 사용되며, 계약서 인쇄창을 만들거나 창을 닫으면 즉시 초기화됩니다.
             </Alert>
 
             <Stack
@@ -3192,7 +3210,7 @@ export default function LaborContractManagement({
                   fontWeight: 800,
                 }}
               >
-                엑셀 업로드 직후에는 이번에 반영한 대상만 선택됩니다. 일반 실행 시에는 양식입력완료·반려 대상이 선택되며, 기존 대상도 필요할 때 재출력할 수 있습니다.
+                작성자료 저장 직후에는 이번에 정상 저장된 대상만 선택됩니다. 일반 실행 시에는 양식입력완료·반려 대상이 선택되며, 기존 대상도 필요할 때 재출력할 수 있습니다.
               </Typography>
 
               <FormControlLabel
@@ -3568,11 +3586,19 @@ export default function LaborContractManagement({
         </DialogTitle>
         <DialogContent dividers>
           <Stack spacing={1}>
-            <Alert severity={importRows.some((row) => row.issues.length > 0) ? 'error' : 'success'}>
+            <Alert
+              severity={
+                importRows.every((row) => row.issues.length === 0)
+                  ? 'success'
+                  : importRows.some((row) => row.issues.length === 0)
+                    ? 'warning'
+                    : 'error'
+              }
+            >
               파일: {importFileName || '-'} · 전체 {importRows.length.toLocaleString()}명 · 정상 {importRows.filter((row) => row.issues.length === 0).length.toLocaleString()}명 · 오류 {importRows.filter((row) => row.issues.length > 0).length.toLocaleString()}명
             </Alert>
             <Alert severity="info">
-              연락처는 근로자 정보에 반영하고, 주민등록번호·주소는 PDF 생성 화면에만 임시 전달합니다. 직종·공정·계약기간·일급·근무조건은 회사 고정값으로 처리합니다.
+              저장하면 정상 자료만 반영되고 오류 자료는 제외됩니다. 연락처는 근로자 정보에 반영하며, 주민등록번호·주소는 상단의 ‘계약서 PDF 생성’ 화면에만 임시 전달합니다. 직종·공정·계약기간·일급·근무조건은 회사 고정값으로 처리합니다.
             </Alert>
             <TableContainer sx={{ maxHeight: 520, border: '1px solid #e2e8f0' }}>
               <Table stickyHeader size="small" sx={{ '& th, & td': { borderRight: '1px solid #e2e8f0', fontSize: '0.68rem', whiteSpace: 'nowrap' }, '& th': { bgcolor: '#f8fafc', fontWeight: 900 } }}>
@@ -3607,13 +3633,29 @@ export default function LaborContractManagement({
                 </TableBody>
               </Table>
             </TableContainer>
-            {importRows.some((row) => row.issues.length > 0) && <Alert severity="warning">오류가 있는 행은 엑셀에서 수정한 뒤 다시 업로드해야 합니다.</Alert>}
+            {importRows.some((row) => row.issues.length > 0) && (
+              <Alert severity="warning">
+                오류 행은 이번 저장에서 제외됩니다. 필요한 경우 엑셀에서 해당 행을 수정한 뒤 다시 업로드할 수 있습니다.
+              </Alert>
+            )}
           </Stack>
         </DialogContent>
         <DialogActions>
           <Button onClick={closeContractImportDialog} disabled={importSaving}>취소</Button>
-          <Button variant="contained" startIcon={<FactCheckOutlinedIcon />} onClick={handleSaveContractImport} disabled={importSaving || importRows.length === 0 || importRows.some((row) => row.issues.length > 0)}>
-            정상 자료 반영 후 PDF 준비
+          <Button
+            variant="contained"
+            startIcon={
+              importSaving
+                ? <CircularProgress size={16} color="inherit" />
+                : <FactCheckOutlinedIcon />
+            }
+            onClick={handleSaveContractImport}
+            disabled={
+              importSaving ||
+              !importRows.some((row) => row.issues.length === 0)
+            }
+          >
+            저장
           </Button>
         </DialogActions>
       </Dialog>
