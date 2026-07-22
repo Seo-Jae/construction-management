@@ -782,6 +782,17 @@ export default function LaborContractManagement({
     setPrintRecordSaving,
   ] = useState(false);
 
+  useEffect(() => {
+    setContractPrintOpen(false);
+    setSensitivePrintInputs({});
+    setSelectedPrintIds([]);
+    setContractPrintError('');
+    setPendingImportPrintData(null);
+  }, [
+    projectName,
+    selectedMonth,
+  ]);
+
   const canManage =
     Boolean(
       accessInfo?.can_manage,
@@ -1927,7 +1938,6 @@ export default function LaborContractManagement({
         );
       }
 
-      setPendingImportPrintData(null);
       setImportRows(parsedRows);
       setImportFileName(
         `기자료 업로드 (${files.length.toLocaleString()}개 파일)`,
@@ -2075,7 +2085,6 @@ export default function LaborContractManagement({
         }
       });
 
-      setPendingImportPrintData(null);
       setImportRows(parsedRows);
       setImportFileName(file.name);
       setImportDialogOpen(true);
@@ -2199,24 +2208,40 @@ export default function LaborContractManagement({
         : '';
 
       setSuccessMessage(`${formatMonthLabel(selectedMonth)} 근로계약 작성자료 ${savedCount.toLocaleString()}명을 저장했습니다.${skippedMessage} 계약서를 만들려면 상단의 ‘계약서 PDF 생성’ 버튼을 눌러주세요.`);
-      setPendingImportPrintData({
-        allowedWorkerCodes: importedRowsSnapshot.map(
-          (row) => row.workerCode,
-        ),
-        sensitiveByWorkerCode: Object.fromEntries(
-          importedRowsSnapshot.map((row) => [
-            row.workerCode,
-            {
-              residentNumber: row.residentNumber,
-              address: row.address,
-              residentUnavailable:
-                row.residentUnavailable,
-              addressUnavailable:
-                row.addressUnavailable,
-              loaded: true,
-            },
-          ]),
-        ),
+      setPendingImportPrintData((previous) => {
+        const currentWorkerCodes =
+          importedRowsSnapshot.map(
+            (row) => row.workerCode,
+          );
+        const currentSensitiveByWorkerCode =
+          Object.fromEntries(
+            importedRowsSnapshot.map((row) => [
+              row.workerCode,
+              {
+                residentNumber:
+                  row.residentNumber,
+                address: row.address,
+                residentUnavailable:
+                  row.residentUnavailable,
+                addressUnavailable:
+                  row.addressUnavailable,
+                loaded: true,
+              },
+            ]),
+          );
+
+        return {
+          allowedWorkerCodes: [
+            ...new Set([
+              ...(previous?.allowedWorkerCodes || []),
+              ...currentWorkerCodes,
+            ]),
+          ],
+          sensitiveByWorkerCode: {
+            ...(previous?.sensitiveByWorkerCode || {}),
+            ...currentSensitiveByWorkerCode,
+          },
+        };
       });
       setImportDialogOpen(false);
       setImportRows([]);
@@ -2239,7 +2264,8 @@ export default function LaborContractManagement({
     }
 
     setContractPrintOpen(false);
-    clearContractPrintInputs();
+    setSelectedPrintIds([]);
+    setContractPrintError('');
   };
 
   const openContractPrintDialog = (
@@ -4242,7 +4268,7 @@ export default function LaborContractManagement({
         <DialogContent dividers>
           <Stack spacing={1.2}>
             <Alert severity="warning">
-              이 단계에서는 주민등록번호와 주소를 다시 입력하지 않습니다. 대상자 EXL 업로드 때 확인한 임시값으로 바로 계약서를 만들며, 인쇄창을 만들거나 창을 닫으면 즉시 폐기합니다.
+              이 단계에서는 주민등록번호와 주소를 다시 입력하지 않습니다. PDF 창만 닫으면 이번 작업의 임시자료는 유지되며, 기자료와 누락자 EXL을 이어서 올릴 수 있습니다. 인쇄창을 만들거나 계약월·현장을 바꾸거나 페이지를 종료하면 즉시 폐기합니다.
             </Alert>
 
             <Stack
@@ -4264,7 +4290,7 @@ export default function LaborContractManagement({
                   fontWeight: 800,
                 }}
               >
-                작성자료 저장 직후에는 이번에 정상 저장된 대상만 선택됩니다. 개인정보가 ‘준비됨’인 근로자만 PDF 생성 대상으로 선택할 수 있습니다.
+                이번 브라우저 작업에서 정상 저장한 기자료와 누락자 EXL이 누적됩니다. 개인정보가 ‘준비됨’인 근로자만 PDF 생성 대상으로 선택할 수 있습니다.
               </Typography>
 
               <FormControlLabel
