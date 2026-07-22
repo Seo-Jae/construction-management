@@ -119,38 +119,34 @@ const formatProposalDate = (value) => {
 };
 
 
-const getApprovalSignatureNames = (steps) => {
-  const result = {
-    director: '',
-    chief: '',
-    ceo: '',
-  };
+const getApprovalSlots = (steps) => {
+  const ordered = [...(Array.isArray(steps) ? steps : [])]
+    .sort(
+      (first, second) =>
+        Number(first?.step_order || 0) -
+        Number(second?.step_order || 0),
+    )
+    .slice(0, 3)
+    .map((step, index) => ({
+      order: index + 1,
+      position:
+        String(step?.approver_position || '').trim() ||
+        `${index + 1}차`,
+      name:
+        step?.status === 'approved'
+          ? String(step?.approver_name || '').trim()
+          : '',
+    }));
 
-  (Array.isArray(steps) ? steps : [])
-    .filter((step) => step?.status === 'approved')
-    .forEach((step) => {
-      const position = String(
-        step?.approver_position || '',
-      ).trim();
-      const name = String(
-        step?.approver_name || '',
-      ).trim();
-
-      if (!name) return;
-
-      if (
-        position.includes('대표') ||
-        position.includes('사장')
-      ) {
-        result.ceo = name;
-      } else if (position.includes('실장')) {
-        result.chief = name;
-      } else if (position === '이사') {
-        result.director = name;
-      }
+  while (ordered.length < 3) {
+    ordered.push({
+      order: ordered.length + 1,
+      position: '',
+      name: '',
     });
+  }
 
-  return result;
+  return ordered;
 };
 
 const applySignatureCell = (
@@ -256,9 +252,16 @@ const downloadWeeklyReport = async (request) => {
     payload?.managerName ||
     request?.requester_name ||
     '';
-  const approvalNames = getApprovalSignatureNames(
+  const approvalSlots = getApprovalSlots(
     request?.approval_steps,
   );
+
+  worksheet.getCell('D1').value =
+    request?.requester_position || '작성자';
+  ['E1', 'F1', 'G1'].forEach((address, index) => {
+    worksheet.getCell(address).value =
+      approvalSlots[index].position || `${index + 1}차`;
+  });
 
   applySignatureCell(
     worksheet,
@@ -268,17 +271,17 @@ const downloadWeeklyReport = async (request) => {
   applySignatureCell(
     worksheet,
     'E2',
-    approvalNames.director,
+    approvalSlots[0].name,
   );
   applySignatureCell(
     worksheet,
     'F2',
-    approvalNames.chief,
+    approvalSlots[1].name,
   );
   applySignatureCell(
     worksheet,
     'G2',
-    approvalNames.ceo,
+    approvalSlots[2].name,
   );
 
   stats.forEach((row, index) => {
@@ -389,9 +392,16 @@ const downloadProposalReport = async (request) => {
     };
   });
 
-  const approvalNames = getApprovalSignatureNames(
+  const approvalSlots = getApprovalSlots(
     request?.approval_steps,
   );
+
+  worksheet.getCell('D3').value =
+    request?.requester_position || '작성자';
+  ['E3', 'F3', 'G3'].forEach((address, index) => {
+    worksheet.getCell(address).value =
+      approvalSlots[index].position || `${index + 1}차`;
+  });
 
   applySignatureCell(
     worksheet,
@@ -401,17 +411,17 @@ const downloadProposalReport = async (request) => {
   applySignatureCell(
     worksheet,
     'E4',
-    approvalNames.director,
+    approvalSlots[0].name,
   );
   applySignatureCell(
     worksheet,
     'F4',
-    approvalNames.chief,
+    approvalSlots[1].name,
   );
   applySignatureCell(
     worksheet,
     'G4',
-    approvalNames.ceo,
+    approvalSlots[2].name,
   );
 
   const narrative =
@@ -503,29 +513,20 @@ const previewValueSx = {
 
 function ApprovalSignArea({
   authorName,
+  authorPosition,
   approvalSteps = [],
 }) {
-  const approvalNames = getApprovalSignatureNames(
-    approvalSteps,
-  );
+  const approvalSlots = getApprovalSlots(approvalSteps);
 
   const signatures = [
     {
-      role: '담당',
+      role: authorPosition || '작성자',
       name: authorName,
     },
-    {
-      role: '이사',
-      name: approvalNames.director,
-    },
-    {
-      role: '실장',
-      name: approvalNames.chief,
-    },
-    {
-      role: '사장',
-      name: approvalNames.ceo,
-    },
+    ...approvalSlots.map((slot) => ({
+      role: slot.position || `${slot.order}차`,
+      name: slot.name,
+    })),
   ];
 
   return (
@@ -698,6 +699,7 @@ function WeeklyPreview({ request }) {
 
         <ApprovalSignArea
           authorName={managerName}
+          authorPosition={request?.requester_position}
           approvalSteps={request?.approval_steps}
         />
       </Box>
@@ -978,6 +980,7 @@ function ProposalPreview({ request }) {
 
         <ApprovalSignArea
           authorName={authorName}
+          authorPosition={request?.requester_position}
           approvalSteps={request?.approval_steps}
         />
       </Box>

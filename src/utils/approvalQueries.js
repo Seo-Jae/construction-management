@@ -1,4 +1,10 @@
 import { supabase } from '../supabaseClient';
+import {
+  DOCUMENT_SELECT,
+  STEP_SELECT,
+  fetchDocumentSteps,
+  toApprovalRequest,
+} from './reportDocuments.js';
 
 const normalizeEmail = (value) =>
   String(value || '').trim().toLowerCase();
@@ -9,22 +15,26 @@ export const getCurrentApprovalIdentity = async () => {
     error,
   } = await supabase.auth.getUser();
 
-  if (error) {
-    throw error;
-  }
+  if (error) throw error;
 
-  const email = normalizeEmail(user?.email);
   const userId = String(user?.id || '').trim();
+  const email = normalizeEmail(user?.email);
 
-  if (!userId || !email) {
-    throw new Error(
-      '로그인 계정 정보를 확인하지 못했습니다.',
-    );
+  if (!userId) {
+    throw new Error('로그인 계정 정보를 확인하지 못했습니다.');
   }
+
+  const { data: profile } = await supabase
+    .from('user_profiles')
+    .select('manager_name, position_title')
+    .eq('auth_user_id', userId)
+    .maybeSingle();
 
   return {
     userId,
     email,
+    displayName: profile?.manager_name || email || '사용자',
+    position: profile?.position_title || '',
   };
 };
 
@@ -33,66 +43,39 @@ export const getCurrentApprovalEmail = async () => {
   return identity.email;
 };
 
-const REQUEST_SELECT = `
-  id,
-  report_type,
-  report_title,
-  report_key,
-  project_name,
-  requester_user_id,
-  requester_name,
-  requester_email,
-  payload,
-  status,
-  current_step_order,
-  current_approver_email,
-  created_at,
-  completed_at
-`;
-
-const fetchRequestsByIds = async (requestIds) => {
-  if (!Array.isArray(requestIds) || requestIds.length === 0) {
-    return [];
-  }
-
-  const { data, error } = await supabase
-    .from('approval_requests')
-    .select(REQUEST_SELECT)
-    .in('id', requestIds);
-
-  if (error) {
-    throw error;
-  }
-
-  return data || [];
-};
-
 export const fetchPendingApprovalSummary = async () => {
-  const { email } = await getCurrentApprovalIdentity();
+  const { userId } = await getCurrentApprovalIdentity();
 
-  /*
-    현재 차례인 pending뿐 아니라 이후 순서인 waiting도
-    결재함에 들어온 열린 건으로 집계합니다.
-  */
   const { data: steps, error: stepError } = await supabase
-    .from('approval_steps')
-    .select('id, request_id, status')
-    .eq('approver_email', email)
-    .in('status', ['pending', 'waiting'])
-    .order('created_at', { ascending: false });
+    .from('report_document_approval_steps')
+    .select('id, document_id, status')
+    .eq('approver_user_id', userId)
+    .eq('status', 'pending');
 
-  if (stepError) {
-    throw stepError;
+  if (stepError) throw stepError;
+
+  const documentIds = (steps || []).map((step) => step.document_id);
+
+  if (documentIds.length === 0) {
+    return {
+      counts: {
+        total: 0,
+        actionable: 0,
+        waiting: 0,
+        weekly: 0,
+        proposal: 0,
+        other: 0,
+      },
+    };
   }
 
-  const requestIds = Array.from(
-    new Set((steps || []).map((step) => step.request_id)),
-  );
+  const { data: documents, error: documentError } = await supabase
+    .from('report_documents')
+    .select('id, report_type, status')
+    .in('id', documentIds)
+    .eq('status', 'pending');
 
-  const requests = await fetchRequestsByIds(requestIds);
-  const requestMap = new Map(
-    requests.map((request) => [request.id, request]),
-  );
+  if (documentError) throw documentError;
 
   const counts = {
     total: 0,
@@ -103,34 +86,16 @@ export const fetchPendingApprovalSummary = async () => {
     other: 0,
   };
 
-  (steps || []).forEach((step) => {
-    const request = requestMap.get(step.request_id);
-
-    if (!request || request.status !== 'pending') {
-      return;
-    }
-
+  (documents || []).forEach((document) => {
     counts.total += 1;
+    counts.actionable += 1;
 
-    if (step.status === 'pending') {
-      counts.actionable += 1;
-    } else {
-      counts.waiting += 1;
-    }
-
-    if (request.report_type === 'weekly') {
-      counts.weekly += 1;
-    } else if (request.report_type === 'proposal') {
-      counts.proposal += 1;
-    } else {
-      counts.other += 1;
-    }
+    if (document.report_type === 'weekly') counts.weekly += 1;
+    else if (document.report_type === 'proposal') counts.proposal += 1;
+    else counts.other += 1;
   });
 
-  return {
-    email,
-    counts,
-  };
+  return { counts };
 };
 
 export const fetchReportApprovalStatus = async ({
@@ -138,231 +103,132 @@ export const fetchReportApprovalStatus = async ({
   reportKey,
   projectName = '',
 }) => {
-  if (!reportType || !reportKey) {
-    return null;
-  }
+  if (!reportType || !reportKey) return null;
 
   const { userId } = await getCurrentApprovalIdentity();
-
   let query = supabase
-    .from('approval_requests')
-    .select(
-      `
-      id,
-      report_type,
-      report_title,
-      report_key,
-      project_name,
-      status,
-      current_step_order,
-      current_approver_email,
-      created_at,
-      completed_at
-    `,
-    )
-    .eq('requester_user_id', userId)
+    .from('report_documents')
+    .select(DOCUMENT_SELECT)
+    .eq('author_user_id', userId)
     .eq('report_type', reportType)
     .eq('report_key', reportKey)
     .order('created_at', { ascending: false })
-    .limit(20);
+    .limit(1);
 
-  if (projectName) {
-    query = query.eq('project_name', projectName);
-  }
+  if (projectName) query = query.eq('project_name', projectName);
 
   const { data, error } = await query;
+  if (error) throw error;
+  return data?.[0] || null;
+};
 
-  if (error) {
-    throw error;
-  }
+const fetchDocumentsByIds = async (documentIds) => {
+  if (!documentIds.length) return [];
 
-  const rows = data || [];
+  const { data, error } = await supabase
+    .from('report_documents')
+    .select(DOCUMENT_SELECT)
+    .in('id', documentIds);
 
-  /*
-    같은 보고서가 여러 차례 반려 후 재요청될 수 있으므로
-    pending을 최우선, 승인완료를 그다음으로 판단합니다.
-  */
-  return (
-    rows.find((row) => row.status === 'pending') ||
-    rows.find((row) => row.status === 'approved') ||
-    rows[0] ||
-    null
-  );
+  if (error) throw error;
+  return data || [];
 };
 
 export const fetchApprovalInboxData = async () => {
-  const { userId, email } =
-    await getCurrentApprovalIdentity();
+  const { userId, email, displayName } = await getCurrentApprovalIdentity();
 
   const [
     { data: ownSteps, error: ownStepError },
-    { data: ownRequests, error: ownRequestError },
+    { data: ownDocuments, error: ownDocumentError },
   ] = await Promise.all([
     supabase
-      .from('approval_steps')
-      .select(
-        `
-        id,
-        request_id,
-        step_order,
-        approver_name,
-        approver_position,
-        approver_email,
-        status,
-        acted_at,
-        comment,
-        created_at
-      `,
-      )
-      .eq('approver_email', email)
+      .from('report_document_approval_steps')
+      .select(STEP_SELECT)
+      .eq('approver_user_id', userId)
+      .neq('status', 'waiting')
       .order('created_at', { ascending: false }),
-
     supabase
-      .from('approval_requests')
-      .select(REQUEST_SELECT)
-      .eq('requester_user_id', userId)
+      .from('report_documents')
+      .select(DOCUMENT_SELECT)
+      .eq('author_user_id', userId)
+      .neq('status', 'draft')
       .order('created_at', { ascending: false }),
   ]);
 
-  if (ownStepError) {
-    throw ownStepError;
-  }
+  if (ownStepError) throw ownStepError;
+  if (ownDocumentError) throw ownDocumentError;
 
-  if (ownRequestError) {
-    throw ownRequestError;
-  }
-
-  const requestIds = Array.from(
+  const documentIds = Array.from(
     new Set([
-      ...(ownSteps || []).map((step) => step.request_id),
-      ...(ownRequests || []).map((request) => request.id),
+      ...(ownSteps || []).map((step) => step.document_id),
+      ...(ownDocuments || []).map((document) => document.id),
     ]),
   );
 
-  if (requestIds.length === 0) {
-    return {
-      email,
-      items: [],
-      stepsByRequest: {},
-    };
+  if (documentIds.length === 0) {
+    return { email, displayName, items: [], stepsByRequest: {} };
   }
 
-  const additionalRequests = await fetchRequestsByIds(
-    requestIds,
+  const documents = await fetchDocumentsByIds(documentIds);
+  const documentMap = new Map(documents.map((document) => [document.id, document]));
+  const stepsByRequest = await fetchDocumentSteps(documents);
+  const requestMap = new Map(
+    documents.map((document) => [
+      document.id,
+      toApprovalRequest(document, stepsByRequest[document.id] || []),
+    ]),
   );
-
-  const requestMap = new Map();
-
-  [...additionalRequests, ...(ownRequests || [])].forEach(
-    (request) => {
-      requestMap.set(request.id, request);
-    },
-  );
-
-  const { data: allSteps, error: allStepError } =
-    await supabase
-      .from('approval_steps')
-      .select(
-        `
-        id,
-        request_id,
-        step_order,
-        approver_name,
-        approver_position,
-        approver_email,
-        status,
-        acted_at,
-        comment,
-        created_at
-      `,
-      )
-      .in('request_id', requestIds)
-      .order('step_order', { ascending: true });
-
-  if (allStepError) {
-    throw allStepError;
-  }
-
-  const stepsByRequest = {};
-
-  (allSteps || []).forEach((step) => {
-    if (!stepsByRequest[step.request_id]) {
-      stepsByRequest[step.request_id] = [];
-    }
-
-    stepsByRequest[step.request_id].push(step);
-  });
 
   const approverItems = (ownSteps || [])
+    .filter((step) => {
+      const document = documentMap.get(step.document_id);
+      return (
+        document &&
+        Number(step.approval_round) === Number(document.current_round)
+      );
+    })
     .map((step) => ({
       ...step,
+      request_id: step.document_id,
       item_kind: 'approver',
-      approval_requests:
-        requestMap.get(step.request_id) || null,
+      approval_requests: requestMap.get(step.document_id) || null,
     }))
     .filter((item) => item.approval_requests);
 
-  /*
-    요청자가 자신의 진행중·승인·반려 결과를 같은 결재함에서
-    확인하도록 요청자 전용 항목을 추가합니다.
-  */
-  const requesterItems = (ownRequests || []).map((request) => ({
-    id: `requester-${request.id}`,
-    request_id: request.id,
+  const requesterItems = (ownDocuments || []).map((document) => ({
+    id: `requester-${document.id}`,
+    request_id: document.id,
     item_kind: 'requester',
     step_order: 0,
     approver_name: '',
     approver_position: '',
-    approver_email: email,
-    status: request.status,
-    acted_at: request.completed_at,
+    approver_email: '',
+    status: document.status,
+    acted_at: document.completed_at,
     comment: '',
-    created_at: request.created_at,
-    approval_requests: request,
+    created_at: document.submitted_at || document.created_at,
+    approval_requests: requestMap.get(document.id) || null,
   }));
 
-  const items = [
-    ...approverItems,
-    ...requesterItems,
-  ].sort((a, b) => {
-    const aActionable =
-      a.item_kind === 'approver' &&
-      a.status === 'pending' &&
-      a.approval_requests?.status === 'pending';
+  const items = [...approverItems, ...requesterItems].sort((first, second) => {
+    const firstActionable =
+      first.item_kind === 'approver' &&
+      first.status === 'pending' &&
+      first.approval_requests?.status === 'pending';
+    const secondActionable =
+      second.item_kind === 'approver' &&
+      second.status === 'pending' &&
+      second.approval_requests?.status === 'pending';
 
-    const bActionable =
-      b.item_kind === 'approver' &&
-      b.status === 'pending' &&
-      b.approval_requests?.status === 'pending';
-
-    if (aActionable !== bActionable) {
-      return aActionable ? -1 : 1;
-    }
-
-    const aRejected =
-      a.item_kind === 'requester' &&
-      a.approval_requests?.status === 'rejected';
-
-    const bRejected =
-      b.item_kind === 'requester' &&
-      b.approval_requests?.status === 'rejected';
-
-    if (aRejected !== bRejected) {
-      return aRejected ? -1 : 1;
-    }
+    if (firstActionable !== secondActionable) return firstActionable ? -1 : 1;
 
     return String(
-      b.approval_requests?.created_at || b.created_at,
+      second.approval_requests?.created_at || second.created_at,
     ).localeCompare(
-      String(
-        a.approval_requests?.created_at || a.created_at,
-      ),
+      String(first.approval_requests?.created_at || first.created_at),
     );
   });
 
-  return {
-    email,
-    items,
-    stepsByRequest,
-  };
+  return { email, displayName, items, stepsByRequest };
 };
+

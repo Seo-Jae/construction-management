@@ -373,7 +373,7 @@ function ReportSnapshot({ request }) {
 }
 
 export default function ApprovalInbox() {
-  const [userEmail, setUserEmail] = useState('');
+  const [userLabel, setUserLabel] = useState('');
   const [items, setItems] = useState([]);
   const [stepsByRequest, setStepsByRequest] = useState({});
   const [comments, setComments] = useState({});
@@ -403,7 +403,7 @@ export default function ApprovalInbox() {
     try {
       const result = await fetchApprovalInboxData();
 
-      setUserEmail(result.email);
+      setUserLabel(result.displayName || '사용자');
       setItems(result.items);
       setStepsByRequest(result.stepsByRequest);
 
@@ -513,15 +513,7 @@ export default function ApprovalInbox() {
         throw new Error(data.error);
       }
 
-      const emailMessage = data?.emailSent
-        ? '다음 대상에게 이메일이 발송되었습니다.'
-        : data?.emailWarning
-          ? `\n이메일 안내: ${data.emailWarning}`
-          : '';
-
-      window.alert(
-        `${actionName} 처리가 완료되었습니다.${emailMessage}`,
-      );
+      window.alert(`${actionName} 처리가 완료되었습니다.`);
 
       window.dispatchEvent(
         new Event('approval-workflow-changed'),
@@ -542,13 +534,6 @@ export default function ApprovalInbox() {
     (item) =>
       item.item_kind === 'approver' &&
       item.status === 'pending' &&
-      item.approval_requests?.status === 'pending',
-  ).length;
-
-  const waitingCount = items.filter(
-    (item) =>
-      item.item_kind === 'approver' &&
-      item.status === 'waiting' &&
       item.approval_requests?.status === 'pending',
   ).length;
 
@@ -605,9 +590,8 @@ export default function ApprovalInbox() {
                 fontSize: '0.7rem',
               }}
             >
-              {userEmail || '-'} · 지금 처리할 결재{' '}
-              {pendingCount.toLocaleString()}건 · 결재 예정{' '}
-              {waitingCount.toLocaleString()}건 · 처리 결과{' '}
+              {userLabel || '-'} · 지금 처리할 결재{' '}
+              {pendingCount.toLocaleString()}건 · 처리 결과{' '}
               {requesterResultCount.toLocaleString()}건
             </Typography>
           </Box>
