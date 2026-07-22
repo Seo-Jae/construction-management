@@ -16,6 +16,7 @@ import EngineeringIcon from '@mui/icons-material/Engineering';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
 import BadgeOutlinedIcon from '@mui/icons-material/BadgeOutlined';
+import ManageAccountsOutlinedIcon from '@mui/icons-material/ManageAccountsOutlined';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { fetchPendingApprovalSummary } from '../utils/approvalQueries.js';
@@ -252,6 +253,7 @@ export default function Sidebar({
   userRole = '담당자',
 }) {
   const isManagementRole = ['관리자', '최고관리자'].includes(userRole);
+  const isSuperAdmin = userRole === '최고관리자';
   const isDailyView = [
     'daily',
     'daily-monthly-workers',
@@ -444,6 +446,41 @@ export default function Sidebar({
                 fontSize: '0.8rem',
                 fontWeight:
                   currentView === 'admin-dashboard' ? 700 : 500,
+              }}
+              sx={{ opacity: drawerOpen ? 1 : 0 }}
+            />
+          </ListItemButton>
+        </Tooltip>
+      )}
+
+      {isSuperAdmin && (
+        <Tooltip
+          title={drawerOpen ? '' : '회원관리'}
+          placement="right"
+          arrow
+        >
+          <ListItemButton
+            selected={currentView === 'user-management'}
+            onClick={() => handleViewChange('user-management')}
+            sx={topMenuSx(currentView === 'user-management')}
+          >
+            <ListItemIcon
+              sx={{
+                minWidth: 34,
+                color: 'inherit',
+                justifyContent: 'center',
+              }}
+            >
+              <ManageAccountsOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+
+            <ListItemText
+              primary="회원관리"
+              primaryTypographyProps={{
+                noWrap: true,
+                fontSize: '0.8rem',
+                fontWeight:
+                  currentView === 'user-management' ? 700 : 500,
               }}
               sx={{ opacity: drawerOpen ? 1 : 0 }}
             />

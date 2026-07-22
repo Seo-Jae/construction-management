@@ -1,10 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
+  Autocomplete,
   Box,
   Button,
+  Checkbox,
   Divider,
+  FormControlLabel,
   Paper,
   TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from '@mui/material';
 import { supabase } from './supabaseClient';
@@ -24,7 +30,7 @@ const DEFAULT_NOTICES = [
     category: '안내',
     title: '계정 및 권한 관련 안내',
     content:
-      '로그인 계정과 현장 권한에 문제가 있는 경우 최고관리자에게 문의해주세요.',
+      '회원가입 후 최고관리자의 승인이 완료되어야 시스템을 이용할 수 있습니다.',
   },
   {
     id: 3,
@@ -35,6 +41,18 @@ const DEFAULT_NOTICES = [
       '관리자와 최고관리자는 전체 현장의 금일 출력과 공정 현황을 확인할 수 있습니다.',
   },
 ];
+
+const EMPTY_SIGNUP_FORM = {
+  email: '',
+  password: '',
+  passwordConfirm: '',
+  managerName: '',
+  organizationType: '현장',
+  projectName: '',
+  positionTitle: '',
+};
+
+const REMEMBERED_EMAIL_KEY = 'wooklim-remembered-login-email';
 
 const formatNoticeDate = (value) => {
   if (!value) return '';
@@ -56,10 +74,26 @@ const formatNoticeDate = (value) => {
     .replace(/\.$/, '');
 };
 
+const normalizeSearchText = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/\s+/g, '');
+
 export default function Login() {
-  const [email, setEmail] = useState('');
+  const [mode, setMode] = useState('login');
+  const [email, setEmail] = useState(() =>
+    window.localStorage.getItem(REMEMBERED_EMAIL_KEY) || '',
+  );
   const [password, setPassword] = useState('');
+  const [rememberEmail, setRememberEmail] = useState(() =>
+    Boolean(window.localStorage.getItem(REMEMBERED_EMAIL_KEY)),
+  );
+  const [signupForm, setSignupForm] = useState(EMPTY_SIGNUP_FORM);
+  const [projectOptions, setProjectOptions] = useState([]);
+  const [projectLoading, setProjectLoading] = useState(false);
+  const [projectError, setProjectError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState(null);
   const [logoError, setLogoError] = useState(false);
   const [notices, setNotices] = useState(DEFAULT_NOTICES);
 
@@ -89,12 +123,67 @@ export default function Login() {
     };
   }, []);
 
+  useEffect(() => {
+    if (mode !== 'signup' || projectOptions.length > 0) return;
+
+    let active = true;
+
+    const loadProjectOptions = async () => {
+      setProjectLoading(true);
+      setProjectError('');
+
+      const { data, error } = await supabase.rpc(
+        'list_registration_projects',
+      );
+
+      if (!active) return;
+
+      if (error) {
+        console.error('회원가입 현장목록 조회 오류:', error);
+        setProjectError(
+          '현장목록을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.',
+        );
+        setProjectLoading(false);
+        return;
+      }
+
+      setProjectOptions(
+        (Array.isArray(data) ? data : [])
+          .map((row) =>
+            String(row?.project_name || row || '').trim(),
+          )
+          .filter(Boolean),
+      );
+      setProjectLoading(false);
+    };
+
+    loadProjectOptions();
+
+    return () => {
+      active = false;
+    };
+  }, [mode, projectOptions.length]);
+
+  const visibleProjectOptions = useMemo(
+    () =>
+      [...new Set(projectOptions)].sort((first, second) =>
+        first.localeCompare(second, 'ko', { numeric: true }),
+      ),
+    [projectOptions],
+  );
+
+  const changeMode = (nextMode) => {
+    if (loading || !nextMode) return;
+    setMode(nextMode);
+    setMessage(null);
+  };
+
   const handleLogin = async (event) => {
     event.preventDefault();
-
     if (loading) return;
 
     setLoading(true);
+    setMessage(null);
 
     try {
       const { error } = await supabase.auth.signInWithPassword({
@@ -102,12 +191,129 @@ export default function Login() {
         password,
       });
 
-      if (error) {
-        throw error;
+      if (error) throw error;
+
+      if (rememberEmail) {
+        window.localStorage.setItem(
+          REMEMBERED_EMAIL_KEY,
+          email.trim().toLowerCase(),
+        );
+      } else {
+        window.localStorage.removeItem(REMEMBERED_EMAIL_KEY);
       }
     } catch (error) {
       console.error('로그인 오류:', error);
-      alert('로그인 실패: 이메일이나 비밀번호를 확인해주세요.');
+      const isBanned = String(error?.message || '')
+        .toLowerCase()
+        .includes('banned');
+
+      setMessage({
+        severity: 'error',
+        text: isBanned
+          ? '사용이 중지된 계정입니다. 최고관리자에게 문의해주세요.'
+          : '로그인 실패: 이메일이나 비밀번호를 확인해주세요.',
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSignupChange = (field, value) => {
+    setSignupForm((previous) => ({
+      ...previous,
+      [field]: value,
+      ...(field === 'organizationType'
+        ? { projectName: value === '본사' ? '본사' : '' }
+        : {}),
+    }));
+  };
+
+  const handleSignup = async (event) => {
+    event.preventDefault();
+    if (loading) return;
+
+    const preparedEmail = signupForm.email.trim().toLowerCase();
+    const preparedName = signupForm.managerName.trim();
+    const preparedPosition = signupForm.positionTitle.trim();
+    const preparedProject =
+      signupForm.organizationType === '본사'
+        ? '본사'
+        : signupForm.projectName.trim();
+
+    if (!preparedProject) {
+      setMessage({
+        severity: 'error',
+        text: '근무할 현장을 검색해 선택해주세요.',
+      });
+      return;
+    }
+
+    if (!preparedName || !preparedPosition) {
+      setMessage({
+        severity: 'error',
+        text: '이름과 직책을 모두 입력해주세요.',
+      });
+      return;
+    }
+
+    if (signupForm.password.length < 8) {
+      setMessage({
+        severity: 'error',
+        text: '비밀번호는 8자 이상으로 입력해주세요.',
+      });
+      return;
+    }
+
+    if (signupForm.password !== signupForm.passwordConfirm) {
+      setMessage({
+        severity: 'error',
+        text: '비밀번호 확인 값이 일치하지 않습니다.',
+      });
+      return;
+    }
+
+    setLoading(true);
+    setMessage(null);
+
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: preparedEmail,
+        password: signupForm.password,
+        options: {
+          emailRedirectTo: window.location.origin,
+          data: {
+            manager_name: preparedName,
+            organization_type: signupForm.organizationType,
+            requested_project_name: preparedProject,
+            position_title: preparedPosition,
+          },
+        },
+      });
+
+      if (error) throw error;
+
+      if (data?.session) {
+        await supabase.auth.signOut();
+      }
+
+      setEmail(preparedEmail);
+      setPassword('');
+      setSignupForm(EMPTY_SIGNUP_FORM);
+      setMode('login');
+      setMessage({
+        severity: 'success',
+        text: data?.user?.identities?.length === 0
+          ? '이미 가입된 이메일입니다. 로그인하거나 비밀번호 찾기를 이용해주세요.'
+          : '가입 요청이 접수되었습니다. 이메일 확인 후 최고관리자에게 승인을 요청해주세요.',
+      });
+    } catch (error) {
+      console.error('회원가입 오류:', error);
+      setMessage({
+        severity: 'error',
+        text:
+          error?.message ||
+          '회원가입 요청을 처리하지 못했습니다. 잠시 후 다시 시도해주세요.',
+      });
     } finally {
       setLoading(false);
     }
@@ -138,7 +344,6 @@ export default function Login() {
           height: 520,
           borderRadius: '50%',
           bgcolor: 'rgba(15, 83, 140, 0.07)',
-          pointerEvents: 'none',
         }}
       />
 
@@ -151,7 +356,6 @@ export default function Login() {
           height: 620,
           borderRadius: '50%',
           bgcolor: 'rgba(30, 64, 175, 0.06)',
-          pointerEvents: 'none',
         }}
       />
 
@@ -160,7 +364,7 @@ export default function Login() {
         sx={{
           width: '100%',
           maxWidth: 1220,
-          minHeight: { xs: 'auto', md: 650 },
+          minHeight: { xs: 'auto', md: 680 },
           borderRadius: { xs: 3, md: 4 },
           border: '1px solid rgba(148, 163, 184, 0.28)',
           boxShadow: '0 28px 75px rgba(15, 23, 42, 0.14)',
@@ -168,18 +372,17 @@ export default function Login() {
           display: 'grid',
           gridTemplateColumns: {
             xs: '1fr',
-            md: 'minmax(420px, 0.88fr) minmax(500px, 1.12fr)',
+            md: 'minmax(440px, 0.9fr) minmax(500px, 1.1fr)',
           },
           position: 'relative',
           zIndex: 1,
           bgcolor: '#ffffff',
         }}
       >
-        {/* 로그인 영역 */}
         <Box
           sx={{
             px: { xs: 3, sm: 5, md: 6 },
-            py: { xs: 4, md: 6 },
+            py: { xs: 4, md: 5 },
             display: 'flex',
             flexDirection: 'column',
             justifyContent: 'center',
@@ -199,27 +402,15 @@ export default function Login() {
             }}
           />
 
-          <Box sx={{ mb: 4 }}>
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1.6,
-                mb: 2.2,
-              }}
-            >
+          <Box sx={{ mb: mode === 'login' ? 3.5 : 2.3 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.6, mb: 1.5 }}>
               {!logoError ? (
                 <Box
                   component="img"
                   src="/images/wooklim-logo.png"
                   alt="욱림건설 로고"
                   onError={() => setLogoError(true)}
-                  sx={{
-                    width: 58,
-                    height: 58,
-                    objectFit: 'contain',
-                    flexShrink: 0,
-                  }}
+                  sx={{ width: 58, height: 58, objectFit: 'contain' }}
                 />
               ) : (
                 <Box
@@ -234,8 +425,6 @@ export default function Login() {
                     justifyContent: 'center',
                     fontSize: '1.35rem',
                     fontWeight: 900,
-                    letterSpacing: '-0.04em',
-                    flexShrink: 0,
                   }}
                 >
                   욱림
@@ -253,16 +442,12 @@ export default function Login() {
                 >
                   WOOKLIM CONSTRUCTION
                 </Typography>
-
                 <Typography
                   component="h1"
                   sx={{
                     mt: 0.25,
                     color: '#0f172a',
-                    fontSize: {
-                      xs: '1.22rem',
-                      sm: '1.38rem',
-                    },
+                    fontSize: { xs: '1.22rem', sm: '1.38rem' },
                     lineHeight: 1.35,
                     fontWeight: 900,
                     letterSpacing: '-0.035em',
@@ -273,118 +458,246 @@ export default function Login() {
               </Box>
             </Box>
 
-            <Typography
-              sx={{
-                color: '#475569',
-                fontSize: '0.88rem',
-                lineHeight: 1.7,
-              }}
-            >
-              관리자에게 발급받은 계정으로 로그인해주세요.
-            </Typography>
-          </Box>
-
-          <Box
-            component="form"
-            onSubmit={handleLogin}
-            sx={{
-              display: 'flex',
-              flexDirection: 'column',
-              gap: 2,
-            }}
-          >
-            <TextField
-              label="이메일"
-              type="email"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              required
+            <ToggleButtonGroup
+              exclusive
               fullWidth
-              autoComplete="email"
-              disabled={loading}
+              size="small"
+              value={mode}
+              onChange={(_event, value) => changeMode(value)}
               sx={{
-                '& .MuiOutlinedInput-root': {
-                  height: 56,
-                  borderRadius: 1.8,
-                  bgcolor: '#fbfdff',
-                  '&:hover fieldset': {
-                    borderColor: '#5696c8',
-                  },
-                  '&.Mui-focused fieldset': {
-                    borderWidth: 1.5,
-                    borderColor: '#0f6fae',
-                  },
+                mt: 1.3,
+                '& .MuiToggleButton-root': {
+                  py: 0.8,
+                  fontWeight: 900,
+                  borderColor: '#cbd5e1',
                 },
-              }}
-            />
-
-            <TextField
-              label="비밀번호"
-              type="password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              required
-              fullWidth
-              autoComplete="current-password"
-              disabled={loading}
-              sx={{
-                '& .MuiOutlinedInput-root': {
-                  height: 56,
-                  borderRadius: 1.8,
-                  bgcolor: '#fbfdff',
-                  '&:hover fieldset': {
-                    borderColor: '#5696c8',
-                  },
-                  '&.Mui-focused fieldset': {
-                    borderWidth: 1.5,
-                    borderColor: '#0f6fae',
-                  },
-                },
-              }}
-            />
-
-            <Button
-              type="submit"
-              variant="contained"
-              size="large"
-              disabled={loading}
-              sx={{
-                mt: 0.7,
-                height: 54,
-                borderRadius: 1.8,
-                bgcolor: '#0f6fae',
-                fontSize: '0.94rem',
-                fontWeight: 900,
-                letterSpacing: '0.02em',
-                boxShadow: '0 10px 22px rgba(15, 111, 174, 0.22)',
-                '&:hover': {
-                  bgcolor: '#0b5f98',
-                  boxShadow: '0 12px 26px rgba(15, 111, 174, 0.27)',
+                '& .Mui-selected': {
+                  color: '#0f6fae !important',
+                  bgcolor: '#eaf5fc !important',
                 },
               }}
             >
-              {loading ? '로그인 중...' : '로그인'}
-            </Button>
+              <ToggleButton value="login">로그인</ToggleButton>
+              <ToggleButton value="signup">회원가입</ToggleButton>
+            </ToggleButtonGroup>
           </Box>
 
-          <Box sx={{ mt: 3.2 }}>
+          {message && (
+            <Alert severity={message.severity} sx={{ mb: 2, fontSize: '0.76rem' }}>
+              {message.text}
+            </Alert>
+          )}
+
+          {mode === 'login' ? (
+            <Box component="form" onSubmit={handleLogin} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <TextField
+                label="이메일"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                required
+                fullWidth
+                autoComplete="email"
+                disabled={loading}
+              />
+              <TextField
+                label="비밀번호"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                required
+                fullWidth
+                autoComplete="current-password"
+                disabled={loading}
+              />
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    size="small"
+                    checked={rememberEmail}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setRememberEmail(checked);
+
+                      if (!checked) {
+                        window.localStorage.removeItem(
+                          REMEMBERED_EMAIL_KEY,
+                        );
+                      }
+                    }}
+                    disabled={loading}
+                  />
+                }
+                label="아이디 기억하기"
+                sx={{
+                  mt: -0.7,
+                  mb: -0.6,
+                  width: 'fit-content',
+                  '& .MuiFormControlLabel-label': {
+                    color: '#64748b',
+                    fontSize: '0.76rem',
+                  },
+                }}
+              />
+              <Button
+                type="submit"
+                variant="contained"
+                size="large"
+                disabled={loading}
+                sx={{
+                  mt: 0.7,
+                  height: 54,
+                  bgcolor: '#0f6fae',
+                  fontWeight: 900,
+                  boxShadow: 'none',
+                  '&:hover': { bgcolor: '#0b5f98' },
+                }}
+              >
+                {loading ? '로그인 중...' : '로그인'}
+              </Button>
+            </Box>
+          ) : (
+            <Box component="form" onSubmit={handleSignup} sx={{ display: 'flex', flexDirection: 'column', gap: 1.35 }}>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.2 }}>
+                <TextField
+                  label="이름"
+                  value={signupForm.managerName}
+                  onChange={(event) => handleSignupChange('managerName', event.target.value)}
+                  required
+                  fullWidth
+                  disabled={loading}
+                />
+                <TextField
+                  label="직책"
+                  placeholder="예: 소장, 차장, 과장"
+                  value={signupForm.positionTitle}
+                  onChange={(event) => handleSignupChange('positionTitle', event.target.value)}
+                  required
+                  fullWidth
+                  disabled={loading}
+                />
+              </Box>
+
+              <TextField
+                label="이메일 아이디"
+                type="email"
+                value={signupForm.email}
+                onChange={(event) => handleSignupChange('email', event.target.value)}
+                required
+                fullWidth
+                autoComplete="email"
+                disabled={loading}
+              />
+
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1.2 }}>
+                <TextField
+                  label="비밀번호"
+                  type="password"
+                  value={signupForm.password}
+                  onChange={(event) => handleSignupChange('password', event.target.value)}
+                  helperText="8자 이상"
+                  required
+                  fullWidth
+                  autoComplete="new-password"
+                  disabled={loading}
+                />
+                <TextField
+                  label="비밀번호 확인"
+                  type="password"
+                  value={signupForm.passwordConfirm}
+                  onChange={(event) => handleSignupChange('passwordConfirm', event.target.value)}
+                  required
+                  fullWidth
+                  autoComplete="new-password"
+                  disabled={loading}
+                />
+              </Box>
+
+              <ToggleButtonGroup
+                exclusive
+                fullWidth
+                size="small"
+                value={signupForm.organizationType}
+                onChange={(_event, value) => {
+                  if (value) handleSignupChange('organizationType', value);
+                }}
+                disabled={loading}
+              >
+                <ToggleButton value="본사">구분(1) · 본사</ToggleButton>
+                <ToggleButton value="현장">구분(1) · 현장</ToggleButton>
+              </ToggleButtonGroup>
+
+              {signupForm.organizationType === '본사' ? (
+                <TextField
+                  label="구분(2)"
+                  value="본사"
+                  fullWidth
+                  disabled
+                  helperText="본사는 자동 입력되며 수정할 수 없습니다."
+                />
+              ) : (
+                <Autocomplete
+                  options={visibleProjectOptions}
+                  value={signupForm.projectName || null}
+                  onChange={(_event, value) =>
+                    handleSignupChange('projectName', value || '')
+                  }
+                  loading={projectLoading}
+                  disabled={loading}
+                  filterOptions={(options, state) => {
+                    const keyword = normalizeSearchText(state.inputValue);
+                    if (!keyword) return options;
+                    return options.filter((option) =>
+                      normalizeSearchText(option).includes(keyword),
+                    );
+                  }}
+                  noOptionsText="검색되는 현장이 없습니다."
+                  loadingText="현장목록 불러오는 중..."
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="구분(2) · 현장 검색"
+                      placeholder="예: 용인금어"
+                      required
+                      error={Boolean(projectError)}
+                      helperText={
+                        projectError ||
+                        '현장명의 일부를 입력한 뒤 목록에서 선택해주세요.'
+                      }
+                    />
+                  )}
+                />
+              )}
+
+              <Button
+                type="submit"
+                variant="contained"
+                size="large"
+                disabled={loading || projectLoading}
+                sx={{
+                  mt: 0.35,
+                  height: 50,
+                  bgcolor: '#0f6fae',
+                  fontWeight: 900,
+                  boxShadow: 'none',
+                  '&:hover': { bgcolor: '#0b5f98' },
+                }}
+              >
+                {loading ? '가입 요청 중...' : '회원가입 요청'}
+              </Button>
+            </Box>
+          )}
+
+          <Box sx={{ mt: 2.5 }}>
             <Divider />
-            <Typography
-              sx={{
-                mt: 2,
-                color: '#94a3b8',
-                fontSize: '0.7rem',
-                lineHeight: 1.65,
-              }}
-            >
-              본 시스템은 승인된 사용자만 이용할 수 있습니다.
+            <Typography sx={{ mt: 1.6, color: '#94a3b8', fontSize: '0.7rem', lineHeight: 1.65 }}>
+              회원가입 후 이메일 확인과 최고관리자 승인이 모두 완료되어야 이용할 수 있습니다.
               <br />
-              계정 또는 접속 권한 문의는 최고관리자에게 연락해주세요.
+              역할과 현장 접근 권한은 최고관리자가 최종 지정합니다.
             </Typography>
           </Box>
         </Box>
 
-        {/* 공지사항 영역 */}
         <Box
           sx={{
             px: { xs: 3, sm: 5, md: 6 },
@@ -399,72 +712,21 @@ export default function Login() {
             overflow: 'hidden',
           }}
         >
-          <Box
-            sx={{
-              position: 'absolute',
-              width: 340,
-              height: 340,
-              borderRadius: '50%',
-              right: -150,
-              top: -120,
-              bgcolor: 'rgba(255,255,255,0.06)',
-            }}
-          />
-
-          <Box
-            sx={{
-              position: 'absolute',
-              width: 250,
-              height: 250,
-              borderRadius: '50%',
-              left: -120,
-              bottom: -110,
-              bgcolor: 'rgba(255,255,255,0.045)',
-            }}
-          />
+          <Box sx={{ position: 'absolute', width: 340, height: 340, borderRadius: '50%', right: -150, top: -120, bgcolor: 'rgba(255,255,255,0.06)' }} />
+          <Box sx={{ position: 'absolute', width: 250, height: 250, borderRadius: '50%', left: -120, bottom: -110, bgcolor: 'rgba(255,255,255,0.045)' }} />
 
           <Box sx={{ position: 'relative', zIndex: 1 }}>
-            <Typography
-              sx={{
-                color: '#99d8ff',
-                fontSize: '0.72rem',
-                fontWeight: 900,
-                letterSpacing: '0.2em',
-              }}
-            >
+            <Typography sx={{ color: '#99d8ff', fontSize: '0.72rem', fontWeight: 900, letterSpacing: '0.2em' }}>
               NOTICE & UPDATE
             </Typography>
-
-            <Typography
-              sx={{
-                mt: 0.7,
-                fontSize: { xs: '1.45rem', md: '1.7rem' },
-                fontWeight: 900,
-                letterSpacing: '-0.035em',
-              }}
-            >
+            <Typography sx={{ mt: 0.7, fontSize: { xs: '1.45rem', md: '1.7rem' }, fontWeight: 900, letterSpacing: '-0.035em' }}>
               공지사항
             </Typography>
-
-            <Typography
-              sx={{
-                mt: 0.8,
-                color: 'rgba(255,255,255,0.72)',
-                fontSize: '0.82rem',
-                lineHeight: 1.7,
-              }}
-            >
+            <Typography sx={{ mt: 0.8, color: 'rgba(255,255,255,0.72)', fontSize: '0.82rem', lineHeight: 1.7 }}>
               공사관리 시스템의 주요 안내와 업데이트 내용을 확인해주세요.
             </Typography>
 
-            <Box
-              sx={{
-                mt: 3.2,
-                display: 'flex',
-                flexDirection: 'column',
-                gap: 1.25,
-              }}
-            >
+            <Box sx={{ mt: 3.2, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
               {notices.map((notice, index) => (
                 <Box
                   key={notice.id}
@@ -472,83 +734,29 @@ export default function Login() {
                     p: 2,
                     borderRadius: 2,
                     border: '1px solid rgba(255,255,255,0.13)',
-                    bgcolor:
-                      index === 0
-                        ? 'rgba(255,255,255,0.13)'
-                        : 'rgba(255,255,255,0.075)',
+                    bgcolor: index === 0 ? 'rgba(255,255,255,0.13)' : 'rgba(255,255,255,0.075)',
                     backdropFilter: 'blur(8px)',
-                    transition: 'transform 0.15s ease, background 0.15s ease',
-                    '&:hover': {
-                      transform: 'translateY(-2px)',
-                      bgcolor: 'rgba(255,255,255,0.15)',
-                    },
                   }}
                 >
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 1,
-                      mb: 0.65,
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        px: 0.8,
-                        py: 0.25,
-                        borderRadius: 999,
-                        bgcolor: 'rgba(126, 211, 255, 0.16)',
-                        color: '#bceaff',
-                        fontSize: '0.65rem',
-                        fontWeight: 900,
-                      }}
-                    >
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mb: 0.65 }}>
+                    <Box sx={{ px: 0.8, py: 0.25, borderRadius: 999, bgcolor: 'rgba(126, 211, 255, 0.16)', color: '#bceaff', fontSize: '0.65rem', fontWeight: 900 }}>
                       {notice.category}
                     </Box>
-
-                    <Typography
-                      sx={{
-                        color: 'rgba(255,255,255,0.55)',
-                        fontSize: '0.66rem',
-                      }}
-                    >
+                    <Typography sx={{ color: 'rgba(255,255,255,0.55)', fontSize: '0.66rem' }}>
                       {formatNoticeDate(notice.updated_at)}
                     </Typography>
                   </Box>
-
-                  <Typography
-                    sx={{
-                      color: '#ffffff',
-                      fontSize: '0.87rem',
-                      fontWeight: 900,
-                      lineHeight: 1.5,
-                    }}
-                  >
+                  <Typography sx={{ color: '#ffffff', fontSize: '0.87rem', fontWeight: 900, lineHeight: 1.5 }}>
                     {notice.title}
                   </Typography>
-
-                  <Typography
-                    sx={{
-                      mt: 0.55,
-                      color: 'rgba(255,255,255,0.7)',
-                      fontSize: '0.72rem',
-                      lineHeight: 1.65,
-                    }}
-                  >
+                  <Typography sx={{ mt: 0.55, color: 'rgba(255,255,255,0.7)', fontSize: '0.72rem', lineHeight: 1.65 }}>
                     {notice.content}
                   </Typography>
                 </Box>
               ))}
             </Box>
 
-            <Typography
-              sx={{
-                mt: 3,
-                color: 'rgba(255,255,255,0.47)',
-                fontSize: '0.66rem',
-              }}
-            >
+            <Typography sx={{ mt: 3, color: 'rgba(255,255,255,0.47)', fontSize: '0.66rem' }}>
               © 2026 WOOKLIM CONSTRUCTION. All rights reserved.
             </Typography>
           </Box>
