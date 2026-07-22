@@ -95,6 +95,29 @@ const sortProjectNames = (projectNames) =>
     );
   });
 
+const formatRecentLoginDateTime = (value) => {
+  if (!value) return '-';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+
+  const parts = new Intl.DateTimeFormat('ko-KR', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+
+  const part = (type) =>
+    parts.find((item) => item.type === type)?.value || '';
+
+  return `${part('year')}-${part('month')}-${part('day')} ${part('hour')}:${part('minute')}:${part('second')}`;
+};
+
 const splitIntoChunks = (items, chunkSize) => {
   const chunks = [];
 
@@ -2886,9 +2909,23 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           )}
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Typography variant="caption" sx={{ color: '#94a3b8' }}>
-              접속자: {userProfile?.manager_name} ({userRole})
-            </Typography>
+            <Box sx={{ textAlign: 'right', lineHeight: 1.25 }}>
+              <Typography
+                component="div"
+                variant="caption"
+                sx={{ color: '#cbd5e1', fontWeight: 700 }}
+              >
+                접속자: {userProfile?.manager_name} ({userRole})
+              </Typography>
+              <Typography
+                component="div"
+                variant="caption"
+                sx={{ mt: 0.1, color: '#94a3b8', fontSize: '0.63rem' }}
+              >
+                최근 접속일시:{' '}
+                {formatRecentLoginDateTime(user?.last_sign_in_at)}
+              </Typography>
+            </Box>
 
             <Button
               color="inherit"

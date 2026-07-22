@@ -75,7 +75,7 @@ const laborMenus = [
     value: 'labor-documents',
     label: '노임서류작성',
     disabled: true,
-    statusLabel: '작성중',
+    statusLabel: '준비중',
   },
 ];
 

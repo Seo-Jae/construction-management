@@ -40,6 +40,7 @@ export const toApprovalRequest = (document, approvalSteps = []) => ({
   written_at: document?.created_at,
   submitted_at: document?.submitted_at,
   completed_at: document?.completed_at,
+  updated_at: document?.updated_at,
   approval_steps: approvalSteps,
 });
 

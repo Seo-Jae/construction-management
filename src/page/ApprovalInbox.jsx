@@ -13,7 +13,9 @@ import {
   Collapse,
   Divider,
   IconButton,
+  MenuItem,
   Paper,
+  Select,
   TextField,
   Tooltip,
   Typography,
@@ -21,9 +23,13 @@ import {
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import { supabase } from '../supabaseClient';
 import { invokeApprovalFunction } from '../utils/approvalFunction.js';
-import { fetchApprovalInboxData } from '../utils/approvalQueries.js';
+import {
+  deleteApprovalDocumentAsSuperAdmin,
+  fetchApprovalInboxData,
+} from '../utils/approvalQueries.js';
 import ApprovalReportViewer, {
   downloadApprovalReportExcel,
 } from './ApprovalReportViewer.jsx';
@@ -105,6 +111,82 @@ const REQUESTER_ITEM_STATUS = {
 const REPORT_TYPE_LABEL = {
   weekly: '주간 업무 보고',
   proposal: '품의 보고',
+};
+
+const INBOX_FILTERS = [
+  { value: 'all', label: '전체' },
+  { value: 'approval-waiting', label: '결재대기' },
+  { value: 'approval-requested', label: '결재요청' },
+  { value: 'approval-completed', label: '결재완료' },
+  { value: 'rejected', label: '반려' },
+];
+
+const RECENT_DAY_OPTIONS = [
+  { value: 7, label: '최근 7일' },
+  { value: 14, label: '최근 14일' },
+  { value: 21, label: '최근 21일' },
+  { value: 0, label: '전체기간' },
+];
+
+const getInboxItemFilter = (item) => {
+  const request = item?.approval_requests;
+
+  if (
+    item?.item_kind === 'approver' &&
+    item?.status === 'pending' &&
+    request?.status === 'pending'
+  ) {
+    return 'approval-waiting';
+  }
+
+  if (
+    item?.item_kind === 'requester' &&
+    request?.status === 'pending'
+  ) {
+    return 'approval-requested';
+  }
+
+  if (
+    (item?.item_kind === 'approver' &&
+      item?.status === 'approved') ||
+    (item?.item_kind === 'requester' &&
+      request?.status === 'approved')
+  ) {
+    return 'approval-completed';
+  }
+
+  if (
+    item?.status === 'rejected' ||
+    request?.status === 'rejected'
+  ) {
+    return 'rejected';
+  }
+
+  return 'other';
+};
+
+const getInboxItemDate = (item) => {
+  const request = item?.approval_requests || {};
+  const candidates =
+    request.status === 'approved'
+      ? [
+          request.completed_at,
+          item?.acted_at,
+          request.updated_at,
+          request.submitted_at,
+          request.created_at,
+        ]
+      : [
+          item?.acted_at,
+          request.updated_at,
+          request.submitted_at,
+          request.created_at,
+          item?.created_at,
+        ];
+
+  const value = candidates.find(Boolean);
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime()) ? date : null;
 };
 
 const getEdgeFunctionErrorMessage = async (error) => {
@@ -374,6 +456,7 @@ function ReportSnapshot({ request }) {
 
 export default function ApprovalInbox() {
   const [userLabel, setUserLabel] = useState('');
+  const [userRole, setUserRole] = useState('');
   const [items, setItems] = useState([]);
   const [stepsByRequest, setStepsByRequest] = useState({});
   const [comments, setComments] = useState({});
@@ -386,6 +469,10 @@ export default function ApprovalInbox() {
     useState(null);
   const [downloadingRequestId, setDownloadingRequestId] =
     useState('');
+  const [deletingRequestId, setDeletingRequestId] =
+    useState('');
+  const [viewFilter, setViewFilter] = useState('all');
+  const [recentDays, setRecentDays] = useState(7);
   const [errorMessage, setErrorMessage] = useState('');
 
   const requestedId = useMemo(
@@ -404,6 +491,7 @@ export default function ApprovalInbox() {
       const result = await fetchApprovalInboxData();
 
       setUserLabel(result.displayName || '사용자');
+      setUserRole(result.role || '');
       setItems(result.items);
       setStepsByRequest(result.stepsByRequest);
 
@@ -481,6 +569,49 @@ export default function ApprovalInbox() {
     }
   };
 
+  const handleDeleteDocument = async (request) => {
+    if (userRole !== '최고관리자' || !request?.id) return;
+
+    if (
+      !window.confirm(
+        `[${request.report_title || '제목 없음'}]\n\n이 결재 내역을 삭제하시겠습니까?\n삭제하면 결재 단계와 의견도 함께 삭제되며 복구할 수 없습니다.`,
+      )
+    ) {
+      return;
+    }
+
+    setDeletingRequestId(request.id);
+    setErrorMessage('');
+
+    try {
+      await deleteApprovalDocumentAsSuperAdmin(request.id);
+
+      if (previewRequest?.id === request.id) {
+        setPreviewRequest(null);
+      }
+
+      setExpandedRequestId((current) =>
+        current === request.id ? '' : current,
+      );
+
+      window.dispatchEvent(
+        new Event('approval-workflow-changed'),
+      );
+      window.dispatchEvent(
+        new Event('report-documents-changed'),
+      );
+
+      await loadInbox();
+    } catch (error) {
+      console.error('결재 내역 삭제 실패:', error);
+      setErrorMessage(
+        error?.message || '결재 내역을 삭제하지 못했습니다.',
+      );
+    } finally {
+      setDeletingRequestId('');
+    }
+  };
+
   const handleAction = async (requestId, decision) => {
     const actionName =
       decision === 'approve' ? '승인' : '반려';
@@ -544,6 +675,53 @@ export default function ApprovalInbox() {
         item.approval_requests?.status,
       ),
   ).length;
+
+  const recentItems = useMemo(() => {
+    if (recentDays === 0) return items;
+
+    const startDate = new Date();
+    startDate.setHours(0, 0, 0, 0);
+    startDate.setDate(startDate.getDate() - (recentDays - 1));
+
+    return items.filter((item) => {
+      const itemDate = getInboxItemDate(item);
+      return itemDate ? itemDate >= startDate : false;
+    });
+  }, [items, recentDays]);
+
+  const filterCounts = useMemo(
+    () =>
+      recentItems.reduce(
+        (counts, item) => {
+          counts.all += 1;
+          const filter = getInboxItemFilter(item);
+          if (
+            Object.prototype.hasOwnProperty.call(counts, filter)
+          ) {
+            counts[filter] += 1;
+          }
+          return counts;
+        },
+        {
+          all: 0,
+          'approval-waiting': 0,
+          'approval-requested': 0,
+          'approval-completed': 0,
+          rejected: 0,
+        },
+      ),
+    [recentItems],
+  );
+
+  const visibleItems = useMemo(
+    () =>
+      viewFilter === 'all'
+        ? recentItems
+        : recentItems.filter(
+            (item) => getInboxItemFilter(item) === viewFilter,
+          ),
+    [recentItems, viewFilter],
+  );
 
   return (
     <Box
@@ -614,6 +792,76 @@ export default function ApprovalInbox() {
             </IconButton>
           </Tooltip>
         </Box>
+
+        <Box
+          sx={{
+            mt: 1,
+            pt: 1,
+            borderTop: '1px solid #e2e8f0',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            flexWrap: 'wrap',
+            gap: 0.8,
+          }}
+        >
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: 0.45,
+            }}
+          >
+            {INBOX_FILTERS.map((filter) => (
+              <Button
+                key={filter.value}
+                size="small"
+                variant={
+                  viewFilter === filter.value
+                    ? 'contained'
+                    : 'outlined'
+                }
+                onClick={() => setViewFilter(filter.value)}
+                sx={{
+                  minWidth: 76,
+                  px: 1,
+                  py: 0.35,
+                  boxShadow: 'none',
+                  fontSize: '0.68rem',
+                  fontWeight: 900,
+                }}
+              >
+                {filter.label} {filterCounts[filter.value] || 0}
+              </Button>
+            ))}
+          </Box>
+
+          <Select
+            size="small"
+            value={recentDays}
+            onChange={(event) =>
+              setRecentDays(Number(event.target.value))
+            }
+            sx={{
+              minWidth: 112,
+              height: 31,
+              bgcolor: '#ffffff',
+              fontSize: '0.7rem',
+              fontWeight: 800,
+            }}
+          >
+            {RECENT_DAY_OPTIONS.map((option) => (
+              <MenuItem
+                key={option.value}
+                value={option.value}
+                sx={{ fontSize: '0.76rem' }}
+              >
+                {option.label}
+              </MenuItem>
+            ))}
+          </Select>
+        </Box>
       </Paper>
 
       {errorMessage && (
@@ -630,7 +878,7 @@ export default function ApprovalInbox() {
           pr: 0.3,
         }}
       >
-        {!loading && items.length === 0 ? (
+        {!loading && visibleItems.length === 0 ? (
           <Paper
             variant="outlined"
             sx={{
@@ -643,10 +891,10 @@ export default function ApprovalInbox() {
               fontSize: '0.78rem',
             }}
           >
-            결재 요청 또는 처리 내역이 없습니다.
+            선택한 조건에 해당하는 결재 내역이 없습니다.
           </Paper>
         ) : (
-          items.map((item) => {
+          visibleItems.map((item) => {
             const request = item.approval_requests;
             const isRequesterItem =
               item.item_kind === 'requester';
@@ -889,6 +1137,40 @@ export default function ApprovalInbox() {
                         ? '생성 중'
                         : 'XLS'}
                     </Button>
+
+                    {userRole === '최고관리자' && (
+                      <Tooltip title="최고관리자 결재 내역 삭제">
+                        <span>
+                          <IconButton
+                            size="small"
+                            color="error"
+                            onClick={() =>
+                              handleDeleteDocument(request)
+                            }
+                            disabled={
+                              deletingRequestId === request?.id
+                            }
+                            sx={{
+                              width: 29,
+                              height: 29,
+                              border: '1px solid #fecaca',
+                              borderRadius: 1,
+                            }}
+                          >
+                            {deletingRequestId === request?.id ? (
+                              <CircularProgress
+                                size={14}
+                                color="inherit"
+                              />
+                            ) : (
+                              <DeleteOutlineIcon
+                                sx={{ fontSize: 17 }}
+                              />
+                            )}
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                    )}
 
                     <Button
                       size="small"

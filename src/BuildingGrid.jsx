@@ -7,8 +7,9 @@ import {
 } from './utils/buildingUnits.js';
 
 const CELL_WIDTH = 34;
-const CELL_HEIGHT = 23;
+const CELL_HEIGHT = 18;
 const CELL_GAP = 2;
+const ROW_GAP = 1;
 
 const formatCompletionMonthDay = (dateValue) => {
   const value = String(dateValue || '').trim();
@@ -137,7 +138,7 @@ export default function BuildingGrid({
         sx={{
           display: 'flex',
           flexDirection: 'column',
-          gap: `${CELL_GAP}px`,
+          gap: `${ROW_GAP}px`,
           bgcolor: 'transparent',
         }}
       >
@@ -452,8 +453,8 @@ export default function BuildingGrid({
 
       <Typography
         sx={{
-          mt: 0.8,
-          fontSize: '0.78rem',
+          mt: 0.45,
+          fontSize: '0.72rem',
           fontWeight: 800,
           color: '#0f172a',
         }}
@@ -462,8 +463,8 @@ export default function BuildingGrid({
       </Typography>
       <Typography
         sx={{
-          mt: 0.15,
-          fontSize: '0.66rem',
+          mt: 0.05,
+          fontSize: '0.6rem',
           fontWeight: 700,
           color: '#64748b',
         }}

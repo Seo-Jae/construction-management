@@ -27,6 +27,8 @@ import {
 } from '../utils/buildingUnits.js';
 
 const PAGE_SIZE = 1000;
+const GRID_CELL_HEIGHT = 18;
+const GRID_ROW_GAP = 1;
 
 const PROCESS_COLORS = [
   '#38bdf8',
@@ -310,7 +312,7 @@ function MultiStatusCell({
         sx={{
           position: 'relative',
           width: cellWidth,
-          height: 23,
+          height: GRID_CELL_HEIGHT,
           flex: `0 0 ${cellWidth}px`,
           border: '1px solid #cbd5e1',
           bgcolor: '#ffffff',
@@ -406,7 +408,7 @@ function MultiProcessBuildingGrid({
         sx={{
           display: 'flex',
           flexDirection: 'column',
-          gap: '2px',
+          gap: `${GRID_ROW_GAP}px`,
           bgcolor: 'transparent',
         }}
       >
@@ -521,7 +523,7 @@ function MultiProcessBuildingGrid({
                       sx={{
                         position: 'relative',
                         width: cellWidth,
-                        height: 23,
+                        height: GRID_CELL_HEIGHT,
                         flex: `0 0 ${cellWidth}px`,
                         border: '1px solid #cbd5e1',
                         bgcolor: '#f8fafc',
@@ -556,7 +558,7 @@ function MultiProcessBuildingGrid({
                       aria-hidden="true"
                       sx={{
                         width: cellWidth,
-                        height: 23,
+                        height: GRID_CELL_HEIGHT,
                         flex: `0 0 ${cellWidth}px`,
                         border: 'none',
                         bgcolor: 'transparent',
@@ -585,8 +587,8 @@ function MultiProcessBuildingGrid({
 
       <Typography
         sx={{
-          mt: 0.8,
-          fontSize: '0.78rem',
+          mt: 0.45,
+          fontSize: '0.72rem',
           fontWeight: 800,
           color: '#0f172a',
         }}
@@ -595,8 +597,8 @@ function MultiProcessBuildingGrid({
       </Typography>
       <Typography
         sx={{
-          mt: 0.15,
-          fontSize: '0.66rem',
+          mt: 0.05,
+          fontSize: '0.6rem',
           fontWeight: 700,
           color: '#64748b',
         }}
@@ -1291,8 +1293,9 @@ export default function MultiProcessProgress({
           position: 'relative',
           flexGrow: 1,
           minHeight: 0,
-          overflow: 'auto',
-          p: 1.5,
+          overflowX: 'auto',
+          overflowY: 'hidden',
+          p: 0.75,
           borderColor: 'transparent',
           boxShadow: 'none',
           bgcolor: '#f1f5f9',
@@ -1340,8 +1343,8 @@ export default function MultiProcessProgress({
               minHeight: '100%',
               display: 'flex',
               alignItems: 'flex-end',
-              gap: 3,
-              pb: 1,
+              gap: 2.5,
+              pb: 0.5,
             }}
           >
             {Object.entries(safeBuildingConfigs)

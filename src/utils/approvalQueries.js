@@ -26,7 +26,7 @@ export const getCurrentApprovalIdentity = async () => {
 
   const { data: profile } = await supabase
     .from('user_profiles')
-    .select('manager_name, position_title')
+    .select('manager_name, position_title, role')
     .eq('auth_user_id', userId)
     .maybeSingle();
 
@@ -35,6 +35,7 @@ export const getCurrentApprovalIdentity = async () => {
     email,
     displayName: profile?.manager_name || email || '사용자',
     position: profile?.position_title || '',
+    role: profile?.role || '',
   };
 };
 
@@ -135,7 +136,14 @@ const fetchDocumentsByIds = async (documentIds) => {
 };
 
 export const fetchApprovalInboxData = async () => {
-  const { userId, email, displayName } = await getCurrentApprovalIdentity();
+  const { userId, email, displayName, role } =
+    await getCurrentApprovalIdentity();
+
+  const { error: purgeError } = await supabase.rpc(
+    'purge_expired_approved_report_documents',
+  );
+
+  if (purgeError) throw purgeError;
 
   const [
     { data: ownSteps, error: ownStepError },
@@ -166,7 +174,13 @@ export const fetchApprovalInboxData = async () => {
   );
 
   if (documentIds.length === 0) {
-    return { email, displayName, items: [], stepsByRequest: {} };
+    return {
+      email,
+      displayName,
+      role,
+      items: [],
+      stepsByRequest: {},
+    };
   }
 
   const documents = await fetchDocumentsByIds(documentIds);
@@ -229,6 +243,23 @@ export const fetchApprovalInboxData = async () => {
     );
   });
 
-  return { email, displayName, items, stepsByRequest };
+  return { email, displayName, role, items, stepsByRequest };
 };
 
+export const deleteApprovalDocumentAsSuperAdmin = async (
+  documentId,
+) => {
+  if (!documentId) {
+    throw new Error('삭제할 결재 문서를 확인하지 못했습니다.');
+  }
+
+  const { data, error } = await supabase.rpc(
+    'delete_report_document_as_super_admin',
+    {
+      p_document_id: documentId,
+    },
+  );
+
+  if (error) throw error;
+  return data;
+};

@@ -2433,10 +2433,11 @@ export default function ProgressInput({
         sx={{
           flexGrow: 1,
           minHeight: 0,
-          overflow: 'auto',
+          overflowX: 'auto',
+          overflowY: 'hidden',
           bgcolor: '#f1f5f9',
           borderRadius: 1,
-          scrollbarGutter: 'stable both-edges',
+          scrollbarGutter: 'stable',
         }}
       >
         {sortedBuildings.length === 0 ? (
@@ -2458,14 +2459,14 @@ export default function ProgressInput({
               display: 'flex',
               flexWrap: 'nowrap',
               alignItems: 'flex-end',
-              gap: 4,
+              gap: 3,
               width: 'max-content',
               minWidth: '100%',
               minHeight: '100%',
               height: 'max-content',
-              px: 1.5,
-              pt: 0.5,
-              pb: 1,
+              px: 1,
+              pt: 0.25,
+              pb: 0.5,
             }}
           >
             {sortedBuildings.map(([name, config]) => (
