@@ -636,6 +636,7 @@ export default function ProgressClaimManagement({
   const [claims, setClaims] = useState([]);
   const [activeClaimId, setActiveClaimId] = useState(null);
   const [keyword, setKeyword] = useState('');
+  const [mainTypeFilter, setMainTypeFilter] = useState('전체');
   const [optionFilter, setOptionFilter] = useState('전체');
   const [onlyUnmapped, setOnlyUnmapped] = useState(false);
   const [applySameItem, setApplySameItem] = useState(false);
@@ -728,6 +729,7 @@ export default function ProgressClaimManagement({
     setSourceProjectLabel('');
     setSelectedKeys(new Set());
     setUnmappedSelectedKeys(new Set());
+    setMainTypeFilter('전체');
     setUnmappedTypeFilter('전체');
     setUnmappedDialogOpen(false);
     setProcessPickerOpen(false);
@@ -864,15 +866,31 @@ export default function ProgressClaimManagement({
     [items],
   );
 
+  const mainTypeOptions = useMemo(() => {
+    const counts = new Map();
+
+    items.forEach((item) => {
+      const typeLabel = getItemTypeLabel(item);
+      counts.set(typeLabel, (counts.get(typeLabel) || 0) + 1);
+    });
+
+    return Array.from(counts.entries())
+      .sort((first, second) => first[0].localeCompare(second[0], 'ko'))
+      .map(([label, count]) => ({ label, count }));
+  }, [items]);
+
   const filteredItems = useMemo(() => {
     const normalizedKeyword = normalizeText(deferredKeyword).toLowerCase();
 
     return items.filter((item) => {
+      if (mainTypeFilter !== '전체' && getItemTypeLabel(item) !== mainTypeFilter) {
+        return false;
+      }
       if (optionFilter !== '전체' && item.option_type !== optionFilter) return false;
       if (onlyUnmapped && decodeProcessTypes(item.process_type).length > 0) return false;
       return !normalizedKeyword || searchIndexByKey.get(item.source_key)?.includes(normalizedKeyword);
     });
-  }, [deferredKeyword, items, onlyUnmapped, optionFilter, searchIndexByKey]);
+  }, [deferredKeyword, items, mainTypeFilter, onlyUnmapped, optionFilter, searchIndexByKey]);
 
   const unmappedTypeOptions = useMemo(() => {
     const counts = new Map();
@@ -1635,6 +1653,21 @@ export default function ProgressClaimManagement({
                 onChange={(event) => setKeyword(event.target.value)}
                 sx={{ width: 235 }}
               />
+              <TextField
+                select
+                size="small"
+                label="구분"
+                value={mainTypeFilter}
+                onChange={(event) => setMainTypeFilter(event.target.value)}
+                sx={{ width: 145 }}
+              >
+                <MenuItem value="전체">전체</MenuItem>
+                {mainTypeOptions.map((type) => (
+                  <MenuItem key={type.label} value={type.label}>
+                    {type.label} ({type.count.toLocaleString()})
+                  </MenuItem>
+                ))}
+              </TextField>
               <TextField
                 select
                 size="small"
