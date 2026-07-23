@@ -17,9 +17,11 @@ import AssessmentIcon from '@mui/icons-material/Assessment';
 import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
 import RequestQuoteOutlinedIcon from '@mui/icons-material/RequestQuoteOutlined';
 import BadgeOutlinedIcon from '@mui/icons-material/BadgeOutlined';
+import ManageAccountsOutlinedIcon from '@mui/icons-material/ManageAccountsOutlined';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { fetchPendingApprovalSummary } from '../utils/approvalQueries.js';
+import { supabase } from '../supabaseClient';
 
 const dailyMenus = [
   { value: 'daily', label: '출력일보작성' },
@@ -270,6 +272,7 @@ export default function Sidebar({
   userRole = '담당자',
 }) {
   const isManagementRole = ['관리자', '최고관리자'].includes(userRole);
+  const isSuperAdmin = userRole === '최고관리자';
   const isDailyView = [
     'daily',
     'daily-monthly-workers',
@@ -347,6 +350,8 @@ export default function Sidebar({
     isReportView,
   );
   const [approvalPendingCount, setApprovalPendingCount] =
+    useState(0);
+  const [registrationPendingCount, setRegistrationPendingCount] =
     useState(0);
 
   useEffect(() => {
@@ -446,6 +451,58 @@ export default function Sidebar({
     };
   }, [currentView]);
 
+  useEffect(() => {
+    if (!isSuperAdmin) {
+      setRegistrationPendingCount(0);
+      return undefined;
+    }
+
+    let active = true;
+
+    const loadRegistrationCount = async () => {
+      try {
+        const { data, error } = await supabase.rpc(
+          'admin_get_pending_user_count',
+        );
+
+        if (error) throw error;
+
+        if (active) {
+          setRegistrationPendingCount(Number(data || 0));
+        }
+      } catch (error) {
+        console.error('회원 승인대기 건수 조회 오류:', error);
+
+        if (active) {
+          setRegistrationPendingCount(0);
+        }
+      }
+    };
+
+    loadRegistrationCount();
+
+    const timer = window.setInterval(
+      loadRegistrationCount,
+      20 * 1000,
+    );
+
+    window.addEventListener('focus', loadRegistrationCount);
+    window.addEventListener(
+      'user-account-changed',
+      loadRegistrationCount,
+    );
+
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', loadRegistrationCount);
+      window.removeEventListener(
+        'user-account-changed',
+        loadRegistrationCount,
+      );
+    };
+  }, [isSuperAdmin]);
+
   const handleViewChange = (view) => {
     if (typeof onViewChange === 'function') onViewChange(view);
   };
@@ -480,6 +537,65 @@ export default function Sidebar({
                 fontSize: '0.8rem',
                 fontWeight:
                   currentView === 'admin-dashboard' ? 700 : 500,
+              }}
+              sx={{ opacity: drawerOpen ? 1 : 0 }}
+            />
+          </ListItemButton>
+        </Tooltip>
+      )}
+
+      {isSuperAdmin && (
+        <Tooltip
+          title={
+            drawerOpen
+              ? ''
+              : `회원관리${
+                  registrationPendingCount > 0
+                    ? ` (${registrationPendingCount})`
+                    : ''
+                }`
+          }
+          placement="right"
+          arrow
+        >
+          <ListItemButton
+            selected={currentView === 'user-management'}
+            onClick={() => handleViewChange('user-management')}
+            sx={topMenuSx(currentView === 'user-management')}
+          >
+            <ListItemIcon
+              sx={{
+                minWidth: 34,
+                color: 'inherit',
+                justifyContent: 'center',
+              }}
+            >
+              <Badge
+                badgeContent={registrationPendingCount}
+                color="error"
+                max={99}
+                invisible={registrationPendingCount === 0}
+                sx={{
+                  '& .MuiBadge-badge': {
+                    minWidth: 16,
+                    height: 16,
+                    px: 0.35,
+                    fontSize: '0.58rem',
+                    fontWeight: 900,
+                  },
+                }}
+              >
+                <ManageAccountsOutlinedIcon fontSize="small" />
+              </Badge>
+            </ListItemIcon>
+
+            <ListItemText
+              primary="회원관리"
+              primaryTypographyProps={{
+                noWrap: true,
+                fontSize: '0.8rem',
+                fontWeight:
+                  currentView === 'user-management' ? 700 : 500,
               }}
               sx={{ opacity: drawerOpen ? 1 : 0 }}
             />

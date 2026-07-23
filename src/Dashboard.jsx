@@ -49,6 +49,7 @@ import LaborContractManagement from './page/LaborContractManagement.jsx';
 import ProgressClaimManagement from './page/ProgressClaimManagement.jsx';
 import ContractItemProcessMapping from './page/ContractItemProcessMapping.jsx';
 import AdminDashboard from './page/AdminDashboard.jsx';
+import UserManagement from './page/UserManagement.jsx';
 
 const drawerWidth = 240;
 const SUPABASE_PAGE_SIZE = 1000;
@@ -63,6 +64,7 @@ const PROJECT_DISPLAY_ORDER = [
 
 const PROJECT_FREE_VIEWS = [
   'admin-dashboard',
+  'user-management',
   'approval-inbox',
   'weekly-overview',
   'weekly-overview-archive',
@@ -283,6 +285,7 @@ const bodyCellStyle = { borderRight: '1px solid #cbd5e1', p: 0 };
 const viewTitles = {
   main: 'Main',
   'admin-dashboard': '욱림건설 전체 현장 Dashboard',
+  'user-management': '회원관리',
   daily: '출력일보작성',
   'daily-monthly-workers': '금월 투입현황',
   'daily-cumulative-workers': '누계투입조회',
@@ -827,6 +830,12 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   };
 
   const handleSidebarViewChange = (nextView) => {
+    if (nextView === 'user-management') {
+      if (!isSuperAdmin) return;
+      setCurrentView(nextView);
+      return;
+    }
+
     if (
       [
         'weekly-overview',
@@ -2681,6 +2690,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               ? cumulativeProjectScope
               : [
                   'admin-dashboard',
+                  'user-management',
                   'approval-inbox',
                   'weekly-overview',
                   'weekly-overview-archive',
@@ -2695,6 +2705,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             ![
               'weekly-overview',
               'weekly-overview-archive',
+              'user-management',
             ].includes(
               currentView,
             ) && (
@@ -2878,6 +2889,10 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               processOptions={processOptions}
               onOpenProject={handleOpenAdminProject}
             />
+          )}
+
+          {currentView === 'user-management' && isSuperAdmin && (
+            <UserManagement currentUserId={user?.id || ''} />
           )}
 
           {currentView === 'approval-inbox' && (
