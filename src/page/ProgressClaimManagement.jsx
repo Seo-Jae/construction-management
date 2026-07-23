@@ -614,16 +614,37 @@ const summarizeItems = (items) =>
   );
 
 const parseClassification = (classification) => {
-  const match = String(classification || '').match(/^(.+?)_(\d+공구)$/);
+  const rawClassification = String(classification || '').trim();
+  const householdMatch = rawClassification.match(
+    /^(68A|68B|84A|84B|101)(?:$|[_\s(].*)/i,
+  );
+
+  /*
+    현장 엑셀에서 동일한 세대 타입이 회차에 따라
+    68A 또는 68A_기본(1공구)처럼 다르게 표시될 수 있습니다.
+    이 표기 차이는 계약변경이 아니므로 계약 식별값에서는 68A로 통일합니다.
+  */
+  if (householdMatch) {
+    const householdType = householdMatch[1].toUpperCase();
+    return {
+      normalizedClassification: householdType,
+      housingType: householdType,
+      workZone: '',
+    };
+  }
+
+  const match = rawClassification.match(/^(.+?)_(\d+공구)$/);
 
   if (!match) {
     return {
-      housingType: String(classification || '').trim(),
+      normalizedClassification: rawClassification,
+      housingType: rawClassification,
       workZone: '',
     };
   }
 
   return {
+    normalizedClassification: rawClassification,
     housingType: match[1].trim(),
     workZone: match[2].trim(),
   };
@@ -639,6 +660,46 @@ const buildSourceKey = ({
   [classification, itemName, specification, unit]
     .map((value) => normalizeText(value).toLowerCase())
     .join('|') + `#${occurrence}`;
+
+const normalizeContractItemIdentities = (sourceItems) => {
+  const duplicateCounter = new Map();
+
+  return sourceItems.map((item, index) => {
+    const rawClassification = String(
+      item?.classification || item?.housing_type || '',
+    ).trim();
+    const { normalizedClassification, housingType, workZone } =
+      parseClassification(rawClassification);
+    const itemName = String(item?.item_name || '').trim();
+    const specification = String(item?.specification || '').trim();
+    const unit = String(item?.unit || '').trim();
+    const duplicateBaseKey = [
+      normalizedClassification,
+      itemName,
+      specification,
+      unit,
+    ]
+      .map((value) => normalizeText(value).toLowerCase())
+      .join('|');
+    const occurrence = (duplicateCounter.get(duplicateBaseKey) || 0) + 1;
+    duplicateCounter.set(duplicateBaseKey, occurrence);
+
+    return {
+      ...item,
+      source_key: buildSourceKey({
+        classification: normalizedClassification,
+        itemName,
+        specification,
+        unit,
+        occurrence,
+      }),
+      sort_order: Number(item?.sort_order) || index + 1,
+      classification: normalizedClassification,
+      housing_type: housingType,
+      work_zone: workZone,
+    };
+  });
+};
 
 const parseDirectCostWorksheet = (worksheet) => {
   const parsedItems = [];
@@ -662,19 +723,20 @@ const parseDirectCostWorksheet = (worksheet) => {
 
     if (!directSectionStarted || grandTotalReached) return;
 
-    const classification = readText(row, 1);
+    const rawClassification = readText(row, 1);
     const specification = readText(row, 3);
     const unit = readText(row, 4);
 
-    if (!classification || !itemLabel || !unit || classification === '간접비') {
+    if (!rawClassification || !itemLabel || !unit || rawClassification === '간접비') {
       return;
     }
 
     const optionType = itemLabel.includes('<확장>') ? '확장' : '기본';
     const baseItemName = itemLabel.replace(/<확장>/g, '').trim();
-    const { housingType, workZone } = parseClassification(classification);
+    const { normalizedClassification, housingType, workZone } =
+      parseClassification(rawClassification);
     const duplicateBaseKey = [
-      classification,
+      normalizedClassification,
       itemLabel,
       specification,
       unit,
@@ -739,7 +801,7 @@ const parseDirectCostWorksheet = (worksheet) => {
 
     parsedItems.push({
       source_key: buildSourceKey({
-        classification,
+        classification: normalizedClassification,
         itemName: itemLabel,
         specification,
         unit,
@@ -747,7 +809,7 @@ const parseDirectCostWorksheet = (worksheet) => {
       }),
       source_row_no: rowNumber,
       sort_order: parsedItems.length + 1,
-      classification,
+      classification: normalizedClassification,
       housing_type: housingType,
       option_type: optionType,
       work_zone: workZone,
@@ -960,13 +1022,15 @@ export default function ProgressClaimManagement({
 
   const applyWorkDraft = useCallback((draft) => {
     const draftItems = Array.isArray(draft?.items)
-      ? draft.items.map((item) => ({
-          ...item,
-          process_type: encodeProcessTypes(decodeProcessTypes(item.process_type)),
-          validation_errors: Array.isArray(item.validation_errors)
-            ? item.validation_errors
-            : [],
-        }))
+      ? normalizeContractItemIdentities(
+          draft.items.map((item) => ({
+            ...item,
+            process_type: encodeProcessTypes(decodeProcessTypes(item.process_type)),
+            validation_errors: Array.isArray(item.validation_errors)
+              ? item.validation_errors
+              : [],
+          })),
+        )
       : [];
 
     setActiveClaimId(null);
@@ -1844,11 +1908,13 @@ export default function ProgressClaimManagement({
       if (error) throw error;
 
       const claim = data?.claim;
-      const detailItems = (data?.items || []).map((item) => ({
-        ...item,
-        process_type: encodeProcessTypes(decodeProcessTypes(item.process_type)),
-        validation_errors: [],
-      }));
+      const detailItems = normalizeContractItemIdentities(
+        (data?.items || []).map((item) => ({
+          ...item,
+          process_type: encodeProcessTypes(decodeProcessTypes(item.process_type)),
+          validation_errors: [],
+        })),
+      );
 
       setActiveClaimId(claimId);
       setClaimNo(Number(claim?.claim_no) || 1);
