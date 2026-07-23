@@ -170,8 +170,127 @@ const normalizeText = (value) =>
     .replace(/\s+/g, '')
     .trim();
 
-const getItemTypeLabel = (item) =>
+const HOUSEHOLD_TYPE_PATTERN = /^(68A|68B|84A|84B|101)$/i;
+
+const getRawItemTypeLabel = (item) =>
   String(item?.housing_type || item?.classification || '미분류').trim() || '미분류';
+
+const getItemTypeLabel = (item) => {
+  const rawType = getRawItemTypeLabel(item);
+  return HOUSEHOLD_TYPE_PATTERN.test(rawType) ? '세대' : rawType;
+};
+
+const getSameItemGroupKey = (item) =>
+  `${getItemTypeLabel(item)}::${String(item?.base_item_name || item?.item_name || '').trim()}`;
+
+const getItemSourceKeys = (item) =>
+  Array.isArray(item?.group_source_keys) && item.group_source_keys.length > 0
+    ? item.group_source_keys
+    : [item?.source_key].filter(Boolean);
+
+const buildGroupedClaimItems = (sourceItems) => {
+  const groups = new Map();
+
+  sourceItems.forEach((item) => {
+    const groupKey = getSameItemGroupKey(item);
+    const existing = groups.get(groupKey);
+
+    if (!existing) {
+      groups.set(groupKey, {
+        ...item,
+        source_key: `group:${groupKey}`,
+        source_row_no: item.source_row_no,
+        housing_type: getItemTypeLabel(item),
+        classification: getItemTypeLabel(item),
+        work_zone: '',
+        item_name: item.base_item_name || item.item_name,
+        base_item_name: item.base_item_name || item.item_name,
+        group_source_keys: [item.source_key],
+        group_count: 1,
+        group_row_numbers: [item.source_row_no],
+        group_specifications: new Set([String(item.specification || '').trim()].filter(Boolean)),
+        group_units: new Set([String(item.unit || '').trim()].filter(Boolean)),
+        group_options: new Set([String(item.option_type || '').trim()].filter(Boolean)),
+        group_processes: new Set([encodeProcessTypes(decodeProcessTypes(item.process_type))]),
+        group_search_parts: [
+          item.classification,
+          item.housing_type,
+          item.work_zone,
+          item.item_name,
+          item.base_item_name,
+          item.specification,
+          item.process_type,
+        ],
+      });
+      return;
+    }
+
+    existing.group_source_keys.push(item.source_key);
+    existing.group_count += 1;
+    existing.group_row_numbers.push(item.source_row_no);
+    existing.group_specifications.add(String(item.specification || '').trim());
+    existing.group_units.add(String(item.unit || '').trim());
+    existing.group_options.add(String(item.option_type || '').trim());
+    existing.group_processes.add(encodeProcessTypes(decodeProcessTypes(item.process_type)));
+    existing.group_search_parts.push(
+      item.classification,
+      item.housing_type,
+      item.work_zone,
+      item.item_name,
+      item.base_item_name,
+      item.specification,
+      item.process_type,
+    );
+
+    [
+      'contract_quantity',
+      'contract_material_amount',
+      'contract_labor_amount',
+      'contract_expense_amount',
+      'current_quantity',
+      'current_material_amount',
+      'current_labor_amount',
+      'current_expense_amount',
+      'previous_quantity',
+      'previous_material_amount',
+      'previous_labor_amount',
+      'previous_expense_amount',
+      'cumulative_quantity',
+      'cumulative_material_amount',
+      'cumulative_labor_amount',
+      'cumulative_expense_amount',
+    ].forEach((field) => {
+      existing[field] = Number(existing[field] || 0) + Number(item[field] || 0);
+    });
+
+    existing.validation_errors = Array.from(
+      new Set([...(existing.validation_errors || []), ...(item.validation_errors || [])]),
+    );
+  });
+
+  return Array.from(groups.values()).map((group) => {
+    const specifications = Array.from(group.group_specifications).filter(Boolean);
+    const units = Array.from(group.group_units).filter(Boolean);
+    const options = Array.from(group.group_options).filter(Boolean);
+    const processes = Array.from(group.group_processes);
+    const groupProcessMixed = processes.length > 1;
+
+    return {
+      ...group,
+      source_row_no: `${group.group_count.toLocaleString()}건`,
+      work_zone: `${group.group_count.toLocaleString()}개 원본 행`,
+      specification:
+        specifications.length <= 1
+          ? specifications[0] || '-'
+          : `규격 ${specifications.length.toLocaleString()}종`,
+      unit: units.length <= 1 ? units[0] || '-' : '혼합',
+      option_type: options.length <= 1 ? options[0] || '기본' : '혼합',
+      process_type: groupProcessMixed ? '' : processes[0] || '',
+      group_process_mixed: groupProcessMixed,
+      group_search_text: normalizeText(group.group_search_parts.filter(Boolean).join(' ')).toLowerCase(),
+    };
+  });
+};
 
 const normalizeClaimProcessOption = (process) => {
   if (process === '경량골조' || process === '경량석고') return '경량벽체';
@@ -882,16 +1001,33 @@ export default function ProgressClaimManagement({
 
   const filteredItems = useMemo(() => {
     const normalizedKeyword = normalizeText(deferredKeyword).toLowerCase();
-
-    return items.filter((item) => {
+    const baseFilteredItems = items.filter((item) => {
       if (mainTypeFilter !== '전체' && getItemTypeLabel(item) !== mainTypeFilter) {
         return false;
       }
       if (optionFilter !== '전체' && item.option_type !== optionFilter) return false;
       if (onlyUnmapped && decodeProcessTypes(item.process_type).length > 0) return false;
-      return !normalizedKeyword || searchIndexByKey.get(item.source_key)?.includes(normalizedKeyword);
+      return true;
     });
-  }, [deferredKeyword, items, mainTypeFilter, onlyUnmapped, optionFilter, searchIndexByKey]);
+
+    if (applySameItem) {
+      return buildGroupedClaimItems(baseFilteredItems).filter(
+        (item) => !normalizedKeyword || item.group_search_text?.includes(normalizedKeyword),
+      );
+    }
+
+    return baseFilteredItems.filter(
+      (item) => !normalizedKeyword || searchIndexByKey.get(item.source_key)?.includes(normalizedKeyword),
+    );
+  }, [
+    applySameItem,
+    deferredKeyword,
+    items,
+    mainTypeFilter,
+    onlyUnmapped,
+    optionFilter,
+    searchIndexByKey,
+  ]);
 
   const unmappedTypeOptions = useMemo(() => {
     const counts = new Map();
@@ -920,7 +1056,7 @@ export default function ProgressClaimManagement({
   }, [deferredUnmappedKeyword, items, searchIndexByKey, unmappedTypeFilter]);
 
   const filteredSourceKeys = useMemo(
-    () => filteredItems.map((item) => item.source_key),
+    () => Array.from(new Set(filteredItems.flatMap((item) => getItemSourceKeys(item)))),
     [filteredItems],
   );
   const allFilteredSelected =
@@ -1043,10 +1179,9 @@ export default function ProgressClaimManagement({
   };
 
   const handleProcessChange = useCallback((targetItem, nextProcess) => {
+    const targetGroupKey = getSameItemGroupKey(targetItem);
     const sameItemCount = applySameItem
-      ? items.filter(
-          (item) => item.base_item_name === targetItem.base_item_name,
-        ).length
+      ? items.filter((item) => getSameItemGroupKey(item) === targetGroupKey).length
       : 1;
     const nextLabel = getProcessDisplayLabel(nextProcess);
 
@@ -1054,7 +1189,7 @@ export default function ProgressClaimManagement({
       applySameItem &&
       sameItemCount > 1 &&
       !window.confirm(
-        `동일 품명 ${sameItemCount.toLocaleString()}개 행에 "${nextLabel}"을 적용하시겠습니까?`,
+        `${getItemTypeLabel(targetItem)} 구분의 동일 품명 ${sameItemCount.toLocaleString()}개 행에 "${nextLabel}"을 적용하시겠습니까?`,
       )
     ) {
       return false;
@@ -1063,7 +1198,7 @@ export default function ProgressClaimManagement({
     setItems((previousItems) =>
       previousItems.map((item) => {
         const shouldChange = applySameItem
-          ? item.base_item_name === targetItem.base_item_name
+          ? getSameItemGroupKey(item) === targetGroupKey
           : item.source_key === targetItem.source_key;
 
         return shouldChange
@@ -1159,11 +1294,13 @@ export default function ProgressClaimManagement({
     setProcessPickerOpen(false);
   };
 
-  const handleToggleSelectedKey = useCallback((sourceKey) => {
+  const handleToggleSelectedKeys = useCallback((sourceKeys, checked) => {
     setSelectedKeys((previousKeys) => {
       const nextKeys = new Set(previousKeys);
-      if (nextKeys.has(sourceKey)) nextKeys.delete(sourceKey);
-      else nextKeys.add(sourceKey);
+      sourceKeys.forEach((sourceKey) => {
+        if (checked) nextKeys.add(sourceKey);
+        else nextKeys.delete(sourceKey);
+      });
       return nextKeys;
     });
   }, []);
@@ -1917,12 +2054,24 @@ export default function ProgressClaimManagement({
                     {visibleFilteredItems.map((item) => {
                     const hasError =
                       (item.validation_errors || []).length > 0;
+                    const rowSourceKeys = getItemSourceKeys(item);
+                    const rowSelectedCount = rowSourceKeys.reduce(
+                      (count, sourceKey) => count + (selectedKeys.has(sourceKey) ? 1 : 0),
+                      0,
+                    );
+                    const rowAllSelected =
+                      rowSourceKeys.length > 0 && rowSelectedCount === rowSourceKeys.length;
+                    const rowSomeSelected =
+                      rowSelectedCount > 0 && rowSelectedCount < rowSourceKeys.length;
+                    const processDisplayLabel = item.group_process_mixed
+                      ? '공정 혼합'
+                      : getProcessDisplayLabel(item.process_type);
 
                     return (
                       <TableRow
                         key={item.source_key}
                         hover
-                        selected={selectedKeys.has(item.source_key)}
+                        selected={rowSelectedCount > 0}
                         sx={{
                           height: MAIN_ROW_HEIGHT,
                           bgcolor: hasError
@@ -1939,10 +2088,13 @@ export default function ProgressClaimManagement({
                         <TableCell align="center" sx={{ ...bodyCellSx, p: 0.2 }}>
                           <Checkbox
                             size="small"
-                            checked={selectedKeys.has(item.source_key)}
-                            onChange={() => handleToggleSelectedKey(item.source_key)}
+                            checked={rowAllSelected}
+                            indeterminate={rowSomeSelected}
+                            onChange={(event) =>
+                              handleToggleSelectedKeys(rowSourceKeys, event.target.checked)
+                            }
                             inputProps={{
-                              'aria-label': `${item.source_row_no}행 선택`,
+                              'aria-label': `${item.source_row_no} 선택`,
                             }}
                             sx={{ p: 0.4 }}
                           />
@@ -2015,9 +2167,9 @@ export default function ProgressClaimManagement({
                           <Button
                             fullWidth
                             size="small"
-                            variant={decodeProcessTypes(item.process_type).length > 0 ? 'outlined' : 'text'}
+                            variant={item.group_process_mixed || decodeProcessTypes(item.process_type).length > 0 ? 'outlined' : 'text'}
                             onClick={() => handleOpenRowProcessPicker(item)}
-                            title={getProcessDisplayLabel(item.process_type)}
+                            title={processDisplayLabel}
                             sx={{
                               minWidth: 0,
                               height: 28,
@@ -2027,11 +2179,11 @@ export default function ProgressClaimManagement({
                               textOverflow: 'ellipsis',
                               whiteSpace: 'nowrap',
                               fontSize: '0.63rem',
-                              color: decodeProcessTypes(item.process_type).length > 0 ? '#0f766e' : '#94a3b8',
+                              color: item.group_process_mixed || decodeProcessTypes(item.process_type).length > 0 ? '#0f766e' : '#94a3b8',
                               borderColor: '#99f6e4',
                             }}
                           >
-                            {getProcessDisplayLabel(item.process_type)}
+                            {processDisplayLabel}
                           </Button>
                         </TableCell>
                         <TableCell sx={{ ...bodyCellSx, ...numberCellSx }}>
