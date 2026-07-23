@@ -68,12 +68,6 @@ const PROJECT_FREE_VIEWS = [
   'daily-cumulative-workers',
 ];
 
-const MANAGEMENT_ONLY_VIEWS = [
-  'admin-dashboard',
-  'weekly-overview',
-  'weekly-overview-archive',
-];
-
 const sortProjectNames = (projectNames) =>
   [...projectNames].sort((first, second) => {
     const firstIndex =
@@ -195,6 +189,18 @@ const getKoreaDateTimeParts = (date = new Date()) => {
     minute: values.minute,
     second: values.second,
   };
+};
+
+const formatKoreaAccessDateTime = (value) => {
+  if (!value) return '-';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '-';
+
+  const parts = getKoreaDateTimeParts(date);
+  const pad = (number) => String(number).padStart(2, '0');
+
+  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}[${pad(parts.hour)}:${pad(parts.minute)}:${pad(parts.second)}]`;
 };
 
 const createKoreaCalendarDate = (date = new Date()) => {
@@ -426,6 +432,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     project_name: activeProjectName,
   };
 
+  const recentAccessAt =
+    user?.last_sign_in_at ||
+    userProfile?.last_sign_in_at ||
+    userProfile?.last_login_at ||
+    userProfile?.last_access_at ||
+    '';
+
   /*
     한국시간 기준 시계입니다.
     브라우저를 계속 열어둬도 자정과 23시 59분이 지나면
@@ -645,15 +658,12 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     }
 
     /*
-      이미 관리 전용 전역 화면에 들어와 있다면
-      프로필 갱신으로 Dashboard로 되돌리지 않습니다.
+      프로필 재조회나 브라우저 포커스 복귀가 발생해도
+      사용자가 보고 있던 현재 메뉴를 그대로 유지합니다.
+      초기 화면값이 비어 있을 때만 관리자 Dashboard를 사용합니다.
     */
     setCurrentView((previousView) =>
-      MANAGEMENT_ONLY_VIEWS.includes(
-        previousView,
-      )
-        ? previousView
-        : 'admin-dashboard',
+      previousView || 'admin-dashboard',
     );
   }, [isManagementRole, userProfile?.project_name]);
 
@@ -2700,9 +2710,17 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           )}
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Typography variant="caption" sx={{ color: '#94a3b8' }}>
-              접속자: {userProfile?.manager_name} ({userRole})
-            </Typography>
+            <Box sx={{ textAlign: 'right', lineHeight: 1.15 }}>
+              <Typography variant="caption" sx={{ display: 'block', color: '#e2e8f0' }}>
+                접속자: {userProfile?.manager_name} ({userRole})
+              </Typography>
+              <Typography
+                variant="caption"
+                sx={{ display: 'block', mt: 0.15, color: '#94a3b8', fontSize: '0.64rem' }}
+              >
+                최근 접속일시: {formatKoreaAccessDateTime(recentAccessAt)}
+              </Typography>
+            </Box>
 
             <Button
               color="inherit"
