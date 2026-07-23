@@ -7,7 +7,7 @@ import {
 } from './utils/buildingUnits.js';
 
 const CELL_WIDTH = 34;
-const CELL_HEIGHT = 30;
+const CELL_HEIGHT = 18;
 const CELL_GAP = 2;
 const ROW_GAP = 1;
 
@@ -125,6 +125,77 @@ export default function BuildingGrid({
     () => Array.from({ length: floors }, (_, index) => floors - index),
     [floors],
   );
+
+  const unitTypeSummary = useMemo(() => {
+    const buildingPrefix = `${String(buildingName || '').trim()}-`;
+    const configuredColumnCount = Math.max(
+      0,
+      Number(config?.unitsPerFloor) || 0,
+    );
+    const typeCountsByLine = new Map();
+    let detectedMaxLine = 0;
+
+    Object.entries(unitTypeData || {}).forEach(
+      ([cellKey, rawUnitType]) => {
+        const normalizedCellKey = String(cellKey || '').trim();
+
+        if (
+          !buildingPrefix ||
+          !normalizedCellKey.startsWith(buildingPrefix)
+        ) {
+          return;
+        }
+
+        const unitCode = normalizedCellKey
+          .slice(buildingPrefix.length)
+          .trim();
+        const lineMatched = unitCode.match(/(\d{1,2})$/);
+        const lineNumber = Number(lineMatched?.[1] || 0);
+        const unitType = String(rawUnitType || '').trim();
+
+        if (!lineNumber || !unitType) {
+          return;
+        }
+
+        detectedMaxLine = Math.max(detectedMaxLine, lineNumber);
+
+        if (!typeCountsByLine.has(lineNumber)) {
+          typeCountsByLine.set(lineNumber, new Map());
+        }
+
+        const typeCounts = typeCountsByLine.get(lineNumber);
+        typeCounts.set(
+          unitType,
+          (typeCounts.get(unitType) || 0) + 1,
+        );
+      },
+    );
+
+    const columnCount =
+      configuredColumnCount || detectedMaxLine;
+    const labels = Array.from(
+      { length: columnCount },
+      (_, index) => {
+        const lineNumber = index + 1;
+        const typeCounts = typeCountsByLine.get(lineNumber);
+
+        if (!typeCounts || typeCounts.size === 0) {
+          return '';
+        }
+
+        return [...typeCounts.entries()].sort(
+          (left, right) =>
+            right[1] - left[1] ||
+            left[0].localeCompare(right[0], 'ko'),
+        )[0][0];
+      },
+    );
+
+    return {
+      labels,
+      hasLabels: labels.some(Boolean),
+    };
+  }, [buildingName, config?.unitsPerFloor, unitTypeData]);
 
   return (
     <Box
@@ -340,13 +411,6 @@ export default function BuildingGrid({
                       cellKey
                     ] || {};
 
-                  const unitType =
-                    String(
-                      unitTypeData?.[
-                        cellKey
-                      ] || '',
-                    ).trim();
-
                   const isCompleted =
                     progress?.status ===
                     '작업완료';
@@ -417,11 +481,12 @@ export default function BuildingGrid({
                             ? 'not-allowed'
                             : 'pointer',
                         fontFamily: 'inherit',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: '1px',
+                        fontSize: completionDate
+                          ? '0.53rem'
+                          : '0.57rem',
+                        letterSpacing: completionDate
+                          ? '-0.02em'
+                          : 'normal',
                         lineHeight: 1,
                         fontWeight: 800,
                         userSelect: 'none',
@@ -449,38 +514,7 @@ export default function BuildingGrid({
                         },
                       }}
                     >
-                      <Box
-                        component="span"
-                        sx={{
-                          display: 'block',
-                          fontSize: completionDate
-                            ? '0.52rem'
-                            : '0.57rem',
-                          letterSpacing: completionDate
-                            ? '-0.02em'
-                            : 'normal',
-                          fontWeight: 900,
-                          lineHeight: 1,
-                        }}
-                      >
-                        {displayText}
-                      </Box>
-
-                      {unitType && (
-                        <Box
-                          component="span"
-                          sx={{
-                            display: 'block',
-                            fontSize: '0.49rem',
-                            fontWeight: 900,
-                            lineHeight: 1,
-                            opacity: 0.86,
-                            letterSpacing: '-0.01em',
-                          }}
-                        >
-                          {unitType}
-                        </Box>
-                      )}
+                      {displayText}
                     </Box>
                   );
                 })}
@@ -489,9 +523,49 @@ export default function BuildingGrid({
           })}
       </Box>
 
+      {unitTypeSummary.hasLabels && (
+        <Box
+          sx={{
+            mt: 0.35,
+            display: 'flex',
+            alignItems: 'center',
+            gap: `${CELL_GAP}px`,
+          }}
+        >
+          <Box
+            aria-hidden="true"
+            sx={{
+              width: 21,
+              flex: '0 0 21px',
+            }}
+          />
+
+          {unitTypeSummary.labels.map((unitType, index) => (
+            <Typography
+              key={`${buildingName}-unit-type-${index + 1}`}
+              component="div"
+              sx={{
+                width: CELL_WIDTH,
+                flex: `0 0 ${CELL_WIDTH}px`,
+                textAlign: 'center',
+                fontSize: '0.56rem',
+                fontWeight: 800,
+                lineHeight: 1.1,
+                color: '#475569',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+            >
+              {unitType}
+            </Typography>
+          ))}
+        </Box>
+      )}
+
       <Typography
         sx={{
-          mt: 0.45,
+          mt: unitTypeSummary.hasLabels ? 0.35 : 0.45,
           fontSize: '0.72rem',
           fontWeight: 800,
           color: '#0f172a',
