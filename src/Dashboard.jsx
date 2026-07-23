@@ -392,9 +392,53 @@ const resolveUserRole = (profile) => {
 };
 
 export default function Dashboard({ user, userProfile, onLogout }) {
-  const userRole = resolveUserRole(userProfile);
+  const profileUserRole = resolveUserRole(userProfile);
+  const [authenticatedUserRole, setAuthenticatedUserRole] =
+    useState('');
+  const userRole = authenticatedUserRole || profileUserRole;
   const isSuperAdmin = userRole === '최고관리자';
   const isManagementRole = ['관리자', '최고관리자'].includes(userRole);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadAuthenticatedUserRole = async () => {
+      if (!user?.id) {
+        if (active) setAuthenticatedUserRole('');
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('user_profiles')
+        .select('auth_user_id, role, account_status')
+        .eq('auth_user_id', user.id)
+        .maybeSingle();
+
+      if (!active) return;
+
+      if (error) {
+        console.warn(
+          '현재 로그인 사용자 권한 확인 실패:',
+          error,
+        );
+        setAuthenticatedUserRole('');
+        return;
+      }
+
+      if (!data || data.account_status === 'disabled') {
+        setAuthenticatedUserRole('');
+        return;
+      }
+
+      setAuthenticatedUserRole(resolveUserRole(data));
+    };
+
+    loadAuthenticatedUserRole();
+
+    return () => {
+      active = false;
+    };
+  }, [user?.id, userProfile?.role, userProfile?.account_status]);
 
   const dashboardStorageBase = `constructionManagementDashboard:${
     user?.id || user?.email || 'anonymous'
