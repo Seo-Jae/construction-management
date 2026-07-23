@@ -892,16 +892,44 @@ const parseDirectCostWorksheet = (worksheet) => {
   return parsedItems;
 };
 
-function SummaryCard({ label, value, subLabel, color = '#0f172a' }) {
+function SummaryCard({
+  label,
+  value,
+  subLabel,
+  color = '#0f172a',
+  active = false,
+  onClick,
+}) {
   return (
     <Box
+      component={onClick ? 'button' : 'div'}
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
       sx={{
         minWidth: 148,
         px: 1.25,
         py: 0.85,
-        border: '1px solid #dbe3ec',
+        border: active ? '2px solid #2563eb' : '1px solid #dbe3ec',
         borderRadius: 1.2,
-        bgcolor: '#ffffff',
+        bgcolor: active ? '#eff6ff' : '#ffffff',
+        boxShadow: active ? '0 0 0 2px rgba(37, 99, 235, 0.08)' : 'none',
+        appearance: 'none',
+        textAlign: 'left',
+        font: 'inherit',
+        cursor: onClick ? 'pointer' : 'default',
+        transition: 'border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease',
+        '&:hover': onClick
+          ? {
+              borderColor: '#60a5fa',
+              bgcolor: active ? '#eff6ff' : '#f8fafc',
+            }
+          : undefined,
+        '&:focus-visible': onClick
+          ? {
+              outline: '2px solid #2563eb',
+              outlineOffset: 2,
+            }
+          : undefined,
       }}
     >
       <Typography sx={{ color: '#64748b', fontSize: '0.64rem', fontWeight: 800 }}>
@@ -952,6 +980,7 @@ export default function ProgressClaimManagement({
   const [keyword, setKeyword] = useState('');
   const [mainTypeFilter, setMainTypeFilter] = useState('전체');
   const [optionFilter, setOptionFilter] = useState('전체');
+  const [summaryView, setSummaryView] = useState('contract');
   const [onlyUnmapped, setOnlyUnmapped] = useState(false);
   const [applySameItem, setApplySameItem] = useState(false);
   const [selectedKeys, setSelectedKeys] = useState(() => new Set());
@@ -1099,6 +1128,8 @@ export default function ProgressClaimManagement({
     setKeyword('');
     setMainTypeFilter('전체');
     setOptionFilter('전체');
+    setSummaryView('contract');
+    setApplySameItem(false);
     setOnlyUnmapped(false);
   }, [projectName]);
 
@@ -1114,6 +1145,8 @@ export default function ProgressClaimManagement({
     setSelectedKeys(new Set());
     setUnmappedSelectedKeys(new Set());
     setMainTypeFilter('전체');
+    setSummaryView('contract');
+    setApplySameItem(false);
     setUnmappedTypeFilter('전체');
     setUnmappedDialogOpen(false);
     setProcessPickerOpen(false);
@@ -1298,6 +1331,31 @@ export default function ProgressClaimManagement({
   const filteredItems = useMemo(() => {
     const normalizedKeyword = normalizeText(deferredKeyword).toLowerCase();
     const baseFilteredItems = items.filter((item) => {
+      const currentTotalForItem = getItemTotal(item, 'current');
+      const cumulativeTotalForItem = getItemTotal(item, 'cumulative');
+      const cumulativeRateForItem = toNumber(item.cumulative_rate);
+
+      if (
+        summaryView === 'current' &&
+        toNumber(item.current_quantity) === 0 &&
+        currentTotalForItem === 0
+      ) {
+        return false;
+      }
+
+      if (
+        summaryView === 'cumulative' &&
+        toNumber(item.cumulative_quantity) === 0 &&
+        cumulativeTotalForItem === 0 &&
+        cumulativeRateForItem <= 0
+      ) {
+        return false;
+      }
+
+      if (summaryView === 'remaining' && cumulativeRateForItem >= 1) {
+        return false;
+      }
+
       if (mainTypeFilter !== '전체' && getItemTypeLabel(item) !== mainTypeFilter) {
         return false;
       }
@@ -1323,6 +1381,7 @@ export default function ProgressClaimManagement({
     onlyUnmapped,
     optionFilter,
     searchIndexByKey,
+    summaryView,
   ]);
 
   const unmappedTypeOptions = useMemo(() => {
@@ -1460,6 +1519,21 @@ export default function ProgressClaimManagement({
     [columnWidths, visibleClaimTableColumns],
   );
 
+  const handleSummaryViewChange = useCallback((nextView) => {
+    setSummaryView(nextView);
+    setKeyword('');
+    setMainTypeFilter('전체');
+    setOptionFilter('전체');
+    setOnlyUnmapped(false);
+    setSelectedKeys(new Set());
+    setApplySameItem(nextView !== 'contract');
+
+    if (mainTableContainerRef.current) {
+      mainTableContainerRef.current.scrollTop = 0;
+    }
+    setMainTableViewport((previous) => ({ ...previous, scrollTop: 0 }));
+  }, []);
+
   const handleExcelFile = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -1538,6 +1612,12 @@ export default function ProgressClaimManagement({
       setHasUnsavedChanges(true);
       setSelectedKeys(new Set());
       setUnmappedSelectedKeys(new Set());
+      setSummaryView('contract');
+      setApplySameItem(false);
+      setKeyword('');
+      setMainTypeFilter('전체');
+      setOptionFilter('전체');
+      setOnlyUnmapped(false);
       setActiveClaimId(null);
       setSourceFileName(file.name);
       setSourceProjectLabel(projectLabel);
@@ -2041,6 +2121,12 @@ export default function ProgressClaimManagement({
       setItems(detailItems);
       setSelectedKeys(new Set());
       setUnmappedSelectedKeys(new Set());
+      setSummaryView('contract');
+      setApplySameItem(false);
+      setKeyword('');
+      setMainTypeFilter('전체');
+      setOptionFilter('전체');
+      setOnlyUnmapped(false);
     } catch (error) {
       console.error('기성 상세조회 오류:', error);
       setErrorMessage(`상세자료를 불러오지 못했습니다: ${error?.message || '알 수 없는 오류'}`);
@@ -2165,6 +2251,8 @@ export default function ProgressClaimManagement({
       setKeyword('');
       setMainTypeFilter('전체');
       setOptionFilter('전체');
+      setSummaryView('contract');
+      setApplySameItem(false);
       setOnlyUnmapped(false);
       setMessage({
         severity: 'info',
@@ -2393,7 +2481,7 @@ export default function ProgressClaimManagement({
                     fontSize: '0.72rem',
                   }}
                 >
-                  기성 엑셀 선택
+                  기성 엑셀 업로드
                 </Button>
 
                 <Button
@@ -2546,25 +2634,33 @@ export default function ProgressClaimManagement({
               <SummaryCard
                 label="계약 직접비"
                 value={contractTotal}
-                subLabel={`재료 ${formatMoney(summary.contractMaterial)} · 노무 ${formatMoney(summary.contractLabor)} · 경비 ${formatMoney(summary.contractExpense)}`}
+                active={summaryView === 'contract'}
+                onClick={() => handleSummaryViewChange('contract')}
+                subLabel={`전체 ${items.length.toLocaleString()}개 품목 · 재료 ${formatMoney(summary.contractMaterial)} · 노무 ${formatMoney(summary.contractLabor)} · 경비 ${formatMoney(summary.contractExpense)}`}
               />
               <SummaryCard
                 label="금회 직접기성"
                 value={currentTotal}
                 color="#0369a1"
-                subLabel={`재료 ${formatMoney(summary.currentMaterial)} · 노무 ${formatMoney(summary.currentLabor)} · 경비 ${formatMoney(summary.currentExpense)}`}
+                active={summaryView === 'current'}
+                onClick={() => handleSummaryViewChange('current')}
+                subLabel={`금회 발생 품목 · 재료 ${formatMoney(summary.currentMaterial)} · 노무 ${formatMoney(summary.currentLabor)} · 경비 ${formatMoney(summary.currentExpense)}`}
               />
               <SummaryCard
                 label="누계 직접기성"
                 value={cumulativeTotal}
                 color="#0f766e"
-                subLabel={`직접비 누계율 ${(cumulativeRate * 100).toFixed(2)}%`}
+                active={summaryView === 'cumulative'}
+                onClick={() => handleSummaryViewChange('cumulative')}
+                subLabel={`누계율 0% 초과 품목 · 직접비 누계율 ${(cumulativeRate * 100).toFixed(2)}%`}
               />
               <SummaryCard
                 label="잔여 직접기성"
                 value={contractTotal - cumulativeTotal}
                 color="#7c2d12"
-                subLabel="계약 직접비 - 누계 직접기성"
+                active={summaryView === 'remaining'}
+                onClick={() => handleSummaryViewChange('remaining')}
+                subLabel="누계율 100% 미만 품목"
               />
             </Stack>
 
@@ -2742,18 +2838,34 @@ export default function ProgressClaimManagement({
                       top: 0,
                       zIndex: 22,
                       height: GROUP_HEADER_HEIGHT,
-                      bgcolor: '#dbeafe',
-                      borderBottom: '1px solid #94a3b8',
+                      bgcolor: '#e2e8f0',
+                      borderBottom: '1px solid #cbd5e1',
+                      px: 0.4,
                       py: 0.2,
                     }}
                   >
-                    <Stack
-                      direction="row"
-                      alignItems="center"
-                      justifyContent="center"
-                      spacing={0.4}
+                    <Box
+                      sx={{
+                        position: 'relative',
+                        width: '100%',
+                        minWidth: 0,
+                        height: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
                     >
-                      <Typography sx={{ fontSize: '0.7rem', fontWeight: 900 }}>
+                      <Typography
+                        sx={{
+                          width: '100%',
+                          pr: 2.8,
+                          pl: 2.8,
+                          textAlign: 'center',
+                          fontSize: '0.7rem',
+                          fontWeight: 900,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
                         계약내역
                       </Typography>
                       <IconButton
@@ -2770,13 +2882,17 @@ export default function ProgressClaimManagement({
                             : '재료비·노무비·경비 열기'
                         }
                         sx={{
+                          position: 'absolute',
+                          top: '50%',
+                          right: 2,
+                          transform: 'translateY(-50%)',
                           width: 20,
                           height: 20,
                           border: '1px solid #94a3b8',
                           borderRadius: 0.7,
-                          bgcolor: '#ffffff',
+                          bgcolor: '#f8fafc',
                           color: '#334155',
-                          '&:hover': { bgcolor: '#eff6ff' },
+                          '&:hover': { bgcolor: '#f1f5f9' },
                         }}
                       >
                         <Box
@@ -2790,7 +2906,7 @@ export default function ProgressClaimManagement({
                           {contractDetailsOpen ? '−' : '+'}
                         </Box>
                       </IconButton>
-                    </Stack>
+                    </Box>
                   </TableCell>
 
                   <TableCell
@@ -2802,18 +2918,34 @@ export default function ProgressClaimManagement({
                       top: 0,
                       zIndex: 22,
                       height: GROUP_HEADER_HEIGHT,
-                      bgcolor: '#dcfce7',
-                      borderBottom: '1px solid #94a3b8',
+                      bgcolor: '#e2e8f0',
+                      borderBottom: '1px solid #cbd5e1',
+                      px: 0.4,
                       py: 0.2,
                     }}
                   >
-                    <Stack
-                      direction="row"
-                      alignItems="center"
-                      justifyContent="center"
-                      spacing={0.4}
+                    <Box
+                      sx={{
+                        position: 'relative',
+                        width: '100%',
+                        minWidth: 0,
+                        height: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
                     >
-                      <Typography sx={{ fontSize: '0.7rem', fontWeight: 900 }}>
+                      <Typography
+                        sx={{
+                          width: '100%',
+                          pr: 2.8,
+                          pl: 2.8,
+                          textAlign: 'center',
+                          fontSize: '0.7rem',
+                          fontWeight: 900,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
                         금회청구
                       </Typography>
                       <IconButton
@@ -2830,13 +2962,17 @@ export default function ProgressClaimManagement({
                             : '재료비·노무비·경비 열기'
                         }
                         sx={{
+                          position: 'absolute',
+                          top: '50%',
+                          right: 2,
+                          transform: 'translateY(-50%)',
                           width: 20,
                           height: 20,
                           border: '1px solid #94a3b8',
                           borderRadius: 0.7,
-                          bgcolor: '#ffffff',
+                          bgcolor: '#f8fafc',
                           color: '#334155',
-                          '&:hover': { bgcolor: '#f0fdf4' },
+                          '&:hover': { bgcolor: '#f1f5f9' },
                         }}
                       >
                         <Box
@@ -2850,7 +2986,7 @@ export default function ProgressClaimManagement({
                           {currentDetailsOpen ? '−' : '+'}
                         </Box>
                       </IconButton>
-                    </Stack>
+                    </Box>
                   </TableCell>
 
                   {endingHeaderColumns.map((column) =>
@@ -2886,7 +3022,7 @@ export default function ProgressClaimManagement({
                       sx={{ py: 6, color: '#94a3b8' }}
                     >
                       {items.length === 0
-                        ? '상단의 기성 엑셀 선택 버튼으로 기존 기성내역서를 불러와주세요.'
+                        ? '상단의 기성 엑셀 업로드 버튼으로 기존 기성내역서를 불러와주세요.'
                         : '현재 필터에 해당하는 품목이 없습니다.'}
                     </TableCell>
                   </TableRow>
@@ -3193,7 +3329,7 @@ export default function ProgressClaimManagement({
           </Stack>
 
           <TableContainer sx={{ flexGrow: 1, minHeight: 0, overflow: 'auto' }}>
-            <Table stickyHeader size="small" sx={{ minWidth: 1120 }}>
+            <Table stickyHeader size="small" sx={{ minWidth: 1240 }}>
               <TableHead>
                 <TableRow>
                   {[
@@ -3203,6 +3339,7 @@ export default function ProgressClaimManagement({
                     '계약 직접비',
                     '금회 직접기성',
                     '누계 직접기성',
+                    '잔여 직접기성',
                     '누계율',
                     '품목수',
                     '등록·수정자',
@@ -3223,7 +3360,7 @@ export default function ProgressClaimManagement({
                 {claims.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={11}
+                      colSpan={12}
                       align="center"
                       sx={{ py: 5, color: '#94a3b8' }}
                     >
@@ -3246,6 +3383,8 @@ export default function ProgressClaimManagement({
                       toNumber(claim.cumulative_material_amount) +
                       toNumber(claim.cumulative_labor_amount) +
                       toNumber(claim.cumulative_expense_amount);
+                    const claimRemainingTotal =
+                      claimContractTotal - claimCumulativeTotal;
                     const claimRate =
                       claimContractTotal > 0
                         ? claimCumulativeTotal / claimContractTotal
@@ -3297,6 +3436,16 @@ export default function ProgressClaimManagement({
                           }}
                         >
                           {formatMoney(claimCumulativeTotal)}원
+                        </TableCell>
+                        <TableCell
+                          sx={{
+                            ...bodyCellSx,
+                            ...numberCellSx,
+                            color: '#7c2d12',
+                            fontWeight: 800,
+                          }}
+                        >
+                          {formatMoney(claimRemainingTotal)}원
                         </TableCell>
                         <TableCell sx={{ ...bodyCellSx, ...numberCellSx }}>
                           {(claimRate * 100).toFixed(2)}%
