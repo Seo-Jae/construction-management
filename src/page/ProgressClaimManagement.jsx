@@ -874,6 +874,7 @@ export default function ProgressClaimManagement({
   const [loading, setLoading] = useState(false);
   const [listLoading, setListLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [draftSaving, setDraftSaving] = useState(false);
   const [message, setMessage] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -939,6 +940,52 @@ export default function ProgressClaimManagement({
     }
   }, [projectName]);
 
+  const loadWorkDraft = useCallback(async (targetClaimNo) => {
+    if (!projectName || Number(targetClaimNo) < 1) return null;
+
+    const { data, error } = await supabase.rpc('get_progress_claim_work_draft', {
+      p_project_name: projectName,
+      p_claim_no: Number(targetClaimNo),
+    });
+
+    if (error) {
+      if (String(error?.message || '').includes('get_progress_claim_work_draft')) {
+        return null;
+      }
+      throw error;
+    }
+
+    return data || null;
+  }, [projectName]);
+
+  const applyWorkDraft = useCallback((draft) => {
+    const draftItems = Array.isArray(draft?.items)
+      ? draft.items.map((item) => ({
+          ...item,
+          process_type: encodeProcessTypes(decodeProcessTypes(item.process_type)),
+          validation_errors: Array.isArray(item.validation_errors)
+            ? item.validation_errors
+            : [],
+        }))
+      : [];
+
+    setActiveClaimId(null);
+    setClaimNo(Number(draft?.claim_no) || 1);
+    setBaseMonth(String(draft?.base_month || '').slice(0, 7));
+    setContractVersionLabel(
+      draft?.contract_version_label || DEFAULT_CONTRACT_VERSION,
+    );
+    setSourceFileName(draft?.source_file_name || '');
+    setSourceProjectLabel(draft?.source_project_label || projectName || '');
+    setItems(draftItems);
+    setSelectedKeys(new Set());
+    setUnmappedSelectedKeys(new Set());
+    setKeyword('');
+    setMainTypeFilter('전체');
+    setOptionFilter('전체');
+    setOnlyUnmapped(false);
+  }, [projectName]);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -960,6 +1007,23 @@ export default function ProgressClaimManagement({
       if (cancelled) return;
 
       const nextDefaults = getNextClaimDefaults(loadedClaims);
+
+      try {
+        const workDraft = await loadWorkDraft(nextDefaults.claimNo);
+        if (cancelled) return;
+
+        if (workDraft) {
+          applyWorkDraft(workDraft);
+          setMessage({
+            severity: 'info',
+            text: `${nextDefaults.claimNo}회차 임시저장 자료를 자동으로 불러왔습니다.`,
+          });
+          return;
+        }
+      } catch (draftError) {
+        console.warn('기성 임시저장 조회 오류:', draftError);
+      }
+
       setClaimNo(nextDefaults.claimNo);
       setBaseMonth(nextDefaults.baseMonth);
       setContractVersionLabel(nextDefaults.contractVersionLabel);
@@ -970,7 +1034,7 @@ export default function ProgressClaimManagement({
     return () => {
       cancelled = true;
     };
-  }, [projectName]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [projectName, loadClaimList, loadWorkDraft, applyWorkDraft]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1549,13 +1613,24 @@ export default function ProgressClaimManagement({
           : item,
       ),
     );
+    const appliedCount = unmappedSelectedKeys.size;
     setMessage({
       severity: 'success',
-      text: `검색·선택한 ${unmappedSelectedKeys.size.toLocaleString()}개 품목에 "${getProcessDisplayLabel(encoded)}" 공정을 연결했습니다.`,
+      text: `검색·선택한 ${appliedCount.toLocaleString()}개 품목에 "${getProcessDisplayLabel(encoded)}" 공정을 연결했습니다.`,
     });
     setErrorMessage('');
-    setUnmappedDialogOpen(false);
     setUnmappedSelectedKeys(new Set());
+
+    requestAnimationFrame(() => {
+      const container = unmappedTableContainerRef.current;
+      if (!container) return;
+      const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+      if (container.scrollTop > maxScrollTop) container.scrollTop = maxScrollTop;
+      setUnmappedTableViewport((previous) => ({
+        ...previous,
+        scrollTop: Math.min(previous.scrollTop, maxScrollTop),
+      }));
+    });
   };
 
   const handleColumnResizeStart = (event, column) => {
@@ -1634,6 +1709,58 @@ export default function ProgressClaimManagement({
     window.addEventListener('pointerup', handlePointerUp);
   };
 
+  const handleDraftSave = async () => {
+    if (!projectName) {
+      setErrorMessage('임시저장할 현장을 먼저 선택해주세요.');
+      return;
+    }
+
+    if (!baseMonth || !contractVersionLabel.trim() || Number(claimNo) < 1) {
+      setErrorMessage('회차, 기준월, 계약 버전을 모두 확인해주세요.');
+      return;
+    }
+
+    if (items.length === 0) {
+      setErrorMessage('임시저장할 기성 품목이 없습니다.');
+      return;
+    }
+
+    setDraftSaving(true);
+    setMessage(null);
+    setErrorMessage('');
+
+    try {
+      const payload = items.map((item) => ({
+        ...item,
+        process_type: encodeProcessTypes(decodeProcessTypes(item.process_type)),
+      }));
+
+      const { error } = await supabase.rpc('save_progress_claim_work_draft', {
+        p_project_name: projectName,
+        p_contract_version_label: contractVersionLabel.trim(),
+        p_claim_no: Number(claimNo),
+        p_base_month: `${baseMonth}-01`,
+        p_source_file_name: sourceFileName || null,
+        p_source_project_label: sourceProjectLabel || null,
+        p_items: payload,
+      });
+
+      if (error) throw error;
+
+      setMessage({
+        severity: 'success',
+        text: `${claimNo}회차 작업내용을 임시저장했습니다. 계약 검증과 관계없이 다시 불러올 수 있습니다.`,
+      });
+    } catch (error) {
+      console.error('기성 임시저장 오류:', error);
+      setErrorMessage(
+        `임시저장하지 못했습니다: ${error?.message || '알 수 없는 오류'}`,
+      );
+    } finally {
+      setDraftSaving(false);
+    }
+  };
+
   const handleSave = async () => {
     if (!projectName) {
       setErrorMessage('저장할 현장을 먼저 선택해주세요.');
@@ -1683,6 +1810,18 @@ export default function ProgressClaimManagement({
         severity: 'success',
         text: `${claimNo}회차 직접비 기성자료를 저장했습니다.`,
       });
+
+      const { error: deleteDraftError } = await supabase.rpc(
+        'delete_progress_claim_work_draft',
+        {
+          p_project_name: projectName,
+          p_claim_no: Number(claimNo),
+        },
+      );
+      if (deleteDraftError) {
+        console.warn('저장 완료 후 임시저장 정리 오류:', deleteDraftError);
+      }
+
       await loadClaimList();
     } catch (error) {
       console.error('기성자료 저장 오류:', error);
@@ -1734,27 +1873,46 @@ export default function ProgressClaimManagement({
     }
   };
 
-  const handleNewClaim = () => {
+  const handleNewClaim = async () => {
     const nextDefaults = getNextClaimDefaults(claims);
 
-    setActiveClaimId(null);
-    setClaimNo(nextDefaults.claimNo);
-    setBaseMonth(nextDefaults.baseMonth);
-    setContractVersionLabel(nextDefaults.contractVersionLabel);
-    setSourceFileName('');
-    setSourceProjectLabel('');
-    setItems([]);
-    setSelectedKeys(new Set());
-    setUnmappedSelectedKeys(new Set());
-    setKeyword('');
-    setMainTypeFilter('전체');
-    setOptionFilter('전체');
-    setOnlyUnmapped(false);
-    setMessage({
-      severity: 'info',
-      text: `${nextDefaults.claimNo}회차 새 작성을 시작합니다. 기준월은 ${nextDefaults.baseMonth}로 자동 설정했으며 직접 변경할 수 있습니다.`,
-    });
+    setLoading(true);
     setErrorMessage('');
+
+    try {
+      const workDraft = await loadWorkDraft(nextDefaults.claimNo);
+      if (workDraft) {
+        applyWorkDraft(workDraft);
+        setMessage({
+          severity: 'info',
+          text: `${nextDefaults.claimNo}회차 임시저장 자료를 불러왔습니다.`,
+        });
+        return;
+      }
+
+      setActiveClaimId(null);
+      setClaimNo(nextDefaults.claimNo);
+      setBaseMonth(nextDefaults.baseMonth);
+      setContractVersionLabel(nextDefaults.contractVersionLabel);
+      setSourceFileName('');
+      setSourceProjectLabel('');
+      setItems([]);
+      setSelectedKeys(new Set());
+      setUnmappedSelectedKeys(new Set());
+      setKeyword('');
+      setMainTypeFilter('전체');
+      setOptionFilter('전체');
+      setOnlyUnmapped(false);
+      setMessage({
+        severity: 'info',
+        text: `${nextDefaults.claimNo}회차 새 작성을 시작합니다. 기준월은 ${nextDefaults.baseMonth}로 자동 설정했으며 직접 변경할 수 있습니다.`,
+      });
+    } catch (error) {
+      console.error('새 회차 임시저장 조회 오류:', error);
+      setErrorMessage(`새 회차를 준비하지 못했습니다: ${error?.message || '알 수 없는 오류'}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -1887,7 +2045,7 @@ export default function ProgressClaimManagement({
                   startIcon={
                     loading ? <CircularProgress size={14} /> : <UploadFileRoundedIcon />
                   }
-                  disabled={loading || saving}
+                  disabled={loading || saving || draftSaving}
                   onClick={() => fileInputRef.current?.click()}
                   sx={{
                     minWidth: 118,
@@ -1902,6 +2060,31 @@ export default function ProgressClaimManagement({
 
                 <Button
                   size="small"
+                  variant="outlined"
+                  startIcon={
+                    draftSaving ? (
+                      <CircularProgress size={14} />
+                    ) : (
+                      <SaveRoundedIcon />
+                    )
+                  }
+                  disabled={draftSaving || saving || loading || items.length === 0}
+                  onClick={handleDraftSave}
+                  sx={{
+                    minWidth: 88,
+                    height: 38,
+                    px: 1.2,
+                    whiteSpace: 'nowrap',
+                    fontSize: '0.72rem',
+                    borderColor: '#64748b',
+                    color: '#475569',
+                  }}
+                >
+                  임시저장
+                </Button>
+
+                <Button
+                  size="small"
                   variant="contained"
                   startIcon={
                     saving ? (
@@ -1910,7 +2093,7 @@ export default function ProgressClaimManagement({
                       <SaveRoundedIcon />
                     )
                   }
-                  disabled={saving || loading || validItems.length === 0}
+                  disabled={saving || draftSaving || loading || validItems.length === 0}
                   onClick={handleSave}
                   sx={{
                     minWidth: activeClaimId ? 132 : 94,
