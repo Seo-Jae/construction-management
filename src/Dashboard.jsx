@@ -46,8 +46,8 @@ import WeeklyOverviewArchive from './page/WeeklyOverviewArchive.jsx';
 import MaterialOrderUpload from './page/MaterialOrderUpload.jsx';
 import MaterialInputStatus from './page/MaterialInputStatus.jsx';
 import LaborContractManagement from './page/LaborContractManagement.jsx';
+import ProgressClaimManagement from './page/ProgressClaimManagement.jsx';
 import AdminDashboard from './page/AdminDashboard.jsx';
-import UserManagement from './page/UserManagement.jsx';
 
 const drawerWidth = 240;
 const SUPABASE_PAGE_SIZE = 1000;
@@ -62,7 +62,6 @@ const PROJECT_DISPLAY_ORDER = [
 
 const PROJECT_FREE_VIEWS = [
   'admin-dashboard',
-  'user-management',
   'approval-inbox',
   'weekly-overview',
   'weekly-overview-archive',
@@ -71,7 +70,6 @@ const PROJECT_FREE_VIEWS = [
 
 const MANAGEMENT_ONLY_VIEWS = [
   'admin-dashboard',
-  'user-management',
   'weekly-overview',
   'weekly-overview-archive',
 ];
@@ -94,29 +92,6 @@ const sortProjectNames = (projectNames) =>
       'ko',
     );
   });
-
-const formatRecentLoginDateTime = (value) => {
-  if (!value) return '-';
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '-';
-
-  const parts = new Intl.DateTimeFormat('ko-KR', {
-    timeZone: 'Asia/Seoul',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hourCycle: 'h23',
-  }).formatToParts(date);
-
-  const part = (type) =>
-    parts.find((item) => item.type === type)?.value || '';
-
-  return `${part('year')}-${part('month')}-${part('day')} ${part('hour')}:${part('minute')}:${part('second')}`;
-};
 
 const splitIntoChunks = (items, chunkSize) => {
   const chunks = [];
@@ -170,9 +145,7 @@ const fetchAllDailyReportRows = async (projectName) => {
   while (true) {
     const { data, error } = await supabase
       .from('daily_reports')
-      .select(
-        'date, workers, tasks, today_task, tomorrow_task, status',
-      )
+      .select('*')
       .eq('project_name', projectName)
       .order('date', { ascending: true })
       .range(from, from + SUPABASE_PAGE_SIZE - 1);
@@ -192,33 +165,6 @@ const fetchAllDailyReportRows = async (projectName) => {
   }
 
   return allRows;
-};
-
-const fetchMonthlyDailyReportRows = async ({
-  projectName,
-  year,
-  monthIndex,
-}) => {
-  const shortYear = String(year).slice(-2);
-  const month = String(monthIndex + 1).padStart(2, '0');
-  const monthStart = `${shortYear}.${month}.01`;
-  const monthEnd = `${shortYear}.${month}.31`;
-
-  const { data, error } = await supabase
-    .from('daily_reports')
-    .select(
-      'date, workers, tasks, today_task, tomorrow_task, status',
-    )
-    .eq('project_name', projectName)
-    .gte('date', monthStart)
-    .lte('date', monthEnd)
-    .order('date', { ascending: true });
-
-  if (error) {
-    throw error;
-  }
-
-  return data || [];
 };
 
 const getKoreaDateTimeParts = (date = new Date()) => {
@@ -330,7 +276,6 @@ const bodyCellStyle = { borderRight: '1px solid #cbd5e1', p: 0 };
 const viewTitles = {
   main: 'Main',
   'admin-dashboard': '욱림건설 전체 현장 Dashboard',
-  'user-management': '회원관리',
   daily: '출력일보작성',
   'daily-monthly-workers': '금월 투입현황',
   'daily-cumulative-workers': '누계투입조회',
@@ -341,6 +286,8 @@ const viewTitles = {
   'progress-monthly': '월별 완료 집계',
   'material-order': '자재발주작성',
   'material-input-status': '자재투입현황',
+  'payment-claim': '기성내역서작성',
+  'payment-sales-status': '매입매출현황',
   'labor-contract': '근로계약서작성',
   'report-weekly': '주간 업무 보고',
   'report-approval': '품의 보고',
@@ -437,35 +384,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const userRole = resolveUserRole(userProfile);
   const isSuperAdmin = userRole === '최고관리자';
   const isManagementRole = ['관리자', '최고관리자'].includes(userRole);
-  const hasAllProjectAccess =
-    isSuperAdmin ||
-    (Array.isArray(userProfile?.project_names) &&
-      userProfile.project_names.some(
-        (projectName) =>
-          String(projectName || '').trim() === ALL_PROJECTS_OPTION,
-      ));
-  const assignedProjectNames = sortProjectNames(
-    Array.from(
-      new Set(
-        [
-          ...(Array.isArray(userProfile?.project_names)
-            ? userProfile.project_names
-            : []),
-          userProfile?.project_name,
-        ]
-          .map((projectName) => String(projectName || '').trim())
-          .filter(
-            (projectName) =>
-              projectName &&
-              projectName !== '본사' &&
-              projectName !== ALL_PROJECTS_OPTION,
-          ),
-      ),
-    ),
-  );
-  const assignedProjectsKey = assignedProjectNames.join('\u0001');
-  const canSwitchProject =
-    hasAllProjectAccess || assignedProjectNames.length > 1;
 
   const [selectedProjectName, setSelectedProjectName] =
     useState('');
@@ -476,25 +394,26 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   ] = useState('');
 
   const [projectOptions, setProjectOptions] =
-    useState(() =>
-      hasAllProjectAccess ? [] : assignedProjectNames,
-    );
+    useState([]);
   const [projectOptionsLoading, setProjectOptionsLoading] =
     useState(false);
 
-  const defaultAssignedProjectName =
-    assignedProjectNames[0] || '';
-
-  const activeProjectName =
-    selectedProjectName === ALL_PROJECTS_OPTION
-      ? ''
-      : selectedProjectName || defaultAssignedProjectName;
+  const activeProjectName = isManagementRole
+    ? (
+        selectedProjectName ===
+        ALL_PROJECTS_OPTION
+          ? ''
+          : selectedProjectName
+      )
+    : userProfile?.project_name || '';
 
   const cumulativeProjectScope =
-    selectedProjectName ||
-    (hasAllProjectAccess
-      ? ALL_PROJECTS_OPTION
-      : defaultAssignedProjectName);
+    isManagementRole
+      ? (
+          selectedProjectName ||
+          ALL_PROJECTS_OPTION
+        )
+      : userProfile?.project_name || '';
 
   const activeProcessOptions =
     getProjectProcessOptions(
@@ -597,14 +516,8 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   }, []);
 
   useEffect(() => {
-    if (!hasAllProjectAccess) {
-      setProjectOptions(assignedProjectNames);
-      setProjectOptionsLoading(false);
-      setSelectedProjectName((previousProjectName) =>
-        assignedProjectNames.includes(previousProjectName)
-          ? previousProjectName
-          : defaultAssignedProjectName,
-      );
+    if (!isManagementRole) {
+      setProjectOptions([]);
       return undefined;
     }
 
@@ -692,11 +605,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         handleFocus,
       );
     };
-  }, [
-    assignedProjectsKey,
-    defaultAssignedProjectName,
-    hasAllProjectAccess,
-  ]);
+  }, [isManagementRole]);
 
   useEffect(() => {
     const requestedView = new URLSearchParams(
@@ -708,10 +617,8 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       URL에 이전 화면의 view 값이 남아 있더라도 Main을 우선합니다.
     */
     if (!isManagementRole) {
-      setSelectedProjectName((previousProjectName) =>
-        assignedProjectNames.includes(previousProjectName)
-          ? previousProjectName
-          : defaultAssignedProjectName,
+      setSelectedProjectName(
+        userProfile?.project_name || '',
       );
       setCurrentView('main');
       return;
@@ -748,12 +655,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         ? previousView
         : 'admin-dashboard',
     );
-  }, [
-    assignedProjectsKey,
-    defaultAssignedProjectName,
-    isManagementRole,
-    userProfile?.project_name,
-  ]);
+  }, [isManagementRole, userProfile?.project_name]);
 
   const handleOpenAdminProject = (projectName) => {
     setSelectedProjectName(projectName);
@@ -830,12 +732,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   };
 
   const handleSidebarViewChange = (nextView) => {
-    if (nextView === 'user-management') {
-      if (!isSuperAdmin) return;
-      setCurrentView(nextView);
-      return;
-    }
-
     if (
       [
         'weekly-overview',
@@ -929,62 +825,36 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   useEffect(() => {
     if (!activeProjectName) {
       setBuildingConfigs({});
-      return undefined;
+      setUnitProgressData({});
+      setSavedData({});
+      setManualStatus({});
+      return;
     }
-
-    let active = true;
 
     const fetchBuildingConfigs = async () => {
-      const { data, error } = await supabase
-        .from('building_settings')
-        .select('building_name, config_json')
-        .eq('project_name', activeProjectName);
-
-      if (error) {
-        console.error('동 설정 조회 오류:', error);
-        return;
-      }
-
-      if (!active) return;
-
-      const configs = {};
-
-      (data || []).forEach((row) => {
-        configs[row.building_name] = row.config_json;
-      });
-
-      setBuildingConfigs(configs);
+        const { data, error } = await supabase.from("building_settings").select("*").eq("project_name", activeProjectName);
+        if (error) return console.error(error);
+        const configs = {};
+        data.forEach(row => { configs[row.building_name] = row.config_json; });
+        setBuildingConfigs(configs);
     };
-
-    fetchBuildingConfigs();
-
-    return () => {
-      active = false;
-    };
-  }, [activeProjectName]);
-
-  useEffect(() => {
-    if (!activeProjectName) {
-      setUnitProgressData({});
-      return undefined;
-    }
-
-    // Main 등 다른 메뉴에서는 세대별 공정 원본을 내려받지 않습니다.
-    if (currentView !== 'progress-input') {
-      return undefined;
-    }
-
-    let active = true;
-    setUnitProgressData({});
 
     const fetchUnitProgress = async () => {
+      // 공정이 바뀔 때 이전 공정 색상이 잠시 남지 않도록 먼저 비웁니다.
+      setUnitProgressData({});
+
       try {
+        /*
+          Supabase REST 조회는 프로젝트 설정에 따라 한 번에
+          최대 1,000행까지만 반환될 수 있습니다.
+
+          1,275세대처럼 1,000건을 넘는 현장도 전부 표시되도록
+          1,000건 단위로 마지막 페이지까지 반복 조회합니다.
+        */
         const data = await fetchAllProgressRows({
           projectName: activeProjectName,
           processType: selectedProcess,
         });
-
-        if (!active) return;
 
         const mapped = {};
 
@@ -1001,52 +871,11 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       }
     };
 
-    fetchUnitProgress();
-
-    return () => {
-      active = false;
-    };
-  }, [activeProjectName, currentView, selectedProcess]);
-
-  const dailyReportLoadKey =
-    currentView === 'daily'
-      ? `${activeProjectName}:all`
-      : ['main', 'daily-monthly-workers'].includes(currentView)
-        ? `${activeProjectName}:${viewYear}:${viewMonth}`
-        : `${activeProjectName}:skip`;
-
-  useEffect(() => {
-    if (!activeProjectName) {
-      setSavedData({});
-      setManualStatus({});
-      return undefined;
-    }
-
-    const monthlyReportViews = new Set([
-      'main',
-      'daily-monthly-workers',
-    ]);
-    const needsAllReports = currentView === 'daily';
-
-    if (!monthlyReportViews.has(currentView) && !needsAllReports) {
-      return undefined;
-    }
-
-    let active = true;
-    setSavedData({});
-    setManualStatus({});
-
     const fetchReports = async () => {
       try {
-        const data = needsAllReports
-          ? await fetchAllDailyReportRows(activeProjectName)
-          : await fetchMonthlyDailyReportRows({
-              projectName: activeProjectName,
-              year: viewYear,
-              monthIndex: viewMonth,
-            });
-
-        if (!active) return;
+        const data = await fetchAllDailyReportRows(
+          activeProjectName,
+        );
 
         const newData = {};
         const newStatus = {};
@@ -1067,16 +896,15 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         setSavedData(newData);
         setManualStatus(newStatus);
       } catch (error) {
-        console.error('공사일보 조회 오류:', error);
+        console.error('공사일보 전체 조회 오류:', error);
       }
     };
 
+    fetchBuildingConfigs();
+    fetchUnitProgress();
     fetchReports();
 
-    return () => {
-      active = false;
-    };
-  }, [dailyReportLoadKey]);
+  }, [activeProjectName, selectedProcess]);
 
   const syncDataToDB = async (
     dateKey,
@@ -2638,23 +2466,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
         setSelectedCells(new Set());
 
-        try {
-          window.sessionStorage.setItem(
-            `main-progress-changed:${activeProjectName}`,
-            String(Date.now()),
-          );
-        } catch {
-          // 저장소를 사용할 수 없는 브라우저에서도 화면 갱신은 계속합니다.
-        }
-
-        window.dispatchEvent(
-          new CustomEvent('unit-progress-changed', {
-            detail: {
-              projectName: activeProjectName,
-            },
-          }),
-        );
-
         const protectedMessage =
           protectedCompletedCellKeys.length >
           0
@@ -2719,23 +2530,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
       setSelectedCells(new Set());
 
-      try {
-        window.sessionStorage.setItem(
-          `main-progress-changed:${activeProjectName}`,
-          String(Date.now()),
-        );
-      } catch {
-        // 저장소를 사용할 수 없는 브라우저에서도 화면 갱신은 계속합니다.
-      }
-
-      window.dispatchEvent(
-        new CustomEvent('unit-progress-changed', {
-          detail: {
-            projectName: activeProjectName,
-          },
-        }),
-      );
-
       const protectedMessage =
         protectedCompletedCellKeys.length >
         0
@@ -2792,7 +2586,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               ? cumulativeProjectScope
               : [
                   'admin-dashboard',
-                  'user-management',
                   'approval-inbox',
                   'weekly-overview',
                   'weekly-overview-archive',
@@ -2803,11 +2596,10 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             - {viewTitles[currentView] || '현장 관리'}
           </Typography>
 
-          {canSwitchProject &&
+          {isManagementRole &&
             ![
               'weekly-overview',
               'weekly-overview-archive',
-              'user-management',
             ].includes(
               currentView,
             ) && (
@@ -2830,8 +2622,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                 size="small"
                 options={
                   currentView ===
-                    'daily-cumulative-workers' &&
-                  hasAllProjectAccess
+                  'daily-cumulative-workers'
                     ? [
                         ALL_PROJECTS_OPTION,
                         ...projectOptions,
@@ -2909,23 +2700,9 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           )}
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <Box sx={{ textAlign: 'right', lineHeight: 1.25 }}>
-              <Typography
-                component="div"
-                variant="caption"
-                sx={{ color: '#cbd5e1', fontWeight: 700 }}
-              >
-                접속자: {userProfile?.manager_name} ({userRole})
-              </Typography>
-              <Typography
-                component="div"
-                variant="caption"
-                sx={{ mt: 0.1, color: '#94a3b8', fontSize: '0.63rem' }}
-              >
-                최근 접속일시:{' '}
-                {formatRecentLoginDateTime(user?.last_sign_in_at)}
-              </Typography>
-            </Box>
+            <Typography variant="caption" sx={{ color: '#94a3b8' }}>
+              접속자: {userProfile?.manager_name} ({userRole})
+            </Typography>
 
             <Button
               color="inherit"
@@ -2997,16 +2774,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             <AdminDashboard
               processOptions={processOptions}
               onOpenProject={handleOpenAdminProject}
-              allowedProjectNames={
-                hasAllProjectAccess
-                  ? null
-                  : assignedProjectNames
-              }
             />
-          )}
-
-          {currentView === 'user-management' && isSuperAdmin && (
-            <UserManagement currentUserId={user?.id || ''} />
           )}
 
           {currentView === 'approval-inbox' && (
@@ -3031,7 +2799,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           {currentView === 'main' && activeProjectName && (
             <MainDashboard
               projectName={activeProjectName}
-              userRole={userRole}
               buildingConfigs={buildingConfigs}
               processOptions={activeProcessOptions}
               savedData={savedData}
@@ -3183,6 +2950,16 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               <LaborContractManagement
                 projectName={activeProjectName}
                 userProfile={activeUserProfile}
+              />
+            )}
+
+          {currentView ===
+            'payment-claim' &&
+            activeProjectName && (
+              <ProgressClaimManagement
+                projectName={activeProjectName}
+                userProfile={activeUserProfile}
+                processOptions={activeProcessOptions}
               />
             )}
 
