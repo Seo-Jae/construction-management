@@ -2367,13 +2367,12 @@ export default function ProgressClaimManagement({
         open={unmappedDialogOpen}
         onClose={() => setUnmappedDialogOpen(false)}
         fullWidth
-        maxWidth={false}
+        maxWidth="lg"
         PaperProps={{
           sx: {
-            width: 'min(1180px, calc(100vw - 48px))',
             height: 'min(780px, calc(100vh - 64px))',
-            maxWidth: 'none',
-            maxHeight: 'none',
+            minHeight: 'min(780px, calc(100vh - 64px))',
+            maxHeight: 'min(780px, calc(100vh - 64px))',
             display: 'flex',
             flexDirection: 'column',
           },
