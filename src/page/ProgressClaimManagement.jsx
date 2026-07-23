@@ -1987,10 +1987,6 @@ export default function ProgressClaimManagement({
       setItems(detailItems);
       setSelectedKeys(new Set());
       setUnmappedSelectedKeys(new Set());
-      setMessage({
-        severity: 'info',
-        text: `${claim?.claim_no || ''}회차 저장자료를 위쪽 작성영역에 불러왔습니다.`,
-      });
     } catch (error) {
       console.error('기성 상세조회 오류:', error);
       setErrorMessage(`상세자료를 불러오지 못했습니다: ${error?.message || '알 수 없는 오류'}`);
@@ -2421,12 +2417,6 @@ export default function ProgressClaimManagement({
                   </Alert>
                 )}
               </Box>
-            )}
-
-            {isClaimLocked && (
-              <Alert severity="success" sx={{ mt: 0.8, py: 0, fontSize: '0.7rem' }}>
-                작성완료된 회차입니다. 현장담당자는 수정할 수 없으며 최고관리자만 작성수정으로 다시 열 수 있습니다.
-              </Alert>
             )}
 
             <Stack
