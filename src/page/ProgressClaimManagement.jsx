@@ -1078,6 +1078,30 @@ export default function ProgressClaimManagement({
   }, [applySameItem, items]);
 
   const handleOpenRowProcessPicker = useCallback((item) => {
+    if (selectedKeys.size > 0) {
+      const selectedItems = items.filter((candidate) =>
+        selectedKeys.has(candidate.source_key),
+      );
+      const firstProcessValue = selectedItems[0]?.process_type || '';
+      const allSelectedRowsHaveSameProcess = selectedItems.every(
+        (candidate) =>
+          encodeProcessTypes(decodeProcessTypes(candidate.process_type)) ===
+          encodeProcessTypes(decodeProcessTypes(firstProcessValue)),
+      );
+
+      setProcessPickerMode('bulk');
+      setProcessPickerTarget(null);
+      setProcessPickerValues(
+        allSelectedRowsHaveSameProcess
+          ? decodeProcessTypes(firstProcessValue).filter(
+              (process) => !EXCLUDED_CLAIM_PROCESS_OPTIONS.has(process),
+            )
+          : [],
+      );
+      setProcessPickerOpen(true);
+      return;
+    }
+
     setProcessPickerMode('row');
     setProcessPickerTarget(item);
     setProcessPickerValues(
@@ -1086,7 +1110,7 @@ export default function ProgressClaimManagement({
       ),
     );
     setProcessPickerOpen(true);
-  }, []);
+  }, [items, selectedKeys]);
 
   const handleOpenBulkProcessPicker = () => {
     if (selectedKeys.size === 0) {
