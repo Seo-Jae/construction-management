@@ -354,6 +354,101 @@ const getKoreaMonthValue = () => {
   return `${values.year}-${values.month}`;
 };
 
+
+const addMonthsToMonthValue = (monthValue, monthsToAdd = 1) => {
+  const match = String(monthValue || '').match(/^(\d{4})-(\d{2})/);
+  if (!match) return getKoreaMonthValue();
+
+  const year = Number(match[1]);
+  const monthIndex = Number(match[2]) - 1;
+  const result = new Date(Date.UTC(year, monthIndex + monthsToAdd, 1));
+
+  return `${result.getUTCFullYear()}-${String(result.getUTCMonth() + 1).padStart(2, '0')}`;
+};
+
+const getClaimVersionLabel = (claim) => {
+  const relation = claim?.contract_version;
+
+  if (Array.isArray(relation)) {
+    return relation[0]?.version_label || DEFAULT_CONTRACT_VERSION;
+  }
+
+  return relation?.version_label || DEFAULT_CONTRACT_VERSION;
+};
+
+const getNextClaimDefaults = (claimRows = []) => {
+  const latestClaim = [...claimRows].sort(
+    (left, right) => Number(right?.claim_no || 0) - Number(left?.claim_no || 0),
+  )[0];
+
+  if (!latestClaim) {
+    return {
+      claimNo: 1,
+      baseMonth: getKoreaMonthValue(),
+      contractVersionLabel: DEFAULT_CONTRACT_VERSION,
+    };
+  }
+
+  return {
+    claimNo: Number(latestClaim.claim_no || 0) + 1,
+    baseMonth: addMonthsToMonthValue(String(latestClaim.base_month || '').slice(0, 7), 1),
+    contractVersionLabel: getClaimVersionLabel(latestClaim),
+  };
+};
+
+const inheritPreviousProcessMappings = (nextItems, previousItems) => {
+  const processBySourceKey = new Map();
+  const processesBySameItemGroup = new Map();
+
+  (previousItems || []).forEach((item) => {
+    const encodedProcess = encodeProcessTypes(decodeProcessTypes(item.process_type));
+    if (!encodedProcess) return;
+
+    if (item.source_key) {
+      processBySourceKey.set(item.source_key, encodedProcess);
+    }
+
+    const groupKey = getSameItemGroupKey(item);
+    if (!processesBySameItemGroup.has(groupKey)) {
+      processesBySameItemGroup.set(groupKey, new Set());
+    }
+    processesBySameItemGroup.get(groupKey).add(encodedProcess);
+  });
+
+  const consensusProcessByGroup = new Map();
+  processesBySameItemGroup.forEach((processSet, groupKey) => {
+    if (processSet.size === 1) {
+      consensusProcessByGroup.set(groupKey, [...processSet][0]);
+    }
+  });
+
+  let exactMatchCount = 0;
+  let sameItemMatchCount = 0;
+
+  const inheritedItems = nextItems.map((item) => {
+    const exactProcess = processBySourceKey.get(item.source_key);
+    if (exactProcess) {
+      exactMatchCount += 1;
+      return { ...item, process_type: exactProcess };
+    }
+
+    const sameItemProcess = consensusProcessByGroup.get(getSameItemGroupKey(item));
+    if (sameItemProcess) {
+      sameItemMatchCount += 1;
+      return { ...item, process_type: sameItemProcess };
+    }
+
+    return item;
+  });
+
+  return {
+    items: inheritedItems,
+    exactMatchCount,
+    sameItemMatchCount,
+    totalMatchCount: exactMatchCount + sameItemMatchCount,
+  };
+};
+
 const unwrapCellValue = (cell) => {
   const value = cell?.value;
 
@@ -792,7 +887,7 @@ export default function ProgressClaimManagement({
   const loadClaimList = useCallback(async () => {
     if (!projectName) {
       setClaims([]);
-      return;
+      return [];
     }
 
     setListLoading(true);
@@ -827,7 +922,9 @@ export default function ProgressClaimManagement({
 
       if (error) throw error;
 
-      setClaims(data || []);
+      const loadedClaims = data || [];
+      setClaims(loadedClaims);
+      return loadedClaims;
     } catch (error) {
       console.error('기성 회차 목록 조회 오류:', error);
       setClaims([]);
@@ -836,15 +933,17 @@ export default function ProgressClaimManagement({
           ? '기성관리 DB가 아직 설치되지 않았습니다. 제공된 Supabase SQL을 먼저 실행해주세요.'
           : `기성 회차 목록을 불러오지 못했습니다: ${error?.message || '알 수 없는 오류'}`,
       );
+      return [];
     } finally {
       setListLoading(false);
     }
   }, [projectName]);
 
   useEffect(() => {
+    let cancelled = false;
+
     setItems([]);
     setActiveClaimId(null);
-    setContractVersionLabel(DEFAULT_CONTRACT_VERSION);
     setSourceFileName('');
     setSourceProjectLabel('');
     setSelectedKeys(new Set());
@@ -855,7 +954,22 @@ export default function ProgressClaimManagement({
     setProcessPickerOpen(false);
     setMessage(null);
     setErrorMessage('');
-    loadClaimList();
+
+    const initializeDraft = async () => {
+      const loadedClaims = await loadClaimList();
+      if (cancelled) return;
+
+      const nextDefaults = getNextClaimDefaults(loadedClaims);
+      setClaimNo(nextDefaults.claimNo);
+      setBaseMonth(nextDefaults.baseMonth);
+      setContractVersionLabel(nextDefaults.contractVersionLabel);
+    };
+
+    initializeDraft();
+
+    return () => {
+      cancelled = true;
+    };
   }, [projectName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -1148,19 +1262,66 @@ export default function ProgressClaimManagement({
         .replace(/^현장명\s*:\s*/, '')
         .trim();
 
-      setItems(parsedItems);
+      const previousClaim = [...claims]
+        .filter((claim) => Number(claim.claim_no || 0) < Number(claimNo || 1))
+        .sort(
+          (left, right) => Number(right.claim_no || 0) - Number(left.claim_no || 0),
+        )[0];
+
+      let nextItems = parsedItems;
+      let inheritanceSummary = '';
+      let inheritanceWarning = '';
+
+      if (previousClaim?.id) {
+        try {
+          const { data: previousClaimDetail, error: previousClaimError } =
+            await supabase.rpc('get_progress_claim_detail', {
+              p_claim_id: previousClaim.id,
+            });
+
+          if (previousClaimError) throw previousClaimError;
+
+          const inheritance = inheritPreviousProcessMappings(
+            parsedItems,
+            previousClaimDetail?.items || [],
+          );
+          nextItems = inheritance.items;
+
+          if (inheritance.totalMatchCount > 0) {
+            const previousVersionLabel = getClaimVersionLabel(previousClaim);
+            const versionChanged =
+              previousVersionLabel !== contractVersionLabel.trim();
+
+            inheritanceSummary =
+              ` ${previousClaim.claim_no}회차 공정 연결 ${inheritance.totalMatchCount.toLocaleString()}건을 자동 승계했습니다.` +
+              (inheritance.sameItemMatchCount > 0
+                ? ` 동일 타입·품명 기준 ${inheritance.sameItemMatchCount.toLocaleString()}건을 포함합니다.`
+                : '') +
+              (versionChanged
+                ? ` 계약 버전이 달라 신규·변경 품목은 공정 연결을 확인해주세요.`
+                : '');
+          }
+        } catch (previousClaimError) {
+          console.warn('이전 회차 공정 연결 승계 오류:', previousClaimError);
+          inheritanceWarning = ' 이전 회차 공정 연결은 불러오지 못해 미연결 상태로 표시합니다.';
+        }
+      }
+
+      setItems(nextItems);
       setSelectedKeys(new Set());
       setUnmappedSelectedKeys(new Set());
       setActiveClaimId(null);
       setSourceFileName(file.name);
       setSourceProjectLabel(projectLabel);
-      const parsedErrorCount = parsedItems.filter(
+      const parsedErrorCount = nextItems.filter(
         (item) => item.validation_errors.length > 0,
       ).length;
       setMessage({
-        severity: parsedErrorCount > 0 ? 'warning' : 'success',
+        severity: parsedErrorCount > 0 || Boolean(inheritanceWarning) ? 'warning' : 'success',
         text:
-          `${file.name}에서 직접비 ${parsedItems.length.toLocaleString()}개 품목을 읽었습니다. 간접비는 제외했습니다.` +
+          `${file.name}에서 직접비 ${nextItems.length.toLocaleString()}개 품목을 읽었습니다. 간접비는 제외했습니다.` +
+          inheritanceSummary +
+          inheritanceWarning +
           (parsedErrorCount > 0
             ? ` 검산 오류 ${parsedErrorCount.toLocaleString()}개 행은 저장에서 제외됩니다.`
             : ''),
@@ -1574,26 +1735,24 @@ export default function ProgressClaimManagement({
   };
 
   const handleNewClaim = () => {
-    const nextClaimNo =
-      claims.length > 0
-        ? Math.max(...claims.map((row) => Number(row.claim_no) || 0)) + 1
-        : 1;
+    const nextDefaults = getNextClaimDefaults(claims);
 
     setActiveClaimId(null);
-    setClaimNo(nextClaimNo);
-    setBaseMonth(getKoreaMonthValue());
-    setContractVersionLabel(DEFAULT_CONTRACT_VERSION);
+    setClaimNo(nextDefaults.claimNo);
+    setBaseMonth(nextDefaults.baseMonth);
+    setContractVersionLabel(nextDefaults.contractVersionLabel);
     setSourceFileName('');
     setSourceProjectLabel('');
     setItems([]);
     setSelectedKeys(new Set());
     setUnmappedSelectedKeys(new Set());
     setKeyword('');
+    setMainTypeFilter('전체');
     setOptionFilter('전체');
     setOnlyUnmapped(false);
     setMessage({
       severity: 'info',
-      text: `${nextClaimNo}회차 새 작성을 시작합니다. 기존 기성 엑셀을 선택해주세요.`,
+      text: `${nextDefaults.claimNo}회차 새 작성을 시작합니다. 기준월은 ${nextDefaults.baseMonth}로 자동 설정했으며 직접 변경할 수 있습니다.`,
     });
     setErrorMessage('');
   };
