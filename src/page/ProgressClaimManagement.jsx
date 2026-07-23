@@ -8,6 +8,7 @@ import React, {
 } from 'react';
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Checkbox,
@@ -2342,7 +2343,17 @@ export default function ProgressClaimManagement({
         open={unmappedDialogOpen}
         onClose={() => setUnmappedDialogOpen(false)}
         fullWidth
-        maxWidth="lg"
+        maxWidth={false}
+        PaperProps={{
+          sx: {
+            width: 'min(1180px, calc(100vw - 48px))',
+            height: 'min(780px, calc(100vh - 64px))',
+            maxWidth: 'none',
+            maxHeight: 'none',
+            display: 'flex',
+            flexDirection: 'column',
+          },
+        }}
       >
         <DialogTitle sx={{ pb: 1 }}>
           <Typography sx={{ fontSize: '1rem', fontWeight: 900 }}>
@@ -2352,7 +2363,17 @@ export default function ProgressClaimManagement({
             타입을 먼저 고른 뒤 품명 또는 규격을 검색해 필요한 행을 한 번에 연결합니다.
           </Typography>
         </DialogTitle>
-        <DialogContent dividers sx={{ p: 1.5 }}>
+        <DialogContent
+          dividers
+          sx={{
+            p: 1.5,
+            flex: 1,
+            minHeight: 0,
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
           <Box sx={{ mb: 1.1 }}>
             <Typography sx={{ mb: 0.55, color: '#475569', fontSize: '0.7rem', fontWeight: 900 }}>
               타입 구분
@@ -2421,30 +2442,57 @@ export default function ProgressClaimManagement({
               spacing={0.8}
               alignItems={{ xs: 'stretch', sm: 'center' }}
             >
-              <TextField
-                select
+              <Autocomplete
+                multiple
+                disableCloseOnSelect
                 fullWidth
                 size="small"
-                label="연결할 공정 · 복수 선택"
+                options={claimProcessOptions}
                 value={unmappedProcesses}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  setUnmappedProcesses(typeof value === 'string' ? value.split(',') : value);
+                onChange={(_event, nextValues) => {
+                  setUnmappedProcesses(Array.from(new Set(nextValues)));
                 }}
-                SelectProps={{
-                  multiple: true,
-                  renderValue: (selected) =>
-                    selected.length > 0 ? selected.join(PROCESS_SEPARATOR) : '공정을 선택하세요',
+                isOptionEqualToValue={(option, value) => option === value}
+                getOptionLabel={(option) => option}
+                renderTags={(selected) => (
+                  <Typography
+                    noWrap
+                    sx={{
+                      maxWidth: '100%',
+                      color: '#334155',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {selected.join(PROCESS_SEPARATOR)}
+                  </Typography>
+                )}
+                renderOption={(props, option, { selected }) => {
+                  const { key, ...optionProps } = props;
+                  return (
+                    <li key={key} {...optionProps}>
+                      <Checkbox
+                        size="small"
+                        checked={selected}
+                        sx={{ p: 0.4, mr: 0.5 }}
+                      />
+                      <Typography sx={{ fontSize: '0.75rem' }}>{option}</Typography>
+                    </li>
+                  );
                 }}
-                sx={{ flex: 1 }}
-              >
-                {claimProcessOptions.map((process) => (
-                  <MenuItem key={process} value={process}>
-                    <Checkbox size="small" checked={unmappedProcesses.includes(process)} sx={{ p: 0.4, mr: 0.5 }} />
-                    <Typography sx={{ fontSize: '0.75rem' }}>{process}</Typography>
-                  </MenuItem>
-                ))}
-              </TextField>
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="연결할 공정 · 복수 선택"
+                    placeholder={unmappedProcesses.length === 0 ? '공정을 선택하세요' : ''}
+                  />
+                )}
+                slotProps={{
+                  paper: { sx: { mt: 0.5 } },
+                  listbox: { sx: { maxHeight: 280 } },
+                }}
+                sx={{ flex: 1, minWidth: 0 }}
+              />
               <Button
                 size="small"
                 variant="outlined"
@@ -2471,7 +2519,13 @@ export default function ProgressClaimManagement({
             onScroll={handleUnmappedTableScroll}
             component={Paper}
             variant="outlined"
-            sx={{ mt: 1.2, maxHeight: '55vh' }}
+            sx={{
+              mt: 1.2,
+              flex: 1,
+              minHeight: 0,
+              height: '100%',
+              overflow: 'auto',
+            }}
           >
             <Table stickyHeader size="small" sx={{ minWidth: 780 }}>
               <TableHead>
