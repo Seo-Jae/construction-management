@@ -7,7 +7,7 @@ import {
 } from './utils/buildingUnits.js';
 
 const CELL_WIDTH = 34;
-const CELL_HEIGHT = 18;
+const CELL_HEIGHT = 30;
 const CELL_GAP = 2;
 const ROW_GAP = 1;
 
@@ -112,6 +112,7 @@ export default function BuildingGrid({
   selectedCells = new Set(),
   onCellClick,
   unitData = {},
+  unitTypeData = {},
   onFloorClick,
   protectCompleted = false,
   targetLines = [],
@@ -339,6 +340,13 @@ export default function BuildingGrid({
                       cellKey
                     ] || {};
 
+                  const unitType =
+                    String(
+                      unitTypeData?.[
+                        cellKey
+                      ] || '',
+                    ).trim();
+
                   const isCompleted =
                     progress?.status ===
                     '작업완료';
@@ -409,12 +417,11 @@ export default function BuildingGrid({
                             ? 'not-allowed'
                             : 'pointer',
                         fontFamily: 'inherit',
-                        fontSize: completionDate
-                          ? '0.53rem'
-                          : '0.57rem',
-                        letterSpacing: completionDate
-                          ? '-0.02em'
-                          : 'normal',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '1px',
                         lineHeight: 1,
                         fontWeight: 800,
                         userSelect: 'none',
@@ -442,7 +449,38 @@ export default function BuildingGrid({
                         },
                       }}
                     >
-                      {displayText}
+                      <Box
+                        component="span"
+                        sx={{
+                          display: 'block',
+                          fontSize: completionDate
+                            ? '0.52rem'
+                            : '0.57rem',
+                          letterSpacing: completionDate
+                            ? '-0.02em'
+                            : 'normal',
+                          fontWeight: 900,
+                          lineHeight: 1,
+                        }}
+                      >
+                        {displayText}
+                      </Box>
+
+                      {unitType && (
+                        <Box
+                          component="span"
+                          sx={{
+                            display: 'block',
+                            fontSize: '0.49rem',
+                            fontWeight: 900,
+                            lineHeight: 1,
+                            opacity: 0.86,
+                            letterSpacing: '-0.01em',
+                          }}
+                        >
+                          {unitType}
+                        </Box>
+                      )}
                     </Box>
                   );
                 })}
