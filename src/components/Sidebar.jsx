@@ -84,6 +84,10 @@ const paymentMenus = [
     label: '기성내역서작성',
   },
   {
+    value: 'payment-contract-mapping',
+    label: '계약품목 공정연결',
+  },
+  {
     value: 'payment-sales-status',
     label: '매입매출현황',
     disabled: true,

@@ -87,6 +87,7 @@ const MAIN_ROW_HEIGHT = 40;
 const DIALOG_ROW_HEIGHT = 38;
 const TABLE_OVERSCAN = 8;
 const GROUP_HEADER_HEIGHT = 30;
+const SUPABASE_PAGE_SIZE = 1000;
 
 const EXCLUDED_CLAIM_PROCESS_OPTIONS = new Set(['허리먹']);
 
@@ -457,6 +458,10 @@ const inheritPreviousProcessMappings = (nextItems, previousItems) => {
   let sameItemMatchCount = 0;
 
   const inheritedItems = nextItems.map((item) => {
+    if (decodeProcessTypes(item.process_type).length > 0) {
+      return item;
+    }
+
     const exactProcess = processBySourceKey.get(item.source_key);
     if (exactProcess) {
       exactMatchCount += 1;
@@ -478,6 +483,53 @@ const inheritPreviousProcessMappings = (nextItems, previousItems) => {
     sameItemMatchCount,
     totalMatchCount: exactMatchCount + sameItemMatchCount,
   };
+};
+
+const fetchContractProcessMappingItems = async ({
+  projectName,
+  versionLabel,
+}) => {
+  const normalizedProjectName = String(projectName || '').trim();
+  const normalizedVersionLabel = String(versionLabel || '').trim();
+
+  if (!normalizedProjectName || !normalizedVersionLabel) return [];
+
+  const { data: versionRows, error: versionError } = await supabase
+    .from('progress_contract_versions')
+    .select('id')
+    .eq('project_name', normalizedProjectName)
+    .eq('version_label', normalizedVersionLabel)
+    .limit(1);
+
+  if (versionError) throw versionError;
+
+  const versionRow = versionRows?.[0];
+  if (!versionRow?.id) return [];
+
+  const allRows = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('progress_contract_items')
+      .select(
+        'source_key, classification, housing_type, item_name, base_item_name, process_type',
+      )
+      .eq('project_name', normalizedProjectName)
+      .eq('contract_version_id', versionRow.id)
+      .order('sort_order', { ascending: true })
+      .range(from, from + SUPABASE_PAGE_SIZE - 1);
+
+    if (error) throw error;
+
+    const rows = data || [];
+    allRows.push(...rows);
+
+    if (rows.length < SUPABASE_PAGE_SIZE) break;
+    from += SUPABASE_PAGE_SIZE;
+  }
+
+  return allRows;
 };
 
 const unwrapCellValue = (cell) => {
@@ -1572,6 +1624,30 @@ export default function ProgressClaimManagement({
       let inheritanceSummary = '';
       let inheritanceWarning = '';
 
+      try {
+        const contractMappingItems = await fetchContractProcessMappingItems({
+          projectName,
+          versionLabel: contractVersionLabel,
+        });
+
+        if (contractMappingItems.length > 0) {
+          const contractInheritance = inheritPreviousProcessMappings(
+            nextItems,
+            contractMappingItems,
+          );
+          nextItems = contractInheritance.items;
+
+          if (contractInheritance.totalMatchCount > 0) {
+            inheritanceSummary +=
+              ` 계약품목 기준 공정 연결 ${contractInheritance.totalMatchCount.toLocaleString()}건을 자동 적용했습니다.`;
+          }
+        }
+      } catch (contractMappingError) {
+        console.warn('계약품목 공정 연결 적용 오류:', contractMappingError);
+        inheritanceWarning +=
+          ' 계약품목 공정 연결 기준은 불러오지 못했습니다.';
+      }
+
       if (previousClaim?.id) {
         try {
           const { data: previousClaimDetail, error: previousClaimError } =
@@ -1582,7 +1658,7 @@ export default function ProgressClaimManagement({
           if (previousClaimError) throw previousClaimError;
 
           const inheritance = inheritPreviousProcessMappings(
-            parsedItems,
+            nextItems,
             previousClaimDetail?.items || [],
           );
           nextItems = inheritance.items;
@@ -1592,7 +1668,7 @@ export default function ProgressClaimManagement({
             const versionChanged =
               previousVersionLabel !== contractVersionLabel.trim();
 
-            inheritanceSummary =
+            inheritanceSummary +=
               ` ${previousClaim.claim_no}회차 공정 연결 ${inheritance.totalMatchCount.toLocaleString()}건을 자동 승계했습니다.` +
               (inheritance.sameItemMatchCount > 0
                 ? ` 동일 타입·품명 기준 ${inheritance.sameItemMatchCount.toLocaleString()}건을 포함합니다.`
@@ -1603,7 +1679,7 @@ export default function ProgressClaimManagement({
           }
         } catch (previousClaimError) {
           console.warn('이전 회차 공정 연결 승계 오류:', previousClaimError);
-          inheritanceWarning = ' 이전 회차 공정 연결은 불러오지 못해 미연결 상태로 표시합니다.';
+          inheritanceWarning += ' 이전 회차 공정 연결은 불러오지 못해 미연결 상태로 표시합니다.';
         }
       }
 

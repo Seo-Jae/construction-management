@@ -47,6 +47,7 @@ import MaterialOrderUpload from './page/MaterialOrderUpload.jsx';
 import MaterialInputStatus from './page/MaterialInputStatus.jsx';
 import LaborContractManagement from './page/LaborContractManagement.jsx';
 import ProgressClaimManagement from './page/ProgressClaimManagement.jsx';
+import ContractItemProcessMapping from './page/ContractItemProcessMapping.jsx';
 import AdminDashboard from './page/AdminDashboard.jsx';
 
 const drawerWidth = 240;
@@ -293,6 +294,7 @@ const viewTitles = {
   'material-order': '자재발주작성',
   'material-input-status': '자재투입현황',
   'payment-claim': '기성내역서작성',
+  'payment-contract-mapping': '계약품목 공정연결',
   'payment-sales-status': '매입매출현황',
   'labor-contract': '근로계약서작성',
   'report-weekly': '주간 업무 보고',
@@ -3058,6 +3060,16 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             'payment-claim' &&
             activeProjectName && (
               <ProgressClaimManagement
+                projectName={activeProjectName}
+                userProfile={activeUserProfile}
+                processOptions={activeProcessOptions}
+              />
+            )}
+
+          {currentView ===
+            'payment-contract-mapping' &&
+            activeProjectName && (
+              <ContractItemProcessMapping
                 projectName={activeProjectName}
                 userProfile={activeUserProfile}
                 processOptions={activeProcessOptions}
