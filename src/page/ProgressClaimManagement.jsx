@@ -83,9 +83,10 @@ const MAIN_ROW_HEIGHT = 40;
 const DIALOG_ROW_HEIGHT = 38;
 const TABLE_OVERSCAN = 8;
 
+const EXCLUDED_CLAIM_PROCESS_OPTIONS = new Set(['허리먹']);
+
 const DEFAULT_CLAIM_PROCESS_OPTIONS = [
   '바닥먹',
-  '허리먹',
   '단열',
   '합지',
   '경량벽체',
@@ -179,7 +180,10 @@ const buildClaimProcessOptions = (processOptions = []) =>
     new Set(
       [...DEFAULT_CLAIM_PROCESS_OPTIONS, ...processOptions.map(normalizeClaimProcessOption)]
         .map((process) => String(process || '').trim())
-        .filter(Boolean),
+        .filter(
+          (process) =>
+            Boolean(process) && !EXCLUDED_CLAIM_PROCESS_OPTIONS.has(process),
+        ),
     ),
   );
 
@@ -1034,7 +1038,11 @@ export default function ProgressClaimManagement({
   const handleOpenRowProcessPicker = useCallback((item) => {
     setProcessPickerMode('row');
     setProcessPickerTarget(item);
-    setProcessPickerValues(decodeProcessTypes(item.process_type));
+    setProcessPickerValues(
+      decodeProcessTypes(item.process_type).filter(
+        (process) => !EXCLUDED_CLAIM_PROCESS_OPTIONS.has(process),
+      ),
+    );
     setProcessPickerOpen(true);
   }, []);
 
@@ -1134,6 +1142,14 @@ export default function ProgressClaimManagement({
       else nextKeys.add(sourceKey);
       return nextKeys;
     });
+  };
+
+  const handleToggleUnmappedProcess = (process) => {
+    setUnmappedProcesses((previousProcesses) =>
+      previousProcesses.includes(process)
+        ? previousProcesses.filter((value) => value !== process)
+        : [...previousProcesses, process],
+    );
   };
 
   const handleToggleUnmappedDialogSelection = (checked) => {
@@ -2278,31 +2294,6 @@ export default function ProgressClaimManagement({
               onChange={(event) => setUnmappedKeyword(event.target.value)}
               sx={{ flex: 1, minWidth: 260 }}
             />
-            <TextField
-              select
-              size="small"
-              label="연결할 공정"
-              value={unmappedProcesses}
-              onChange={(event) => {
-                const value = event.target.value;
-                setUnmappedProcesses(
-                  typeof value === 'string' ? value.split(',') : value,
-                );
-              }}
-              SelectProps={{
-                multiple: true,
-                renderValue: (selected) =>
-                  selected.length > 0 ? selected.join(PROCESS_SEPARATOR) : '공정 선택',
-              }}
-              sx={{ width: 220 }}
-            >
-              {claimProcessOptions.map((process) => (
-                <MenuItem key={process} value={process}>
-                  <Checkbox size="small" checked={unmappedProcesses.includes(process)} />
-                  <Typography sx={{ fontSize: '0.72rem' }}>{process}</Typography>
-                </MenuItem>
-              ))}
-            </TextField>
             <Chip
               size="small"
               color="warning"
@@ -2312,9 +2303,96 @@ export default function ProgressClaimManagement({
             <Chip
               size="small"
               color="primary"
-              label={`선택 ${unmappedSelectedKeys.size.toLocaleString()}`}
+              label={`품목 선택 ${unmappedSelectedKeys.size.toLocaleString()}`}
             />
           </Stack>
+
+          <Box
+            sx={{
+              mt: 1.2,
+              p: 1,
+              border: '1px solid #cbd5e1',
+              borderRadius: 1,
+              bgcolor: '#f8fafc',
+            }}
+          >
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              alignItems={{ xs: 'flex-start', sm: 'center' }}
+              justifyContent="space-between"
+              spacing={0.6}
+              sx={{ mb: 0.8 }}
+            >
+              <Typography sx={{ color: '#334155', fontSize: '0.72rem', fontWeight: 900 }}>
+                연결할 공정 · 복수 선택 가능
+              </Typography>
+              <Stack direction="row" spacing={0.6} alignItems="center">
+                <Chip
+                  size="small"
+                  color="success"
+                  variant="outlined"
+                  label={`공정 선택 ${unmappedProcesses.length.toLocaleString()}`}
+                />
+                <Button
+                  size="small"
+                  disabled={unmappedProcesses.length === 0}
+                  onClick={() => setUnmappedProcesses([])}
+                  sx={{ minWidth: 0, fontSize: '0.68rem' }}
+                >
+                  공정 전체 해제
+                </Button>
+              </Stack>
+            </Stack>
+
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: {
+                  xs: 'repeat(2, minmax(0, 1fr))',
+                  sm: 'repeat(3, minmax(0, 1fr))',
+                  md: 'repeat(6, minmax(0, 1fr))',
+                },
+                gap: 0.55,
+              }}
+            >
+              {claimProcessOptions.map((process) => {
+                const selected = unmappedProcesses.includes(process);
+                return (
+                  <Button
+                    key={process}
+                    variant={selected ? 'contained' : 'outlined'}
+                    onClick={() => handleToggleUnmappedProcess(process)}
+                    sx={{
+                      minHeight: 34,
+                      justifyContent: 'flex-start',
+                      px: 0.8,
+                      fontSize: '0.7rem',
+                      bgcolor: selected ? '#0f766e' : '#ffffff',
+                      '&:hover': selected
+                        ? { bgcolor: '#115e59' }
+                        : { bgcolor: '#f1f5f9' },
+                    }}
+                  >
+                    <Checkbox
+                      size="small"
+                      checked={selected}
+                      sx={{
+                        p: 0,
+                        mr: 0.5,
+                        color: 'inherit',
+                        '&.Mui-checked': { color: 'inherit' },
+                      }}
+                    />
+                    {process}
+                  </Button>
+                );
+              })}
+            </Box>
+
+            <Typography sx={{ mt: 0.7, color: '#64748b', fontSize: '0.64rem' }}>
+              필요한 공정을 두 개 이상 선택한 뒤 아래 품목에 한 번에 적용할 수 있습니다.
+            </Typography>
+          </Box>
 
           <TableContainer
             ref={unmappedTableContainerRef}
