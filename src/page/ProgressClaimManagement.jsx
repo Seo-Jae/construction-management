@@ -1402,7 +1402,8 @@ export default function ProgressClaimManagement({
           <Box
             sx={{
               px: 1.5,
-              py: 0.7,
+              pt: 1.15,
+              pb: 0.8,
               borderBottom: '1px solid #cbd5e1',
               bgcolor: '#f8fafc',
             }}
@@ -1414,8 +1415,10 @@ export default function ProgressClaimManagement({
                 gap: 0.75,
                 flexWrap: 'nowrap',
                 minWidth: 0,
+                minHeight: 48,
                 overflowX: 'auto',
-                pb: 0.15,
+                pt: 0.45,
+                pb: 0.2,
               }}
             >
               <Box sx={{ width: 235, minWidth: 235, flexShrink: 0 }}>
@@ -1443,6 +1446,7 @@ export default function ProgressClaimManagement({
                   setClaimNo(Math.max(1, Number(event.target.value) || 1))
                 }
                 inputProps={{ min: 1 }}
+                InputLabelProps={{ shrink: true }}
                 sx={{ width: 84, flexShrink: 0 }}
               />
 
@@ -1461,6 +1465,7 @@ export default function ProgressClaimManagement({
                 size="small"
                 value={contractVersionLabel}
                 onChange={(event) => setContractVersionLabel(event.target.value)}
+                InputLabelProps={{ shrink: true }}
                 sx={{ width: 150, flexShrink: 0 }}
               />
 
@@ -1722,9 +1727,10 @@ export default function ProgressClaimManagement({
                   {CLAIM_TABLE_COLUMNS.map((column) => (
                     <TableCell
                       key={column.key}
-                      align={column.align}
+                      align="center"
                       sx={{
                         ...headerCellSx,
+                        textAlign: 'center',
                         position: 'relative',
                         width: columnWidths[column.key] || column.width,
                         minWidth: columnWidths[column.key] || column.width,
@@ -2062,17 +2068,8 @@ export default function ProgressClaimManagement({
                   ].map((label) => (
                     <TableCell
                       key={label}
-                      sx={headerCellSx}
-                      align={
-                        [
-                          '금회 직접기성',
-                          '누계 직접기성',
-                          '누계율',
-                          '품목수',
-                        ].includes(label)
-                          ? 'right'
-                          : 'left'
-                      }
+                      sx={{ ...headerCellSx, textAlign: 'center' }}
+                      align="center"
                     >
                       {label}
                     </TableCell>
