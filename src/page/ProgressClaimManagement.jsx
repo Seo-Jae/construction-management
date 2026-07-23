@@ -34,6 +34,8 @@ import {
 } from '@mui/material';
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
+import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
+import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import ExcelJS from 'exceljs';
@@ -85,6 +87,31 @@ const DIALOG_ROW_HEIGHT = 38;
 const TABLE_OVERSCAN = 8;
 
 const EXCLUDED_CLAIM_PROCESS_OPTIONS = new Set(['허리먹']);
+
+const normalizeProgressClaimRole = (role) => {
+  const normalized = String(role || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_\-()[\]{}<>]/g, '');
+
+  if (
+    normalized.includes('최고관리자') ||
+    normalized.includes('superadmin') ||
+    normalized.includes('masteradmin')
+  ) {
+    return '최고관리자';
+  }
+
+  if (
+    normalized === '관리자' ||
+    normalized === 'admin' ||
+    normalized.includes('administrator')
+  ) {
+    return '관리자';
+  }
+
+  return '담당자';
+};
 
 const DEFAULT_CLAIM_PROCESS_OPTIONS = [
   '바닥먹',
@@ -912,6 +939,8 @@ export default function ProgressClaimManagement({
   const [items, setItems] = useState([]);
   const [claims, setClaims] = useState([]);
   const [activeClaimId, setActiveClaimId] = useState(null);
+  const [activeClaimStatus, setActiveClaimStatus] = useState('draft');
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [keyword, setKeyword] = useState('');
   const [mainTypeFilter, setMainTypeFilter] = useState('전체');
   const [optionFilter, setOptionFilter] = useState('전체');
@@ -937,6 +966,7 @@ export default function ProgressClaimManagement({
   const [listLoading, setListLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [draftSaving, setDraftSaving] = useState(false);
+  const [statusChanging, setStatusChanging] = useState(false);
   const [message, setMessage] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -946,6 +976,12 @@ export default function ProgressClaimManagement({
   );
   const deferredKeyword = useDeferredValue(keyword);
   const deferredUnmappedKeyword = useDeferredValue(unmappedKeyword);
+  const userRole = useMemo(
+    () => normalizeProgressClaimRole(userProfile?.role),
+    [userProfile?.role],
+  );
+  const isSuperAdmin = userRole === '최고관리자';
+  const isClaimLocked = activeClaimStatus === 'completed';
 
   const loadClaimList = useCallback(async () => {
     if (!projectName) {
@@ -975,6 +1011,10 @@ export default function ProgressClaimManagement({
           cumulative_labor_amount,
           cumulative_expense_amount,
           status,
+          completed_by_name,
+          completed_at,
+          reopened_by_name,
+          reopened_at,
           created_by_name,
           updated_by_name,
           updated_at,
@@ -1034,6 +1074,8 @@ export default function ProgressClaimManagement({
       : [];
 
     setActiveClaimId(null);
+    setActiveClaimStatus('draft');
+    setHasUnsavedChanges(false);
     setClaimNo(Number(draft?.claim_no) || 1);
     setBaseMonth(String(draft?.base_month || '').slice(0, 7));
     setContractVersionLabel(
@@ -1055,6 +1097,8 @@ export default function ProgressClaimManagement({
 
     setItems([]);
     setActiveClaimId(null);
+    setActiveClaimStatus('draft');
+    setHasUnsavedChanges(false);
     setSourceFileName('');
     setSourceProjectLabel('');
     setSelectedKeys(new Set());
@@ -1436,6 +1480,8 @@ export default function ProgressClaimManagement({
       }
 
       setItems(nextItems);
+      setActiveClaimStatus('draft');
+      setHasUnsavedChanges(true);
       setSelectedKeys(new Set());
       setUnmappedSelectedKeys(new Set());
       setActiveClaimId(null);
@@ -1484,6 +1530,7 @@ export default function ProgressClaimManagement({
       return false;
     }
 
+    setHasUnsavedChanges(true);
     setItems((previousItems) =>
       previousItems.map((item) => {
         const shouldChange = applySameItem
@@ -1502,6 +1549,7 @@ export default function ProgressClaimManagement({
   }, [applySameItem, items]);
 
   const handleOpenRowProcessPicker = useCallback((item) => {
+    if (isClaimLocked) return;
     if (selectedKeys.size > 0) {
       const selectedItems = items.filter((candidate) =>
         selectedKeys.has(candidate.source_key),
@@ -1534,9 +1582,10 @@ export default function ProgressClaimManagement({
       ),
     );
     setProcessPickerOpen(true);
-  }, [items, selectedKeys]);
+  }, [isClaimLocked, items, selectedKeys]);
 
   const handleOpenBulkProcessPicker = () => {
+    if (isClaimLocked) return;
     if (selectedKeys.size === 0) {
       setErrorMessage('공정을 일괄 적용할 행을 먼저 선택해주세요.');
       return;
@@ -1556,6 +1605,7 @@ export default function ProgressClaimManagement({
   };
 
   const handleApplyProcessPicker = () => {
+    if (isClaimLocked) return;
     const encoded = encodeProcessTypes(processPickerValues);
 
     if (processPickerMode === 'row' && processPickerTarget) {
@@ -1566,6 +1616,7 @@ export default function ProgressClaimManagement({
         text: `${processPickerTarget.item_name} 품목의 공정을 "${getProcessDisplayLabel(encoded)}"으로 변경했습니다.`,
       });
     } else if (processPickerMode === 'bulk') {
+      setHasUnsavedChanges(true);
       setItems((previousItems) =>
         previousItems.map((item) =>
           selectedKeys.has(item.source_key)
@@ -1606,7 +1657,9 @@ export default function ProgressClaimManagement({
   };
 
   const handleClearSelectedProcesses = () => {
+    if (isClaimLocked) return;
     if (selectedKeys.size === 0) return;
+    setHasUnsavedChanges(true);
     setItems((previousItems) =>
       previousItems.map((item) =>
         selectedKeys.has(item.source_key)
@@ -1621,6 +1674,7 @@ export default function ProgressClaimManagement({
   };
 
   const handleOpenUnmappedDialog = () => {
+    if (isClaimLocked) return;
     setUnmappedKeyword('');
     setUnmappedTypeFilter('전체');
     setUnmappedProcesses([]);
@@ -1659,6 +1713,7 @@ export default function ProgressClaimManagement({
   };
 
   const handleApplyUnmappedProcess = () => {
+    if (isClaimLocked) return;
     if (unmappedSelectedKeys.size === 0) {
       setErrorMessage('공정을 연결할 미연결 품목을 선택해주세요.');
       return;
@@ -1670,6 +1725,7 @@ export default function ProgressClaimManagement({
     }
 
     const encoded = encodeProcessTypes(unmappedProcesses);
+    setHasUnsavedChanges(true);
     setItems((previousItems) =>
       previousItems.map((item) =>
         unmappedSelectedKeys.has(item.source_key)
@@ -1870,6 +1926,8 @@ export default function ProgressClaimManagement({
       if (error) throw error;
 
       setActiveClaimId(data);
+      setActiveClaimStatus('draft');
+      setHasUnsavedChanges(false);
       setMessage({
         severity: 'success',
         text: `${claimNo}회차 직접비 기성자료를 저장했습니다.`,
@@ -1917,6 +1975,8 @@ export default function ProgressClaimManagement({
       );
 
       setActiveClaimId(claimId);
+      setActiveClaimStatus(claim?.status === 'completed' ? 'completed' : 'draft');
+      setHasUnsavedChanges(false);
       setClaimNo(Number(claim?.claim_no) || 1);
       setBaseMonth(String(claim?.base_month || '').slice(0, 7));
       setContractVersionLabel(
@@ -1939,6 +1999,91 @@ export default function ProgressClaimManagement({
     }
   };
 
+  const handleCompleteClaim = async () => {
+    if (!activeClaimId) {
+      setErrorMessage('먼저 회차를 저장한 뒤 작성완료 처리해주세요.');
+      return;
+    }
+
+    if (hasUnsavedChanges) {
+      setErrorMessage('변경한 내용을 회차 저장한 뒤 작성완료 처리해주세요.');
+      return;
+    }
+
+    if (!window.confirm(
+      `${claimNo}회차를 작성완료 처리하시겠습니까?\n작성완료 후에는 최고관리자만 작성수정으로 다시 열 수 있습니다.`,
+    )) {
+      return;
+    }
+
+    setStatusChanging(true);
+    setMessage(null);
+    setErrorMessage('');
+
+    try {
+      const { error } = await supabase.rpc('complete_progress_claim', {
+        p_claim_id: activeClaimId,
+      });
+
+      if (error) throw error;
+
+      setActiveClaimStatus('completed');
+      setSelectedKeys(new Set());
+      setUnmappedSelectedKeys(new Set());
+      setProcessPickerOpen(false);
+      setUnmappedDialogOpen(false);
+      setMessage({
+        severity: 'success',
+        text: `${claimNo}회차를 작성완료 처리했습니다.`,
+      });
+      await loadClaimList();
+    } catch (error) {
+      console.error('기성 작성완료 처리 오류:', error);
+      setErrorMessage(
+        `작성완료 처리하지 못했습니다: ${error?.message || '알 수 없는 오류'}`,
+      );
+    } finally {
+      setStatusChanging(false);
+    }
+  };
+
+  const handleReopenClaim = async () => {
+    if (!activeClaimId || !isSuperAdmin) return;
+
+    if (!window.confirm(
+      `${claimNo}회차의 작성완료 상태를 해제하고 수정 가능 상태로 변경하시겠습니까?`,
+    )) {
+      return;
+    }
+
+    setStatusChanging(true);
+    setMessage(null);
+    setErrorMessage('');
+
+    try {
+      const { error } = await supabase.rpc('reopen_progress_claim', {
+        p_claim_id: activeClaimId,
+      });
+
+      if (error) throw error;
+
+      setActiveClaimStatus('draft');
+      setHasUnsavedChanges(false);
+      setMessage({
+        severity: 'info',
+        text: `${claimNo}회차를 작성중 상태로 변경했습니다. 수정 후 다시 저장하고 작성완료 처리해주세요.`,
+      });
+      await loadClaimList();
+    } catch (error) {
+      console.error('기성 작성수정 처리 오류:', error);
+      setErrorMessage(
+        `작성수정 상태로 변경하지 못했습니다: ${error?.message || '알 수 없는 오류'}`,
+      );
+    } finally {
+      setStatusChanging(false);
+    }
+  };
+
   const handleNewClaim = async () => {
     const nextDefaults = getNextClaimDefaults(claims);
 
@@ -1957,6 +2102,8 @@ export default function ProgressClaimManagement({
       }
 
       setActiveClaimId(null);
+      setActiveClaimStatus('draft');
+      setHasUnsavedChanges(false);
       setClaimNo(nextDefaults.claimNo);
       setBaseMonth(nextDefaults.baseMonth);
       setContractVersionLabel(nextDefaults.contractVersionLabel);
@@ -2047,9 +2194,11 @@ export default function ProgressClaimManagement({
                 type="number"
                 size="small"
                 value={claimNo}
-                onChange={(event) =>
-                  setClaimNo(Math.max(1, Number(event.target.value) || 1))
-                }
+                onChange={(event) => {
+                  setClaimNo(Math.max(1, Number(event.target.value) || 1));
+                  setHasUnsavedChanges(true);
+                }}
+                disabled={isClaimLocked}
                 inputProps={{ min: 1 }}
                 InputLabelProps={{ shrink: true }}
                 sx={{ width: 84, flexShrink: 0 }}
@@ -2060,7 +2209,11 @@ export default function ProgressClaimManagement({
                 type="month"
                 size="small"
                 value={baseMonth}
-                onChange={(event) => setBaseMonth(event.target.value)}
+                onChange={(event) => {
+                  setBaseMonth(event.target.value);
+                  setHasUnsavedChanges(true);
+                }}
+                disabled={isClaimLocked}
                 InputLabelProps={{ shrink: true }}
                 sx={{ width: 145, flexShrink: 0 }}
               />
@@ -2069,7 +2222,11 @@ export default function ProgressClaimManagement({
                 label="계약 버전"
                 size="small"
                 value={contractVersionLabel}
-                onChange={(event) => setContractVersionLabel(event.target.value)}
+                onChange={(event) => {
+                  setContractVersionLabel(event.target.value);
+                  setHasUnsavedChanges(true);
+                }}
+                disabled={isClaimLocked}
                 InputLabelProps={{ shrink: true }}
                 sx={{ width: 150, flexShrink: 0 }}
               />
@@ -2111,7 +2268,7 @@ export default function ProgressClaimManagement({
                   startIcon={
                     loading ? <CircularProgress size={14} /> : <UploadFileRoundedIcon />
                   }
-                  disabled={loading || saving || draftSaving}
+                  disabled={loading || saving || draftSaving || statusChanging || isClaimLocked}
                   onClick={() => fileInputRef.current?.click()}
                   sx={{
                     minWidth: 118,
@@ -2134,7 +2291,7 @@ export default function ProgressClaimManagement({
                       <SaveRoundedIcon />
                     )
                   }
-                  disabled={draftSaving || saving || loading || items.length === 0}
+                  disabled={draftSaving || saving || loading || statusChanging || isClaimLocked || items.length === 0}
                   onClick={handleDraftSave}
                   sx={{
                     minWidth: 88,
@@ -2159,7 +2316,7 @@ export default function ProgressClaimManagement({
                       <SaveRoundedIcon />
                     )
                   }
-                  disabled={saving || draftSaving || loading || validItems.length === 0}
+                  disabled={saving || draftSaving || loading || statusChanging || isClaimLocked || validItems.length === 0}
                   onClick={handleSave}
                   sx={{
                     minWidth: activeClaimId ? 132 : 94,
@@ -2173,6 +2330,79 @@ export default function ProgressClaimManagement({
                 >
                   {activeClaimId ? '현재 회차 다시 저장' : '회차 저장'}
                 </Button>
+
+                {activeClaimId && activeClaimStatus === 'draft' && (
+                  <Button
+                    size="small"
+                    variant="contained"
+                    color="success"
+                    startIcon={
+                      statusChanging ? (
+                        <CircularProgress size={14} color="inherit" />
+                      ) : (
+                        <CheckCircleRoundedIcon />
+                      )
+                    }
+                    disabled={
+                      statusChanging ||
+                      saving ||
+                      draftSaving ||
+                      loading ||
+                      hasUnsavedChanges
+                    }
+                    onClick={handleCompleteClaim}
+                    title={
+                      hasUnsavedChanges
+                        ? '변경한 내용을 회차 저장한 뒤 작성완료 처리할 수 있습니다.'
+                        : '작성완료 처리 후에는 최고관리자만 다시 수정할 수 있습니다.'
+                    }
+                    sx={{
+                      minWidth: 98,
+                      height: 38,
+                      px: 1.2,
+                      whiteSpace: 'nowrap',
+                      fontSize: '0.72rem',
+                    }}
+                  >
+                    작성완료
+                  </Button>
+                )}
+
+                {activeClaimId && activeClaimStatus === 'completed' && isSuperAdmin && (
+                  <Button
+                    size="small"
+                    variant="contained"
+                    color="warning"
+                    startIcon={
+                      statusChanging ? (
+                        <CircularProgress size={14} color="inherit" />
+                      ) : (
+                        <EditRoundedIcon />
+                      )
+                    }
+                    disabled={statusChanging || loading}
+                    onClick={handleReopenClaim}
+                    sx={{
+                      minWidth: 98,
+                      height: 38,
+                      px: 1.2,
+                      whiteSpace: 'nowrap',
+                      fontSize: '0.72rem',
+                    }}
+                  >
+                    작성수정
+                  </Button>
+                )}
+
+                {activeClaimId && activeClaimStatus === 'completed' && !isSuperAdmin && (
+                  <Chip
+                    size="small"
+                    color="success"
+                    variant="outlined"
+                    label="작성완료 · 수정불가"
+                    sx={{ height: 30, fontWeight: 800 }}
+                  />
+                )}
               </Box>
             </Box>
 
@@ -2191,6 +2421,12 @@ export default function ProgressClaimManagement({
                   </Alert>
                 )}
               </Box>
+            )}
+
+            {isClaimLocked && (
+              <Alert severity="success" sx={{ mt: 0.8, py: 0, fontSize: '0.7rem' }}>
+                작성완료된 회차입니다. 현장담당자는 수정할 수 없으며 최고관리자만 작성수정으로 다시 열 수 있습니다.
+              </Alert>
             )}
 
             <Stack
@@ -2300,7 +2536,7 @@ export default function ProgressClaimManagement({
               <Button
                 size="small"
                 variant="outlined"
-                disabled={selectedKeys.size === 0}
+                disabled={isClaimLocked || selectedKeys.size === 0}
                 onClick={handleOpenBulkProcessPicker}
                 sx={{ whiteSpace: 'nowrap' }}
               >
@@ -2308,7 +2544,7 @@ export default function ProgressClaimManagement({
               </Button>
               <Button
                 size="small"
-                disabled={selectedKeys.size === 0}
+                disabled={isClaimLocked || selectedKeys.size === 0}
                 onClick={handleClearSelectedProcesses}
                 sx={{ whiteSpace: 'nowrap' }}
               >
@@ -2341,8 +2577,8 @@ export default function ProgressClaimManagement({
                 size="small"
                 color={unmappedCount > 0 ? 'warning' : 'success'}
                 variant="outlined"
-                clickable={unmappedCount > 0}
-                onClick={unmappedCount > 0 ? handleOpenUnmappedDialog : undefined}
+                clickable={!isClaimLocked && unmappedCount > 0}
+                onClick={!isClaimLocked && unmappedCount > 0 ? handleOpenUnmappedDialog : undefined}
                 label={`공정 미연결 ${unmappedCount.toLocaleString()}`}
                 sx={{ fontWeight: 800 }}
               />
@@ -2403,7 +2639,7 @@ export default function ProgressClaimManagement({
                           size="small"
                           checked={allFilteredSelected}
                           indeterminate={someFilteredSelected}
-                          disabled={filteredItems.length === 0}
+                          disabled={isClaimLocked || filteredItems.length === 0}
                           onChange={(event) =>
                             handleToggleFilteredSelection(event.target.checked)
                           }
@@ -2498,6 +2734,7 @@ export default function ProgressClaimManagement({
                             size="small"
                             checked={rowAllSelected}
                             indeterminate={rowSomeSelected}
+                            disabled={isClaimLocked}
                             onChange={(event) =>
                               handleToggleSelectedKeys(rowSourceKeys, event.target.checked)
                             }
@@ -2576,6 +2813,7 @@ export default function ProgressClaimManagement({
                             fullWidth
                             size="small"
                             variant={item.group_process_mixed || decodeProcessTypes(item.process_type).length > 0 ? 'outlined' : 'text'}
+                            disabled={isClaimLocked}
                             onClick={() => handleOpenRowProcessPicker(item)}
                             title={processDisplayLabel}
                             sx={{
@@ -2848,10 +3086,10 @@ export default function ProgressClaimManagement({
                           <Chip
                             size="small"
                             label={
-                              claim.status === 'confirmed' ? '확정' : '작성중'
+                              claim.status === 'completed' ? '작성완료' : '작성중'
                             }
                             color={
-                              claim.status === 'confirmed' ? 'success' : 'warning'
+                              claim.status === 'completed' ? 'success' : 'warning'
                             }
                             variant="outlined"
                             sx={{ height: 21, fontSize: '0.59rem' }}
