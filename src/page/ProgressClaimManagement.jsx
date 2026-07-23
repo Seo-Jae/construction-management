@@ -2725,13 +2725,14 @@ export default function ProgressClaimManagement({
           </Stack>
 
           <TableContainer sx={{ flexGrow: 1, minHeight: 0, overflow: 'auto' }}>
-            <Table stickyHeader size="small" sx={{ minWidth: 1000 }}>
+            <Table stickyHeader size="small" sx={{ minWidth: 1120 }}>
               <TableHead>
                 <TableRow>
                   {[
                     '회차',
                     '기준월',
                     '계약 버전',
+                    '계약 직접비',
                     '금회 직접기성',
                     '누계 직접기성',
                     '누계율',
@@ -2754,7 +2755,7 @@ export default function ProgressClaimManagement({
                 {claims.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={10}
+                      colSpan={11}
                       align="center"
                       sx={{ py: 5, color: '#94a3b8' }}
                     >
@@ -2798,6 +2799,16 @@ export default function ProgressClaimManagement({
                         </TableCell>
                         <TableCell sx={bodyCellSx}>
                           {claim.contract_version?.version_label || '-'}
+                        </TableCell>
+                        <TableCell
+                          sx={{
+                            ...bodyCellSx,
+                            ...numberCellSx,
+                            color: '#334155',
+                            fontWeight: 800,
+                          }}
+                        >
+                          {formatMoney(claimContractTotal)}원
                         </TableCell>
                         <TableCell
                           sx={{
