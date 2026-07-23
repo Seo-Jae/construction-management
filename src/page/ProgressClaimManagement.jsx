@@ -20,6 +20,7 @@ import {
   DialogTitle,
   Divider,
   FormControlLabel,
+  IconButton,
   MenuItem,
   Paper,
   Stack,
@@ -85,6 +86,7 @@ const PROCESS_SEPARATOR = ' + ';
 const MAIN_ROW_HEIGHT = 40;
 const DIALOG_ROW_HEIGHT = 38;
 const TABLE_OVERSCAN = 8;
+const GROUP_HEADER_HEIGHT = 30;
 
 const EXCLUDED_CLAIM_PROCESS_OPTIONS = new Set(['허리먹']);
 
@@ -137,14 +139,16 @@ const CLAIM_TABLE_COLUMNS = [
   { key: 'specification', label: '규격', width: 200, min: 120, max: 420, align: 'left' },
   { key: 'unit', label: '단위', width: 46, min: 42, max: 90, align: 'left' },
   { key: 'process', label: '공정 연결', width: 120, min: 105, max: 240, align: 'left' },
-  { key: 'contractQuantity', label: '계약수량', width: 70, min: 64, max: 120, align: 'right' },
-  { key: 'contractMaterial', label: '계약 재료비', width: 84, min: 76, max: 150, align: 'right' },
-  { key: 'contractLabor', label: '계약 노무비', width: 84, min: 76, max: 150, align: 'right' },
-  { key: 'contractExpense', label: '계약 경비', width: 76, min: 70, max: 140, align: 'right' },
-  { key: 'currentQuantity', label: '금회수량', width: 70, min: 64, max: 120, align: 'right' },
-  { key: 'currentMaterial', label: '금회 재료비', width: 84, min: 76, max: 150, align: 'right' },
-  { key: 'currentLabor', label: '금회 노무비', width: 84, min: 76, max: 150, align: 'right' },
-  { key: 'currentExpense', label: '금회 경비', width: 76, min: 70, max: 140, align: 'right' },
+  { key: 'contractQuantity', label: '수량', width: 70, min: 64, max: 120, align: 'right' },
+  { key: 'contractMaterial', label: '재료비', width: 84, min: 76, max: 150, align: 'right' },
+  { key: 'contractLabor', label: '노무비', width: 84, min: 76, max: 150, align: 'right' },
+  { key: 'contractExpense', label: '경비', width: 76, min: 70, max: 140, align: 'right' },
+  { key: 'contractTotal', label: '합계', width: 92, min: 82, max: 160, align: 'right' },
+  { key: 'currentQuantity', label: '수량', width: 70, min: 64, max: 120, align: 'right' },
+  { key: 'currentMaterial', label: '재료비', width: 84, min: 76, max: 150, align: 'right' },
+  { key: 'currentLabor', label: '노무비', width: 84, min: 76, max: 150, align: 'right' },
+  { key: 'currentExpense', label: '경비', width: 76, min: 70, max: 140, align: 'right' },
+  { key: 'currentTotal', label: '합계', width: 92, min: 82, max: 160, align: 'right' },
   { key: 'cumulative', label: '누계금액', width: 92, min: 82, max: 160, align: 'right' },
   { key: 'rate', label: '누계율', width: 64, min: 58, max: 105, align: 'right' },
 ];
@@ -591,6 +595,8 @@ const getColumnDisplayValue = (item, columnKey) => {
       return formatMoney(item.contract_labor_amount);
     case 'contractExpense':
       return formatMoney(item.contract_expense_amount);
+    case 'contractTotal':
+      return formatMoney(getItemTotal(item, 'contract'));
     case 'currentQuantity':
       return formatQuantity(item.current_quantity);
     case 'currentMaterial':
@@ -599,6 +605,8 @@ const getColumnDisplayValue = (item, columnKey) => {
       return formatMoney(item.current_labor_amount);
     case 'currentExpense':
       return formatMoney(item.current_expense_amount);
+    case 'currentTotal':
+      return formatMoney(getItemTotal(item, 'current'));
     case 'cumulative':
       return formatMoney(getItemTotal(item, 'cumulative'));
     case 'rate':
@@ -962,6 +970,8 @@ export default function ProgressClaimManagement({
   const [unmappedTableViewport, setUnmappedTableViewport] = useState({ scrollTop: 0, height: 420 });
   const [splitPercent, setSplitPercent] = useState(loadStoredSplitPercent);
   const [columnWidths, setColumnWidths] = useState(loadStoredColumnWidths);
+  const [contractDetailsOpen, setContractDetailsOpen] = useState(false);
+  const [currentDetailsOpen, setCurrentDetailsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [listLoading, setListLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -1397,13 +1407,57 @@ export default function ProgressClaimManagement({
   const unmappedBottomSpacerHeight =
     Math.max(0, unmappedDialogItems.length - unmappedVirtualRange.end) * DIALOG_ROW_HEIGHT;
 
+  const visibleClaimTableColumns = useMemo(() => {
+    const hiddenKeys = new Set();
+
+    if (!contractDetailsOpen) {
+      hiddenKeys.add('contractMaterial');
+      hiddenKeys.add('contractLabor');
+      hiddenKeys.add('contractExpense');
+    }
+
+    if (!currentDetailsOpen) {
+      hiddenKeys.add('currentMaterial');
+      hiddenKeys.add('currentLabor');
+      hiddenKeys.add('currentExpense');
+    }
+
+    return CLAIM_TABLE_COLUMNS.filter((column) => !hiddenKeys.has(column.key));
+  }, [contractDetailsOpen, currentDetailsOpen]);
+
+  const baseHeaderColumns = useMemo(
+    () =>
+      visibleClaimTableColumns.filter((column) =>
+        ['selected', 'row', 'classification', 'option', 'item', 'specification', 'unit', 'process'].includes(column.key),
+      ),
+    [visibleClaimTableColumns],
+  );
+
+  const contractHeaderColumns = useMemo(
+    () => visibleClaimTableColumns.filter((column) => column.key.startsWith('contract')),
+    [visibleClaimTableColumns],
+  );
+
+  const currentHeaderColumns = useMemo(
+    () => visibleClaimTableColumns.filter((column) => column.key.startsWith('current')),
+    [visibleClaimTableColumns],
+  );
+
+  const endingHeaderColumns = useMemo(
+    () =>
+      visibleClaimTableColumns.filter((column) =>
+        ['cumulative', 'rate'].includes(column.key),
+      ),
+    [visibleClaimTableColumns],
+  );
+
   const claimTableWidth = useMemo(
     () =>
-      CLAIM_TABLE_COLUMNS.reduce(
+      visibleClaimTableColumns.reduce(
         (total, column) => total + Number(columnWidths[column.key] || column.width),
         0,
       ),
-    [columnWidths],
+    [columnWidths, visibleClaimTableColumns],
   );
 
   const handleExcelFile = async (event) => {
@@ -2124,6 +2178,71 @@ export default function ProgressClaimManagement({
     }
   };
 
+  const renderClaimHeaderCell = (
+    column,
+    { rowSpan = 1, top = 0, zIndex = 20 } = {},
+  ) => (
+    <TableCell
+      key={column.key}
+      rowSpan={rowSpan}
+      align="center"
+      sx={{
+        ...headerCellSx,
+        textAlign: 'center',
+        position: 'sticky',
+        top,
+        zIndex,
+        height: rowSpan === 2 ? GROUP_HEADER_HEIGHT * 2 : GROUP_HEADER_HEIGHT,
+        bgcolor: '#e2e8f0',
+        width: columnWidths[column.key] || column.width,
+        minWidth: columnWidths[column.key] || column.width,
+        maxWidth: columnWidths[column.key] || column.width,
+        overflow: 'hidden',
+        px: column.key === 'selected' ? 0.2 : 0.7,
+        py: 0.35,
+        verticalAlign: 'middle',
+      }}
+    >
+      {column.key === 'selected' ? (
+        <Checkbox
+          size="small"
+          checked={allFilteredSelected}
+          indeterminate={someFilteredSelected}
+          disabled={isClaimLocked || filteredItems.length === 0}
+          onChange={(event) =>
+            handleToggleFilteredSelection(event.target.checked)
+          }
+          inputProps={{ 'aria-label': '현재 표시 행 전체 선택' }}
+          sx={{ p: 0.4 }}
+        />
+      ) : (
+        column.label
+      )}
+      {column.key !== 'selected' && (
+        <Box
+          role="separator"
+          aria-label={`${column.label} 열 너비 조절`}
+          onPointerDown={(event) =>
+            handleColumnResizeStart(event, column)
+          }
+          onDoubleClick={(event) =>
+            handleAutoFitColumn(event, column)
+          }
+          sx={{
+            position: 'absolute',
+            top: 0,
+            right: -3,
+            width: 7,
+            height: '100%',
+            cursor: 'col-resize',
+            zIndex: 5,
+            '&:hover': { bgcolor: 'rgba(14,116,144,0.25)' },
+          }}
+        />
+      )}
+    </TableCell>
+  );
+
   return (
     <>
       <Box
@@ -2597,7 +2716,7 @@ export default function ProgressClaimManagement({
               }}
             >
               <colgroup>
-                {CLAIM_TABLE_COLUMNS.map((column) => (
+                {visibleClaimTableColumns.map((column) => (
                   <col
                     key={column.key}
                     style={{ width: columnWidths[column.key] || column.width }}
@@ -2605,71 +2724,164 @@ export default function ProgressClaimManagement({
                 ))}
               </colgroup>
               <TableHead>
-                <TableRow>
-                  {CLAIM_TABLE_COLUMNS.map((column) => (
-                    <TableCell
-                      key={column.key}
-                      align="center"
-                      sx={{
-                        ...headerCellSx,
-                        textAlign: 'center',
-                        position: 'sticky',
-                        top: 0,
-                        zIndex: 20,
-                        bgcolor: '#e2e8f0',
-                        width: columnWidths[column.key] || column.width,
-                        minWidth: columnWidths[column.key] || column.width,
-                        maxWidth: columnWidths[column.key] || column.width,
-                        overflow: 'hidden',
-                        px: column.key === 'selected' ? 0.2 : 1,
-                      }}
+                <TableRow sx={{ height: GROUP_HEADER_HEIGHT }}>
+                  {baseHeaderColumns.map((column) =>
+                    renderClaimHeaderCell(column, {
+                      rowSpan: 2,
+                      top: 0,
+                      zIndex: 23,
+                    }),
+                  )}
+
+                  <TableCell
+                    colSpan={contractHeaderColumns.length}
+                    align="center"
+                    sx={{
+                      ...headerCellSx,
+                      position: 'sticky',
+                      top: 0,
+                      zIndex: 22,
+                      height: GROUP_HEADER_HEIGHT,
+                      bgcolor: '#dbeafe',
+                      borderBottom: '1px solid #94a3b8',
+                      py: 0.2,
+                    }}
+                  >
+                    <Stack
+                      direction="row"
+                      alignItems="center"
+                      justifyContent="center"
+                      spacing={0.4}
                     >
-                      {column.key === 'selected' ? (
-                        <Checkbox
-                          size="small"
-                          checked={allFilteredSelected}
-                          indeterminate={someFilteredSelected}
-                          disabled={isClaimLocked || filteredItems.length === 0}
-                          onChange={(event) =>
-                            handleToggleFilteredSelection(event.target.checked)
-                          }
-                          inputProps={{ 'aria-label': '현재 표시 행 전체 선택' }}
-                          sx={{ p: 0.4 }}
-                        />
-                      ) : (
-                        column.label
-                      )}
-                      {column.key !== 'selected' && (
+                      <Typography sx={{ fontSize: '0.7rem', fontWeight: 900 }}>
+                        계약내역
+                      </Typography>
+                      <IconButton
+                        size="small"
+                        onClick={() => setContractDetailsOpen((previous) => !previous)}
+                        aria-label={
+                          contractDetailsOpen
+                            ? '계약내역 상세 닫기'
+                            : '계약내역 상세 열기'
+                        }
+                        title={
+                          contractDetailsOpen
+                            ? '재료비·노무비·경비 닫기'
+                            : '재료비·노무비·경비 열기'
+                        }
+                        sx={{
+                          width: 20,
+                          height: 20,
+                          border: '1px solid #94a3b8',
+                          borderRadius: 0.7,
+                          bgcolor: '#ffffff',
+                          color: '#334155',
+                          '&:hover': { bgcolor: '#eff6ff' },
+                        }}
+                      >
                         <Box
-                          role="separator"
-                          aria-label={`${column.label} 열 너비 조절`}
-                          onPointerDown={(event) =>
-                            handleColumnResizeStart(event, column)
-                          }
-                          onDoubleClick={(event) =>
-                            handleAutoFitColumn(event, column)
-                          }
+                          component="span"
                           sx={{
-                            position: 'absolute',
-                            top: 0,
-                            right: -3,
-                            width: 7,
-                            height: '100%',
-                            cursor: 'col-resize',
-                            zIndex: 5,
-                            '&:hover': { bgcolor: 'rgba(14,116,144,0.25)' },
+                            fontSize: '0.95rem',
+                            fontWeight: 900,
+                            lineHeight: 1,
                           }}
-                        />
-                      )}
-                    </TableCell>
-                  ))}
+                        >
+                          {contractDetailsOpen ? '−' : '+'}
+                        </Box>
+                      </IconButton>
+                    </Stack>
+                  </TableCell>
+
+                  <TableCell
+                    colSpan={currentHeaderColumns.length}
+                    align="center"
+                    sx={{
+                      ...headerCellSx,
+                      position: 'sticky',
+                      top: 0,
+                      zIndex: 22,
+                      height: GROUP_HEADER_HEIGHT,
+                      bgcolor: '#dcfce7',
+                      borderBottom: '1px solid #94a3b8',
+                      py: 0.2,
+                    }}
+                  >
+                    <Stack
+                      direction="row"
+                      alignItems="center"
+                      justifyContent="center"
+                      spacing={0.4}
+                    >
+                      <Typography sx={{ fontSize: '0.7rem', fontWeight: 900 }}>
+                        금회청구
+                      </Typography>
+                      <IconButton
+                        size="small"
+                        onClick={() => setCurrentDetailsOpen((previous) => !previous)}
+                        aria-label={
+                          currentDetailsOpen
+                            ? '금회청구 상세 닫기'
+                            : '금회청구 상세 열기'
+                        }
+                        title={
+                          currentDetailsOpen
+                            ? '재료비·노무비·경비 닫기'
+                            : '재료비·노무비·경비 열기'
+                        }
+                        sx={{
+                          width: 20,
+                          height: 20,
+                          border: '1px solid #94a3b8',
+                          borderRadius: 0.7,
+                          bgcolor: '#ffffff',
+                          color: '#334155',
+                          '&:hover': { bgcolor: '#f0fdf4' },
+                        }}
+                      >
+                        <Box
+                          component="span"
+                          sx={{
+                            fontSize: '0.95rem',
+                            fontWeight: 900,
+                            lineHeight: 1,
+                          }}
+                        >
+                          {currentDetailsOpen ? '−' : '+'}
+                        </Box>
+                      </IconButton>
+                    </Stack>
+                  </TableCell>
+
+                  {endingHeaderColumns.map((column) =>
+                    renderClaimHeaderCell(column, {
+                      rowSpan: 2,
+                      top: 0,
+                      zIndex: 23,
+                    }),
+                  )}
+                </TableRow>
+
+                <TableRow sx={{ height: GROUP_HEADER_HEIGHT }}>
+                  {contractHeaderColumns.map((column) =>
+                    renderClaimHeaderCell(column, {
+                      top: GROUP_HEADER_HEIGHT,
+                      zIndex: 22,
+                    }),
+                  )}
+                  {currentHeaderColumns.map((column) =>
+                    renderClaimHeaderCell(column, {
+                      top: GROUP_HEADER_HEIGHT,
+                      zIndex: 22,
+                    }),
+                  )}
                 </TableRow>
               </TableHead>
               <TableBody>
                 {filteredItems.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={CLAIM_TABLE_COLUMNS.length}
+                      colSpan={visibleClaimTableColumns.length}
                       align="center"
                       sx={{ py: 6, color: '#94a3b8' }}
                     >
@@ -2682,7 +2894,7 @@ export default function ProgressClaimManagement({
                   <>
                     {mainTopSpacerHeight > 0 && (
                       <TableRow aria-hidden="true" sx={{ height: mainTopSpacerHeight }}>
-                        <TableCell colSpan={CLAIM_TABLE_COLUMNS.length} sx={{ p: 0, border: 0, height: mainTopSpacerHeight }} />
+                        <TableCell colSpan={visibleClaimTableColumns.length} sx={{ p: 0, border: 0, height: mainTopSpacerHeight }} />
                       </TableRow>
                     )}
                     {visibleFilteredItems.map((item) => {
@@ -2825,26 +3037,54 @@ export default function ProgressClaimManagement({
                         <TableCell sx={{ ...bodyCellSx, ...numberCellSx }}>
                           {formatQuantity(item.contract_quantity)}
                         </TableCell>
-                        <TableCell sx={{ ...bodyCellSx, ...numberCellSx }}>
-                          {formatMoney(item.contract_material_amount)}
-                        </TableCell>
-                        <TableCell sx={{ ...bodyCellSx, ...numberCellSx }}>
-                          {formatMoney(item.contract_labor_amount)}
-                        </TableCell>
-                        <TableCell sx={{ ...bodyCellSx, ...numberCellSx }}>
-                          {formatMoney(item.contract_expense_amount)}
+                        {contractDetailsOpen && (
+                          <>
+                            <TableCell sx={{ ...bodyCellSx, ...numberCellSx }}>
+                              {formatMoney(item.contract_material_amount)}
+                            </TableCell>
+                            <TableCell sx={{ ...bodyCellSx, ...numberCellSx }}>
+                              {formatMoney(item.contract_labor_amount)}
+                            </TableCell>
+                            <TableCell sx={{ ...bodyCellSx, ...numberCellSx }}>
+                              {formatMoney(item.contract_expense_amount)}
+                            </TableCell>
+                          </>
+                        )}
+                        <TableCell
+                          sx={{
+                            ...bodyCellSx,
+                            ...numberCellSx,
+                            fontWeight: 800,
+                            bgcolor: '#eff6ff',
+                          }}
+                        >
+                          {formatMoney(getItemTotal(item, 'contract'))}
                         </TableCell>
                         <TableCell sx={{ ...bodyCellSx, ...numberCellSx }}>
                           {formatQuantity(item.current_quantity)}
                         </TableCell>
-                        <TableCell sx={{ ...bodyCellSx, ...numberCellSx }}>
-                          {formatMoney(item.current_material_amount)}
-                        </TableCell>
-                        <TableCell sx={{ ...bodyCellSx, ...numberCellSx }}>
-                          {formatMoney(item.current_labor_amount)}
-                        </TableCell>
-                        <TableCell sx={{ ...bodyCellSx, ...numberCellSx }}>
-                          {formatMoney(item.current_expense_amount)}
+                        {currentDetailsOpen && (
+                          <>
+                            <TableCell sx={{ ...bodyCellSx, ...numberCellSx }}>
+                              {formatMoney(item.current_material_amount)}
+                            </TableCell>
+                            <TableCell sx={{ ...bodyCellSx, ...numberCellSx }}>
+                              {formatMoney(item.current_labor_amount)}
+                            </TableCell>
+                            <TableCell sx={{ ...bodyCellSx, ...numberCellSx }}>
+                              {formatMoney(item.current_expense_amount)}
+                            </TableCell>
+                          </>
+                        )}
+                        <TableCell
+                          sx={{
+                            ...bodyCellSx,
+                            ...numberCellSx,
+                            fontWeight: 800,
+                            bgcolor: '#f0fdf4',
+                          }}
+                        >
+                          {formatMoney(getItemTotal(item, 'current'))}
                         </TableCell>
                         <TableCell
                           sx={{
@@ -2863,7 +3103,7 @@ export default function ProgressClaimManagement({
                     })}
                     {mainBottomSpacerHeight > 0 && (
                       <TableRow aria-hidden="true" sx={{ height: mainBottomSpacerHeight }}>
-                        <TableCell colSpan={CLAIM_TABLE_COLUMNS.length} sx={{ p: 0, border: 0, height: mainBottomSpacerHeight }} />
+                        <TableCell colSpan={visibleClaimTableColumns.length} sx={{ p: 0, border: 0, height: mainBottomSpacerHeight }} />
                       </TableRow>
                     )}
                   </>
