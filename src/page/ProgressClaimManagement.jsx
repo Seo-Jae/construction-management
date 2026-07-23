@@ -1,5 +1,6 @@
 import React, {
   useCallback,
+  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -75,8 +76,27 @@ const bodyCellSx = {
 
 const DEFAULT_CONTRACT_VERSION = '최초계약';
 const DEFAULT_SPLIT_PERCENT = 62;
-const SPLIT_STORAGE_KEY = 'progressClaimSplitPercentV25';
-const COLUMN_WIDTHS_STORAGE_KEY = 'progressClaimColumnWidthsV25';
+const SPLIT_STORAGE_KEY = 'progressClaimSplitPercentV26';
+const COLUMN_WIDTHS_STORAGE_KEY = 'progressClaimColumnWidthsV26';
+const PROCESS_SEPARATOR = ' + ';
+const MAIN_ROW_HEIGHT = 40;
+const DIALOG_ROW_HEIGHT = 38;
+const TABLE_OVERSCAN = 8;
+
+const DEFAULT_CLAIM_PROCESS_OPTIONS = [
+  '바닥먹',
+  '허리먹',
+  '단열',
+  '합지',
+  '경량벽체',
+  '세대천정',
+  '몰딩',
+  '걸레받이',
+  '수장',
+  '외주',
+  '직영',
+  '기타',
+];
 
 const CLAIM_TABLE_COLUMNS = [
   { key: 'selected', label: '선택', width: 40, min: 36, max: 50, align: 'center' },
@@ -146,6 +166,50 @@ const normalizeText = (value) =>
   String(value || '')
     .replace(/\s+/g, '')
     .trim();
+
+const normalizeClaimProcessOption = (process) => {
+  if (process === '경량골조' || process === '경량석고') return '경량벽체';
+  if (process === '1차몰딩' || process === '2차몰딩') return '몰딩';
+  if (process === '1차 걸레받이' || process === '2차 걸레받이') return '걸레받이';
+  return process;
+};
+
+const buildClaimProcessOptions = (processOptions = []) =>
+  Array.from(
+    new Set(
+      [...DEFAULT_CLAIM_PROCESS_OPTIONS, ...processOptions.map(normalizeClaimProcessOption)]
+        .map((process) => String(process || '').trim())
+        .filter(Boolean),
+    ),
+  );
+
+const decodeProcessTypes = (value) =>
+  Array.from(
+    new Set(
+      String(value || '')
+        .split(/\s*\+\s*|\s*,\s*/g)
+        .map((process) => normalizeClaimProcessOption(process.trim()))
+        .filter(Boolean),
+    ),
+  );
+
+const encodeProcessTypes = (values) =>
+  Array.from(new Set((values || []).map((value) => String(value || '').trim()).filter(Boolean)))
+    .join(PROCESS_SEPARATOR);
+
+const getProcessDisplayLabel = (value) => {
+  const processes = decodeProcessTypes(value);
+  return processes.length > 0 ? processes.join(PROCESS_SEPARATOR) : '미연결';
+};
+
+const getVirtualRange = (itemCount, scrollTop, viewportHeight, rowHeight) => {
+  const visibleCount = Math.ceil(Math.max(viewportHeight, rowHeight) / rowHeight);
+  const rawStart = Math.max(0, Math.floor(scrollTop / rowHeight) - TABLE_OVERSCAN);
+  const maxStart = Math.max(0, itemCount - visibleCount);
+  const start = Math.min(rawStart, maxStart);
+  const end = Math.min(itemCount, start + visibleCount + TABLE_OVERSCAN * 2);
+  return { start, end };
+};
 
 const getKoreaMonthValue = () => {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -268,7 +332,7 @@ const getColumnDisplayValue = (item, columnKey) => {
     case 'unit':
       return item.unit;
     case 'process':
-      return item.process_type || '미연결';
+      return getProcessDisplayLabel(item.process_type);
     case 'contractQuantity':
       return formatQuantity(item.contract_quantity);
     case 'contractMaterial':
@@ -550,6 +614,10 @@ export default function ProgressClaimManagement({
 }) {
   const fileInputRef = useRef(null);
   const splitContainerRef = useRef(null);
+  const mainTableContainerRef = useRef(null);
+  const unmappedTableContainerRef = useRef(null);
+  const mainScrollFrameRef = useRef(null);
+  const unmappedScrollFrameRef = useRef(null);
   const [claimNo, setClaimNo] = useState(1);
   const [baseMonth, setBaseMonth] = useState(getKoreaMonthValue);
   const [contractVersionLabel, setContractVersionLabel] =
@@ -564,13 +632,18 @@ export default function ProgressClaimManagement({
   const [onlyUnmapped, setOnlyUnmapped] = useState(false);
   const [applySameItem, setApplySameItem] = useState(false);
   const [selectedKeys, setSelectedKeys] = useState(() => new Set());
-  const [bulkProcess, setBulkProcess] = useState('');
+  const [processPickerOpen, setProcessPickerOpen] = useState(false);
+  const [processPickerMode, setProcessPickerMode] = useState('row');
+  const [processPickerTarget, setProcessPickerTarget] = useState(null);
+  const [processPickerValues, setProcessPickerValues] = useState([]);
   const [unmappedDialogOpen, setUnmappedDialogOpen] = useState(false);
   const [unmappedKeyword, setUnmappedKeyword] = useState('');
   const [unmappedSelectedKeys, setUnmappedSelectedKeys] = useState(
     () => new Set(),
   );
-  const [unmappedProcess, setUnmappedProcess] = useState('');
+  const [unmappedProcesses, setUnmappedProcesses] = useState([]);
+  const [mainTableViewport, setMainTableViewport] = useState({ scrollTop: 0, height: 480 });
+  const [unmappedTableViewport, setUnmappedTableViewport] = useState({ scrollTop: 0, height: 420 });
   const [splitPercent, setSplitPercent] = useState(loadStoredSplitPercent);
   const [columnWidths, setColumnWidths] = useState(loadStoredColumnWidths);
   const [loading, setLoading] = useState(false);
@@ -578,6 +651,13 @@ export default function ProgressClaimManagement({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
+
+  const claimProcessOptions = useMemo(
+    () => buildClaimProcessOptions(processOptions),
+    [processOptions],
+  );
+  const deferredKeyword = useDeferredValue(keyword);
+  const deferredUnmappedKeyword = useDeferredValue(unmappedKeyword);
 
   const loadClaimList = useCallback(async () => {
     if (!projectName) {
@@ -640,6 +720,7 @@ export default function ProgressClaimManagement({
     setSelectedKeys(new Set());
     setUnmappedSelectedKeys(new Set());
     setUnmappedDialogOpen(false);
+    setProcessPickerOpen(false);
     setMessage(null);
     setErrorMessage('');
     loadClaimList();
@@ -669,10 +750,61 @@ export default function ProgressClaimManagement({
   }, [columnWidths]);
 
   useEffect(() => {
+    const observeContainer = (element, setter) => {
+      if (!element) return undefined;
+      const updateHeight = () =>
+        setter((previous) => ({ ...previous, height: element.clientHeight || previous.height }));
+      updateHeight();
+      if (typeof ResizeObserver === 'undefined') return undefined;
+      const observer = new ResizeObserver(updateHeight);
+      observer.observe(element);
+      return () => observer.disconnect();
+    };
+
+    const cleanupMain = observeContainer(
+      mainTableContainerRef.current,
+      setMainTableViewport,
+    );
+    const cleanupUnmapped = observeContainer(
+      unmappedTableContainerRef.current,
+      setUnmappedTableViewport,
+    );
+
+    return () => {
+      cleanupMain?.();
+      cleanupUnmapped?.();
+    };
+  }, [unmappedDialogOpen]);
+
+  const handleMainTableScroll = useCallback((event) => {
+    const target = event.currentTarget;
+    if (mainScrollFrameRef.current) cancelAnimationFrame(mainScrollFrameRef.current);
+    mainScrollFrameRef.current = requestAnimationFrame(() => {
+      setMainTableViewport({
+        scrollTop: target.scrollTop,
+        height: target.clientHeight,
+      });
+    });
+  }, []);
+
+  const handleUnmappedTableScroll = useCallback((event) => {
+    const target = event.currentTarget;
+    if (unmappedScrollFrameRef.current) {
+      cancelAnimationFrame(unmappedScrollFrameRef.current);
+    }
+    unmappedScrollFrameRef.current = requestAnimationFrame(() => {
+      setUnmappedTableViewport({
+        scrollTop: target.scrollTop,
+        height: target.clientHeight,
+      });
+    });
+  }, []);
+
+  useEffect(() => {
     const availableKeys = new Set(items.map((item) => item.source_key));
     const availableUnmappedKeys = new Set(
       items
-        .filter((item) => !item.process_type)
+        .filter((item) => decodeProcessTypes(item.process_type).length === 0)
         .map((item) => item.source_key),
     );
 
@@ -700,43 +832,46 @@ export default function ProgressClaimManagement({
     summary.cumulativeMaterial + summary.cumulativeLabor + summary.cumulativeExpense;
   const cumulativeRate = contractTotal > 0 ? cumulativeTotal / contractTotal : 0;
   const errorRowCount = items.length - validItems.length;
-  const unmappedCount = items.filter((item) => !item.process_type).length;
+  const unmappedCount = useMemo(
+    () => items.reduce((count, item) => count + (decodeProcessTypes(item.process_type).length === 0 ? 1 : 0), 0),
+    [items],
+  );
+
+  const searchIndexByKey = useMemo(
+    () =>
+      new Map(
+        items.map((item) => [
+          item.source_key,
+          normalizeText([
+            item.classification,
+            item.item_name,
+            item.base_item_name,
+            item.specification,
+            item.process_type,
+          ].join(' ')).toLowerCase(),
+        ]),
+      ),
+    [items],
+  );
 
   const filteredItems = useMemo(() => {
-    const normalizedKeyword = normalizeText(keyword).toLowerCase();
+    const normalizedKeyword = normalizeText(deferredKeyword).toLowerCase();
 
     return items.filter((item) => {
       if (optionFilter !== '전체' && item.option_type !== optionFilter) return false;
-      if (onlyUnmapped && item.process_type) return false;
-
-      if (!normalizedKeyword) return true;
-
-      return [
-        item.classification,
-        item.item_name,
-        item.specification,
-        item.process_type,
-      ].some((value) => normalizeText(value).toLowerCase().includes(normalizedKeyword));
+      if (onlyUnmapped && decodeProcessTypes(item.process_type).length > 0) return false;
+      return !normalizedKeyword || searchIndexByKey.get(item.source_key)?.includes(normalizedKeyword);
     });
-  }, [items, keyword, onlyUnmapped, optionFilter]);
+  }, [deferredKeyword, items, onlyUnmapped, optionFilter, searchIndexByKey]);
 
   const unmappedDialogItems = useMemo(() => {
-    const normalizedKeyword = normalizeText(unmappedKeyword).toLowerCase();
+    const normalizedKeyword = normalizeText(deferredUnmappedKeyword).toLowerCase();
 
     return items.filter((item) => {
-      if (item.process_type) return false;
-      if (!normalizedKeyword) return true;
-
-      return [
-        item.classification,
-        item.item_name,
-        item.base_item_name,
-        item.specification,
-      ].some((value) =>
-        normalizeText(value).toLowerCase().includes(normalizedKeyword),
-      );
+      if (decodeProcessTypes(item.process_type).length > 0) return false;
+      return !normalizedKeyword || searchIndexByKey.get(item.source_key)?.includes(normalizedKeyword);
     });
-  }, [items, unmappedKeyword]);
+  }, [deferredUnmappedKeyword, items, searchIndexByKey]);
 
   const filteredSourceKeys = useMemo(
     () => filteredItems.map((item) => item.source_key),
@@ -759,6 +894,40 @@ export default function ProgressClaimManagement({
   const someUnmappedDialogSelected =
     unmappedDialogSourceKeys.some((key) => unmappedSelectedKeys.has(key)) &&
     !allUnmappedDialogSelected;
+
+  const mainVirtualRange = useMemo(
+    () => getVirtualRange(
+      filteredItems.length,
+      mainTableViewport.scrollTop,
+      mainTableViewport.height,
+      MAIN_ROW_HEIGHT,
+    ),
+    [filteredItems.length, mainTableViewport],
+  );
+  const visibleFilteredItems = useMemo(
+    () => filteredItems.slice(mainVirtualRange.start, mainVirtualRange.end),
+    [filteredItems, mainVirtualRange],
+  );
+  const mainTopSpacerHeight = mainVirtualRange.start * MAIN_ROW_HEIGHT;
+  const mainBottomSpacerHeight =
+    Math.max(0, filteredItems.length - mainVirtualRange.end) * MAIN_ROW_HEIGHT;
+
+  const unmappedVirtualRange = useMemo(
+    () => getVirtualRange(
+      unmappedDialogItems.length,
+      unmappedTableViewport.scrollTop,
+      unmappedTableViewport.height,
+      DIALOG_ROW_HEIGHT,
+    ),
+    [unmappedDialogItems.length, unmappedTableViewport],
+  );
+  const visibleUnmappedDialogItems = useMemo(
+    () => unmappedDialogItems.slice(unmappedVirtualRange.start, unmappedVirtualRange.end),
+    [unmappedDialogItems, unmappedVirtualRange],
+  );
+  const unmappedTopSpacerHeight = unmappedVirtualRange.start * DIALOG_ROW_HEIGHT;
+  const unmappedBottomSpacerHeight =
+    Math.max(0, unmappedDialogItems.length - unmappedVirtualRange.end) * DIALOG_ROW_HEIGHT;
 
   const claimTableWidth = useMemo(
     () =>
@@ -827,21 +996,22 @@ export default function ProgressClaimManagement({
     }
   };
 
-  const handleProcessChange = (targetItem, nextProcess) => {
+  const handleProcessChange = useCallback((targetItem, nextProcess) => {
     const sameItemCount = applySameItem
       ? items.filter(
           (item) => item.base_item_name === targetItem.base_item_name,
         ).length
       : 1;
+    const nextLabel = getProcessDisplayLabel(nextProcess);
 
     if (
       applySameItem &&
       sameItemCount > 1 &&
       !window.confirm(
-        `동일 품명 ${sameItemCount.toLocaleString()}개 행에 "${nextProcess || '미연결'}"을 적용하시겠습니까?`,
+        `동일 품명 ${sameItemCount.toLocaleString()}개 행에 "${nextLabel}"을 적용하시겠습니까?`,
       )
     ) {
-      return;
+      return false;
     }
 
     setItems((previousItems) =>
@@ -858,16 +1028,71 @@ export default function ProgressClaimManagement({
           : item;
       }),
     );
+    return true;
+  }, [applySameItem, items]);
+
+  const handleOpenRowProcessPicker = useCallback((item) => {
+    setProcessPickerMode('row');
+    setProcessPickerTarget(item);
+    setProcessPickerValues(decodeProcessTypes(item.process_type));
+    setProcessPickerOpen(true);
+  }, []);
+
+  const handleOpenBulkProcessPicker = () => {
+    if (selectedKeys.size === 0) {
+      setErrorMessage('공정을 일괄 적용할 행을 먼저 선택해주세요.');
+      return;
+    }
+    setProcessPickerMode('bulk');
+    setProcessPickerTarget(null);
+    setProcessPickerValues([]);
+    setProcessPickerOpen(true);
   };
 
-  const handleToggleSelectedKey = (sourceKey) => {
+  const handleToggleProcessPickerValue = (process) => {
+    setProcessPickerValues((previous) =>
+      previous.includes(process)
+        ? previous.filter((value) => value !== process)
+        : [...previous, process],
+    );
+  };
+
+  const handleApplyProcessPicker = () => {
+    const encoded = encodeProcessTypes(processPickerValues);
+
+    if (processPickerMode === 'row' && processPickerTarget) {
+      const applied = handleProcessChange(processPickerTarget, encoded);
+      if (!applied) return;
+      setMessage({
+        severity: 'success',
+        text: `${processPickerTarget.item_name} 품목의 공정을 "${getProcessDisplayLabel(encoded)}"으로 변경했습니다.`,
+      });
+    } else if (processPickerMode === 'bulk') {
+      setItems((previousItems) =>
+        previousItems.map((item) =>
+          selectedKeys.has(item.source_key)
+            ? { ...item, process_type: encoded }
+            : item,
+        ),
+      );
+      setMessage({
+        severity: 'success',
+        text: `선택한 ${selectedKeys.size.toLocaleString()}개 행을 "${getProcessDisplayLabel(encoded)}" 상태로 변경했습니다.`,
+      });
+    }
+
+    setErrorMessage('');
+    setProcessPickerOpen(false);
+  };
+
+  const handleToggleSelectedKey = useCallback((sourceKey) => {
     setSelectedKeys((previousKeys) => {
       const nextKeys = new Set(previousKeys);
       if (nextKeys.has(sourceKey)) nextKeys.delete(sourceKey);
       else nextKeys.add(sourceKey);
       return nextKeys;
     });
-  };
+  }, []);
 
   const handleToggleFilteredSelection = (checked) => {
     setSelectedKeys((previousKeys) => {
@@ -880,29 +1105,24 @@ export default function ProgressClaimManagement({
     });
   };
 
-  const handleApplyBulkProcess = () => {
-    if (selectedKeys.size === 0) {
-      setErrorMessage('공정을 일괄 적용할 행을 먼저 선택해주세요.');
-      return;
-    }
-
+  const handleClearSelectedProcesses = () => {
+    if (selectedKeys.size === 0) return;
     setItems((previousItems) =>
       previousItems.map((item) =>
         selectedKeys.has(item.source_key)
-          ? { ...item, process_type: bulkProcess }
+          ? { ...item, process_type: '' }
           : item,
       ),
     );
     setMessage({
       severity: 'success',
-      text: `선택한 ${selectedKeys.size.toLocaleString()}개 행을 "${bulkProcess || '미연결'}" 상태로 변경했습니다. 저장 버튼을 눌러야 DB에 반영됩니다.`,
+      text: `선택한 ${selectedKeys.size.toLocaleString()}개 행의 공정 연결을 해제했습니다.`,
     });
-    setErrorMessage('');
   };
 
   const handleOpenUnmappedDialog = () => {
     setUnmappedKeyword('');
-    setUnmappedProcess('');
+    setUnmappedProcesses([]);
     setUnmappedSelectedKeys(new Set());
     setUnmappedDialogOpen(true);
   };
@@ -933,21 +1153,22 @@ export default function ProgressClaimManagement({
       return;
     }
 
-    if (!unmappedProcess) {
+    if (unmappedProcesses.length === 0) {
       setErrorMessage('선택 품목에 연결할 공정을 선택해주세요.');
       return;
     }
 
+    const encoded = encodeProcessTypes(unmappedProcesses);
     setItems((previousItems) =>
       previousItems.map((item) =>
         unmappedSelectedKeys.has(item.source_key)
-          ? { ...item, process_type: unmappedProcess }
+          ? { ...item, process_type: encoded }
           : item,
       ),
     );
     setMessage({
       severity: 'success',
-      text: `검색·선택한 ${unmappedSelectedKeys.size.toLocaleString()}개 품목에 "${unmappedProcess}" 공정을 연결했습니다. 저장 버튼을 눌러야 DB에 반영됩니다.`,
+      text: `검색·선택한 ${unmappedSelectedKeys.size.toLocaleString()}개 품목에 "${getProcessDisplayLabel(encoded)}" 공정을 연결했습니다.`,
     });
     setErrorMessage('');
     setUnmappedDialogOpen(false);
@@ -1059,7 +1280,10 @@ export default function ProgressClaimManagement({
     setErrorMessage('');
 
     try {
-      const payload = validItems.map(({ validation_errors, ...item }) => item);
+      const payload = validItems.map(({ validation_errors, ...item }) => ({
+        ...item,
+        process_type: encodeProcessTypes(decodeProcessTypes(item.process_type)),
+      }));
       const { data, error } = await supabase.rpc('save_progress_claim', {
         p_project_name: projectName,
         p_contract_version_label: contractVersionLabel.trim(),
@@ -1100,7 +1324,7 @@ export default function ProgressClaimManagement({
       const claim = data?.claim;
       const detailItems = (data?.items || []).map((item) => ({
         ...item,
-        process_type: item.process_type || '',
+        process_type: encodeProcessTypes(decodeProcessTypes(item.process_type)),
         validation_errors: [],
       }));
 
@@ -1178,28 +1402,35 @@ export default function ProgressClaimManagement({
           <Box
             sx={{
               px: 1.5,
-              py: 1.1,
+              py: 0.7,
               borderBottom: '1px solid #cbd5e1',
               bgcolor: '#f8fafc',
             }}
           >
-            <Stack
-              direction={{ xs: 'column', xl: 'row' }}
-              spacing={1}
-              alignItems={{ xs: 'stretch', xl: 'center' }}
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.75,
+                flexWrap: 'nowrap',
+                minWidth: 0,
+                overflowX: 'auto',
+                pb: 0.15,
+              }}
             >
-              <Box sx={{ minWidth: 225 }}>
+              <Box sx={{ width: 235, minWidth: 235, flexShrink: 0 }}>
                 <Typography
                   sx={{
                     color: '#0f172a',
-                    fontSize: '0.94rem',
+                    fontSize: '0.9rem',
                     fontWeight: 900,
+                    lineHeight: 1.2,
                   }}
                 >
                   기성내역서 작성 · 직접비
                 </Typography>
-                <Typography sx={{ color: '#64748b', fontSize: '0.63rem' }}>
-                  엑셀 최종값만 읽으며 재료비·노무비·경비 외 간접비는 제외합니다.
+                <Typography noWrap sx={{ color: '#64748b', fontSize: '0.6rem' }}>
+                  엑셀 최종값만 읽으며 직접비만 반영합니다.
                 </Typography>
               </Box>
 
@@ -1212,7 +1443,7 @@ export default function ProgressClaimManagement({
                   setClaimNo(Math.max(1, Number(event.target.value) || 1))
                 }
                 inputProps={{ min: 1 }}
-                sx={{ width: 92 }}
+                sx={{ width: 84, flexShrink: 0 }}
               />
 
               <TextField
@@ -1222,7 +1453,7 @@ export default function ProgressClaimManagement({
                 value={baseMonth}
                 onChange={(event) => setBaseMonth(event.target.value)}
                 InputLabelProps={{ shrink: true }}
-                sx={{ width: 148 }}
+                sx={{ width: 145, flexShrink: 0 }}
               />
 
               <TextField
@@ -1230,9 +1461,7 @@ export default function ProgressClaimManagement({
                 size="small"
                 value={contractVersionLabel}
                 onChange={(event) => setContractVersionLabel(event.target.value)}
-                helperText="최초 작성 기본값: 최초계약"
-                FormHelperTextProps={{ sx: { m: 0, mt: 0.2, fontSize: '0.56rem' } }}
-                sx={{ width: 174 }}
+                sx={{ width: 150, flexShrink: 0 }}
               />
 
               <input
@@ -1243,38 +1472,60 @@ export default function ProgressClaimManagement({
                 onChange={handleExcelFile}
               />
 
-              <Button
-                variant="outlined"
-                startIcon={
-                  loading ? <CircularProgress size={16} /> : <UploadFileRoundedIcon />
-                }
-                disabled={loading || saving}
-                onClick={() => fileInputRef.current?.click()}
-                sx={{ whiteSpace: 'nowrap' }}
-              >
-                기성 엑셀 선택
-              </Button>
-
-              <Button
-                variant="contained"
-                startIcon={
-                  saving ? (
-                    <CircularProgress size={16} color="inherit" />
-                  ) : (
-                    <SaveRoundedIcon />
-                  )
-                }
-                disabled={saving || loading || validItems.length === 0}
-                onClick={handleSave}
+              <Box
                 sx={{
-                  whiteSpace: 'nowrap',
-                  bgcolor: '#0f766e',
-                  '&:hover': { bgcolor: '#115e59' },
+                  ml: 'auto',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 0.65,
+                  flexShrink: 0,
                 }}
               >
-                {activeClaimId ? '현재 회차 다시 저장' : '회차 저장'}
-              </Button>
-            </Stack>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={
+                    loading ? <CircularProgress size={14} /> : <UploadFileRoundedIcon />
+                  }
+                  disabled={loading || saving}
+                  onClick={() => fileInputRef.current?.click()}
+                  sx={{
+                    minWidth: 118,
+                    height: 38,
+                    px: 1.2,
+                    whiteSpace: 'nowrap',
+                    fontSize: '0.72rem',
+                  }}
+                >
+                  기성 엑셀 선택
+                </Button>
+
+                <Button
+                  size="small"
+                  variant="contained"
+                  startIcon={
+                    saving ? (
+                      <CircularProgress size={14} color="inherit" />
+                    ) : (
+                      <SaveRoundedIcon />
+                    )
+                  }
+                  disabled={saving || loading || validItems.length === 0}
+                  onClick={handleSave}
+                  sx={{
+                    minWidth: activeClaimId ? 132 : 94,
+                    height: 38,
+                    px: 1.2,
+                    whiteSpace: 'nowrap',
+                    fontSize: '0.72rem',
+                    bgcolor: '#0f766e',
+                    '&:hover': { bgcolor: '#115e59' },
+                  }}
+                >
+                  {activeClaimId ? '현재 회차 다시 저장' : '회차 저장'}
+                </Button>
+              </Box>
+            </Box>
 
             {(message || errorMessage) && (
               <Box sx={{ mt: 0.8 }}>
@@ -1382,29 +1633,22 @@ export default function ProgressClaimManagement({
 
               <Divider orientation="vertical" flexItem />
 
-              <TextField
-                select
-                size="small"
-                label={`선택 행 공정 (${selectedKeys.size.toLocaleString()})`}
-                value={bulkProcess}
-                onChange={(event) => setBulkProcess(event.target.value)}
-                sx={{ width: 160 }}
-              >
-                <MenuItem value="">공정 연결 해제</MenuItem>
-                {processOptions.map((process) => (
-                  <MenuItem key={process} value={process}>
-                    {process}
-                  </MenuItem>
-                ))}
-              </TextField>
               <Button
                 size="small"
                 variant="outlined"
                 disabled={selectedKeys.size === 0}
-                onClick={handleApplyBulkProcess}
+                onClick={handleOpenBulkProcessPicker}
                 sx={{ whiteSpace: 'nowrap' }}
               >
-                선택 행 적용
+                선택 행 공정 ({selectedKeys.size.toLocaleString()})
+              </Button>
+              <Button
+                size="small"
+                disabled={selectedKeys.size === 0}
+                onClick={handleClearSelectedProcesses}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                공정 해제
               </Button>
               <Button
                 size="small"
@@ -1451,7 +1695,11 @@ export default function ProgressClaimManagement({
             </Stack>
           </Box>
 
-          <TableContainer sx={{ flexGrow: 1, minHeight: 0, overflow: 'auto' }}>
+          <TableContainer
+            ref={mainTableContainerRef}
+            onScroll={handleMainTableScroll}
+            sx={{ flexGrow: 1, minHeight: 0, overflow: 'auto' }}
+          >
             <Table
               stickyHeader
               size="small"
@@ -1540,7 +1788,13 @@ export default function ProgressClaimManagement({
                     </TableCell>
                   </TableRow>
                 ) : (
-                  filteredItems.map((item) => {
+                  <>
+                    {mainTopSpacerHeight > 0 && (
+                      <TableRow aria-hidden="true" sx={{ height: mainTopSpacerHeight }}>
+                        <TableCell colSpan={CLAIM_TABLE_COLUMNS.length} sx={{ p: 0, border: 0, height: mainTopSpacerHeight }} />
+                      </TableRow>
+                    )}
+                    {visibleFilteredItems.map((item) => {
                     const hasError =
                       (item.validation_errors || []).length > 0;
 
@@ -1550,6 +1804,7 @@ export default function ProgressClaimManagement({
                         hover
                         selected={selectedKeys.has(item.source_key)}
                         sx={{
+                          height: MAIN_ROW_HEIGHT,
                           bgcolor: hasError
                             ? '#fff1f2'
                             : item.option_type === '확장'
@@ -1636,38 +1891,28 @@ export default function ProgressClaimManagement({
                         <TableCell sx={{ ...bodyCellSx, overflow: 'hidden' }}>
                           {item.unit}
                         </TableCell>
-                        <TableCell sx={{ ...bodyCellSx, p: 0.35, overflow: 'hidden' }}>
-                          <TextField
-                            select
+                        <TableCell sx={{ ...bodyCellSx, p: 0.3, overflow: 'hidden' }}>
+                          <Button
                             fullWidth
                             size="small"
-                            value={item.process_type || ''}
-                            onChange={(event) =>
-                              handleProcessChange(item, event.target.value)
-                            }
-                            SelectProps={{ displayEmpty: true }}
+                            variant={decodeProcessTypes(item.process_type).length > 0 ? 'outlined' : 'text'}
+                            onClick={() => handleOpenRowProcessPicker(item)}
+                            title={getProcessDisplayLabel(item.process_type)}
                             sx={{
-                              '& .MuiInputBase-root': { fontSize: '0.65rem' },
-                              '& .MuiSelect-select': {
-                                py: 0.55,
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                              },
+                              minWidth: 0,
+                              height: 28,
+                              px: 0.6,
+                              justifyContent: 'flex-start',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                              fontSize: '0.63rem',
+                              color: decodeProcessTypes(item.process_type).length > 0 ? '#0f766e' : '#94a3b8',
+                              borderColor: '#99f6e4',
                             }}
                           >
-                            <MenuItem value="" sx={{ fontSize: '0.68rem' }}>
-                              미연결
-                            </MenuItem>
-                            {processOptions.map((process) => (
-                              <MenuItem
-                                key={process}
-                                value={process}
-                                sx={{ fontSize: '0.68rem' }}
-                              >
-                                {process}
-                              </MenuItem>
-                            ))}
-                          </TextField>
+                            {getProcessDisplayLabel(item.process_type)}
+                          </Button>
                         </TableCell>
                         <TableCell sx={{ ...bodyCellSx, ...numberCellSx }}>
                           {formatQuantity(item.contract_quantity)}
@@ -1707,7 +1952,13 @@ export default function ProgressClaimManagement({
                         </TableCell>
                       </TableRow>
                     );
-                  })
+                    })}
+                    {mainBottomSpacerHeight > 0 && (
+                      <TableRow aria-hidden="true" sx={{ height: mainBottomSpacerHeight }}>
+                        <TableCell colSpan={CLAIM_TABLE_COLUMNS.length} sx={{ p: 0, border: 0, height: mainBottomSpacerHeight }} />
+                      </TableRow>
+                    )}
+                  </>
                 )}
               </TableBody>
             </Table>
@@ -1866,7 +2117,7 @@ export default function ProgressClaimManagement({
                         hover
                         selected={activeClaimId === claim.id}
                         onClick={() => handleLoadClaim(claim.id)}
-                        sx={{ cursor: 'pointer' }}
+                        sx={{ cursor: 'pointer', height: DIALOG_ROW_HEIGHT }}
                       >
                         <TableCell sx={{ ...bodyCellSx, fontWeight: 900 }}>
                           {claim.claim_no}회차
@@ -1935,6 +2186,73 @@ export default function ProgressClaimManagement({
       </Box>
 
       <Dialog
+        open={processPickerOpen}
+        onClose={() => setProcessPickerOpen(false)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle sx={{ pb: 0.8 }}>
+          <Typography sx={{ fontSize: '1rem', fontWeight: 900 }}>
+            {processPickerMode === 'bulk'
+              ? `선택 행 공정 연결 (${selectedKeys.size.toLocaleString()}건)`
+              : '공정 연결'}
+          </Typography>
+          {processPickerTarget && (
+            <Typography noWrap sx={{ mt: 0.2, color: '#64748b', fontSize: '0.7rem' }}>
+              {processPickerTarget.item_name} · {processPickerTarget.specification || '-'}
+            </Typography>
+          )}
+        </DialogTitle>
+        <DialogContent dividers sx={{ py: 1.2 }}>
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
+              gap: 0.5,
+            }}
+          >
+            {claimProcessOptions.map((process) => (
+              <Button
+                key={process}
+                variant={processPickerValues.includes(process) ? 'contained' : 'outlined'}
+                onClick={() => handleToggleProcessPickerValue(process)}
+                sx={{
+                  minHeight: 38,
+                  justifyContent: 'flex-start',
+                  fontSize: '0.72rem',
+                  bgcolor: processPickerValues.includes(process) ? '#0f766e' : undefined,
+                  '&:hover': processPickerValues.includes(process)
+                    ? { bgcolor: '#115e59' }
+                    : undefined,
+                }}
+              >
+                <Checkbox
+                  size="small"
+                  checked={processPickerValues.includes(process)}
+                  sx={{ p: 0, mr: 0.6, color: 'inherit', '&.Mui-checked': { color: 'inherit' } }}
+                />
+                {process}
+              </Button>
+            ))}
+          </Box>
+          <Typography sx={{ mt: 1, color: '#64748b', fontSize: '0.66rem' }}>
+            경량벽체는 경량골조·경량석고를 묶고, 몰딩과 걸레받이는 1·2차를 각각 하나로 묶어 관리합니다. 단열과 합지는 동시에 선택할 수 있습니다.
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 2, py: 1.1 }}>
+          <Button onClick={() => setProcessPickerValues([])}>전체 해제</Button>
+          <Button onClick={() => setProcessPickerOpen(false)}>취소</Button>
+          <Button
+            variant="contained"
+            onClick={handleApplyProcessPicker}
+            sx={{ bgcolor: '#0f766e', '&:hover': { bgcolor: '#115e59' } }}
+          >
+            적용
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
         open={unmappedDialogOpen}
         onClose={() => setUnmappedDialogOpen(false)}
         fullWidth
@@ -1967,14 +2285,24 @@ export default function ProgressClaimManagement({
               select
               size="small"
               label="연결할 공정"
-              value={unmappedProcess}
-              onChange={(event) => setUnmappedProcess(event.target.value)}
-              sx={{ width: 190 }}
+              value={unmappedProcesses}
+              onChange={(event) => {
+                const value = event.target.value;
+                setUnmappedProcesses(
+                  typeof value === 'string' ? value.split(',') : value,
+                );
+              }}
+              SelectProps={{
+                multiple: true,
+                renderValue: (selected) =>
+                  selected.length > 0 ? selected.join(PROCESS_SEPARATOR) : '공정 선택',
+              }}
+              sx={{ width: 220 }}
             >
-              <MenuItem value="">공정을 선택해주세요</MenuItem>
-              {processOptions.map((process) => (
+              {claimProcessOptions.map((process) => (
                 <MenuItem key={process} value={process}>
-                  {process}
+                  <Checkbox size="small" checked={unmappedProcesses.includes(process)} />
+                  <Typography sx={{ fontSize: '0.72rem' }}>{process}</Typography>
                 </MenuItem>
               ))}
             </TextField>
@@ -1992,6 +2320,8 @@ export default function ProgressClaimManagement({
           </Stack>
 
           <TableContainer
+            ref={unmappedTableContainerRef}
+            onScroll={handleUnmappedTableScroll}
             component={Paper}
             variant="outlined"
             sx={{ mt: 1.2, maxHeight: '55vh' }}
@@ -2038,13 +2368,19 @@ export default function ProgressClaimManagement({
                     </TableCell>
                   </TableRow>
                 ) : (
-                  unmappedDialogItems.map((item) => (
+                  <>
+                    {unmappedTopSpacerHeight > 0 && (
+                      <TableRow aria-hidden="true" sx={{ height: unmappedTopSpacerHeight }}>
+                        <TableCell colSpan={5} sx={{ p: 0, border: 0, height: unmappedTopSpacerHeight }} />
+                      </TableRow>
+                    )}
+                    {visibleUnmappedDialogItems.map((item) => (
                     <TableRow
                       key={item.source_key}
                       hover
                       selected={unmappedSelectedKeys.has(item.source_key)}
                       onClick={() => handleToggleUnmappedKey(item.source_key)}
-                      sx={{ cursor: 'pointer' }}
+                      sx={{ cursor: 'pointer', height: DIALOG_ROW_HEIGHT }}
                     >
                       <TableCell align="center" sx={{ ...bodyCellSx, p: 0.2 }}>
                         <Checkbox
@@ -2073,7 +2409,13 @@ export default function ProgressClaimManagement({
                         {item.specification || '-'}
                       </TableCell>
                     </TableRow>
-                  ))
+                    ))}
+                    {unmappedBottomSpacerHeight > 0 && (
+                      <TableRow aria-hidden="true" sx={{ height: unmappedBottomSpacerHeight }}>
+                        <TableCell colSpan={5} sx={{ p: 0, border: 0, height: unmappedBottomSpacerHeight }} />
+                      </TableRow>
+                    )}
+                  </>
                 )}
               </TableBody>
             </Table>
@@ -2083,7 +2425,7 @@ export default function ProgressClaimManagement({
           <Button onClick={() => setUnmappedDialogOpen(false)}>취소</Button>
           <Button
             variant="contained"
-            disabled={unmappedSelectedKeys.size === 0 || !unmappedProcess}
+            disabled={unmappedSelectedKeys.size === 0 || unmappedProcesses.length === 0}
             onClick={handleApplyUnmappedProcess}
             sx={{ bgcolor: '#0f766e', '&:hover': { bgcolor: '#115e59' } }}
           >
