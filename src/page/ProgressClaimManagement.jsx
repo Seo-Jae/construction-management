@@ -1546,6 +1546,20 @@ export default function ProgressClaimManagement({
                   flexShrink: 0,
                 }}
               >
+                {sourceProjectLabel && (
+                  <Chip
+                    size="small"
+                    label={sourceProjectLabel}
+                    sx={{
+                      maxWidth: 300,
+                      '& .MuiChip-label': {
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      },
+                    }}
+                  />
+                )}
+
                 <Button
                   size="small"
                   variant="outlined"
@@ -1747,9 +1761,6 @@ export default function ProgressClaimManagement({
               </Button>
 
               <Box sx={{ flexGrow: 1 }} />
-              {sourceProjectLabel && (
-                <Chip size="small" label={sourceProjectLabel} />
-              )}
               <Chip
                 size="small"
                 color="primary"

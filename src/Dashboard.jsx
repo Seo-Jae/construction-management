@@ -391,13 +391,32 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const isSuperAdmin = userRole === '최고관리자';
   const isManagementRole = ['관리자', '최고관리자'].includes(userRole);
 
+  const dashboardStorageBase = `constructionManagementDashboard:${
+    user?.id || user?.email || 'anonymous'
+  }`;
+
+  const readDashboardSessionValue = (key) => {
+    try {
+      return window.sessionStorage.getItem(
+        `${dashboardStorageBase}:${key}`,
+      ) || '';
+    } catch (error) {
+      console.warn('화면 상태 불러오기 실패:', error);
+      return '';
+    }
+  };
+
   const [selectedProjectName, setSelectedProjectName] =
-    useState('');
+    useState(() =>
+      readDashboardSessionValue('selectedProjectName'),
+    );
 
   const [
     lastSelectedProjectName,
     setLastSelectedProjectName,
-  ] = useState('');
+  ] = useState(() =>
+    readDashboardSessionValue('lastSelectedProjectName'),
+  );
 
   const [projectOptions, setProjectOptions] =
     useState([]);
@@ -493,6 +512,19 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       return requestedView;
     }
 
+    const storedView =
+      readDashboardSessionValue('currentView');
+
+    if (
+      storedView &&
+      Object.prototype.hasOwnProperty.call(
+        viewTitles,
+        storedView,
+      )
+    ) {
+      return storedView;
+    }
+
     return isManagementRole
       ? 'admin-dashboard'
       : 'main';
@@ -527,6 +559,30 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       window.clearInterval(timer);
     };
   }, []);
+
+  useEffect(() => {
+    try {
+      window.sessionStorage.setItem(
+        `${dashboardStorageBase}:currentView`,
+        currentView,
+      );
+      window.sessionStorage.setItem(
+        `${dashboardStorageBase}:selectedProjectName`,
+        selectedProjectName || '',
+      );
+      window.sessionStorage.setItem(
+        `${dashboardStorageBase}:lastSelectedProjectName`,
+        lastSelectedProjectName || '',
+      );
+    } catch (error) {
+      console.warn('화면 상태 저장 실패:', error);
+    }
+  }, [
+    currentView,
+    dashboardStorageBase,
+    lastSelectedProjectName,
+    selectedProjectName,
+  ]);
 
   useEffect(() => {
     if (!isManagementRole) {
@@ -621,19 +677,33 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   }, [isManagementRole]);
 
   useEffect(() => {
+    if (!userProfile) {
+      return;
+    }
+
     const requestedView = new URLSearchParams(
       window.location.search,
     ).get('view');
 
-    /*
-      담당자는 로그인할 때마다 현장 Main을 가장 먼저 봅니다.
-      URL에 이전 화면의 view 값이 남아 있더라도 Main을 우선합니다.
-    */
     if (!isManagementRole) {
       setSelectedProjectName(
         userProfile?.project_name || '',
       );
-      setCurrentView('main');
+
+      setCurrentView((previousView) => {
+        if (
+          [
+            'admin-dashboard',
+            'approval-inbox',
+            'weekly-overview',
+            'weekly-overview-archive',
+          ].includes(previousView)
+        ) {
+          return 'main';
+        }
+
+        return previousView || 'main';
+      });
       return;
     }
 
@@ -648,24 +718,37 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         'weekly-overview-archive',
       ].includes(
         requestedView,
-      ) &&
-      isManagementRole
+      )
     ) {
-      setCurrentView(
-        requestedView,
-      );
+      setCurrentView(requestedView);
       return;
     }
 
     /*
-      프로필 재조회나 브라우저 포커스 복귀가 발생해도
-      사용자가 보고 있던 현재 메뉴를 그대로 유지합니다.
-      초기 화면값이 비어 있을 때만 관리자 Dashboard를 사용합니다.
+      브라우저 최소화, 다른 창 전환, 인증 프로필 재조회,
+      Dashboard 컴포넌트 재마운트가 발생해도
+      현재 메뉴와 선택 현장을 sessionStorage에서 복원합니다.
     */
     setCurrentView((previousView) =>
-      previousView || 'admin-dashboard',
+      previousView ||
+      readDashboardSessionValue('currentView') ||
+      'admin-dashboard',
     );
-  }, [isManagementRole, userProfile?.project_name]);
+
+    setSelectedProjectName((previousProjectName) =>
+      previousProjectName ||
+      readDashboardSessionValue('selectedProjectName'),
+    );
+
+    setLastSelectedProjectName((previousProjectName) =>
+      previousProjectName ||
+      readDashboardSessionValue('lastSelectedProjectName'),
+    );
+  }, [
+    isManagementRole,
+    userProfile,
+    userProfile?.project_name,
+  ]);
 
   const handleOpenAdminProject = (projectName) => {
     setSelectedProjectName(projectName);
