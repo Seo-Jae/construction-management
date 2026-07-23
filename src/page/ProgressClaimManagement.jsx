@@ -2368,17 +2368,21 @@ export default function ProgressClaimManagement({
         onClose={() => setUnmappedDialogOpen(false)}
         fullWidth
         maxWidth="lg"
-        PaperProps={{
-          sx: {
-            height: 'min(780px, calc(100vh - 64px))',
-            minHeight: 'min(780px, calc(100vh - 64px))',
-            maxHeight: 'min(780px, calc(100vh - 64px))',
+        scroll="paper"
+        sx={{
+          '& .MuiDialog-paper': {
+            width: '100%',
+            height: 'calc(100vh - 48px)',
+            minHeight: 'calc(100vh - 48px)',
+            maxHeight: 'calc(100vh - 48px)',
+            m: 3,
+            overflow: 'hidden',
             display: 'flex',
             flexDirection: 'column',
           },
         }}
       >
-        <DialogTitle sx={{ pb: 1 }}>
+        <DialogTitle sx={{ pb: 1, flexShrink: 0 }}>
           <Typography sx={{ fontSize: '1rem', fontWeight: 900 }}>
             공정 미연결 품목 일괄 연결
           </Typography>
@@ -2645,7 +2649,7 @@ export default function ProgressClaimManagement({
             </Table>
           </TableContainer>
         </DialogContent>
-        <DialogActions sx={{ px: 2, py: 1.2 }}>
+        <DialogActions sx={{ px: 2, py: 1.2, flexShrink: 0 }}>
           <Button onClick={() => setUnmappedDialogOpen(false)}>취소</Button>
           <Button
             variant="contained"
