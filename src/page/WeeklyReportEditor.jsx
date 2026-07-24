@@ -11,7 +11,6 @@ import {
 } from '@mui/material';
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
-import ApprovalRequestDialog from './ApprovalRequestDialog.jsx';
 import { saveReportDocumentDraft } from '../utils/reportDocuments.js';
 
 const REPORT_PROCESSES = [
@@ -732,7 +731,7 @@ export default function WeeklyReportEditor({
   const [progressLoaded, setProgressLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
-  const [approvalOpen, setApprovalOpen] = useState(false);
+  const [completing, setCompleting] = useState(false);
   const [highlightedLineIds, setHighlightedLineIds] =
     useState(
       Array.isArray(storedPayload.highlightedLineIds)
@@ -958,9 +957,57 @@ export default function WeeklyReportEditor({
     }
   };
 
-  const handleOpenApproval = async () => {
-    const savedId = await handleSaveDraft({ silent: true });
-    if (savedId) setApprovalOpen(true);
+  const handleCompleteWeeklyReport = async () => {
+    if (saving || completing) return;
+
+    const confirmed = window.confirm(
+      '결재요청을 누르면 별도의 결재함을 거치지 않고 즉시 결재완료 처리되며 주간업무총괄에 등록됩니다.\n계속하시겠습니까?',
+    );
+
+    if (!confirmed) return;
+
+    setCompleting(true);
+    setErrorMessage('');
+
+    try {
+      const savedId = await handleSaveDraft({ silent: true });
+      if (!savedId) return;
+
+      const { data, error } = await supabase.rpc(
+        'complete_weekly_report_direct',
+        {
+          p_document_id: savedId,
+          p_title: `주간 업무 보고 - ${period.display}`,
+          p_report_key: approvalReportKey,
+          p_project_name: projectName,
+          p_week_start: weekStartKey,
+          p_week_end: weekEndKey,
+          p_display_period: period.display,
+          p_payload: reportPayload,
+        },
+      );
+
+      if (error) throw error;
+
+      setDocumentId(data || savedId);
+      window.dispatchEvent(new Event('report-documents-changed'));
+      window.dispatchEvent(new Event('approval-workflow-changed'));
+      window.dispatchEvent(new Event('weekly-report-completed'));
+      window.dispatchEvent(new Event('weekly-overview-changed'));
+
+      window.alert(
+        '주간 업무 보고가 자동으로 결재완료 처리되어 주간업무총괄에 등록되었습니다.',
+      );
+      onBackToList?.();
+    } catch (error) {
+      console.error('주간 업무 보고 자동 결재완료 실패:', error);
+      setErrorMessage(
+        error?.message ||
+          '주간 업무 보고를 결재완료 처리하지 못했습니다.',
+      );
+    } finally {
+      setCompleting(false);
+    }
   };
 
   const handleDownloadExcel = async () => {
@@ -1065,8 +1112,8 @@ export default function WeeklyReportEditor({
           <Button
             size="small"
             variant="contained"
-            onClick={handleOpenApproval}
-            disabled={saving}
+            onClick={handleCompleteWeeklyReport}
+            disabled={saving || completing}
             sx={{
               minWidth: 82,
               px: 1.15,
@@ -1079,7 +1126,7 @@ export default function WeeklyReportEditor({
               },
             }}
           >
-            결재요청
+            {completing ? '처리중' : '결재요청'}
           </Button>
 
           <Button
@@ -1273,18 +1320,6 @@ export default function WeeklyReportEditor({
         />
       </Paper>
 
-      <ApprovalRequestDialog
-        open={approvalOpen}
-        onClose={() => setApprovalOpen(false)}
-        reportType="weekly"
-        reportTitle={`주간 업무 보고 - ${period.display}`}
-        reportKey={approvalReportKey}
-        projectName={projectName}
-        requesterName={managerName}
-        documentId={documentId}
-        onSubmitted={() => onBackToList?.()}
-        payload={reportPayload}
-      />
     </Box>
   );
 }
