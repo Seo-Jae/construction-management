@@ -23,6 +23,8 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { fetchPendingApprovalSummary } from '../utils/approvalQueries.js';
 import { supabase } from '../supabaseClient';
 
+const INACTIVE_MENU_STATUS = '준비중';
+
 const dailyMenus = [
   { value: 'daily', label: '출력일보작성' },
   {
@@ -59,7 +61,7 @@ const materialMenus = [
     value: 'material-order',
     label: '자재발주작성',
     disabled: true,
-    statusLabel: '준비중',
+    statusLabel: INACTIVE_MENU_STATUS,
   },
   {
     value: 'material-input-status',
@@ -76,7 +78,7 @@ const laborMenus = [
     value: 'labor-documents',
     label: '노임서류작성',
     disabled: true,
-    statusLabel: '작성중',
+    statusLabel: INACTIVE_MENU_STATUS,
   },
 ];
 
@@ -93,7 +95,7 @@ const paymentMenus = [
     value: 'payment-sales-status',
     label: '매입매출현황',
     disabled: true,
-    statusLabel: '다음단계',
+    statusLabel: INACTIVE_MENU_STATUS,
   },
 ];
 
@@ -110,13 +112,13 @@ const reportMenus = [
     value: 'report-outsourcing-approval',
     label: '외주 품의 보고',
     disabled: true,
-    statusLabel: '준비중',
+    statusLabel: INACTIVE_MENU_STATUS,
   },
   {
     value: 'report-accident',
     label: '사고 경위 보고',
     disabled: true,
-    statusLabel: '준비중',
+    statusLabel: INACTIVE_MENU_STATUS,
   },
 ];
 

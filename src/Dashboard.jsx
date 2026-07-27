@@ -2973,6 +2973,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           {currentView === 'main' && activeProjectName && (
             <MainDashboard
               projectName={activeProjectName}
+              userRole={userRole}
               buildingConfigs={buildingConfigs}
               processOptions={activeProcessOptions}
               savedData={savedData}
