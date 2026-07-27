@@ -18,6 +18,7 @@ import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
 import RequestQuoteOutlinedIcon from '@mui/icons-material/RequestQuoteOutlined';
 import BadgeOutlinedIcon from '@mui/icons-material/BadgeOutlined';
 import ManageAccountsOutlinedIcon from '@mui/icons-material/ManageAccountsOutlined';
+import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { fetchPendingApprovalSummary } from '../utils/approvalQueries.js';
@@ -799,6 +800,39 @@ export default function Sidebar({
               fontSize: '0.8rem',
               fontWeight:
                 currentView === 'main' ? 700 : 500,
+            }}
+            sx={{ opacity: drawerOpen ? 1 : 0 }}
+          />
+        </ListItemButton>
+      </Tooltip>
+
+      <Tooltip
+        title={drawerOpen ? '' : '조직도'}
+        placement="right"
+        arrow
+      >
+        <ListItemButton
+          selected={currentView === 'organization-chart'}
+          onClick={() => handleViewChange('organization-chart')}
+          sx={topMenuSx(currentView === 'organization-chart')}
+        >
+          <ListItemIcon
+            sx={{
+              minWidth: 34,
+              color: 'inherit',
+              justifyContent: 'center',
+            }}
+          >
+            <AccountTreeOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+
+          <ListItemText
+            primary="조직도"
+            primaryTypographyProps={{
+              noWrap: true,
+              fontSize: '0.8rem',
+              fontWeight:
+                currentView === 'organization-chart' ? 700 : 500,
             }}
             sx={{ opacity: drawerOpen ? 1 : 0 }}
           />
