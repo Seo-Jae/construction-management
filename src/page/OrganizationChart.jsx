@@ -23,13 +23,6 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
-import AddIcon from '@mui/icons-material/Add';
-import CloseIcon from '@mui/icons-material/Close';
-import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
-import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
-import PhoneOutlinedIcon from '@mui/icons-material/PhoneOutlined';
-import SaveOutlinedIcon from '@mui/icons-material/SaveOutlined';
-import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import { supabase } from '../supabaseClient';
 
 const TABLE_NAME = 'organization_chart_nodes';
@@ -168,7 +161,7 @@ function OrganizationCard({
           alignItems="center"
           sx={{ minWidth: 0, color: '#64748b' }}
         >
-          <PhoneOutlinedIcon sx={{ fontSize: 14 }} />
+          <Typography component="span" sx={{ fontSize: 12, lineHeight: 1 }}>☎</Typography>
           <Typography
             noWrap
             title={node.contact}
@@ -203,7 +196,7 @@ function OrganizationCard({
               onClick={() => onAddChild(node)}
               sx={{ p: 0.35 }}
             >
-              <AddIcon sx={{ fontSize: 16 }} />
+              <Typography component="span" sx={{ fontSize: 15, fontWeight: 900, lineHeight: 1 }}>+</Typography>
             </IconButton>
           </Tooltip>
 
@@ -213,7 +206,7 @@ function OrganizationCard({
               onClick={() => onEdit(node)}
               sx={{ p: 0.35 }}
             >
-              <EditOutlinedIcon sx={{ fontSize: 16 }} />
+              <Typography component="span" sx={{ fontSize: 10, fontWeight: 900, lineHeight: 1 }}>수정</Typography>
             </IconButton>
           </Tooltip>
 
@@ -224,7 +217,7 @@ function OrganizationCard({
               onClick={() => onDelete(node)}
               sx={{ p: 0.35 }}
             >
-              <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+              <Typography component="span" sx={{ fontSize: 10, fontWeight: 900, lineHeight: 1 }}>삭제</Typography>
             </IconButton>
           </Tooltip>
         </Stack>
@@ -610,7 +603,7 @@ export default function OrganizationChart({
         }}
       >
         <Stack direction="row" spacing={1.2} alignItems="center">
-          <AccountTreeOutlinedIcon sx={{ color: '#0f766e' }} />
+          <Box sx={{ width: 26, height: 26, borderRadius: 1, bgcolor: '#ccfbf1', color: '#0f766e', display: 'grid', placeItems: 'center', fontSize: '0.72rem', fontWeight: 900 }}>조직</Box>
           <Box>
             <Typography
               sx={{
@@ -636,7 +629,6 @@ export default function OrganizationChart({
               <Button
                 size="small"
                 variant="outlined"
-                startIcon={<AddIcon />}
                 onClick={() => openAddDialog('')}
               >
                 최상위 항목 추가
@@ -647,9 +639,6 @@ export default function OrganizationChart({
               size="small"
               variant={editMode ? 'contained' : 'outlined'}
               color={editMode ? 'success' : 'primary'}
-              startIcon={
-                editMode ? <SaveOutlinedIcon /> : <EditOutlinedIcon />
-              }
               onClick={() => setEditMode((previous) => !previous)}
             >
               {editMode ? '수정완료' : '수정'}
@@ -699,9 +688,7 @@ export default function OrganizationChart({
             spacing={1.2}
             sx={{ minHeight: 300 }}
           >
-            <AccountTreeOutlinedIcon
-              sx={{ fontSize: 48, color: '#94a3b8' }}
-            />
+            <Typography sx={{ fontSize: 42, color: '#94a3b8', fontWeight: 900, lineHeight: 1 }}>조직도</Typography>
             <Typography fontWeight={900} color="#334155">
               등록된 조직도 항목이 없습니다.
             </Typography>
@@ -712,7 +699,6 @@ export default function OrganizationChart({
               <Button
                 variant="contained"
                 size="small"
-                startIcon={<AddIcon />}
                 onClick={() => {
                   setEditMode(true);
                   openAddDialog('');
@@ -779,7 +765,7 @@ export default function OrganizationChart({
             disabled={saving}
             sx={{ position: 'absolute', right: 8, top: 8 }}
           >
-            <CloseIcon />
+            <Typography component="span" sx={{ fontSize: 22, lineHeight: 1 }}>×</Typography>
           </IconButton>
         </DialogTitle>
 
@@ -893,9 +879,7 @@ export default function OrganizationChart({
             variant="contained"
             onClick={handleSave}
             disabled={saving}
-            startIcon={
-              saving ? <CircularProgress size={15} /> : <SaveOutlinedIcon />
-            }
+            startIcon={saving ? <CircularProgress size={15} /> : undefined}
           >
             저장
           </Button>

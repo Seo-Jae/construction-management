@@ -18,7 +18,6 @@ import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
 import RequestQuoteOutlinedIcon from '@mui/icons-material/RequestQuoteOutlined';
 import BadgeOutlinedIcon from '@mui/icons-material/BadgeOutlined';
 import ManageAccountsOutlinedIcon from '@mui/icons-material/ManageAccountsOutlined';
-import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { fetchPendingApprovalSummary } from '../utils/approvalQueries.js';
@@ -823,7 +822,7 @@ export default function Sidebar({
               justifyContent: 'center',
             }}
           >
-            <AccountTreeOutlinedIcon fontSize="small" />
+            <ManageAccountsOutlinedIcon fontSize="small" />
           </ListItemIcon>
 
           <ListItemText
