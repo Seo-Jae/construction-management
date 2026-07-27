@@ -2,6 +2,7 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -16,6 +17,7 @@ import {
   DialogTitle,
   Divider,
   IconButton,
+  Menu,
   MenuItem,
   Paper,
   Stack,
@@ -82,16 +84,27 @@ function OrganizationCard({
   node,
   editMode,
   onAddChild,
+  onAddSibling,
   onEdit,
   onDelete,
 }) {
+  const [menuAnchor, setMenuAnchor] = useState(null);
+
+  const closeMenu = () => setMenuAnchor(null);
+
+  const runMenuAction = (action) => {
+    closeMenu();
+    action(node);
+  };
+
   return (
     <Paper
       variant="outlined"
       sx={{
         position: 'relative',
-        width: 190,
-        minHeight: 126,
+        width: 164,
+        minHeight: 104,
+        mx: 'auto',
         overflow: 'hidden',
         borderRadius: 1.5,
         borderColor: '#94a3b8',
@@ -101,8 +114,9 @@ function OrganizationCard({
     >
       <Box
         sx={{
-          px: 1.25,
-          py: 0.7,
+          pl: 1.05,
+          pr: editMode ? 3.4 : 1.05,
+          py: 0.52,
           bgcolor: '#e2e8f0',
           borderBottom: '1px solid #cbd5e1',
         }}
@@ -111,7 +125,7 @@ function OrganizationCard({
           noWrap
           sx={{
             color: '#334155',
-            fontSize: '0.72rem',
+            fontSize: '0.66rem',
             fontWeight: 900,
           }}
           title={node.department}
@@ -121,19 +135,19 @@ function OrganizationCard({
       </Box>
 
       <Stack
-        spacing={0.5}
+        spacing={0.35}
         alignItems="center"
-        sx={{ px: 1.2, py: 1.05 }}
+        sx={{ px: 1, py: 0.72 }}
       >
         <Chip
           size="small"
           label={node.position_title || '직책 미입력'}
           sx={{
-            height: 21,
+            height: 18,
             maxWidth: '100%',
             bgcolor: '#f1f5f9',
             color: '#475569',
-            fontSize: '0.65rem',
+            fontSize: '0.59rem',
             fontWeight: 800,
             '& .MuiChip-label': {
               overflow: 'hidden',
@@ -148,7 +162,7 @@ function OrganizationCard({
           sx={{
             maxWidth: '100%',
             color: '#0f172a',
-            fontSize: '0.94rem',
+            fontSize: '0.84rem',
             fontWeight: 900,
           }}
         >
@@ -161,13 +175,13 @@ function OrganizationCard({
           alignItems="center"
           sx={{ minWidth: 0, color: '#64748b' }}
         >
-          <Typography component="span" sx={{ fontSize: 12, lineHeight: 1 }}>☎</Typography>
+          <Typography component="span" sx={{ fontSize: 10, lineHeight: 1 }}>☎</Typography>
           <Typography
             noWrap
             title={node.contact}
             sx={{
-              maxWidth: 145,
-              fontSize: '0.66rem',
+              maxWidth: 126,
+              fontSize: '0.61rem',
               fontWeight: 700,
             }}
           >
@@ -177,50 +191,82 @@ function OrganizationCard({
       </Stack>
 
       {editMode && (
-        <Stack
-          direction="row"
-          spacing={0.2}
-          sx={{
-            position: 'absolute',
-            top: 30,
-            right: 4,
-            p: 0.25,
-            borderRadius: 1,
-            bgcolor: 'rgba(255,255,255,0.94)',
-            boxShadow: '0 1px 4px rgba(15,23,42,0.12)',
-          }}
-        >
-          <Tooltip title="하위 조직원 추가">
+        <>
+          <Tooltip title="조직도 메뉴">
             <IconButton
               size="small"
-              onClick={() => onAddChild(node)}
-              sx={{ p: 0.35 }}
+              aria-label={`${node.person_name || '조직원'} 메뉴`}
+              aria-controls={menuAnchor ? `organization-menu-${node.id}` : undefined}
+              aria-haspopup="true"
+              aria-expanded={menuAnchor ? 'true' : undefined}
+              onClick={(event) => setMenuAnchor(event.currentTarget)}
+              sx={{
+                position: 'absolute',
+                top: 1,
+                right: 2,
+                width: 24,
+                height: 24,
+                color: '#475569',
+              }}
             >
-              <Typography component="span" sx={{ fontSize: 15, fontWeight: 900, lineHeight: 1 }}>+</Typography>
+              <Typography
+                component="span"
+                sx={{
+                  mt: -0.65,
+                  fontSize: 18,
+                  fontWeight: 900,
+                  letterSpacing: 0.5,
+                  lineHeight: 1,
+                }}
+              >
+                ...
+              </Typography>
             </IconButton>
           </Tooltip>
 
-          <Tooltip title="수정">
-            <IconButton
-              size="small"
-              onClick={() => onEdit(node)}
-              sx={{ p: 0.35 }}
+          <Menu
+            id={`organization-menu-${node.id}`}
+            anchorEl={menuAnchor}
+            open={Boolean(menuAnchor)}
+            onClose={closeMenu}
+            MenuListProps={{
+              dense: true,
+              'aria-label': `${node.person_name || '조직원'} 편집 메뉴`,
+            }}
+            PaperProps={{
+              sx: {
+                minWidth: 154,
+                boxShadow: '0 8px 24px rgba(15,23,42,0.16)',
+              },
+            }}
+          >
+            <MenuItem
+              onClick={() => runMenuAction(onAddChild)}
+              sx={{ fontSize: '0.75rem' }}
             >
-              <Typography component="span" sx={{ fontSize: 10, fontWeight: 900, lineHeight: 1 }}>수정</Typography>
-            </IconButton>
-          </Tooltip>
-
-          <Tooltip title="삭제">
-            <IconButton
-              size="small"
-              color="error"
-              onClick={() => onDelete(node)}
-              sx={{ p: 0.35 }}
+              하위 항목 추가
+            </MenuItem>
+            <MenuItem
+              onClick={() => runMenuAction(onAddSibling)}
+              sx={{ fontSize: '0.75rem' }}
             >
-              <Typography component="span" sx={{ fontSize: 10, fontWeight: 900, lineHeight: 1 }}>삭제</Typography>
-            </IconButton>
-          </Tooltip>
-        </Stack>
+              같은 단계에 추가
+            </MenuItem>
+            <Divider />
+            <MenuItem
+              onClick={() => runMenuAction(onEdit)}
+              sx={{ fontSize: '0.75rem' }}
+            >
+              수정
+            </MenuItem>
+            <MenuItem
+              onClick={() => runMenuAction(onDelete)}
+              sx={{ color: '#dc2626', fontSize: '0.75rem' }}
+            >
+              삭제
+            </MenuItem>
+          </Menu>
+        </>
       )}
     </Paper>
   );
@@ -231,6 +277,7 @@ function TreeItem({
   childrenByParent,
   editMode,
   onAddChild,
+  onAddSibling,
   onEdit,
   onDelete,
 }) {
@@ -243,14 +290,14 @@ function TreeItem({
         position: 'relative',
         listStyle: 'none',
         textAlign: 'center',
-        px: 1,
-        pt: 2.5,
+        px: 0.75,
+        pt: 2.2,
         '&::before, &::after': {
           content: '""',
           position: 'absolute',
           top: 0,
           width: '50%',
-          height: 20,
+          height: 18,
           borderTop: '1.5px solid #94a3b8',
         },
         '&::before': {
@@ -285,6 +332,7 @@ function TreeItem({
         node={node}
         editMode={editMode}
         onAddChild={onAddChild}
+        onAddSibling={onAddSibling}
         onEdit={onEdit}
         onDelete={onDelete}
       />
@@ -299,7 +347,7 @@ function TreeItem({
             alignItems: 'flex-start',
             m: 0,
             p: 0,
-            pt: 2.5,
+            pt: 2.2,
             listStyle: 'none',
             '&::before': {
               content: '""',
@@ -307,7 +355,7 @@ function TreeItem({
               top: 0,
               left: '50%',
               width: 0,
-              height: 20,
+              height: 18,
               borderLeft: '1.5px solid #94a3b8',
             },
           }}
@@ -319,6 +367,7 @@ function TreeItem({
               childrenByParent={childrenByParent}
               editMode={editMode}
               onAddChild={onAddChild}
+              onAddSibling={onAddSibling}
               onEdit={onEdit}
               onDelete={onDelete}
             />
@@ -334,6 +383,7 @@ export default function OrganizationChart({
   currentUserId = '',
 }) {
   const isSuperAdmin = userRole === '최고관리자';
+  const chartViewportRef = useRef(null);
   const [nodes, setNodes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -401,6 +451,22 @@ export default function OrganizationChart({
 
   const rootNodes = childrenByParent.get('__root__') || [];
 
+  useEffect(() => {
+    if (loading || rootNodes.length === 0) return undefined;
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      const viewport = chartViewportRef.current;
+      if (!viewport) return;
+
+      viewport.scrollLeft = Math.max(
+        0,
+        (viewport.scrollWidth - viewport.clientWidth) / 2,
+      );
+    });
+
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [loading, nodes, rootNodes.length]);
+
   const latestUpdatedAt = useMemo(() => {
     return nodes.reduce((latest, node) => {
       const value = node.updated_at || node.created_at;
@@ -441,11 +507,29 @@ export default function OrganizationChart({
     return nodes.filter((node) => !excluded.has(node.id));
   }, [form.id, getDescendantIds, nodes]);
 
-  const openAddDialog = (parentId = '') => {
+  const getNextSortOrder = useCallback(
+    (parentId = '') => {
+      const parentKey = parentId || '__root__';
+      const siblings = childrenByParent.get(parentKey) || [];
+
+      return (
+        siblings.reduce(
+          (highest, node) =>
+            Math.max(highest, Number(node.sort_order || 0)),
+          0,
+        ) + 1
+      );
+    },
+    [childrenByParent],
+  );
+
+  const openAddDialog = (parentId = '', defaults = {}) => {
     setForm({
       ...emptyForm,
       parent_id: parentId,
-      sort_order: nodes.length + 1,
+      department: defaults.department || '',
+      position_title: defaults.position_title || '',
+      sort_order: getNextSortOrder(parentId),
     });
     setDialogOpen(true);
   };
@@ -615,7 +699,7 @@ export default function OrganizationChart({
               욱림건설 조직도
             </Typography>
             <Typography sx={{ color: '#64748b', fontSize: '0.7rem' }}>
-              부서와 직책의 연결 관계를 기준으로 표시합니다.
+              같은 상위 항목에 연결된 조직원은 같은 단계에 가로로 표시합니다.
               {latestUpdatedAt
                 ? ` 최종 수정 ${formatDateTime(latestUpdatedAt)}`
                 : ''}
@@ -660,6 +744,7 @@ export default function OrganizationChart({
       )}
 
       <Box
+        ref={chartViewportRef}
         sx={{
           flexGrow: 1,
           minHeight: 0,
@@ -667,6 +752,7 @@ export default function OrganizationChart({
           px: 2,
           py: 2.5,
           bgcolor: '#f8fafc',
+          scrollBehavior: 'smooth',
         }}
       >
         {loading ? (
@@ -711,7 +797,8 @@ export default function OrganizationChart({
         ) : (
           <Box
             sx={{
-              minWidth: 'max-content',
+              width: 'max-content',
+              minWidth: '100%',
               display: 'flex',
               justifyContent: 'center',
               pb: 4,
@@ -742,6 +829,12 @@ export default function OrganizationChart({
                   editMode={editMode}
                   onAddChild={(parentNode) =>
                     openAddDialog(parentNode.id)
+                  }
+                  onAddSibling={(siblingNode) =>
+                    openAddDialog(siblingNode.parent_id || '', {
+                      department: siblingNode.department,
+                      position_title: siblingNode.position_title,
+                    })
                   }
                   onEdit={openEditDialog}
                   onDelete={handleDelete}
@@ -782,7 +875,7 @@ export default function OrganizationChart({
                   parent_id: event.target.value,
                 }))
               }
-              helperText="최상위 항목은 상위 조직을 선택하지 않습니다."
+              helperText="같은 상위 조직을 선택한 항목끼리 같은 단계에 가로로 표시됩니다. 최상위 항목은 선택하지 않습니다."
             >
               <MenuItem value="">최상위</MenuItem>
               {sortNodes(parentOptions).map((node) => (
@@ -866,7 +959,7 @@ export default function OrganizationChart({
                   sort_order: event.target.value,
                 }))
               }
-              helperText="같은 상위 조직 아래에서 숫자가 작은 항목부터 왼쪽에 표시됩니다."
+              helperText="같은 단계에서 숫자가 작은 항목부터 왼쪽에 표시됩니다."
             />
           </Stack>
         </DialogContent>
