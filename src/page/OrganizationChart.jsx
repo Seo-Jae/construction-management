@@ -39,11 +39,25 @@ const LAYOUT_TYPES = {
   SIDE: 'side',
 };
 
+const LAYOUT = {
+  padding: 48,
+  departmentWidth: 190,
+  departmentHeaderHeight: 58,
+  personWidth: 190,
+  personHeight: 82,
+  memberHeight: 64,
+  memberGap: 8,
+  memberPadding: 10,
+  horizontalGap: 72,
+  verticalGap: 108,
+  minCanvasWidth: 1400,
+  minCanvasHeight: 820,
+};
+
 const emptyForm = {
   id: '',
   parent_id: '',
   node_type: NODE_TYPES.PERSON,
-  layout_type: LAYOUT_TYPES.NORMAL,
   department: '',
   position_title: '',
   person_name: '',
@@ -52,6 +66,10 @@ const emptyForm = {
 };
 
 const normalizeText = (value) => String(value || '').trim();
+const normalizeParentId = (value) => value || '';
+const getParentKey = (value) => normalizeParentId(value) || ROOT_KEY;
+const isFiniteCoordinate = (value) =>
+  value !== null && value !== '' && Number.isFinite(Number(value));
 
 const formatDateTime = (value) => {
   if (!value) return '';
@@ -82,9 +100,7 @@ const sortNodes = (rows) =>
       first?.department,
     ).localeCompare(normalizeText(second?.department), 'ko');
 
-    if (departmentDifference !== 0) {
-      return departmentDifference;
-    }
+    if (departmentDifference !== 0) return departmentDifference;
 
     return normalizeText(first?.person_name).localeCompare(
       normalizeText(second?.person_name),
@@ -92,396 +108,601 @@ const sortNodes = (rows) =>
     );
   });
 
-const normalizeParentId = (value) => value || '';
+const buildChildrenMap = (nodes) => {
+  const map = new Map();
 
-const getParentKey = (value) => normalizeParentId(value) || ROOT_KEY;
+  nodes.forEach((node) => {
+    const key = getParentKey(node.parent_id);
+    const children = map.get(key) || [];
+    children.push(node);
+    map.set(key, children);
+  });
 
-const getCardDropPlacement = (event, orientation = 'horizontal') => {
-  const bounds = event.currentTarget.getBoundingClientRect();
-  const placementRatio =
-    orientation === 'vertical'
-      ? bounds.height > 0
-        ? (event.clientY - bounds.top) / bounds.height
-        : 0.5
-      : bounds.width > 0
-        ? (event.clientX - bounds.left) / bounds.width
-        : 0.5;
+  map.forEach((children, key) => {
+    map.set(key, sortNodes(children));
+  });
 
-  if (placementRatio < 0.3) return 'before';
-  if (placementRatio > 0.7) return 'after';
-  return 'child';
+  return map;
 };
 
-const DROP_LABELS = {
-  before: '앞에 배치',
-  after: '뒤에 배치',
-  child: '하위로 이동',
-  root: '최상위로 이동',
+const buildNodeMap = (nodes) =>
+  new Map(nodes.map((node) => [node.id, node]));
+
+const getStructuralNodeIds = (nodes, childrenByParent, nodeById) => {
+  const result = new Set();
+
+  nodes.forEach((node) => {
+    const children = childrenByParent.get(node.id) || [];
+    const hasDepartmentChild = children.some(
+      (child) => child.node_type === NODE_TYPES.DEPARTMENT,
+    );
+    const parent = nodeById.get(node.parent_id);
+
+    if (
+      node.node_type === NODE_TYPES.DEPARTMENT ||
+      !node.parent_id ||
+      hasDepartmentChild ||
+      node.layout_type === LAYOUT_TYPES.SIDE ||
+      (node.node_type === NODE_TYPES.PERSON &&
+        parent?.node_type === NODE_TYPES.PERSON)
+    ) {
+      result.add(node.id);
+    }
+  });
+
+  return result;
 };
 
-function OrganizationCard({
+const getEmbeddedMembers = (
+  departmentId,
+  childrenByParent,
+  structuralNodeIds,
+) =>
+  (childrenByParent.get(departmentId) || []).filter(
+    (node) =>
+      node.node_type === NODE_TYPES.PERSON &&
+      !structuralNodeIds.has(node.id),
+  );
+
+const getLayoutItemSize = (
   node,
-  level,
-  orientationFromParent,
-  childCount,
-  editMode,
-  layoutMode,
-  draggedNodeId,
-  dropTarget,
+  childrenByParent,
+  structuralNodeIds,
+) => {
+  if (node.node_type !== NODE_TYPES.DEPARTMENT) {
+    return {
+      width: LAYOUT.personWidth,
+      height: LAYOUT.personHeight,
+    };
+  }
+
+  const members = getEmbeddedMembers(
+    node.id,
+    childrenByParent,
+    structuralNodeIds,
+  );
+  const membersHeight =
+    members.length > 0
+      ? LAYOUT.memberPadding * 2 +
+        members.length * LAYOUT.memberHeight +
+        Math.max(0, members.length - 1) * LAYOUT.memberGap
+      : 0;
+
+  return {
+    width: LAYOUT.departmentWidth,
+    height: LAYOUT.departmentHeaderHeight + membersHeight,
+  };
+};
+
+const findStructuralParentId = (
+  node,
+  structuralNodeIds,
+  nodeById,
+) => {
+  let parentId = normalizeParentId(node.parent_id);
+  const visited = new Set();
+
+  while (parentId && !visited.has(parentId)) {
+    if (structuralNodeIds.has(parentId)) return parentId;
+    visited.add(parentId);
+    parentId = normalizeParentId(nodeById.get(parentId)?.parent_id);
+  }
+
+  return '';
+};
+
+const buildStructuralGraph = (
+  nodes,
+  structuralNodeIds,
+  nodeById,
+) => {
+  const children = new Map();
+  const parentById = new Map();
+
+  nodes
+    .filter((node) => structuralNodeIds.has(node.id))
+    .forEach((node) => {
+      const parentId = findStructuralParentId(
+        node,
+        structuralNodeIds,
+        nodeById,
+      );
+      parentById.set(node.id, parentId);
+      const key = parentId || ROOT_KEY;
+      const siblings = children.get(key) || [];
+      siblings.push(node);
+      children.set(key, siblings);
+    });
+
+  children.forEach((siblings, key) => {
+    children.set(key, sortNodes(siblings));
+  });
+
+  return { children, parentById };
+};
+
+const createAutoLayout = ({
+  nodes,
+  structuralNodeIds,
+  structuralChildren,
+  childrenByParent,
+}) => {
+  const structuralNodes = nodes.filter((node) =>
+    structuralNodeIds.has(node.id),
+  );
+  const sizeById = new Map(
+    structuralNodes.map((node) => [
+      node.id,
+      getLayoutItemSize(
+        node,
+        childrenByParent,
+        structuralNodeIds,
+      ),
+    ]),
+  );
+  const subtreeWidthById = new Map();
+  const calculating = new Set();
+
+  const calculateSubtreeWidth = (nodeId) => {
+    if (subtreeWidthById.has(nodeId)) {
+      return subtreeWidthById.get(nodeId);
+    }
+
+    const ownWidth = sizeById.get(nodeId)?.width || LAYOUT.personWidth;
+    if (calculating.has(nodeId)) return ownWidth;
+
+    calculating.add(nodeId);
+    const children = structuralChildren.get(nodeId) || [];
+    const childrenWidth = children.reduce(
+      (total, child, index) =>
+        total +
+        calculateSubtreeWidth(child.id) +
+        (index > 0 ? LAYOUT.horizontalGap : 0),
+      0,
+    );
+    calculating.delete(nodeId);
+
+    const result = Math.max(ownWidth, childrenWidth);
+    subtreeWidthById.set(nodeId, result);
+    return result;
+  };
+
+  const roots = structuralChildren.get(ROOT_KEY) || structuralNodes;
+  roots.forEach((root) => calculateSubtreeWidth(root.id));
+
+  const depthById = new Map();
+  const queue = roots.map((node) => ({ node, depth: 0 }));
+  const visited = new Set();
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || visited.has(current.node.id)) continue;
+    visited.add(current.node.id);
+    depthById.set(current.node.id, current.depth);
+
+    (structuralChildren.get(current.node.id) || []).forEach((child) => {
+      queue.push({ node: child, depth: current.depth + 1 });
+    });
+  }
+
+  structuralNodes.forEach((node) => {
+    if (!depthById.has(node.id)) depthById.set(node.id, 0);
+  });
+
+  const maximumDepth = Math.max(0, ...depthById.values());
+  const heightByDepth = Array.from(
+    { length: maximumDepth + 1 },
+    () => LAYOUT.personHeight,
+  );
+
+  structuralNodes.forEach((node) => {
+    const depth = depthById.get(node.id) || 0;
+    heightByDepth[depth] = Math.max(
+      heightByDepth[depth],
+      sizeById.get(node.id)?.height || LAYOUT.personHeight,
+    );
+  });
+
+  const yByDepth = [];
+  let nextY = LAYOUT.padding;
+
+  heightByDepth.forEach((height, depth) => {
+    yByDepth[depth] = nextY;
+    nextY += height + LAYOUT.verticalGap;
+  });
+
+  const positions = {};
+  const placeSubtree = (node, left, ancestry = new Set()) => {
+    if (ancestry.has(node.id)) return;
+
+    const nextAncestry = new Set(ancestry);
+    nextAncestry.add(node.id);
+    const subtreeWidth = calculateSubtreeWidth(node.id);
+    const ownSize = sizeById.get(node.id) || {
+      width: LAYOUT.personWidth,
+      height: LAYOUT.personHeight,
+    };
+    const depth = depthById.get(node.id) || 0;
+
+    positions[node.id] = {
+      x: Math.round(left + (subtreeWidth - ownSize.width) / 2),
+      y: Math.round(yByDepth[depth] || LAYOUT.padding),
+    };
+
+    const children = structuralChildren.get(node.id) || [];
+    const childrenTotalWidth = children.reduce(
+      (total, child, index) =>
+        total +
+        calculateSubtreeWidth(child.id) +
+        (index > 0 ? LAYOUT.horizontalGap : 0),
+      0,
+    );
+    let childLeft = left + Math.max(0, (subtreeWidth - childrenTotalWidth) / 2);
+
+    children.forEach((child) => {
+      placeSubtree(child, childLeft, nextAncestry);
+      childLeft +=
+        calculateSubtreeWidth(child.id) + LAYOUT.horizontalGap;
+    });
+  };
+
+  const rootsTotalWidth = roots.reduce(
+    (total, root, index) =>
+      total +
+      calculateSubtreeWidth(root.id) +
+      (index > 0 ? LAYOUT.horizontalGap : 0),
+    0,
+  );
+  let rootLeft = LAYOUT.padding;
+
+  roots.forEach((root) => {
+    placeSubtree(root, rootLeft);
+    rootLeft += calculateSubtreeWidth(root.id) + LAYOUT.horizontalGap;
+  });
+
+  structuralNodes
+    .filter((node) => !positions[node.id])
+    .forEach((node, index) => {
+      positions[node.id] = {
+        x:
+          LAYOUT.padding +
+          (rootsTotalWidth > 0 ? rootsTotalWidth + LAYOUT.horizontalGap : 0) +
+          index * (LAYOUT.personWidth + LAYOUT.horizontalGap),
+        y: LAYOUT.padding,
+      };
+    });
+
+  return positions;
+};
+
+const createConnectorPath = (parentRect, childRect) => {
+  const parentCenterX = parentRect.x + parentRect.width / 2;
+  const parentCenterY = parentRect.y + parentRect.height / 2;
+  const childCenterX = childRect.x + childRect.width / 2;
+  const childCenterY = childRect.y + childRect.height / 2;
+
+  if (childRect.y >= parentRect.y + parentRect.height + 16) {
+    const startY = parentRect.y + parentRect.height;
+    const endY = childRect.y;
+    const middleY = startY + (endY - startY) / 2;
+    return `M ${parentCenterX} ${startY} V ${middleY} H ${childCenterX} V ${endY}`;
+  }
+
+  if (parentRect.y >= childRect.y + childRect.height + 16) {
+    const startY = parentRect.y;
+    const endY = childRect.y + childRect.height;
+    const middleY = endY + (startY - endY) / 2;
+    return `M ${parentCenterX} ${startY} V ${middleY} H ${childCenterX} V ${endY}`;
+  }
+
+  if (childCenterX >= parentCenterX) {
+    const startX = parentRect.x + parentRect.width;
+    const endX = childRect.x;
+    const middleX = startX + (endX - startX) / 2;
+    return `M ${startX} ${parentCenterY} H ${middleX} V ${childCenterY} H ${endX}`;
+  }
+
+  const startX = parentRect.x;
+  const endX = childRect.x + childRect.width;
+  const middleX = endX + (startX - endX) / 2;
+  return `M ${startX} ${parentCenterY} H ${middleX} V ${childCenterY} H ${endX}`;
+};
+
+function NodeMenu({
+  node,
+  light = false,
   onAddDepartment,
   onAddPerson,
   onAddSibling,
-  onToggleSide,
   onEdit,
   onDelete,
-  onDragStart,
-  onDragOver,
-  onDragLeave,
-  onDrop,
-  onDragEnd,
 }) {
-  const [menuAnchor, setMenuAnchor] = useState(null);
-  const isDepartment = node.node_type === NODE_TYPES.DEPARTMENT;
-  const isRootPerson = level === 0 && !isDepartment;
-  const isDragging = draggedNodeId === node.id;
-  const activeDrop =
-    dropTarget?.targetId === node.id ? dropTarget.placement : '';
-
-  const closeMenu = () => setMenuAnchor(null);
-
-  const runMenuAction = (action) => {
-    closeMenu();
+  const [anchor, setAnchor] = useState(null);
+  const close = () => setAnchor(null);
+  const run = (action) => {
+    close();
     action(node);
   };
 
+  return (
+    <>
+      <Tooltip title="조직도 메뉴">
+        <IconButton
+          size="small"
+          aria-label="조직도 메뉴"
+          onClick={(event) => {
+            event.stopPropagation();
+            setAnchor(event.currentTarget);
+          }}
+          sx={{
+            position: 'absolute',
+            top: 2,
+            right: 3,
+            zIndex: 4,
+            width: 24,
+            height: 24,
+            color: light ? '#ffffff' : '#475569',
+            bgcolor: light ? 'rgba(15,23,42,0.18)' : 'transparent',
+            '&:hover': {
+              bgcolor: light ? 'rgba(15,23,42,0.32)' : '#e2e8f0',
+            },
+          }}
+        >
+          <Typography
+            component="span"
+            sx={{ mt: -0.7, fontSize: 18, fontWeight: 900, lineHeight: 1 }}
+          >
+            ...
+          </Typography>
+        </IconButton>
+      </Tooltip>
+
+      <Menu
+        anchorEl={anchor}
+        open={Boolean(anchor)}
+        onClose={close}
+        MenuListProps={{ dense: true }}
+        PaperProps={{
+          sx: {
+            minWidth: 158,
+            boxShadow: '0 8px 24px rgba(15,23,42,0.16)',
+          },
+        }}
+      >
+        <MenuItem onClick={() => run(onAddDepartment)} sx={{ fontSize: '0.75rem' }}>
+          하위 부서 추가
+        </MenuItem>
+        <MenuItem onClick={() => run(onAddPerson)} sx={{ fontSize: '0.75rem' }}>
+          하위 직원 추가
+        </MenuItem>
+        <MenuItem onClick={() => run(onAddSibling)} sx={{ fontSize: '0.75rem' }}>
+          같은 단계에 추가
+        </MenuItem>
+        <Divider />
+        <MenuItem onClick={() => run(onEdit)} sx={{ fontSize: '0.75rem' }}>
+          수정
+        </MenuItem>
+        <MenuItem
+          onClick={() => run(onDelete)}
+          sx={{ color: '#dc2626', fontSize: '0.75rem' }}
+        >
+          삭제
+        </MenuItem>
+      </Menu>
+    </>
+  );
+}
+
+function MemberCard({
+  node,
+  editMode,
+  layoutMode,
+  dragging,
+  onDragStart,
+  onDragEnd,
+  onAddDepartment,
+  onAddPerson,
+  onAddSibling,
+  onEdit,
+  onDelete,
+}) {
   return (
     <Paper
       variant="outlined"
       draggable={layoutMode}
       onDragStart={(event) => onDragStart(event, node)}
-      onDragOver={(event) =>
-        onDragOver(event, node, orientationFromParent)
-      }
-      onDragLeave={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) {
-          onDragLeave(event, node);
-        }
-      }}
-      onDrop={(event) =>
-        onDrop(event, node, orientationFromParent)
-      }
       onDragEnd={onDragEnd}
       sx={{
         position: 'relative',
-        width: isRootPerson ? 196 : isDepartment ? 176 : 164,
-        minHeight: isRootPerson ? 76 : isDepartment ? 58 : 64,
-        mx: 'auto',
+        height: LAYOUT.memberHeight,
+        display: 'flex',
+        alignItems: 'stretch',
         overflow: 'hidden',
-        borderRadius: isRootPerson ? 2.2 : 1,
-        borderColor: activeDrop ? '#0ea5e9' : '#94a3b8',
-        bgcolor: isDepartment
-          ? '#f1f5f9'
-          : node.layout_type === LAYOUT_TYPES.SIDE
-            ? '#ecfdf5'
-            : '#ffffff',
-        boxShadow: '0 4px 12px rgba(15, 23, 42, 0.08)',
-        cursor: layoutMode ? (isDragging ? 'grabbing' : 'grab') : 'default',
-        opacity: isDragging ? 0.42 : 1,
-        userSelect: layoutMode ? 'none' : 'auto',
-        transition: 'border-color 120ms, box-shadow 120ms, opacity 120ms',
-        ...(activeDrop
-          ? {
-              boxShadow: '0 0 0 3px rgba(14, 165, 233, 0.20)',
-            }
-          : {}),
+        borderRadius: 1,
+        borderColor: '#cbd5e1',
+        bgcolor: '#ffffff',
+        boxShadow: '0 2px 7px rgba(15,23,42,0.06)',
+        cursor: layoutMode ? 'grab' : 'default',
+        opacity: dragging ? 0.45 : 1,
       }}
     >
-      {isDepartment ? (
-        <>
-          <Box
-            sx={{
-              pl: 1.15,
-              pr: editMode ? 3.5 : 1.15,
-              py: 0.72,
-              bgcolor:
-                node.layout_type === LAYOUT_TYPES.SIDE
-                  ? '#65a30d'
-                  : '#166534',
-              borderBottom: '1px solid rgba(255,255,255,0.18)',
-            }}
-          >
-            <Typography
-              noWrap
-              title={node.department}
-              sx={{
-                color: '#ffffff',
-                fontSize: '0.73rem',
-                fontWeight: 900,
-                letterSpacing: 0.15,
-              }}
-            >
-              {node.department || '부서 미입력'}
-            </Typography>
-          </Box>
-          <Typography
-            sx={{
-              px: 1,
-              py: 0.62,
-              color: '#475569',
-              fontSize: '0.62rem',
-              fontWeight: 800,
-              textAlign: 'center',
-            }}
-          >
-            구성원 {childCount}명
-          </Typography>
-        </>
-      ) : isRootPerson ? (
-        <>
-          <Box
-            sx={{
-              pl: 1.3,
-              pr: editMode ? 3.7 : 1.3,
-              py: 0.68,
-              bgcolor: '#334155',
-            }}
-          >
-            <Typography
-              noWrap
-              title={node.position_title}
-              sx={{
-                color: '#ffffff',
-                fontSize: '0.69rem',
-                fontWeight: 900,
-                textAlign: 'center',
-              }}
-            >
-              {node.position_title || '직책 미입력'}
-            </Typography>
-          </Box>
-          <Stack spacing={0.18} alignItems="center" sx={{ px: 1, py: 0.7 }}>
-            <Typography
-              noWrap
-              title={node.person_name}
-              sx={{
-                maxWidth: '100%',
-                color: '#0f172a',
-                fontSize: '0.82rem',
-                fontWeight: 900,
-              }}
-            >
-              {node.person_name || '이름 미입력'}
-            </Typography>
-            <Typography
-              noWrap
-              title={node.contact}
-              sx={{
-                maxWidth: '100%',
-                color: '#64748b',
-                fontSize: '0.59rem',
-                fontWeight: 700,
-              }}
-            >
-              {node.contact || '연락처 미입력'}
-            </Typography>
-          </Stack>
-        </>
-      ) : (
-        <Box
-          sx={{
-            minHeight: 64,
-            display: 'flex',
-            alignItems: 'stretch',
-          }}
-        >
-          <Box
-            sx={{
-              flex: '0 0 4px',
-              bgcolor:
-                node.layout_type === LAYOUT_TYPES.SIDE
-                  ? '#84cc16'
-                  : '#16a34a',
-            }}
-          />
-          <Stack
-            spacing={0.18}
-            justifyContent="center"
-            sx={{
-              minWidth: 0,
-              flex: 1,
-              pl: 1.05,
-              pr: editMode ? 3.1 : 0.9,
-              py: 0.52,
-              textAlign: 'left',
-            }}
-          >
-            <Typography
-              noWrap
-              title={node.position_title}
-              sx={{
-                color: '#64748b',
-                fontSize: '0.55rem',
-                fontWeight: 800,
-              }}
-            >
-              {node.position_title || '직책 미입력'}
-            </Typography>
-            <Typography
-              noWrap
-              title={node.person_name}
-              sx={{
-                color: '#0f172a',
-                fontSize: '0.74rem',
-                fontWeight: 900,
-              }}
-            >
-              {node.person_name || '이름 미입력'}
-            </Typography>
-            <Typography
-              noWrap
-              title={node.contact}
-              sx={{
-                color: '#64748b',
-                fontSize: '0.54rem',
-                fontWeight: 700,
-              }}
-            >
-              {node.contact || '연락처 미입력'}
-            </Typography>
-          </Stack>
-        </Box>
-      )}
+      <Box sx={{ flex: '0 0 4px', bgcolor: '#16a34a' }} />
+      <Stack
+        spacing={0.15}
+        justifyContent="center"
+        sx={{
+          minWidth: 0,
+          flex: 1,
+          pl: 1,
+          pr: editMode ? 3.15 : 0.85,
+          py: 0.45,
+        }}
+      >
+        <Typography noWrap sx={{ color: '#64748b', fontSize: '0.55rem', fontWeight: 800 }}>
+          {node.position_title || '직책 미입력'}
+        </Typography>
+        <Typography noWrap sx={{ color: '#0f172a', fontSize: '0.74rem', fontWeight: 900 }}>
+          {node.person_name || '이름 미입력'}
+        </Typography>
+        <Typography noWrap sx={{ color: '#64748b', fontSize: '0.54rem', fontWeight: 700 }}>
+          {node.contact || '연락처 미입력'}
+        </Typography>
+      </Stack>
 
       {editMode && (
-        <>
-          <Tooltip title="조직도 메뉴">
-            <IconButton
-              size="small"
-              aria-label={`${node.person_name || '조직원'} 메뉴`}
-              aria-controls={menuAnchor ? `organization-menu-${node.id}` : undefined}
-              aria-haspopup="true"
-              aria-expanded={menuAnchor ? 'true' : undefined}
-              onClick={(event) => setMenuAnchor(event.currentTarget)}
-              sx={{
-                position: 'absolute',
-                top: 1,
-                right: 2,
-                width: 24,
-                height: 24,
-                color:
-                  isDepartment || isRootPerson
-                    ? '#ffffff'
-                    : '#475569',
-                bgcolor:
-                  isDepartment || isRootPerson
-                    ? 'rgba(15, 23, 42, 0.18)'
-                    : 'transparent',
-                '&:hover': {
-                  bgcolor:
-                    isDepartment || isRootPerson
-                      ? 'rgba(15, 23, 42, 0.32)'
-                      : '#e2e8f0',
-                },
-              }}
-            >
-              <Typography
-                component="span"
-                sx={{
-                  mt: -0.65,
-                  fontSize: 18,
-                  fontWeight: 900,
-                  letterSpacing: 0.5,
-                  lineHeight: 1,
-                }}
-              >
-                ...
-              </Typography>
-            </IconButton>
-          </Tooltip>
+        <NodeMenu
+          node={node}
+          onAddDepartment={onAddDepartment}
+          onAddPerson={onAddPerson}
+          onAddSibling={onAddSibling}
+          onEdit={onEdit}
+          onDelete={onDelete}
+        />
+      )}
+    </Paper>
+  );
+}
 
-          <Menu
-            id={`organization-menu-${node.id}`}
-            anchorEl={menuAnchor}
-            open={Boolean(menuAnchor)}
-            onClose={closeMenu}
-            MenuListProps={{
-              dense: true,
-              'aria-label': `${node.person_name || '조직원'} 편집 메뉴`,
-            }}
-            PaperProps={{
-              sx: {
-                minWidth: 154,
-                boxShadow: '0 8px 24px rgba(15,23,42,0.16)',
-              },
-            }}
-          >
-            <MenuItem
-              onClick={() => runMenuAction(onAddDepartment)}
-              sx={{ fontSize: '0.75rem' }}
-            >
-              하위 부서 추가
-            </MenuItem>
-            <MenuItem
-              onClick={() => runMenuAction(onAddPerson)}
-              sx={{ fontSize: '0.75rem' }}
-            >
-              하위 직원 추가
-            </MenuItem>
-            <MenuItem
-              onClick={() => runMenuAction(onAddSibling)}
-              sx={{ fontSize: '0.75rem' }}
-            >
-              같은 단계에 추가
-            </MenuItem>
-            <Divider />
-            {node.parent_id && (
-              <MenuItem
-                onClick={() => runMenuAction(onToggleSide)}
-                sx={{ fontSize: '0.75rem' }}
-              >
-                {node.layout_type === LAYOUT_TYPES.SIDE
-                  ? '기본 위치로 배치'
-                  : '측면에 배치'}
-              </MenuItem>
-            )}
-            <MenuItem
-              onClick={() => runMenuAction(onEdit)}
-              sx={{ fontSize: '0.75rem' }}
-            >
-              수정
-            </MenuItem>
-            <MenuItem
-              onClick={() => runMenuAction(onDelete)}
-              sx={{ color: '#dc2626', fontSize: '0.75rem' }}
-            >
-              삭제
-            </MenuItem>
-          </Menu>
-        </>
+function DepartmentGroup({
+  node,
+  members,
+  position,
+  size,
+  editMode,
+  layoutMode,
+  moving,
+  memberDraggingId,
+  memberDropTargetId,
+  onPointerDown,
+  onMemberDragStart,
+  onMemberDragEnd,
+  onMemberDragOver,
+  onMemberDragLeave,
+  onMemberDrop,
+  onAddDepartment,
+  onAddPerson,
+  onAddSibling,
+  onEdit,
+  onDelete,
+}) {
+  const activeMemberDrop = memberDropTargetId === node.id;
+
+  return (
+    <Paper
+      variant="outlined"
+      onDragOver={(event) => onMemberDragOver(event, node)}
+      onDragLeave={(event) => onMemberDragLeave(event, node)}
+      onDrop={(event) => onMemberDrop(event, node)}
+      sx={{
+        position: 'absolute',
+        left: position.x,
+        top: position.y,
+        zIndex: moving ? 5 : 2,
+        width: size.width,
+        minHeight: size.height,
+        overflow: 'hidden',
+        borderRadius: 1.2,
+        borderWidth: activeMemberDrop ? 2 : 1,
+        borderColor: activeMemberDrop ? '#0ea5e9' : '#94a3b8',
+        bgcolor: '#f8fafc',
+        boxShadow: moving
+          ? '0 14px 32px rgba(15,23,42,0.22)'
+          : '0 5px 14px rgba(15,23,42,0.09)',
+        userSelect: layoutMode ? 'none' : 'auto',
+      }}
+    >
+      <Box
+        onPointerDown={(event) => onPointerDown(event, node)}
+        sx={{
+          position: 'relative',
+          height: LAYOUT.departmentHeaderHeight,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          px: 1.15,
+          pr: editMode ? 3.6 : 1.15,
+          bgcolor: '#166534',
+          color: '#ffffff',
+          cursor: layoutMode ? (moving ? 'grabbing' : 'grab') : 'default',
+          touchAction: layoutMode ? 'none' : 'auto',
+        }}
+      >
+        <Typography noWrap sx={{ fontSize: '0.76rem', fontWeight: 900 }}>
+          {node.department || '부서 미입력'}
+        </Typography>
+        <Typography sx={{ mt: 0.15, color: '#dcfce7', fontSize: '0.57rem', fontWeight: 800 }}>
+          구성원 {members.length}명
+          {layoutMode ? ' · 끌어서 위치 이동' : ''}
+        </Typography>
+
+        {editMode && (
+          <NodeMenu
+            node={node}
+            light
+            onAddDepartment={onAddDepartment}
+            onAddPerson={onAddPerson}
+            onAddSibling={onAddSibling}
+            onEdit={onEdit}
+            onDelete={onDelete}
+          />
+        )}
+      </Box>
+
+      {members.length > 0 && (
+        <Stack spacing={`${LAYOUT.memberGap}px`} sx={{ p: `${LAYOUT.memberPadding}px` }}>
+          {members.map((member) => (
+            <MemberCard
+              key={member.id}
+              node={member}
+              editMode={editMode}
+              layoutMode={layoutMode}
+              dragging={memberDraggingId === member.id}
+              onDragStart={onMemberDragStart}
+              onDragEnd={onMemberDragEnd}
+              onAddDepartment={onAddDepartment}
+              onAddPerson={onAddPerson}
+              onAddSibling={onAddSibling}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
+          ))}
+        </Stack>
       )}
 
-      {activeDrop && (
+      {activeMemberDrop && (
         <Box
           sx={{
             position: 'absolute',
             inset: 0,
-            zIndex: 5,
+            zIndex: 7,
             pointerEvents: 'none',
             display: 'grid',
             placeItems: 'center',
-            bgcolor: 'rgba(14, 165, 233, 0.88)',
+            bgcolor: 'rgba(14,165,233,0.86)',
           }}
         >
-          <Typography
-            sx={{
-              px: 0.65,
-              color: '#ffffff',
-              fontSize: '0.64rem',
-              fontWeight: 900,
-              textAlign: 'center',
-            }}
-          >
-            {DROP_LABELS[activeDrop]}
+          <Typography sx={{ px: 1, color: '#ffffff', fontSize: '0.68rem', fontWeight: 900 }}>
+            이 부서로 소속 변경
           </Typography>
         </Box>
       )}
@@ -489,247 +710,69 @@ function OrganizationCard({
   );
 }
 
-function TreeItem({
+function PersonNode({
   node,
-  childrenByParent,
-  level = 0,
-  orientationFromParent = 'horizontal',
+  position,
+  size,
   editMode,
   layoutMode,
-  draggedNodeId,
-  dropTarget,
+  moving,
+  onPointerDown,
   onAddDepartment,
   onAddPerson,
   onAddSibling,
-  onToggleSide,
   onEdit,
   onDelete,
-  onDragStart,
-  onDragOver,
-  onDragLeave,
-  onDrop,
-  onDragEnd,
 }) {
-  const children = childrenByParent.get(node.id) || [];
-  const normalChildren = children.filter(
-    (child) => child.layout_type !== LAYOUT_TYPES.SIDE,
-  );
-  const sideChildren = children.filter(
-    (child) => child.layout_type === LAYOUT_TYPES.SIDE,
-  );
-  const isDepartment = node.node_type === NODE_TYPES.DEPARTMENT;
-
-  const outerItemSx =
-    orientationFromParent === 'vertical'
-      ? {
-          position: 'relative',
-          listStyle: 'none',
-          textAlign: 'center',
-          '&::before': {
-            content: '""',
-            position: 'absolute',
-            top: '50%',
-            left: -10,
-            width: 10,
-            borderTop: '1.5px solid #94a3b8',
-          },
-        }
-      : orientationFromParent === 'side'
-        ? {
-            position: 'relative',
-            listStyle: 'none',
-            textAlign: 'center',
-            px: 0.55,
-          }
-        : {
-            position: 'relative',
-            listStyle: 'none',
-            textAlign: 'center',
-            px: 0.75,
-            pt: 2.2,
-            '&::before, &::after': {
-              content: '""',
-              position: 'absolute',
-              top: 0,
-              width: '50%',
-              height: 18,
-              borderTop: '1.5px solid #94a3b8',
-            },
-            '&::before': {
-              right: '50%',
-            },
-            '&::after': {
-              left: '50%',
-              borderLeft: '1.5px solid #94a3b8',
-            },
-            '&:only-child::before, &:only-child::after': {
-              display: 'none',
-            },
-            '&:only-child': {
-              pt: 0,
-            },
-            '&:first-of-type::before': {
-              border: 0,
-            },
-            '&:first-of-type::after': {
-              borderRadius: '5px 0 0 0',
-            },
-            '&:last-of-type::after': {
-              border: 0,
-            },
-            '&:last-of-type::before': {
-              borderRight: '1.5px solid #94a3b8',
-              borderRadius: '0 5px 0 0',
-            },
-          };
-
   return (
-    <Box
-      component="li"
-      sx={outerItemSx}
+    <Paper
+      variant="outlined"
+      onPointerDown={(event) => onPointerDown(event, node)}
+      sx={{
+        position: 'absolute',
+        left: position.x,
+        top: position.y,
+        zIndex: moving ? 5 : 2,
+        width: size.width,
+        height: size.height,
+        overflow: 'hidden',
+        borderRadius: 2,
+        borderColor: '#64748b',
+        bgcolor: '#ffffff',
+        boxShadow: moving
+          ? '0 14px 32px rgba(15,23,42,0.22)'
+          : '0 5px 14px rgba(15,23,42,0.10)',
+        cursor: layoutMode ? (moving ? 'grabbing' : 'grab') : 'default',
+        touchAction: layoutMode ? 'none' : 'auto',
+        userSelect: layoutMode ? 'none' : 'auto',
+      }}
     >
-      <OrganizationCard
-        node={node}
-        level={level}
-        orientationFromParent={orientationFromParent}
-        childCount={
-          children.filter(
-            (child) => child.node_type === NODE_TYPES.PERSON,
-          ).length
-        }
-        editMode={editMode}
-        layoutMode={layoutMode}
-        draggedNodeId={draggedNodeId}
-        dropTarget={dropTarget}
-        onAddDepartment={onAddDepartment}
-        onAddPerson={onAddPerson}
-        onAddSibling={onAddSibling}
-        onToggleSide={onToggleSide}
-        onEdit={onEdit}
-        onDelete={onDelete}
-        onDragStart={onDragStart}
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        onDrop={onDrop}
-        onDragEnd={onDragEnd}
-      />
+      <Box sx={{ position: 'relative', py: 0.65, px: 1.2, pr: editMode ? 3.7 : 1.2, bgcolor: '#334155' }}>
+        <Typography noWrap sx={{ color: '#ffffff', fontSize: '0.68rem', fontWeight: 900, textAlign: 'center' }}>
+          {node.position_title || '직책 미입력'}
+        </Typography>
 
-      {sideChildren.length > 0 && (
-        <Box
-          component="ul"
-          sx={{
-            position: 'relative',
-            display: 'flex',
-            alignItems: 'flex-start',
-            width: 'max-content',
-            mx: 'auto',
-            mt: 1.3,
-            pl: 4.5,
-            transform: 'translateX(42%)',
-            listStyle: 'none',
-            '&::before': {
-              content: '""',
-              position: 'absolute',
-              top: '50%',
-              left: 0,
-              width: 36,
-              borderTop: '1.5px solid #94a3b8',
-            },
-            '&::after': {
-              content: '""',
-              position: 'absolute',
-              top: -11,
-              left: 0,
-              height: 'calc(50% + 11px)',
-              borderLeft: '1.5px solid #94a3b8',
-            },
-          }}
-        >
-          {sideChildren.map((child) => (
-            <TreeItem
-              key={child.id}
-              node={child}
-              childrenByParent={childrenByParent}
-              level={level + 1}
-              orientationFromParent="side"
-              editMode={editMode}
-              layoutMode={layoutMode}
-              draggedNodeId={draggedNodeId}
-              dropTarget={dropTarget}
-              onAddDepartment={onAddDepartment}
-              onAddPerson={onAddPerson}
-              onAddSibling={onAddSibling}
-              onToggleSide={onToggleSide}
-              onEdit={onEdit}
-              onDelete={onDelete}
-              onDragStart={onDragStart}
-              onDragOver={onDragOver}
-              onDragLeave={onDragLeave}
-              onDrop={onDrop}
-              onDragEnd={onDragEnd}
-            />
-          ))}
-        </Box>
-      )}
-
-      {normalChildren.length > 0 && (
-        <Box
-          component="ul"
-          sx={{
-            position: 'relative',
-            display: 'flex',
-            flexDirection: isDepartment ? 'column' : 'row',
-            justifyContent: 'center',
-            alignItems: isDepartment ? 'center' : 'flex-start',
-            gap: isDepartment ? 0.8 : 0,
-            width: isDepartment ? 'max-content' : 'auto',
-            minWidth: isDepartment ? 176 : 0,
-            m: 0,
-            mx: isDepartment ? 'auto' : 0,
-            p: 0,
-            pl: isDepartment ? 2.2 : 0,
-            pt: isDepartment ? 1.4 : 2.2,
-            listStyle: 'none',
-            '&::before': {
-              content: '""',
-              position: 'absolute',
-              top: 0,
-              left: isDepartment ? 8 : '50%',
-              width: 0,
-              height: isDepartment ? 'calc(100% - 32px)' : 18,
-              borderLeft: '1.5px solid #94a3b8',
-            },
-          }}
-        >
-          {normalChildren.map((child) => (
-            <TreeItem
-              key={child.id}
-              node={child}
-              childrenByParent={childrenByParent}
-              level={level + 1}
-              orientationFromParent={
-                isDepartment ? 'vertical' : 'horizontal'
-              }
-              editMode={editMode}
-              layoutMode={layoutMode}
-              draggedNodeId={draggedNodeId}
-              dropTarget={dropTarget}
-              onAddDepartment={onAddDepartment}
-              onAddPerson={onAddPerson}
-              onAddSibling={onAddSibling}
-              onToggleSide={onToggleSide}
-              onEdit={onEdit}
-              onDelete={onDelete}
-              onDragStart={onDragStart}
-              onDragOver={onDragOver}
-              onDragLeave={onDragLeave}
-              onDrop={onDrop}
-              onDragEnd={onDragEnd}
-            />
-          ))}
-        </Box>
-      )}
-    </Box>
+        {editMode && (
+          <NodeMenu
+            node={node}
+            light
+            onAddDepartment={onAddDepartment}
+            onAddPerson={onAddPerson}
+            onAddSibling={onAddSibling}
+            onEdit={onEdit}
+            onDelete={onDelete}
+          />
+        )}
+      </Box>
+      <Stack spacing={0.15} alignItems="center" sx={{ px: 1, py: 0.7 }}>
+        <Typography noWrap sx={{ maxWidth: '100%', color: '#0f172a', fontSize: '0.82rem', fontWeight: 900 }}>
+          {node.person_name || '이름 미입력'}
+        </Typography>
+        <Typography noWrap sx={{ maxWidth: '100%', color: '#64748b', fontSize: '0.58rem', fontWeight: 700 }}>
+          {node.contact || '연락처 미입력'}
+        </Typography>
+      </Stack>
+    </Paper>
   );
 }
 
@@ -739,14 +782,21 @@ export default function OrganizationChart({
 }) {
   const isSuperAdmin = userRole === '최고관리자';
   const chartViewportRef = useRef(null);
+  const dragStateRef = useRef(null);
+  const positionOverridesRef = useRef({});
+  const hasCenteredRef = useRef(false);
+
   const [nodes, setNodes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingLayout, setSavingLayout] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [layoutMode, setLayoutMode] = useState(false);
-  const [draggedNodeId, setDraggedNodeId] = useState('');
-  const [dropTarget, setDropTarget] = useState(null);
+  const [zoom, setZoom] = useState(1);
+  const [movingNodeId, setMovingNodeId] = useState('');
+  const [positionOverrides, setPositionOverrides] = useState({});
+  const [memberDraggingId, setMemberDraggingId] = useState('');
+  const [memberDropTargetId, setMemberDropTargetId] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [message, setMessage] = useState(null);
@@ -757,7 +807,7 @@ export default function OrganizationChart({
     const { data, error } = await supabase
       .from(TABLE_NAME)
       .select(
-        'id, parent_id, node_type, layout_type, department, position_title, person_name, contact, sort_order, is_active, created_at, updated_at',
+        'id, parent_id, node_type, layout_type, department, position_title, person_name, contact, sort_order, layout_x, layout_y, is_active, created_at, updated_at',
       )
       .eq('is_active', true)
       .order('sort_order', { ascending: true })
@@ -770,10 +820,10 @@ export default function OrganizationChart({
         severity: 'error',
         text:
           error.code === '42P01'
-            ? '조직도 테이블이 없습니다. 제공된 Supabase SQL을 먼저 실행해주세요.'
+            ? '조직도 테이블이 없습니다. 조직도 SQL을 먼저 실행해주세요.'
             : error.code === '42703'
-              ? 'v51.3 조직도 SQL을 먼저 실행해주세요. 부서·직원 구분 열이 아직 없습니다.'
-            : `조직도를 불러오지 못했습니다: ${error.message}`,
+              ? 'v51.5 조직도 SQL을 먼저 실행해주세요. 자유배치 좌표 열이 아직 없습니다.'
+              : `조직도를 불러오지 못했습니다: ${error.message}`,
       });
     } else {
       setNodes(
@@ -785,6 +835,8 @@ export default function OrganizationChart({
           })),
         ),
       );
+      setPositionOverrides({});
+      positionOverridesRef.current = {};
     }
 
     setLoading(false);
@@ -795,55 +847,150 @@ export default function OrganizationChart({
 
     const handleFocus = () => loadNodes();
     window.addEventListener('focus', handleFocus);
-
-    return () => {
-      window.removeEventListener('focus', handleFocus);
-    };
+    return () => window.removeEventListener('focus', handleFocus);
   }, [loadNodes]);
 
-  const childrenByParent = useMemo(() => {
-    const map = new Map();
+  const nodeById = useMemo(() => buildNodeMap(nodes), [nodes]);
+  const childrenByParent = useMemo(() => buildChildrenMap(nodes), [nodes]);
+  const structuralNodeIds = useMemo(
+    () => getStructuralNodeIds(nodes, childrenByParent, nodeById),
+    [childrenByParent, nodeById, nodes],
+  );
+  const structuralGraph = useMemo(
+    () => buildStructuralGraph(nodes, structuralNodeIds, nodeById),
+    [nodeById, nodes, structuralNodeIds],
+  );
+  const structuralNodes = useMemo(
+    () => nodes.filter((node) => structuralNodeIds.has(node.id)),
+    [nodes, structuralNodeIds],
+  );
+  const autoPositions = useMemo(
+    () =>
+      createAutoLayout({
+        nodes,
+        structuralNodeIds,
+        structuralChildren: structuralGraph.children,
+        childrenByParent,
+      }),
+    [childrenByParent, nodes, structuralGraph.children, structuralNodeIds],
+  );
 
-    nodes.forEach((node) => {
-      const parentKey = getParentKey(node.parent_id);
-      const siblings = map.get(parentKey) || [];
-      siblings.push(node);
-      map.set(parentKey, siblings);
+  const itemSizeById = useMemo(
+    () =>
+      new Map(
+        structuralNodes.map((node) => [
+          node.id,
+          getLayoutItemSize(
+            node,
+            childrenByParent,
+            structuralNodeIds,
+          ),
+        ]),
+      ),
+    [childrenByParent, structuralNodeIds, structuralNodes],
+  );
+
+  const resolvedPositions = useMemo(() => {
+    const result = {};
+
+    structuralNodes.forEach((node) => {
+      const override = positionOverrides[node.id];
+      if (override) {
+        result[node.id] = override;
+        return;
+      }
+
+      if (
+        isFiniteCoordinate(node.layout_x) &&
+        isFiniteCoordinate(node.layout_y)
+      ) {
+        result[node.id] = {
+          x: Number(node.layout_x),
+          y: Number(node.layout_y),
+        };
+        return;
+      }
+
+      result[node.id] = autoPositions[node.id] || {
+        x: LAYOUT.padding,
+        y: LAYOUT.padding,
+      };
     });
 
-    map.forEach((siblings, key) => {
-      map.set(key, sortNodes(siblings));
+    return result;
+  }, [autoPositions, positionOverrides, structuralNodes]);
+
+  const layoutRects = useMemo(
+    () =>
+      new Map(
+        structuralNodes.map((node) => {
+          const position = resolvedPositions[node.id] || {
+            x: LAYOUT.padding,
+            y: LAYOUT.padding,
+          };
+          const size = itemSizeById.get(node.id) || {
+            width: LAYOUT.personWidth,
+            height: LAYOUT.personHeight,
+          };
+          return [
+            node.id,
+            {
+              x: position.x,
+              y: position.y,
+              width: size.width,
+              height: size.height,
+            },
+          ];
+        }),
+      ),
+    [itemSizeById, resolvedPositions, structuralNodes],
+  );
+
+  const connectionPaths = useMemo(() => {
+    const result = [];
+
+    structuralNodes.forEach((node) => {
+      const parentId = structuralGraph.parentById.get(node.id);
+      if (!parentId) return;
+
+      const parentRect = layoutRects.get(parentId);
+      const childRect = layoutRects.get(node.id);
+      if (!parentRect || !childRect) return;
+
+      result.push({
+        id: `${parentId}-${node.id}`,
+        path: createConnectorPath(parentRect, childRect),
+      });
     });
 
-    return map;
-  }, [nodes]);
+    return result;
+  }, [layoutRects, structuralGraph.parentById, structuralNodes]);
 
-  const rootNodes = childrenByParent.get(ROOT_KEY) || [];
+  const canvasSize = useMemo(() => {
+    let maximumX = LAYOUT.minCanvasWidth;
+    let maximumY = LAYOUT.minCanvasHeight;
 
-  useEffect(() => {
-    if (loading || rootNodes.length === 0) return undefined;
-
-    const animationFrame = window.requestAnimationFrame(() => {
-      const viewport = chartViewportRef.current;
-      if (!viewport) return;
-
-      viewport.scrollLeft = Math.max(
-        0,
-        (viewport.scrollWidth - viewport.clientWidth) / 2,
-      );
+    layoutRects.forEach((rect) => {
+      maximumX = Math.max(maximumX, rect.x + rect.width + LAYOUT.padding);
+      maximumY = Math.max(maximumY, rect.y + rect.height + LAYOUT.padding);
     });
 
-    return () => window.cancelAnimationFrame(animationFrame);
-  }, [loading, nodes, rootNodes.length]);
+    return {
+      width: Math.ceil(maximumX),
+      height: Math.ceil(maximumY),
+    };
+  }, [layoutRects]);
 
-  const latestUpdatedAt = useMemo(() => {
-    return nodes.reduce((latest, node) => {
-      const value = node.updated_at || node.created_at;
-      if (!value) return latest;
-      if (!latest) return value;
-      return new Date(value) > new Date(latest) ? value : latest;
-    }, '');
-  }, [nodes]);
+  const latestUpdatedAt = useMemo(
+    () =>
+      nodes.reduce((latest, node) => {
+        const value = node.updated_at || node.created_at;
+        if (!value) return latest;
+        if (!latest) return value;
+        return new Date(value) > new Date(latest) ? value : latest;
+      }, ''),
+    [nodes],
+  );
 
   const getDescendantIds = useCallback(
     (nodeId) => {
@@ -852,9 +999,7 @@ export default function OrganizationChart({
 
       while (queue.length > 0) {
         const parentId = queue.shift();
-        const children = childrenByParent.get(parentId) || [];
-
-        children.forEach((child) => {
+        (childrenByParent.get(parentId) || []).forEach((child) => {
           if (!descendants.has(child.id)) {
             descendants.add(child.id);
             queue.push(child.id);
@@ -872,15 +1017,13 @@ export default function OrganizationChart({
 
     const excluded = getDescendantIds(form.id);
     excluded.add(form.id);
-
     return nodes.filter((node) => !excluded.has(node.id));
   }, [form.id, getDescendantIds, nodes]);
 
   const getNextSortOrder = useCallback(
     (parentId = '') => {
-      const parentKey = getParentKey(parentId);
-      const siblings = childrenByParent.get(parentKey) || [];
-
+      const siblings =
+        childrenByParent.get(getParentKey(parentId)) || [];
       return (
         siblings.reduce(
           (highest, node) =>
@@ -890,6 +1033,65 @@ export default function OrganizationChart({
       );
     },
     [childrenByParent],
+  );
+
+  const getSuggestedPosition = useCallback(
+    (parentId = '') => {
+      const parentStructuralId = parentId
+        ? structuralNodeIds.has(parentId)
+          ? parentId
+          : findStructuralParentId(
+              nodeById.get(parentId) || {},
+              structuralNodeIds,
+              nodeById,
+            )
+        : '';
+      const siblingKey = parentStructuralId || ROOT_KEY;
+      const structuralSiblings =
+        structuralGraph.children.get(siblingKey) || [];
+      const siblingRects = structuralSiblings
+        .map((node) => layoutRects.get(node.id))
+        .filter(Boolean);
+      const parentRect = parentStructuralId
+        ? layoutRects.get(parentStructuralId)
+        : null;
+
+      if (siblingRects.length > 0) {
+        return {
+          x:
+            Math.max(
+              ...siblingRects.map((rect) => rect.x + rect.width),
+            ) + LAYOUT.horizontalGap,
+          y: Math.min(...siblingRects.map((rect) => rect.y)),
+        };
+      }
+
+      if (parentRect) {
+        return {
+          x: Math.max(LAYOUT.padding, parentRect.x),
+          y: parentRect.y + parentRect.height + LAYOUT.verticalGap,
+        };
+      }
+
+      const rootRects = (structuralGraph.children.get(ROOT_KEY) || [])
+        .map((node) => layoutRects.get(node.id))
+        .filter(Boolean);
+
+      return {
+        x:
+          rootRects.length > 0
+            ? Math.max(...rootRects.map((rect) => rect.x + rect.width)) +
+              LAYOUT.horizontalGap
+            : LAYOUT.padding,
+        y: LAYOUT.padding,
+      };
+    },
+    [
+      layoutRects,
+      nodeById,
+      structuralGraph.children,
+      structuralNodeIds,
+    ],
   );
 
   const openAddDialog = (
@@ -908,7 +1110,6 @@ export default function OrganizationChart({
       ...emptyForm,
       parent_id: parentId,
       node_type: nodeType,
-      layout_type: defaults.layout_type || LAYOUT_TYPES.NORMAL,
       department: defaults.department || inheritedDepartment,
       position_title: defaults.position_title || '',
       sort_order: getNextSortOrder(parentId),
@@ -921,7 +1122,6 @@ export default function OrganizationChart({
       id: node.id,
       parent_id: node.parent_id || '',
       node_type: node.node_type || NODE_TYPES.PERSON,
-      layout_type: node.layout_type || LAYOUT_TYPES.NORMAL,
       department: node.department || '',
       position_title: node.position_title || '',
       person_name: node.person_name || '',
@@ -947,10 +1147,7 @@ export default function OrganizationChart({
     const isDepartment = form.node_type === NODE_TYPES.DEPARTMENT;
 
     if (isDepartment && !department) {
-      setMessage({
-        severity: 'warning',
-        text: '부서명을 입력해주세요.',
-      });
+      setMessage({ severity: 'warning', text: '부서명을 입력해주세요.' });
       return;
     }
 
@@ -962,15 +1159,23 @@ export default function OrganizationChart({
       return;
     }
 
-    setSaving(true);
+    const parent = nodeById.get(form.parent_id);
+    const becomesEmbeddedMember =
+      !isDepartment &&
+      parent?.node_type === NODE_TYPES.DEPARTMENT &&
+      !getDescendantIds(form.id).size;
+    const previousNode = nodeById.get(form.id);
+    const suggested = getSuggestedPosition(form.parent_id);
+    const needsCoordinates =
+      !becomesEmbeddedMember &&
+      (!previousNode ||
+        !isFiniteCoordinate(previousNode.layout_x) ||
+        !isFiniteCoordinate(previousNode.layout_y));
 
     const payload = {
       parent_id: form.parent_id || null,
       node_type: form.node_type,
-      layout_type:
-        form.parent_id && form.layout_type === LAYOUT_TYPES.SIDE
-          ? LAYOUT_TYPES.SIDE
-          : LAYOUT_TYPES.NORMAL,
+      layout_type: LAYOUT_TYPES.NORMAL,
       department: isDepartment ? department : department || '',
       position_title: isDepartment ? '' : positionTitle,
       person_name: isDepartment ? '' : personName,
@@ -978,8 +1183,12 @@ export default function OrganizationChart({
       sort_order: Number(form.sort_order || 0),
       updated_by: currentUserId || null,
       is_active: true,
+      ...(needsCoordinates
+        ? { layout_x: suggested.x, layout_y: suggested.y }
+        : {}),
     };
 
+    setSaving(true);
     let error = null;
 
     if (form.id) {
@@ -1014,251 +1223,141 @@ export default function OrganizationChart({
       severity: 'success',
       text: form.id
         ? '조직도 정보를 수정했습니다.'
-        : '조직도 항목을 추가했습니다.',
+        : '조직도 항목을 추가했습니다. 배치 편집에서 위치를 자유롭게 옮길 수 있습니다.',
     });
   };
 
-  const handleToggleSide = async (node) => {
-    if (!isSuperAdmin || savingLayout) return;
+  const persistPosition = useCallback(
+    async (nodeId, position) => {
+      if (!isSuperAdmin) return;
 
-    const nextLayout =
-      node.layout_type === LAYOUT_TYPES.SIDE
-        ? LAYOUT_TYPES.NORMAL
-        : LAYOUT_TYPES.SIDE;
-
-    setSavingLayout(true);
-
-    const { error } = await supabase
-      .from(TABLE_NAME)
-      .update({
-        layout_type: nextLayout,
-        updated_by: currentUserId || null,
-      })
-      .eq('id', node.id);
-
-    if (error) {
-      console.error('조직도 측면 배치 오류:', error);
-      setMessage({
-        severity: 'error',
-        text: `배치 방식을 저장하지 못했습니다: ${error.message}`,
-      });
-      setSavingLayout(false);
-      return;
-    }
-
-    await loadNodes();
-    setSavingLayout(false);
-    setMessage({
-      severity: 'success',
-      text:
-        nextLayout === LAYOUT_TYPES.SIDE
-          ? '선택한 항목을 측면 분기로 배치했습니다.'
-          : '선택한 항목을 기본 위치로 되돌렸습니다.',
-    });
-  };
-
-  const resetDragState = useCallback(() => {
-    setDraggedNodeId('');
-    setDropTarget(null);
-  }, []);
-
-  const persistNodeMove = useCallback(
-    async ({
-      sourceId,
-      destinationParentId = '',
-      destinationIndex = 0,
-      destinationLayout = LAYOUT_TYPES.NORMAL,
-      successText,
-    }) => {
-      if (!isSuperAdmin || savingLayout) return;
-
-      const source = nodes.find((node) => node.id === sourceId);
-      if (!source) return;
-
-      const nextParentId = normalizeParentId(destinationParentId);
-      const descendants = getDescendantIds(sourceId);
-
-      if (
-        nextParentId === sourceId ||
-        (nextParentId && descendants.has(nextParentId))
-      ) {
-        setMessage({
-          severity: 'warning',
-          text: '자기 자신 또는 자신의 하위 항목 아래로는 이동할 수 없습니다.',
-        });
-        return;
-      }
-
-      const previousParentId = normalizeParentId(source.parent_id);
-      const destinationParent = nodes.find(
-        (node) => node.id === nextParentId,
-      );
-      const inheritedDepartment =
-        source.node_type === NODE_TYPES.PERSON &&
-        destinationParent?.node_type === NODE_TYPES.DEPARTMENT
-          ? destinationParent.department
-          : source.department;
-
-      const destinationSiblings = sortNodes(
-        nodes.filter(
-          (node) =>
-            node.id !== sourceId &&
-            normalizeParentId(node.parent_id) === nextParentId &&
-            node.layout_type === destinationLayout,
-        ),
-      );
-
-      const safeIndex = Math.max(
-        0,
-        Math.min(Number(destinationIndex || 0), destinationSiblings.length),
-      );
-
-      destinationSiblings.splice(safeIndex, 0, {
-        ...source,
-        parent_id: nextParentId || null,
-        layout_type: destinationLayout,
-        department: inheritedDepartment,
-      });
-
-      const patchMap = new Map();
-
-      const addOrderedPatches = (orderedNodes, parentId, layoutType) => {
-        orderedNodes.forEach((orderedNode, index) => {
-          patchMap.set(orderedNode.id, {
-            id: orderedNode.id,
-            parent_id: parentId || null,
-            sort_order: index + 1,
-            layout_type: layoutType,
-            department: orderedNode.department || '',
-          });
-        });
+      const safePosition = {
+        x: Math.max(0, Math.round(position.x)),
+        y: Math.max(0, Math.round(position.y)),
       };
 
-      if (
-        previousParentId !== nextParentId ||
-        source.layout_type !== destinationLayout
-      ) {
-        const previousSiblings = sortNodes(
-          nodes.filter(
-            (node) =>
-              node.id !== sourceId &&
-              normalizeParentId(node.parent_id) === previousParentId &&
-              node.layout_type === source.layout_type,
-          ),
-        );
-
-        addOrderedPatches(
-          previousSiblings,
-          previousParentId,
-          source.layout_type,
-        );
-      }
-
-      addOrderedPatches(
-        destinationSiblings,
-        nextParentId,
-        destinationLayout,
-      );
-
-      const patches = [...patchMap.values()].filter((patch) => {
-        const original = nodes.find((node) => node.id === patch.id);
-        if (!original) return false;
-
-        return (
-          normalizeParentId(original.parent_id) !==
-            normalizeParentId(patch.parent_id) ||
-          Number(original.sort_order || 0) !== patch.sort_order ||
-          original.layout_type !== patch.layout_type ||
-          normalizeText(original.department) !==
-            normalizeText(patch.department)
-        );
-      });
-
-      if (patches.length === 0) {
-        setMessage({
-          severity: 'info',
-          text: '현재 위치와 동일합니다.',
-        });
-        return;
-      }
-
-      const patchById = new Map(
-        patches.map((patch) => [patch.id, patch]),
-      );
-      const optimisticUpdatedAt = new Date().toISOString();
-
+      setSavingLayout(true);
       setNodes((previous) =>
-        sortNodes(
-          previous.map((node) => {
-            const patch = patchById.get(node.id);
-            return patch
-              ? {
-                  ...node,
-                  ...patch,
-                  updated_at: optimisticUpdatedAt,
-                }
-              : node;
-          }),
+        previous.map((node) =>
+          node.id === nodeId
+            ? {
+                ...node,
+                layout_x: safePosition.x,
+                layout_y: safePosition.y,
+                updated_at: new Date().toISOString(),
+              }
+            : node,
         ),
       );
-      setSavingLayout(true);
 
-      let saveError = null;
+      const { error } = await supabase
+        .from(TABLE_NAME)
+        .update({
+          layout_x: safePosition.x,
+          layout_y: safePosition.y,
+          updated_by: currentUserId || null,
+        })
+        .eq('id', nodeId);
 
-      for (const patch of patches) {
-        const { error } = await supabase
-          .from(TABLE_NAME)
-          .update({
-            parent_id: patch.parent_id,
-            sort_order: patch.sort_order,
-            layout_type: patch.layout_type,
-            department: patch.department,
-            updated_by: currentUserId || null,
-          })
-          .eq('id', patch.id);
-
-        if (error) {
-          saveError = error;
-          break;
-        }
-      }
-
-      await loadNodes();
       setSavingLayout(false);
 
-      if (saveError) {
-        console.error('조직도 드래그 배치 저장 오류:', saveError);
+      if (error) {
+        console.error('조직도 좌표 저장 오류:', error);
+        await loadNodes();
         setMessage({
           severity: 'error',
-          text: `배치 저장 중 오류가 발생했습니다. 현재 DB 상태를 다시 불러왔습니다: ${saveError.message}`,
+          text: `배치 위치를 저장하지 못했습니다: ${error.message}`,
         });
         return;
       }
 
+      setPositionOverrides((previous) => {
+        const next = { ...previous };
+        delete next[nodeId];
+        positionOverridesRef.current = next;
+        return next;
+      });
       setMessage({
         severity: 'success',
-        text: successText || '조직도 배치를 저장했습니다.',
+        text: '박스 위치를 저장했습니다.',
       });
     },
-    [
-      currentUserId,
-      getDescendantIds,
-      isSuperAdmin,
-      loadNodes,
-      nodes,
-      savingLayout,
-    ],
+    [currentUserId, isSuperAdmin, loadNodes],
   );
 
-  const getDraggedId = useCallback(
-    (event) =>
-      draggedNodeId ||
-      event.dataTransfer?.getData('text/plain') ||
-      '',
-    [draggedNodeId],
+  useEffect(() => {
+    if (!movingNodeId) return undefined;
+
+    const handlePointerMove = (event) => {
+      const drag = dragStateRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+
+      const nextPosition = {
+        x: Math.max(
+          0,
+          drag.origin.x + (event.clientX - drag.startClientX) / zoom,
+        ),
+        y: Math.max(
+          0,
+          drag.origin.y + (event.clientY - drag.startClientY) / zoom,
+        ),
+      };
+      drag.latest = nextPosition;
+
+      setPositionOverrides((previous) => {
+        const next = { ...previous, [drag.nodeId]: nextPosition };
+        positionOverridesRef.current = next;
+        return next;
+      });
+    };
+
+    const finishPointerMove = (event) => {
+      const drag = dragStateRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+
+      const finalPosition =
+        drag.latest ||
+        positionOverridesRef.current[drag.nodeId] ||
+        drag.origin;
+      dragStateRef.current = null;
+      setMovingNodeId('');
+      persistPosition(drag.nodeId, finalPosition);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', finishPointerMove);
+    window.addEventListener('pointercancel', finishPointerMove);
+
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', finishPointerMove);
+      window.removeEventListener('pointercancel', finishPointerMove);
+    };
+  }, [movingNodeId, persistPosition, zoom]);
+
+  const handleNodePointerDown = useCallback(
+    (event, node) => {
+      if (!layoutMode || savingLayout || event.button !== 0) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      const origin = resolvedPositions[node.id];
+      if (!origin) return;
+
+      dragStateRef.current = {
+        nodeId: node.id,
+        pointerId: event.pointerId,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        origin,
+        latest: origin,
+      };
+      setMovingNodeId(node.id);
+    },
+    [layoutMode, resolvedPositions, savingLayout],
   );
 
-  const handleDragStart = useCallback(
+  const handleMemberDragStart = useCallback(
     (event, node) => {
       if (!layoutMode || savingLayout) {
         event.preventDefault();
@@ -1268,210 +1367,175 @@ export default function OrganizationChart({
       event.stopPropagation();
       event.dataTransfer.effectAllowed = 'move';
       event.dataTransfer.setData('text/plain', node.id);
-      setDraggedNodeId(node.id);
-      setDropTarget(null);
+      setMemberDraggingId(node.id);
+      setMemberDropTargetId('');
     },
     [layoutMode, savingLayout],
   );
 
-  const handleCardDragOver = useCallback(
-    (event, targetNode, orientationFromParent) => {
-      if (!layoutMode || savingLayout) return;
-
-      event.stopPropagation();
-      const sourceId = getDraggedId(event);
-
-      if (
-        !sourceId ||
-        sourceId === targetNode.id ||
-        getDescendantIds(sourceId).has(targetNode.id)
-      ) {
-        if (event.dataTransfer) event.dataTransfer.dropEffect = 'none';
-        return;
-      }
-
-      event.preventDefault();
-      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-      const placement = getCardDropPlacement(
-        event,
-        orientationFromParent,
-      );
-
-      setDropTarget((previous) =>
-        previous?.targetId === targetNode.id &&
-        previous?.placement === placement
-          ? previous
-          : { targetId: targetNode.id, placement },
-      );
-    },
-    [
-      getDescendantIds,
-      getDraggedId,
-      layoutMode,
-      savingLayout,
-    ],
-  );
-
-  const handleCardDragLeave = useCallback((event, targetNode) => {
-    event.stopPropagation();
-    setDropTarget((previous) =>
-      previous?.targetId === targetNode.id ? null : previous,
-    );
+  const resetMemberDrag = useCallback(() => {
+    setMemberDraggingId('');
+    setMemberDropTargetId('');
   }, []);
 
-  const handleCardDrop = useCallback(
-    async (event, targetNode, orientationFromParent) => {
+  const handleMemberDragOver = useCallback(
+    (event, departmentNode) => {
+      if (!layoutMode || !memberDraggingId || savingLayout) return;
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer.dropEffect = 'move';
+      setMemberDropTargetId(departmentNode.id);
+    },
+    [layoutMode, memberDraggingId, savingLayout],
+  );
+
+  const handleMemberDragLeave = useCallback(
+    (event, departmentNode) => {
+      if (!event.currentTarget.contains(event.relatedTarget)) {
+        setMemberDropTargetId((previous) =>
+          previous === departmentNode.id ? '' : previous,
+        );
+      }
+    },
+    [],
+  );
+
+  const handleMemberDrop = useCallback(
+    async (event, departmentNode) => {
       if (!layoutMode || savingLayout) return;
 
       event.preventDefault();
       event.stopPropagation();
+      const memberId =
+        memberDraggingId ||
+        event.dataTransfer?.getData('text/plain') ||
+        '';
+      const member = nodeById.get(memberId);
+      resetMemberDrag();
 
-      const sourceId = getDraggedId(event);
-      const placement = getCardDropPlacement(
-        event,
-        orientationFromParent,
-      );
-      setDropTarget(null);
-
-      if (
-        !sourceId ||
-        sourceId === targetNode.id ||
-        getDescendantIds(sourceId).has(targetNode.id)
-      ) {
+      if (!member || member.node_type !== NODE_TYPES.PERSON) return;
+      if (member.parent_id === departmentNode.id) {
+        setMessage({ severity: 'info', text: '이미 해당 부서 소속입니다.' });
+        return;
+      }
+      if (getDescendantIds(member.id).size > 0) {
         setMessage({
           severity: 'warning',
-          text: '자기 자신이나 자신의 하위 항목에는 놓을 수 없습니다.',
+          text: '하위 조직이 연결된 직원은 먼저 하위 조직을 이동해야 합니다.',
         });
-        resetDragState();
         return;
       }
 
-      if (placement === 'child') {
-        const targetChildren = (
-          childrenByParent.get(targetNode.id) || []
-        ).filter(
-          (node) =>
-            node.id !== sourceId &&
-            node.layout_type === LAYOUT_TYPES.NORMAL,
-        );
+      setSavingLayout(true);
+      const nextSortOrder = getNextSortOrder(departmentNode.id);
+      const { error } = await supabase
+        .from(TABLE_NAME)
+        .update({
+          parent_id: departmentNode.id,
+          department: departmentNode.department || '',
+          layout_type: LAYOUT_TYPES.NORMAL,
+          sort_order: nextSortOrder,
+          updated_by: currentUserId || null,
+        })
+        .eq('id', member.id);
 
-        await persistNodeMove({
-          sourceId,
-          destinationParentId: targetNode.id,
-          destinationIndex: targetChildren.length,
-          destinationLayout: LAYOUT_TYPES.NORMAL,
-          successText: `[${targetNode.node_type === NODE_TYPES.DEPARTMENT ? targetNode.department : targetNode.person_name}] 하위로 이동했습니다.`,
+      if (error) {
+        console.error('직원 소속 변경 오류:', error);
+        setMessage({
+          severity: 'error',
+          text: `직원 소속을 변경하지 못했습니다: ${error.message}`,
         });
-        resetDragState();
+        setSavingLayout(false);
         return;
       }
 
-      const destinationParentId = normalizeParentId(
-        targetNode.parent_id,
-      );
-      const destinationLayout =
-        targetNode.layout_type || LAYOUT_TYPES.NORMAL;
-      const targetSiblings = sortNodes(
-        (childrenByParent.get(getParentKey(destinationParentId)) || []).filter(
-          (node) =>
-            node.id !== sourceId &&
-            node.layout_type === destinationLayout,
-        ),
-      );
-      const targetIndex = targetSiblings.findIndex(
-        (node) => node.id === targetNode.id,
-      );
-
-      await persistNodeMove({
-        sourceId,
-        destinationParentId,
-        destinationIndex:
-          targetIndex + (placement === 'after' ? 1 : 0),
-        destinationLayout,
-        successText:
-          placement === 'before'
-            ? '선택한 항목의 앞으로 이동했습니다.'
-            : '선택한 항목의 뒤로 이동했습니다.',
+      await loadNodes();
+      setSavingLayout(false);
+      setMessage({
+        severity: 'success',
+        text: `${member.person_name} 직원을 ${departmentNode.department} 소속으로 변경했습니다.`,
       });
-      resetDragState();
     },
     [
-      childrenByParent,
+      currentUserId,
       getDescendantIds,
-      getDraggedId,
+      getNextSortOrder,
       layoutMode,
-      persistNodeMove,
-      resetDragState,
+      loadNodes,
+      memberDraggingId,
+      nodeById,
+      resetMemberDrag,
       savingLayout,
     ],
   );
 
-  const handleRootDragOver = useCallback(
-    (event) => {
-      if (!layoutMode || savingLayout || !getDraggedId(event)) return;
+  const handleAutoArrange = async () => {
+    if (!isSuperAdmin || savingLayout || structuralNodes.length === 0) return;
 
-      event.preventDefault();
-      event.stopPropagation();
-      if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
-      setDropTarget({ targetId: ROOT_KEY, placement: 'root' });
-    },
-    [getDraggedId, layoutMode, savingLayout],
-  );
+    const confirmed = window.confirm(
+      '현재 자유배치 위치를 자동정렬로 다시 맞추시겠습니까?',
+    );
+    if (!confirmed) return;
 
-  const handleRootDrop = useCallback(
-    async (event) => {
-      if (!layoutMode || savingLayout) return;
+    setSavingLayout(true);
+    let saveError = null;
 
-      event.preventDefault();
-      event.stopPropagation();
-      const sourceId = getDraggedId(event);
-      setDropTarget(null);
+    for (const node of structuralNodes) {
+      const position = autoPositions[node.id];
+      if (!position) continue;
 
-      if (!sourceId) return;
+      const { error } = await supabase
+        .from(TABLE_NAME)
+        .update({
+          layout_x: Math.round(position.x),
+          layout_y: Math.round(position.y),
+          updated_by: currentUserId || null,
+        })
+        .eq('id', node.id);
 
-      const rootSiblings = (childrenByParent.get(ROOT_KEY) || []).filter(
-        (node) =>
-          node.id !== sourceId &&
-          node.layout_type === LAYOUT_TYPES.NORMAL,
-      );
+      if (error) {
+        saveError = error;
+        break;
+      }
+    }
 
-      await persistNodeMove({
-        sourceId,
-        destinationParentId: '',
-        destinationIndex: rootSiblings.length,
-        destinationLayout: LAYOUT_TYPES.NORMAL,
-        successText: '선택한 항목을 최상위로 이동했습니다.',
+    await loadNodes();
+    setSavingLayout(false);
+
+    if (saveError) {
+      console.error('조직도 자동정렬 오류:', saveError);
+      setMessage({
+        severity: 'error',
+        text: `자동정렬 저장 중 오류가 발생했습니다: ${saveError.message}`,
       });
-      resetDragState();
-    },
-    [
-      childrenByParent,
-      getDraggedId,
-      layoutMode,
-      persistNodeMove,
-      resetDragState,
-      savingLayout,
-    ],
-  );
+      return;
+    }
+
+    setMessage({
+      severity: 'success',
+      text: '하위 부서를 같은 단계에서 가로로 정렬했습니다. 이후 원하는 위치로 다시 옮길 수 있습니다.',
+    });
+  };
 
   const handleDelete = async (node) => {
     if (!isSuperAdmin) return;
 
     const children = childrenByParent.get(node.id) || [];
-
     if (children.length > 0) {
       setMessage({
         severity: 'warning',
-        text: '하위 조직원이 연결되어 있습니다. 하위 항목을 먼저 이동하거나 삭제해주세요.',
+        text: '하위 조직이 연결되어 있습니다. 하위 항목을 먼저 이동하거나 삭제해주세요.',
       });
       return;
     }
 
-    const confirmed = window.confirm(
-      `[${node.department} / ${node.person_name}] 항목을 조직도에서 삭제하시겠습니까?`,
-    );
-
-    if (!confirmed) return;
+    const label =
+      node.node_type === NODE_TYPES.DEPARTMENT
+        ? node.department
+        : `${node.position_title} ${node.person_name}`;
+    if (!window.confirm(`[${label}] 항목을 조직도에서 삭제하시겠습니까?`)) {
+      return;
+    }
 
     const { error } = await supabase
       .from(TABLE_NAME)
@@ -1491,11 +1555,28 @@ export default function OrganizationChart({
     }
 
     await loadNodes();
-    setMessage({
-      severity: 'success',
-      text: '조직도 항목을 삭제했습니다.',
-    });
+    setMessage({ severity: 'success', text: '조직도 항목을 삭제했습니다.' });
   };
+
+  const addDepartment = (parentNode) =>
+    openAddDialog(parentNode.id, NODE_TYPES.DEPARTMENT);
+  const addPerson = (parentNode) =>
+    openAddDialog(parentNode.id, NODE_TYPES.PERSON);
+  const addSibling = (siblingNode) =>
+    openAddDialog(
+      siblingNode.parent_id || '',
+      siblingNode.node_type || NODE_TYPES.PERSON,
+      {
+        department:
+          siblingNode.node_type === NODE_TYPES.DEPARTMENT
+            ? ''
+            : siblingNode.department,
+        position_title:
+          siblingNode.node_type === NODE_TYPES.PERSON
+            ? siblingNode.position_title
+            : '',
+      },
+    );
 
   const toggleEditMode = () => {
     if (savingLayout) return;
@@ -1504,7 +1585,7 @@ export default function OrganizationChart({
       if (next) setLayoutMode(false);
       return next;
     });
-    resetDragState();
+    resetMemberDrag();
   };
 
   const toggleLayoutMode = () => {
@@ -1514,8 +1595,47 @@ export default function OrganizationChart({
       if (next) setEditMode(false);
       return next;
     });
-    resetDragState();
+    resetMemberDrag();
   };
+
+  const changeZoom = (difference) => {
+    setZoom((previous) =>
+      Math.min(1.4, Math.max(0.6, Number((previous + difference).toFixed(1)))),
+    );
+  };
+
+  useEffect(() => {
+    if (
+      loading ||
+      structuralNodes.length === 0 ||
+      hasCenteredRef.current
+    ) {
+      return undefined;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      const viewport = chartViewportRef.current;
+      const firstRoot = structuralGraph.children.get(ROOT_KEY)?.[0];
+      const firstRect = firstRoot ? layoutRects.get(firstRoot.id) : null;
+      if (!viewport || !firstRect) return;
+
+      viewport.scrollLeft = Math.max(
+        0,
+        (firstRect.x + firstRect.width / 2) * zoom -
+          viewport.clientWidth / 2,
+      );
+      viewport.scrollTop = Math.max(0, firstRect.y * zoom - 24);
+      hasCenteredRef.current = true;
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [
+    layoutRects,
+    loading,
+    structuralGraph.children,
+    structuralNodes.length,
+    zoom,
+  ]);
 
   return (
     <Paper
@@ -1533,29 +1653,38 @@ export default function OrganizationChart({
       <Box
         sx={{
           px: 2,
-          py: 1.35,
+          py: 1.25,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 2,
+          flexWrap: 'wrap',
         }}
       >
         <Stack direction="row" spacing={1.2} alignItems="center">
-          <Box sx={{ width: 26, height: 26, borderRadius: 1, bgcolor: '#ccfbf1', color: '#0f766e', display: 'grid', placeItems: 'center', fontSize: '0.72rem', fontWeight: 900 }}>조직</Box>
+          <Box
+            sx={{
+              width: 28,
+              height: 28,
+              borderRadius: 1,
+              bgcolor: '#ccfbf1',
+              color: '#0f766e',
+              display: 'grid',
+              placeItems: 'center',
+              fontSize: '0.68rem',
+              fontWeight: 900,
+            }}
+          >
+            조직
+          </Box>
           <Box>
-            <Typography
-              sx={{
-                color: '#0f172a',
-                fontSize: '1rem',
-                fontWeight: 900,
-              }}
-            >
+            <Typography sx={{ color: '#0f172a', fontSize: '1rem', fontWeight: 900 }}>
               욱림건설 조직도
             </Typography>
-            <Typography sx={{ color: '#64748b', fontSize: '0.7rem' }}>
+            <Typography sx={{ color: '#64748b', fontSize: '0.68rem' }}>
               {layoutMode
-                ? '카드 가장자리는 같은 단계 순서 변경, 중앙은 하위 이동입니다.'
-                : '부서는 대분류로, 소속 직원은 직책·성명·연락처 카드로 표시합니다.'}
+                ? '부서 제목을 끌면 자유 이동, 직원을 다른 부서에 놓으면 소속이 변경됩니다.'
+                : '부서 위치와 연결선이 저장된 좌표에 따라 표시됩니다.'}
               {latestUpdatedAt
                 ? ` 최종 수정 ${formatDateTime(latestUpdatedAt)}`
                 : ''}
@@ -1563,62 +1692,79 @@ export default function OrganizationChart({
           </Box>
         </Stack>
 
-        {isSuperAdmin && (
-          <Stack direction="row" spacing={0.75}>
-            {editMode && (
-              <>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  onClick={() =>
-                    openAddDialog('', NODE_TYPES.DEPARTMENT)
-                  }
-                >
-                  최상위 부서 추가
-                </Button>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  onClick={() => openAddDialog('', NODE_TYPES.PERSON)}
-                >
-                  최상위 직원 추가
-                </Button>
-              </>
-            )}
-
-            <Button
-              size="small"
-              variant={layoutMode ? 'contained' : 'outlined'}
-              color={layoutMode ? 'success' : 'primary'}
-              onClick={toggleLayoutMode}
-              disabled={savingLayout}
-              startIcon={
-                savingLayout ? <CircularProgress size={14} /> : undefined
-              }
-            >
-              {layoutMode ? '배치완료' : '배치 편집'}
-            </Button>
-            <Button
-              size="small"
-              variant={editMode ? 'contained' : 'outlined'}
-              color={editMode ? 'success' : 'primary'}
-              onClick={toggleEditMode}
-              disabled={savingLayout}
-            >
-              {editMode ? '수정완료' : '수정'}
-            </Button>
+        <Stack direction="row" spacing={0.65} alignItems="center" flexWrap="wrap" useFlexGap>
+          <Stack direction="row" spacing={0.2} alignItems="center">
+            <Tooltip title="축소">
+              <span>
+                <IconButton size="small" onClick={() => changeZoom(-0.1)} disabled={zoom <= 0.6}>
+                  <Typography sx={{ fontSize: 18, fontWeight: 900 }}>−</Typography>
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Typography sx={{ minWidth: 42, textAlign: 'center', color: '#475569', fontSize: '0.68rem', fontWeight: 900 }}>
+              {Math.round(zoom * 100)}%
+            </Typography>
+            <Tooltip title="확대">
+              <span>
+                <IconButton size="small" onClick={() => changeZoom(0.1)} disabled={zoom >= 1.4}>
+                  <Typography sx={{ fontSize: 18, fontWeight: 900 }}>+</Typography>
+                </IconButton>
+              </span>
+            </Tooltip>
           </Stack>
-        )}
+
+          {isSuperAdmin && (
+            <>
+              {editMode && (
+                <>
+                  <Button size="small" variant="outlined" onClick={() => openAddDialog('', NODE_TYPES.DEPARTMENT)}>
+                    최상위 부서 추가
+                  </Button>
+                  <Button size="small" variant="outlined" onClick={() => openAddDialog('', NODE_TYPES.PERSON)}>
+                    최상위 직원 추가
+                  </Button>
+                </>
+              )}
+
+              {layoutMode && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={handleAutoArrange}
+                  disabled={savingLayout}
+                >
+                  자동정렬
+                </Button>
+              )}
+
+              <Button
+                size="small"
+                variant={layoutMode ? 'contained' : 'outlined'}
+                color={layoutMode ? 'success' : 'primary'}
+                onClick={toggleLayoutMode}
+                disabled={savingLayout}
+                startIcon={savingLayout ? <CircularProgress size={14} /> : undefined}
+              >
+                {layoutMode ? '배치완료' : '배치 편집'}
+              </Button>
+              <Button
+                size="small"
+                variant={editMode ? 'contained' : 'outlined'}
+                color={editMode ? 'success' : 'primary'}
+                onClick={toggleEditMode}
+                disabled={savingLayout}
+              >
+                {editMode ? '수정완료' : '수정'}
+              </Button>
+            </>
+          )}
+        </Stack>
       </Box>
 
       <Divider />
 
       {message && (
-        <Alert
-          severity={message.severity}
-          onClose={() => setMessage(null)}
-          sx={{ mx: 2, mt: 1.25, py: 0.2 }}
-        >
+        <Alert severity={message.severity} onClose={() => setMessage(null)} sx={{ mx: 2, mt: 1.2, py: 0.15 }}>
           {message.text}
         </Alert>
       )}
@@ -1629,78 +1775,21 @@ export default function OrganizationChart({
           flexGrow: 1,
           minHeight: 0,
           overflow: 'auto',
-          px: 2,
-          py: 2.5,
           bgcolor: '#f8fafc',
-          scrollBehavior: 'smooth',
         }}
       >
-        {layoutMode && !loading && rootNodes.length > 0 && (
-          <Paper
-            variant="outlined"
-            onDragOver={handleRootDragOver}
-            onDragLeave={(event) => {
-              if (!event.currentTarget.contains(event.relatedTarget)) {
-                setDropTarget((previous) =>
-                  previous?.targetId === ROOT_KEY ? null : previous,
-                );
-              }
-            }}
-            onDrop={handleRootDrop}
-            sx={{
-              position: 'sticky',
-              left: 0,
-              zIndex: 4,
-              width: 'calc(100% - 32px)',
-              maxWidth: 520,
-              minWidth: 260,
-              mx: 'auto',
-              mb: 2,
-              px: 1.5,
-              py: 0.9,
-              textAlign: 'center',
-              color:
-                dropTarget?.targetId === ROOT_KEY
-                  ? '#0369a1'
-                  : '#64748b',
-              bgcolor:
-                dropTarget?.targetId === ROOT_KEY
-                  ? '#e0f2fe'
-                  : '#ffffff',
-              borderStyle: 'dashed',
-              borderWidth: 2,
-              borderColor:
-                dropTarget?.targetId === ROOT_KEY
-                  ? '#0ea5e9'
-                  : '#94a3b8',
-              fontSize: '0.7rem',
-              fontWeight: 900,
-            }}
-          >
-            박스를 최상위로 옮기려면 여기에 놓으세요
-          </Paper>
-        )}
-
         {loading ? (
-          <Stack
-            alignItems="center"
-            justifyContent="center"
-            spacing={1}
-            sx={{ minHeight: 260 }}
-          >
+          <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ minHeight: 300 }}>
             <CircularProgress size={28} />
             <Typography sx={{ color: '#64748b', fontSize: '0.75rem' }}>
               조직도를 불러오는 중입니다.
             </Typography>
           </Stack>
-        ) : rootNodes.length === 0 ? (
-          <Stack
-            alignItems="center"
-            justifyContent="center"
-            spacing={1.2}
-            sx={{ minHeight: 300 }}
-          >
-            <Typography sx={{ fontSize: 42, color: '#94a3b8', fontWeight: 900, lineHeight: 1 }}>조직도</Typography>
+        ) : nodes.length === 0 ? (
+          <Stack alignItems="center" justifyContent="center" spacing={1.2} sx={{ minHeight: 320 }}>
+            <Typography sx={{ fontSize: 40, color: '#94a3b8', fontWeight: 900, lineHeight: 1 }}>
+              조직도
+            </Typography>
             <Typography fontWeight={900} color="#334155">
               등록된 조직도 항목이 없습니다.
             </Typography>
@@ -1723,150 +1812,143 @@ export default function OrganizationChart({
         ) : (
           <Box
             sx={{
-              width: 'max-content',
-              minWidth: '100%',
-              display: 'flex',
-              justifyContent: 'center',
-              pb: 4,
+              position: 'relative',
+              width: canvasSize.width * zoom,
+              height: canvasSize.height * zoom,
             }}
           >
             <Box
-              component="ul"
               sx={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'flex-start',
-                m: 0,
-                p: 0,
-                listStyle: 'none',
-                '& > li': {
-                  pt: 0,
-                },
-                '& > li::before, & > li::after': {
-                  display: 'none',
-                },
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                width: canvasSize.width,
+                height: canvasSize.height,
+                transform: `scale(${zoom})`,
+                transformOrigin: '0 0',
+                backgroundImage: layoutMode
+                  ? 'linear-gradient(rgba(148,163,184,0.16) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.16) 1px, transparent 1px)'
+                  : 'none',
+                backgroundSize: layoutMode ? '24px 24px' : 'auto',
               }}
             >
-              {rootNodes.map((node) => (
-                <TreeItem
-                  key={node.id}
-                  node={node}
-                  childrenByParent={childrenByParent}
-                  level={0}
-                  orientationFromParent="horizontal"
-                  editMode={editMode}
-                  layoutMode={layoutMode}
-                  draggedNodeId={draggedNodeId}
-                  dropTarget={dropTarget}
-                  onAddDepartment={(parentNode) =>
-                    openAddDialog(
-                      parentNode.id,
-                      NODE_TYPES.DEPARTMENT,
-                    )
-                  }
-                  onAddPerson={(parentNode) =>
-                    openAddDialog(parentNode.id, NODE_TYPES.PERSON)
-                  }
-                  onAddSibling={(siblingNode) =>
-                    openAddDialog(
-                      siblingNode.parent_id || '',
-                      siblingNode.node_type || NODE_TYPES.PERSON,
-                      {
-                        department:
-                          siblingNode.node_type === NODE_TYPES.DEPARTMENT
-                            ? ''
-                            : siblingNode.department,
-                        position_title:
-                          siblingNode.node_type === NODE_TYPES.PERSON
-                            ? siblingNode.position_title
-                            : '',
-                        layout_type:
-                          siblingNode.layout_type ||
-                          LAYOUT_TYPES.NORMAL,
-                      },
-                    )
-                  }
-                  onToggleSide={handleToggleSide}
-                  onEdit={openEditDialog}
-                  onDelete={handleDelete}
-                  onDragStart={handleDragStart}
-                  onDragOver={handleCardDragOver}
-                  onDragLeave={handleCardDragLeave}
-                  onDrop={handleCardDrop}
-                  onDragEnd={resetDragState}
-                />
-              ))}
+              <Box
+                component="svg"
+                viewBox={`0 0 ${canvasSize.width} ${canvasSize.height}`}
+                preserveAspectRatio="none"
+                aria-hidden="true"
+                sx={{
+                  position: 'absolute',
+                  inset: 0,
+                  zIndex: 1,
+                  width: canvasSize.width,
+                  height: canvasSize.height,
+                  overflow: 'visible',
+                  pointerEvents: 'none',
+                }}
+              >
+                {connectionPaths.map((connection) => (
+                  <path
+                    key={connection.id}
+                    d={connection.path}
+                    fill="none"
+                    stroke="#64748b"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ))}
+              </Box>
+
+              {structuralNodes.map((node) => {
+                const position = resolvedPositions[node.id];
+                const size = itemSizeById.get(node.id);
+                if (!position || !size) return null;
+
+                if (node.node_type === NODE_TYPES.DEPARTMENT) {
+                  const members = getEmbeddedMembers(
+                    node.id,
+                    childrenByParent,
+                    structuralNodeIds,
+                  );
+
+                  return (
+                    <DepartmentGroup
+                      key={node.id}
+                      node={node}
+                      members={members}
+                      position={position}
+                      size={size}
+                      editMode={editMode}
+                      layoutMode={layoutMode}
+                      moving={movingNodeId === node.id}
+                      memberDraggingId={memberDraggingId}
+                      memberDropTargetId={memberDropTargetId}
+                      onPointerDown={handleNodePointerDown}
+                      onMemberDragStart={handleMemberDragStart}
+                      onMemberDragEnd={resetMemberDrag}
+                      onMemberDragOver={handleMemberDragOver}
+                      onMemberDragLeave={handleMemberDragLeave}
+                      onMemberDrop={handleMemberDrop}
+                      onAddDepartment={addDepartment}
+                      onAddPerson={addPerson}
+                      onAddSibling={addSibling}
+                      onEdit={openEditDialog}
+                      onDelete={handleDelete}
+                    />
+                  );
+                }
+
+                return (
+                  <PersonNode
+                    key={node.id}
+                    node={node}
+                    position={position}
+                    size={size}
+                    editMode={editMode}
+                    layoutMode={layoutMode}
+                    moving={movingNodeId === node.id}
+                    onPointerDown={handleNodePointerDown}
+                    onAddDepartment={addDepartment}
+                    onAddPerson={addPerson}
+                    onAddSibling={addSibling}
+                    onEdit={openEditDialog}
+                    onDelete={handleDelete}
+                  />
+                );
+              })}
             </Box>
           </Box>
         )}
       </Box>
 
-      <Dialog
-        open={dialogOpen}
-        onClose={closeDialog}
-        fullWidth
-        maxWidth="sm"
-      >
+      <Dialog open={dialogOpen} onClose={closeDialog} fullWidth maxWidth="sm">
         <DialogTitle sx={{ pr: 6, fontWeight: 900 }}>
           {form.id ? '조직도 항목 수정' : '조직도 항목 추가'}
-          <IconButton
-            onClick={closeDialog}
-            disabled={saving}
-            sx={{ position: 'absolute', right: 8, top: 8 }}
-          >
+          <IconButton onClick={closeDialog} disabled={saving} sx={{ position: 'absolute', right: 8, top: 8 }}>
             <Typography component="span" sx={{ fontSize: 22, lineHeight: 1 }}>×</Typography>
           </IconButton>
         </DialogTitle>
 
         <DialogContent dividers>
           <Stack spacing={1.5} sx={{ pt: 0.5 }}>
-            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
-              <TextField
-                fullWidth
-                select
-                size="small"
-                label="항목 구분"
-                value={form.node_type}
-                onChange={(event) =>
-                  setForm((previous) => ({
-                    ...previous,
-                    node_type: event.target.value,
-                  }))
-                }
-              >
-                <MenuItem value={NODE_TYPES.DEPARTMENT}>
-                  부서
-                </MenuItem>
-                <MenuItem value={NODE_TYPES.PERSON}>직원</MenuItem>
-              </TextField>
-
-              <TextField
-                fullWidth
-                select
-                size="small"
-                label="배치 방식"
-                value={
-                  form.parent_id
-                    ? form.layout_type
-                    : LAYOUT_TYPES.NORMAL
-                }
-                disabled={!form.parent_id}
-                onChange={(event) =>
-                  setForm((previous) => ({
-                    ...previous,
-                    layout_type: event.target.value,
-                  }))
-                }
-                helperText={
-                  form.parent_id
-                    ? '측면 배치는 연결선 옆으로 분기됩니다.'
-                    : '최상위 항목은 기본 배치로 저장됩니다.'
-                }
-              >
-                <MenuItem value={LAYOUT_TYPES.NORMAL}>기본 배치</MenuItem>
-                <MenuItem value={LAYOUT_TYPES.SIDE}>측면 배치</MenuItem>
-              </TextField>
-            </Stack>
+            <TextField
+              fullWidth
+              select
+              size="small"
+              label="항목 구분"
+              value={form.node_type}
+              onChange={(event) =>
+                setForm((previous) => ({
+                  ...previous,
+                  node_type: event.target.value,
+                }))
+              }
+            >
+              <MenuItem value={NODE_TYPES.DEPARTMENT}>부서</MenuItem>
+              <MenuItem value={NODE_TYPES.PERSON}>직원</MenuItem>
+            </TextField>
 
             <TextField
               select
@@ -1875,16 +1957,10 @@ export default function OrganizationChart({
               value={form.parent_id}
               onChange={(event) => {
                 const nextParentId = event.target.value;
-                const nextParent = nodes.find(
-                  (node) => node.id === nextParentId,
-                );
-
+                const nextParent = nodeById.get(nextParentId);
                 setForm((previous) => ({
                   ...previous,
                   parent_id: nextParentId,
-                  layout_type: nextParentId
-                    ? previous.layout_type
-                    : LAYOUT_TYPES.NORMAL,
                   department:
                     previous.node_type === NODE_TYPES.PERSON &&
                     nextParent?.node_type === NODE_TYPES.DEPARTMENT
@@ -1892,7 +1968,7 @@ export default function OrganizationChart({
                       : previous.department,
                 }));
               }}
-              helperText="직원을 부서 아래에 두면 부서 박스 아래로 세로 정렬됩니다."
+              helperText="하위 부서는 생성 후 같은 단계의 빈 위치에 놓이며, 배치 편집에서 자유롭게 옮길 수 있습니다."
             >
               <MenuItem value="">최상위</MenuItem>
               {sortNodes(parentOptions).map((node) => (
@@ -1936,10 +2012,7 @@ export default function OrganizationChart({
                     }))
                   }
                 />
-                <Stack
-                  direction={{ xs: 'column', sm: 'row' }}
-                  spacing={1.25}
-                >
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.25}>
                   <TextField
                     fullWidth
                     required
@@ -1984,15 +2057,13 @@ export default function OrganizationChart({
                   sort_order: event.target.value,
                 }))
               }
-              helperText="같은 단계에서는 숫자가 작은 항목부터 먼저 표시됩니다. 배치 편집에서는 드래그로 자동 변경됩니다."
+              helperText="직원은 같은 부서 안에서 숫자가 작은 순서대로 표시됩니다."
             />
           </Stack>
         </DialogContent>
 
         <DialogActions sx={{ px: 2.5, py: 1.5 }}>
-          <Button onClick={closeDialog} disabled={saving}>
-            취소
-          </Button>
+          <Button onClick={closeDialog} disabled={saving}>취소</Button>
           <Button
             variant="contained"
             onClick={handleSave}
