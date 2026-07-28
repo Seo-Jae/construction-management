@@ -1207,6 +1207,38 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
   const handlePrevMonth = () => { if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); } else setViewMonth(m => m - 1); };
   const handleNextMonth = () => { if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0); } else setViewMonth(m => m + 1); };
+  const handleGoToToday = () => {
+    const today = createKoreaCalendarDate();
+
+    setViewYear(today.getFullYear());
+    setViewMonth(today.getMonth());
+    setSelectedWeekDate(today);
+  };
+  const handleGoToMonth = (year, month) => {
+    const nextYear = Number(year);
+    const nextMonth = Number(month);
+
+    if (
+      !Number.isInteger(nextYear) ||
+      !Number.isInteger(nextMonth) ||
+      nextMonth < 0 ||
+      nextMonth > 11
+    ) {
+      return;
+    }
+
+    const isAlreadySelectedMonth =
+      selectedWeekDate.getFullYear() === nextYear &&
+      selectedWeekDate.getMonth() === nextMonth;
+
+    setViewYear(nextYear);
+    setViewMonth(nextMonth);
+    setSelectedWeekDate(
+      isAlreadySelectedMonth
+        ? new Date(selectedWeekDate)
+        : new Date(nextYear, nextMonth, 1),
+    );
+  };
   const handleDayClick = (day) => { if (!day) return; setSelectedWeekDate(new Date(viewYear, viewMonth, day)); };
   const isClosed = (dateStr) => {
     if (!dateStr) return false;
@@ -3003,6 +3035,8 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               isClosed={isClosed}
               handlePrevMonth={handlePrevMonth}
               handleNextMonth={handleNextMonth}
+              handleGoToToday={handleGoToToday}
+              handleGoToMonth={handleGoToMonth}
               handleDayClick={handleDayClick}
               handleOpenModal={handleOpenModal}
               handleDownloadExcel={handleDownloadExcel}

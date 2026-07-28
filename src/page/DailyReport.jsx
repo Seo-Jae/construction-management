@@ -3,8 +3,12 @@ import {
   Box,
   Button,
   Divider,
+  FormControl,
   IconButton,
+  MenuItem,
   Paper,
+  Popover,
+  Select,
   Typography,
 } from '@mui/material';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
@@ -22,6 +26,8 @@ export default function DailyReport({
   isClosed,
   handlePrevMonth,
   handleNextMonth,
+  handleGoToToday,
+  handleGoToMonth,
   handleDayClick,
   handleOpenModal,
   handleDownloadExcel,
@@ -37,6 +43,41 @@ export default function DailyReport({
     previewDateKey,
     setPreviewDateKey,
   ] = useState('');
+  const [
+    monthPickerAnchor,
+    setMonthPickerAnchor,
+  ] = useState(null);
+  const [
+    pickerYear,
+    setPickerYear,
+  ] = useState(viewYear);
+  const [
+    pickerMonth,
+    setPickerMonth,
+  ] = useState(viewMonth);
+
+  const yearOptions = Array.from(
+    { length: 101 },
+    (_, index) => 2000 + index,
+  );
+
+  const handleOpenMonthPicker = (event) => {
+    setPickerYear(viewYear);
+    setPickerMonth(viewMonth);
+    setMonthPickerAnchor(event.currentTarget);
+  };
+
+  const handleCloseMonthPicker = () => {
+    setMonthPickerAnchor(null);
+  };
+
+  const handleApplyMonthPicker = () => {
+    handleGoToMonth(
+      pickerYear,
+      pickerMonth,
+    );
+    handleCloseMonthPicker();
+  };
 
   const handleOpenPreview = (
     dateKey,
@@ -72,20 +113,157 @@ export default function DailyReport({
             기간 선택
           </Typography>
 
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <IconButton size="small" onClick={handlePrevMonth} sx={{ p: 0 }}>
-              <ChevronLeftIcon fontSize="small" />
-            </IconButton>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+            <Button
+              type="button"
+              size="small"
+              variant="outlined"
+              onClick={handleGoToToday}
+              sx={{
+                minWidth: 44,
+                height: 25,
+                px: 0.8,
+                py: 0,
+                borderColor: '#cbd5e1',
+                color: '#334155',
+                fontSize: '0.68rem',
+                fontWeight: 800,
+                lineHeight: 1,
+              }}
+            >
+              오늘
+            </Button>
 
-            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 'bold' }}>
-              {`${viewYear}.${String(viewMonth + 1).padStart(2, '0')}`}
-            </Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.15 }}>
+              <IconButton size="small" onClick={handlePrevMonth} sx={{ p: 0 }}>
+                <ChevronLeftIcon fontSize="small" />
+              </IconButton>
 
-            <IconButton size="small" onClick={handleNextMonth} sx={{ p: 0 }}>
-              <ChevronRightIcon fontSize="small" />
-            </IconButton>
+              <Button
+                type="button"
+                size="small"
+                variant="text"
+                onClick={handleOpenMonthPicker}
+                aria-haspopup="dialog"
+                aria-expanded={Boolean(monthPickerAnchor)}
+                sx={{
+                  minWidth: 65,
+                  px: 0.35,
+                  py: 0.15,
+                  color: 'text.secondary',
+                  fontSize: '0.7rem',
+                  fontWeight: 900,
+                  lineHeight: 1.2,
+                  '&:hover': {
+                    bgcolor: '#f1f5f9',
+                    color: '#0f172a',
+                  },
+                }}
+              >
+                {`${viewYear}.${String(viewMonth + 1).padStart(2, '0')}`}
+              </Button>
+
+              <IconButton size="small" onClick={handleNextMonth} sx={{ p: 0 }}>
+                <ChevronRightIcon fontSize="small" />
+              </IconButton>
+            </Box>
           </Box>
         </Box>
+
+        <Popover
+          open={Boolean(monthPickerAnchor)}
+          anchorEl={monthPickerAnchor}
+          onClose={handleCloseMonthPicker}
+          anchorOrigin={{
+            vertical: 'bottom',
+            horizontal: 'center',
+          }}
+          transformOrigin={{
+            vertical: 'top',
+            horizontal: 'center',
+          }}
+          slotProps={{
+            paper: {
+              sx: {
+                mt: 0.75,
+                p: 1.5,
+                border: '1px solid #e2e8f0',
+                borderRadius: 2,
+                boxShadow: '0 12px 30px rgba(15, 23, 42, 0.16)',
+              },
+            },
+          }}
+        >
+          <Typography
+            variant="caption"
+            sx={{
+              display: 'block',
+              mb: 1,
+              color: '#334155',
+              fontWeight: 900,
+            }}
+          >
+            이동할 연도와 월 선택
+          </Typography>
+
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+            <FormControl size="small" sx={{ minWidth: 92 }}>
+              <Select
+                value={pickerYear}
+                onChange={(event) =>
+                  setPickerYear(Number(event.target.value))
+                }
+                MenuProps={{
+                  PaperProps: {
+                    sx: { maxHeight: 300 },
+                  },
+                }}
+                inputProps={{ 'aria-label': '이동할 연도' }}
+                sx={{ fontSize: '0.78rem', fontWeight: 700 }}
+              >
+                {yearOptions.map((year) => (
+                  <MenuItem key={year} value={year}>
+                    {year}년
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <FormControl size="small" sx={{ minWidth: 82 }}>
+              <Select
+                value={pickerMonth}
+                onChange={(event) =>
+                  setPickerMonth(Number(event.target.value))
+                }
+                inputProps={{ 'aria-label': '이동할 월' }}
+                sx={{ fontSize: '0.78rem', fontWeight: 700 }}
+              >
+                {Array.from({ length: 12 }, (_, index) => (
+                  <MenuItem key={index} value={index}>
+                    {index + 1}월
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <Button
+              type="button"
+              size="small"
+              variant="contained"
+              onClick={handleApplyMonthPicker}
+              sx={{
+                height: 40,
+                px: 1.4,
+                bgcolor: '#0284c7',
+                boxShadow: 'none',
+                fontSize: '0.75rem',
+                fontWeight: 800,
+              }}
+            >
+              이동
+            </Button>
+          </Box>
+        </Popover>
 
         <Divider sx={{ mb: 1.5 }} />
 
