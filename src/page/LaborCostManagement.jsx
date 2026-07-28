@@ -16,6 +16,8 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  FormControlLabel,
+  IconButton,
   InputBase,
   MenuItem,
   Paper,
@@ -30,12 +32,16 @@ import {
   TableRow,
   Tabs,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material';
-import AddRoundedIcon from '@mui/icons-material/AddRounded';
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import AddCircleOutlineRoundedIcon from '@mui/icons-material/AddCircleOutlineRounded';
+import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded';
+import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
+import DeleteSweepRoundedIcon from '@mui/icons-material/DeleteSweepRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
+import RemoveCircleOutlineRoundedIcon from '@mui/icons-material/RemoveCircleOutlineRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import { supabase } from '../supabaseClient';
 import { getProjectCellKeys } from '../utils/buildingUnits.js';
@@ -43,6 +49,7 @@ import { getProjectCellKeys } from '../utils/buildingUnits.js';
 const DEFAULT_UNIT = '㎡';
 const DEFAULT_CHANGE_REASON = '실행 예산 기준 최초 등록';
 const SUPABASE_WRITE_CHUNK_SIZE = 500;
+const SUPABASE_READ_PAGE_SIZE = 1000;
 
 const moneyFormatter = new Intl.NumberFormat('ko-KR', {
   maximumFractionDigits: 0,
@@ -147,6 +154,39 @@ const resolveFloor = (unit) => {
   if (text.length <= 2) return 0;
   return Number(text.slice(0, -2)) || 0;
 };
+
+const normalizeBuildingLookupKey = (value) => {
+  const text = String(value || '')
+    .trim()
+    .replace(/\s+/g, '');
+
+  if (!text) return '';
+
+  const withoutDong = text.replace(/동$/u, '');
+
+  if (/^\d+$/.test(withoutDong)) {
+    return String(Number(withoutDong));
+  }
+
+  return text;
+};
+
+const normalizeUnitLookupKey = (value) => {
+  const text = String(value || '').trim();
+
+  if (!text) return '';
+
+  if (/^\d+$/.test(text)) {
+    return String(Number(text));
+  }
+
+  return text;
+};
+
+const getUnitTypeLookupKey = (building, unit) =>
+  `${normalizeBuildingLookupKey(building)}::${normalizeUnitLookupKey(
+    unit,
+  )}`;
 
 const normalizeRole = (profile) =>
   [
@@ -288,6 +328,7 @@ export default function LaborCostManagement({
 }) {
   const [activeTab, setActiveTab] = useState(0);
   const [overviewLoading, setOverviewLoading] = useState(false);
+  const [overviewLoaded, setOverviewLoaded] = useState(false);
   const [quantityLoading, setQuantityLoading] = useState(false);
   const [monthlyLoading, setMonthlyLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -302,6 +343,9 @@ export default function LaborCostManagement({
   const [historyProcess, setHistoryProcess] = useState('');
   const [processDialogOpen, setProcessDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [selectedProcesses, setSelectedProcesses] = useState(
+    () => new Set(),
+  );
   const [newProcessName, setNewProcessName] = useState('');
   const [newProcessUnit, setNewProcessUnit] = useState(DEFAULT_UNIT);
   const [newProcessContractAmount, setNewProcessContractAmount] =
@@ -318,10 +362,14 @@ export default function LaborCostManagement({
   const [buildingFilter, setBuildingFilter] = useState('전체');
   const [floorFilter, setFloorFilter] = useState('전체');
   const [typeFilter, setTypeFilter] = useState('전체');
+  const [onlyUnassignedQuantity, setOnlyUnassignedQuantity] =
+    useState(false);
   const [unitKeyword, setUnitKeyword] = useState('');
   const [bulkQuantity, setBulkQuantity] = useState('');
   const [quantityPage, setQuantityPage] = useState(0);
   const [quantityRowsPerPage, setQuantityRowsPerPage] = useState(100);
+  const [quantityDeleteDialogOpen, setQuantityDeleteDialogOpen] =
+    useState(false);
 
   const [baseMonth, setBaseMonth] = useState(getKoreaMonthKey());
   const [monthlySummary, setMonthlySummary] = useState([]);
@@ -355,7 +403,7 @@ export default function LaborCostManagement({
       .map((row) => row.process_type)
       .filter(Boolean);
 
-    if (activeProcesses.length > 0) return activeProcesses;
+    if (overviewLoaded) return activeProcesses;
 
     return Array.from(
       new Set([
@@ -363,7 +411,29 @@ export default function LaborCostManagement({
         ...settings.map((setting) => setting.process_type).filter(Boolean),
       ]),
     );
-  }, [processCatalog, processOptions, settings]);
+  }, [overviewLoaded, processCatalog, processOptions, settings]);
+
+  const contractLaborGrandTotal = useMemo(
+    () =>
+      processCatalog
+        .filter((row) => row.is_active !== false)
+        .reduce(
+          (total, row) =>
+            total + toNumber(row.contract_labor_amount),
+          0,
+        ),
+    [processCatalog],
+  );
+
+  const executionLaborGrandTotal = useMemo(
+    () =>
+      settings.reduce(
+        (total, row) =>
+          total + toNumber(row.execution_labor_total),
+        0,
+      ),
+    [settings],
+  );
 
   const validUnits = useMemo(() => {
     const rows = Array.from(getProjectCellKeys(buildingConfigs)).map(
@@ -374,7 +444,9 @@ export default function LaborCostManagement({
           building,
           unit,
           floor: resolveFloor(unit),
-          unitType: unitTypes[cellKey] || '미지정',
+          unitType:
+            unitTypes[getUnitTypeLookupKey(building, unit)] ||
+            '미지정',
         };
       },
     );
@@ -458,6 +530,13 @@ export default function LaborCostManagement({
       }
 
       if (
+        onlyUnassignedQuantity &&
+        toNumber(quantities[row.cellKey]) > 0
+      ) {
+        return false;
+      }
+
+      if (
         keyword &&
         !`${row.building} ${row.unit} ${row.unitType}`
           .toLowerCase()
@@ -471,6 +550,8 @@ export default function LaborCostManagement({
   }, [
     buildingFilter,
     floorFilter,
+    onlyUnassignedQuantity,
+    quantities,
     typeFilter,
     unitKeyword,
     validUnits,
@@ -532,13 +613,18 @@ export default function LaborCostManagement({
       setSettings(nextSettings);
       setRateHistory(nextHistory);
       setProcessCatalog(nextCatalog);
+      setOverviewLoaded(true);
 
+      const activeProcessNames = nextCatalog
+        .filter((row) => row.is_active !== false)
+        .map((row) => row.process_type);
+      const requestedProcess =
+        editor.processType || quantityProcess || '';
       const preferredProcess =
-        editor.processType ||
-        quantityProcess ||
-        nextCatalog.find((row) => row.is_active !== false)?.process_type ||
-        nextSettings[0]?.process_type ||
-        processOptions[0] ||
+        (activeProcessNames.includes(requestedProcess)
+          ? requestedProcess
+          : '') ||
+        activeProcessNames[0] ||
         '';
 
       if (preferredProcess) {
@@ -556,7 +642,14 @@ export default function LaborCostManagement({
             currentCatalog,
           ),
         );
-        setQuantityProcess((previous) => previous || preferredProcess);
+        setQuantityProcess((previous) =>
+          activeProcessNames.includes(previous)
+            ? previous
+            : preferredProcess,
+        );
+      } else {
+        setEditor(createEditor(''));
+        setQuantityProcess('');
       }
     } catch (error) {
       console.error('노임 기준 불러오기 오류:', error);
@@ -577,18 +670,42 @@ export default function LaborCostManagement({
     }
 
     try {
-      const { data, error } = await supabase.rpc(
-        'get_labor_unit_types',
-        {
-          p_project_name: projectName,
-        },
-      );
+      const rows = [];
+      let offset = 0;
 
-      if (error) throw error;
+      while (true) {
+        const { data, error } = await supabase
+          .rpc('get_labor_unit_types', {
+            p_project_name: projectName,
+          })
+          .range(
+            offset,
+            offset + SUPABASE_READ_PAGE_SIZE - 1,
+          );
 
-      const nextUnitTypes = (data || []).reduce((result, row) => {
-        result[`${row.building}-${row.unit}`] =
-          String(row.unit_type || '').trim() || '미지정';
+        if (error) throw error;
+
+        const pageRows = data || [];
+        rows.push(...pageRows);
+
+        if (pageRows.length < SUPABASE_READ_PAGE_SIZE) {
+          break;
+        }
+
+        offset += SUPABASE_READ_PAGE_SIZE;
+      }
+
+      const nextUnitTypes = rows.reduce((result, row) => {
+        const lookupKey = getUnitTypeLookupKey(
+          row.building,
+          row.unit,
+        );
+        const unitType = String(row.unit_type || '').trim();
+
+        if (lookupKey !== '::' && unitType) {
+          result[lookupKey] = unitType;
+        }
+
         return result;
       }, {});
 
@@ -613,17 +730,33 @@ export default function LaborCostManagement({
     setErrorMessage('');
 
     try {
-      const { data, error } = await supabase.rpc(
-        'get_labor_unit_quantities',
-        {
-          p_project_name: projectName,
-          p_process_type: quantityProcess,
-        },
-      );
+      const rows = [];
+      let offset = 0;
 
-      if (error) throw error;
+      while (true) {
+        const { data, error } = await supabase
+          .rpc('get_labor_unit_quantities', {
+            p_project_name: projectName,
+            p_process_type: quantityProcess,
+          })
+          .range(
+            offset,
+            offset + SUPABASE_READ_PAGE_SIZE - 1,
+          );
 
-      const nextQuantities = (data || []).reduce((result, row) => {
+        if (error) throw error;
+
+        const pageRows = data || [];
+        rows.push(...pageRows);
+
+        if (pageRows.length < SUPABASE_READ_PAGE_SIZE) {
+          break;
+        }
+
+        offset += SUPABASE_READ_PAGE_SIZE;
+      }
+
+      const nextQuantities = rows.reduce((result, row) => {
         result[`${row.building}-${row.unit}`] = row.quantity;
         return result;
       }, {});
@@ -689,6 +822,7 @@ export default function LaborCostManagement({
     setSettings([]);
     setRateHistory([]);
     setProcessCatalog([]);
+    setOverviewLoaded(false);
     setUnitTypes({});
     setQuantities({});
     setMonthlySummary([]);
@@ -736,6 +870,18 @@ export default function LaborCostManagement({
     editor.processType,
     settingByProcess,
   ]);
+
+  useEffect(() => {
+    setSelectedProcesses((previous) => {
+      const next = new Set(
+        Array.from(previous).filter((processType) =>
+          allProcessOptions.includes(processType),
+        ),
+      );
+
+      return next.size === previous.size ? previous : next;
+    });
+  }, [allProcessOptions]);
 
   const handleEditorProcessChange = (processType) => {
     setEditor(
@@ -878,35 +1024,153 @@ export default function LaborCostManagement({
     }
   };
 
-  const handleDeleteProcess = async () => {
-    if (!rateEditable || !editor.processType) return;
+  const handleToggleProcess = (processType) => {
+    setSelectedProcesses((previous) => {
+      const next = new Set(previous);
+
+      if (next.has(processType)) next.delete(processType);
+      else next.add(processType);
+
+      return next;
+    });
+  };
+
+  const handleToggleAllProcesses = () => {
+    const allSelected =
+      allProcessOptions.length > 0 &&
+      allProcessOptions.every((processType) =>
+        selectedProcesses.has(processType),
+      );
+
+    setSelectedProcesses(
+      allSelected ? new Set() : new Set(allProcessOptions),
+    );
+  };
+
+  const handleDeleteProcesses = async () => {
+    const processTypes = allProcessOptions.filter((processType) =>
+      selectedProcesses.has(processType),
+    );
+
+    if (!rateEditable || processTypes.length === 0) return;
 
     setSaving(true);
     setMessage(null);
     setErrorMessage('');
 
     try {
-      const deletedProcess = editor.processType;
       const { error } = await supabase.rpc(
-        'archive_labor_process_catalog',
+        'archive_labor_process_catalogs',
         {
           p_project_name: projectName,
-          p_process_type: deletedProcess,
+          p_process_types: processTypes,
         },
       );
 
       if (error) throw error;
 
       setDeleteDialogOpen(false);
+      setSelectedProcesses(new Set());
       setMessage({
         severity: 'success',
-        text: `${deletedProcess} 공정을 목록에서 삭제했습니다. 기존 단가이력과 물량자료는 보존됩니다.`,
+        text: `선택한 공정 ${processTypes.length.toLocaleString()}개를 목록에서 삭제했습니다. 기존 단가이력과 물량자료는 보존됩니다.`,
+      });
+      await loadOverview();
+      await loadMonthly();
+    } catch (error) {
+      console.error('노임 공정 일괄삭제 오류:', error);
+      setErrorMessage(
+        `선택한 공정을 삭제하지 못했습니다: ${
+          error?.message || '알 수 없는 오류'
+        }`,
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleMoveProcesses = async (direction) => {
+    if (!rateEditable || selectedProcesses.size === 0 || saving) {
+      return;
+    }
+
+    const nextOrder = [...allProcessOptions];
+    let changed = false;
+
+    if (direction === 'up') {
+      for (let index = 1; index < nextOrder.length; index += 1) {
+        const currentSelected = selectedProcesses.has(nextOrder[index]);
+        const previousSelected = selectedProcesses.has(
+          nextOrder[index - 1],
+        );
+
+        if (currentSelected && !previousSelected) {
+          [nextOrder[index - 1], nextOrder[index]] = [
+            nextOrder[index],
+            nextOrder[index - 1],
+          ];
+          changed = true;
+        }
+      }
+    } else {
+      for (
+        let index = nextOrder.length - 2;
+        index >= 0;
+        index -= 1
+      ) {
+        const currentSelected = selectedProcesses.has(nextOrder[index]);
+        const nextSelected = selectedProcesses.has(
+          nextOrder[index + 1],
+        );
+
+        if (currentSelected && !nextSelected) {
+          [nextOrder[index], nextOrder[index + 1]] = [
+            nextOrder[index + 1],
+            nextOrder[index],
+          ];
+          changed = true;
+        }
+      }
+    }
+
+    if (!changed) {
+      setMessage({
+        severity: 'info',
+        text:
+          direction === 'up'
+            ? '선택한 공정이 이미 가장 위에 있습니다.'
+            : '선택한 공정이 이미 가장 아래에 있습니다.',
+      });
+      return;
+    }
+
+    setSaving(true);
+    setMessage(null);
+    setErrorMessage('');
+
+    try {
+      const { error } = await supabase.rpc(
+        'reorder_labor_process_catalog',
+        {
+          p_project_name: projectName,
+          p_process_types: nextOrder,
+        },
+      );
+
+      if (error) throw error;
+
+      setMessage({
+        severity: 'success',
+        text:
+          direction === 'up'
+            ? '선택한 공정을 위로 이동했습니다.'
+            : '선택한 공정을 아래로 이동했습니다.',
       });
       await loadOverview();
     } catch (error) {
-      console.error('노임 공정 삭제 오류:', error);
+      console.error('노임 공정 순서변경 오류:', error);
       setErrorMessage(
-        `공정을 삭제하지 못했습니다: ${
+        `공정 순서를 변경하지 못했습니다: ${
           error?.message || '알 수 없는 오류'
         }`,
       );
@@ -1023,6 +1287,51 @@ export default function LaborCostManagement({
     }
   };
 
+  const handleDeleteAllQuantities = async () => {
+    if (!quantityProcess) {
+      setErrorMessage('물량을 삭제할 공정을 선택해주세요.');
+      return;
+    }
+
+    setSaving(true);
+    setMessage(null);
+    setErrorMessage('');
+
+    try {
+      const { data, error } = await supabase.rpc(
+        'delete_labor_unit_quantities',
+        {
+          p_project_name: projectName,
+          p_process_type: quantityProcess,
+        },
+      );
+
+      if (error) throw error;
+
+      setQuantityDeleteDialogOpen(false);
+      setQuantities({});
+      setSelectedUnits(new Set());
+      setBulkQuantity('');
+      setOnlyUnassignedQuantity(false);
+      setMessage({
+        severity: 'success',
+        text: `${quantityProcess} 공정의 저장 물량 ${toNumber(
+          data,
+        ).toLocaleString()}건을 모두 삭제했습니다.`,
+      });
+      await loadMonthly();
+    } catch (error) {
+      console.error('현재 공정 세대물량 전체삭제 오류:', error);
+      setErrorMessage(
+        `현재 공정의 세대별 물량을 삭제하지 못했습니다: ${
+          error?.message || '알 수 없는 오류'
+        }`,
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const selectedProcessHistory = useMemo(
     () =>
       rateHistory.filter(
@@ -1054,8 +1363,8 @@ export default function LaborCostManagement({
         minHeight: 0,
         flex: 1,
         display: 'grid',
-        gridTemplateRows: 'auto minmax(0, 1fr)',
-        gap: 1.1,
+        gridTemplateRows: 'auto auto minmax(0, 1fr)',
+        gap: 0.8,
       }}
     >
       <Paper
@@ -1087,29 +1396,6 @@ export default function LaborCostManagement({
               </MenuItem>
             ))}
           </TextField>
-
-          <Button
-            size="small"
-            variant="outlined"
-            startIcon={<AddRoundedIcon />}
-            onClick={() => setProcessDialogOpen(true)}
-            disabled={!rateEditable}
-            sx={{ whiteSpace: 'nowrap' }}
-          >
-            공정 추가
-          </Button>
-
-          <Button
-            size="small"
-            color="error"
-            variant="outlined"
-            startIcon={<DeleteOutlineRoundedIcon />}
-            onClick={() => setDeleteDialogOpen(true)}
-            disabled={!rateEditable || !editor.processType}
-            sx={{ whiteSpace: 'nowrap' }}
-          >
-            선택 공정 삭제
-          </Button>
 
           <TextField
             select
@@ -1303,6 +1589,91 @@ export default function LaborCostManagement({
         </Typography>
       </Paper>
 
+      <Paper
+        variant="outlined"
+        sx={{
+          minHeight: 34,
+          px: 0.75,
+          py: 0.35,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0.45,
+          borderColor: '#94a3b8',
+          boxShadow: 'none',
+        }}
+      >
+        <Tooltip title="공정 추가" arrow>
+          <span>
+            <IconButton
+              size="small"
+              color="primary"
+              aria-label="공정 추가"
+              onClick={() => setProcessDialogOpen(true)}
+              disabled={!rateEditable || saving}
+            >
+              <AddCircleOutlineRoundedIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+
+        <Tooltip title="공정 삭제" arrow>
+          <span>
+            <IconButton
+              size="small"
+              color="error"
+              aria-label="공정 삭제"
+              onClick={() => setDeleteDialogOpen(true)}
+              disabled={
+                !rateEditable ||
+                saving ||
+                selectedProcesses.size === 0
+              }
+            >
+              <RemoveCircleOutlineRoundedIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+
+        <Tooltip title="공정 위로 이동" arrow>
+          <span>
+            <IconButton
+              size="small"
+              aria-label="공정 위로 이동"
+              onClick={() => handleMoveProcesses('up')}
+              disabled={
+                !rateEditable ||
+                saving ||
+                selectedProcesses.size === 0
+              }
+            >
+              <ArrowUpwardRoundedIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+
+        <Tooltip title="공정 아래로 이동" arrow>
+          <span>
+            <IconButton
+              size="small"
+              aria-label="공정 아래로 이동"
+              onClick={() => handleMoveProcesses('down')}
+              disabled={
+                !rateEditable ||
+                saving ||
+                selectedProcesses.size === 0
+              }
+            >
+              <ArrowDownwardRoundedIcon fontSize="small" />
+            </IconButton>
+          </span>
+        </Tooltip>
+
+        <Divider orientation="vertical" flexItem sx={{ mx: 0.35 }} />
+        <Typography sx={{ fontSize: '0.65rem', color: '#64748b' }}>
+          선택 {selectedProcesses.size.toLocaleString()}개
+        </Typography>
+      </Paper>
+
       <TableContainer
         component={Paper}
         variant="outlined"
@@ -1315,6 +1686,27 @@ export default function LaborCostManagement({
         <Table stickyHeader size="small">
           <TableHead>
             <TableRow>
+              <TableCell padding="checkbox" sx={headerCellSx}>
+                <Checkbox
+                  size="small"
+                  checked={
+                    allProcessOptions.length > 0 &&
+                    allProcessOptions.every((processType) =>
+                      selectedProcesses.has(processType),
+                    )
+                  }
+                  indeterminate={
+                    allProcessOptions.some((processType) =>
+                      selectedProcesses.has(processType),
+                    ) &&
+                    !allProcessOptions.every((processType) =>
+                      selectedProcesses.has(processType),
+                    )
+                  }
+                  onChange={handleToggleAllProcesses}
+                  inputProps={{ 'aria-label': '공정 전체 선택' }}
+                />
+              </TableCell>
               {[
                 '공정',
                 '단위',
@@ -1344,6 +1736,17 @@ export default function LaborCostManagement({
                   onClick={() => handleEditorProcessChange(processType)}
                   sx={{ cursor: 'pointer' }}
                 >
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      size="small"
+                      checked={selectedProcesses.has(processType)}
+                      onClick={(event) => event.stopPropagation()}
+                      onChange={() => handleToggleProcess(processType)}
+                      inputProps={{
+                        'aria-label': `${processType} 공정 선택`,
+                      }}
+                    />
+                  </TableCell>
                   <TableCell
                     sx={{ ...bodyCellSx, fontWeight: 900 }}
                     align="center"
@@ -1403,7 +1806,7 @@ export default function LaborCostManagement({
 
             {allProcessOptions.length === 0 && (
               <TableRow>
-                <TableCell colSpan={9} align="center" sx={{ py: 5 }}>
+                <TableCell colSpan={10} align="center" sx={{ py: 5 }}>
                   공정 목록이 없습니다.
                 </TableCell>
               </TableRow>
@@ -1515,6 +1918,31 @@ export default function LaborCostManagement({
               </MenuItem>
             ))}
           </TextField>
+
+          <FormControlLabel
+            control={
+              <Checkbox
+                size="small"
+                checked={onlyUnassignedQuantity}
+                onChange={(event) => {
+                  setOnlyUnassignedQuantity(event.target.checked);
+                  setQuantityPage(0);
+                }}
+              />
+            }
+            label={
+              <Typography sx={{ fontSize: '0.69rem' }}>
+                공정 물량 미지정만
+              </Typography>
+            }
+            sx={{
+              mr: 0,
+              whiteSpace: 'nowrap',
+              '& .MuiFormControlLabel-label': {
+                lineHeight: 1,
+              },
+            }}
+          />
 
           <TextField
             size="small"
@@ -2101,12 +2529,12 @@ export default function LaborCostManagement({
         }}
       >
         <Stack
-          direction="row"
-          alignItems="center"
-          justifyContent="space-between"
+          direction={{ xs: 'column', md: 'row' }}
+          alignItems={{ xs: 'stretch', md: 'center' }}
           spacing={1}
+          sx={{ width: '100%' }}
         >
-          <Box>
+          <Box sx={{ flexShrink: 0 }}>
             <Typography
               sx={{
                 fontSize: '0.9rem',
@@ -2122,21 +2550,96 @@ export default function LaborCostManagement({
             </Typography>
           </Box>
 
-          <Button
-            size="small"
-            startIcon={<RefreshRoundedIcon />}
-            onClick={() => {
-              loadOverview();
-              loadUnitTypes();
-              loadQuantities();
-              loadMonthly();
-            }}
-            disabled={
-              overviewLoading || quantityLoading || monthlyLoading
-            }
+          <Box sx={{ flex: 1 }} />
+
+          <Stack
+            direction="row"
+            spacing={{ xs: 1.5, md: 3 }}
+            alignItems="center"
+            justifyContent={{ xs: 'space-between', md: 'flex-end' }}
+            sx={{ flexWrap: 'wrap' }}
           >
-            새로고침
-          </Button>
+            <Box sx={{ minWidth: 145, textAlign: 'right' }}>
+              <Typography
+                sx={{
+                  fontSize: '0.62rem',
+                  fontWeight: 800,
+                  color: '#64748b',
+                }}
+              >
+                계약 노무비 총계
+              </Typography>
+              <Typography
+                sx={{
+                  fontSize: '0.82rem',
+                  fontWeight: 900,
+                  color: '#0f172a',
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {formatMoney(contractLaborGrandTotal)}원
+              </Typography>
+            </Box>
+
+            <Box sx={{ minWidth: 145, textAlign: 'right' }}>
+              <Typography
+                sx={{
+                  fontSize: '0.62rem',
+                  fontWeight: 800,
+                  color: '#64748b',
+                }}
+              >
+                실행 노임총액
+              </Typography>
+              <Typography
+                sx={{
+                  fontSize: '0.82rem',
+                  fontWeight: 900,
+                  color: '#0f766e',
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {formatMoney(executionLaborGrandTotal)}원
+              </Typography>
+            </Box>
+
+            {activeTab === 1 && (
+              <Tooltip title="현재 공정 물량 전체 삭제" arrow>
+                <span>
+                  <IconButton
+                    size="small"
+                    color="error"
+                    aria-label="현재 공정 물량 전체 삭제"
+                    onClick={() => setQuantityDeleteDialogOpen(true)}
+                    disabled={
+                      saving ||
+                      quantityLoading ||
+                      !quantityProcess
+                    }
+                  >
+                    <DeleteSweepRoundedIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            )}
+
+            <Button
+              size="small"
+              startIcon={<RefreshRoundedIcon />}
+              onClick={() => {
+                loadOverview();
+                loadUnitTypes();
+                loadQuantities();
+                loadMonthly();
+              }}
+              disabled={
+                overviewLoading || quantityLoading || monthlyLoading
+              }
+              sx={{ whiteSpace: 'nowrap' }}
+            >
+              새로고침
+            </Button>
+          </Stack>
         </Stack>
 
         <Tabs
@@ -2287,12 +2790,34 @@ export default function LaborCostManagement({
         fullWidth
         maxWidth="xs"
       >
-        <DialogTitle sx={{ fontWeight: 900 }}>공정 삭제</DialogTitle>
+        <DialogTitle sx={{ fontWeight: 900 }}>
+          선택 공정 삭제
+        </DialogTitle>
         <DialogContent dividers>
           <Typography sx={{ fontSize: '0.82rem', lineHeight: 1.65 }}>
-            <strong>{editor.processType}</strong> 공정을 노임작성 목록에서
-            삭제하시겠습니까?
+            선택한{' '}
+            <strong>{selectedProcesses.size.toLocaleString()}개 공정</strong>
+            을 노임작성 목록에서 삭제하시겠습니까?
           </Typography>
+          <Stack
+            direction="row"
+            spacing={0.6}
+            useFlexGap
+            flexWrap="wrap"
+            sx={{ mt: 1 }}
+          >
+            {allProcessOptions
+              .filter((processType) =>
+                selectedProcesses.has(processType),
+              )
+              .map((processType) => (
+                <Chip
+                  key={processType}
+                  size="small"
+                  label={processType}
+                />
+              ))}
+          </Stack>
           <Typography
             sx={{ mt: 1, fontSize: '0.7rem', color: '#64748b' }}
           >
@@ -2311,10 +2836,55 @@ export default function LaborCostManagement({
           <Button
             color="error"
             variant="contained"
-            onClick={handleDeleteProcess}
+            onClick={handleDeleteProcesses}
+            disabled={saving || selectedProcesses.size === 0}
+          >
+            선택 삭제
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={quantityDeleteDialogOpen}
+        onClose={() =>
+          !saving && setQuantityDeleteDialogOpen(false)
+        }
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle sx={{ fontWeight: 900 }}>
+          현재 공정 물량 전체 삭제
+        </DialogTitle>
+        <DialogContent dividers>
+          <Alert severity="warning" sx={{ mb: 1.2 }}>
+            삭제 후에는 되돌릴 수 없습니다.
+          </Alert>
+          <Typography sx={{ fontSize: '0.82rem', lineHeight: 1.65 }}>
+            <strong>{quantityProcess || '선택 공정'}</strong>에 저장된
+            모든 세대별 물량을 삭제하시겠습니까?
+          </Typography>
+          <Typography
+            sx={{ mt: 1, fontSize: '0.7rem', color: '#64748b' }}
+          >
+            현재 화면의 동·층·타입 필터와 관계없이 이 현장의 해당 공정
+            물량 전체가 삭제됩니다. 공정과 단가 변경이력은 삭제되지
+            않습니다.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setQuantityDeleteDialogOpen(false)}
             disabled={saving}
           >
-            삭제
+            취소
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={handleDeleteAllQuantities}
+            disabled={saving || !quantityProcess}
+          >
+            전체 삭제
           </Button>
         </DialogActions>
       </Dialog>
