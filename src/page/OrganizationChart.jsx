@@ -60,9 +60,15 @@ const BASE_RENDER_SCALE = 0.7;
 const ZOOM_MIN = 0.6;
 const ZOOM_MAX = 1.4;
 const ZOOM_STEP = 0.1;
+const CHART_FONT_FAMILY =
+  '"Pretendard Variable", Pretendard, "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
 const SNAP_GRID = {
   x: 24,
   y: 24,
+};
+const BRANCH_LINE = {
+  edgeGap: 16,
+  handleStrokeWidth: 18,
 };
 
 const LAYOUT = {
@@ -114,6 +120,27 @@ const snapPosition = (position) => ({
   x: snapCoordinate(position?.x, SNAP_GRID.x),
   y: snapCoordinate(position?.y, SNAP_GRID.y),
 });
+const clampNumber = (value, minimum, maximum) =>
+  Math.min(maximum, Math.max(minimum, Number(value || 0)));
+const snapCoordinateWithinRange = (
+  value,
+  minimum,
+  maximum,
+  step,
+) => {
+  const minimumSnap = Math.ceil(minimum / step) * step;
+  const maximumSnap = Math.floor(maximum / step) * step;
+
+  if (minimumSnap > maximumSnap) {
+    return (minimum + maximum) / 2;
+  }
+
+  return clampNumber(
+    Math.round(Number(value || 0) / step) * step,
+    minimumSnap,
+    maximumSnap,
+  );
+};
 
 const formatDateTime = (value) => {
   if (!value) return '';
@@ -439,7 +466,11 @@ const createAutoLayout = ({
   return positions;
 };
 
-const createConnectorSegments = (parentRect, childRect) => {
+const createConnectorSegments = (
+  parentRect,
+  childRect,
+  requestedBranchY = null,
+) => {
   const parentCenterX = parentRect.x + parentRect.width / 2;
   const parentCenterY = parentRect.y + parentRect.height / 2;
   const childCenterX = childRect.x + childRect.width / 2;
@@ -448,7 +479,13 @@ const createConnectorSegments = (parentRect, childRect) => {
   if (childRect.y >= parentRect.y + parentRect.height + 16) {
     const startY = parentRect.y + parentRect.height;
     const endY = childRect.y;
-    const middleY = startY + (endY - startY) / 2;
+    const minimumY = startY + BRANCH_LINE.edgeGap;
+    const maximumY = endY - BRANCH_LINE.edgeGap;
+    const defaultMiddleY = startY + (endY - startY) / 2;
+    const middleY =
+      maximumY > minimumY && isFiniteCoordinate(requestedBranchY)
+        ? clampNumber(requestedBranchY, minimumY, maximumY)
+        : defaultMiddleY;
     return [
       { x1: parentCenterX, y1: startY, x2: parentCenterX, y2: middleY },
       { x1: parentCenterX, y1: middleY, x2: childCenterX, y2: middleY },
@@ -755,13 +792,13 @@ function MemberCard({
           py: 0.45,
         }}
       >
-        <Typography noWrap sx={{ color: '#64748b', fontSize: '0.55rem', fontWeight: 800 }}>
+        <Typography noWrap sx={{ color: '#475569', fontSize: '0.66rem', fontWeight: 800, letterSpacing: '-0.01em' }}>
           {node.position_title || '직책 미입력'}
         </Typography>
-        <Typography noWrap sx={{ color: '#0f172a', fontSize: '0.74rem', fontWeight: 900 }}>
+        <Typography noWrap sx={{ color: '#020617', fontSize: '0.86rem', fontWeight: 900, letterSpacing: '-0.02em' }}>
           {node.person_name || '이름 미입력'}
         </Typography>
-        <Typography noWrap sx={{ color: '#64748b', fontSize: '0.54rem', fontWeight: 700 }}>
+        <Typography noWrap sx={{ color: '#475569', fontSize: '0.64rem', fontWeight: 750, letterSpacing: '-0.01em' }}>
           {node.contact || '연락처 미입력'}
         </Typography>
       </Stack>
@@ -849,10 +886,10 @@ function DepartmentGroup({
           touchAction: layoutMode ? 'none' : 'auto',
         }}
       >
-        <Typography noWrap sx={{ fontSize: '0.76rem', fontWeight: 900 }}>
+        <Typography noWrap sx={{ fontSize: '0.88rem', fontWeight: 900, letterSpacing: '-0.02em' }}>
           {node.department || '부서 미입력'}
         </Typography>
-        <Typography sx={{ mt: 0.15, color: 'rgba(255,255,255,0.82)', fontSize: '0.57rem', fontWeight: 800 }}>
+        <Typography sx={{ mt: 0.15, color: 'rgba(255,255,255,0.94)', fontSize: '0.65rem', fontWeight: 800, letterSpacing: '-0.01em' }}>
           구성원 {memberCount}명
           {layoutMode ? ' · 끌어서 위치 이동' : ''}
         </Typography>
@@ -965,7 +1002,7 @@ function PersonNode({
       }}
     >
       <Box sx={{ position: 'relative', py: 0.65, px: 1.2, pr: editMode ? 3.7 : 1.2, bgcolor: '#334155' }}>
-        <Typography noWrap sx={{ color: '#ffffff', fontSize: '0.68rem', fontWeight: 900, textAlign: 'center' }}>
+        <Typography noWrap sx={{ color: '#ffffff', fontSize: '0.76rem', fontWeight: 900, textAlign: 'center', letterSpacing: '-0.01em' }}>
           {node.position_title || '직책 미입력'}
         </Typography>
 
@@ -982,10 +1019,10 @@ function PersonNode({
         )}
       </Box>
       <Stack spacing={0.15} alignItems="center" sx={{ px: 1, py: 0.7 }}>
-        <Typography noWrap sx={{ maxWidth: '100%', color: '#0f172a', fontSize: '0.82rem', fontWeight: 900 }}>
+        <Typography noWrap sx={{ maxWidth: '100%', color: '#020617', fontSize: '0.94rem', fontWeight: 900, letterSpacing: '-0.02em' }}>
           {node.person_name || '이름 미입력'}
         </Typography>
-        <Typography noWrap sx={{ maxWidth: '100%', color: '#64748b', fontSize: '0.58rem', fontWeight: 700 }}>
+        <Typography noWrap sx={{ maxWidth: '100%', color: '#475569', fontSize: '0.68rem', fontWeight: 750, letterSpacing: '-0.01em' }}>
           {node.contact || '연락처 미입력'}
         </Typography>
       </Stack>
@@ -1000,10 +1037,12 @@ export default function OrganizationChart({
   const isSuperAdmin = userRole === '최고관리자';
   const chartViewportRef = useRef(null);
   const dragStateRef = useRef(null);
+  const branchDragStateRef = useRef(null);
   const panDragStateRef = useRef(null);
   const panRef = useRef({ x: 0, y: 0 });
   const zoomRef = useRef(1);
   const positionOverridesRef = useRef({});
+  const branchOverridesRef = useRef({});
   const hasCenteredRef = useRef(false);
 
   const [nodes, setNodes] = useState([]);
@@ -1017,7 +1056,10 @@ export default function OrganizationChart({
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
   const [movingNodeId, setMovingNodeId] = useState('');
+  const [movingBranchParentId, setMovingBranchParentId] =
+    useState('');
   const [positionOverrides, setPositionOverrides] = useState({});
+  const [branchOverrides, setBranchOverrides] = useState({});
   const [memberDraggingId, setMemberDraggingId] = useState('');
   const [memberDropTargetId, setMemberDropTargetId] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -1034,7 +1076,7 @@ export default function OrganizationChart({
     const { data, error } = await supabase
       .from(TABLE_NAME)
       .select(
-        'id, parent_id, node_type, layout_type, department, position_title, person_name, contact, sort_order, layout_x, layout_y, card_color, is_active, created_at, updated_at',
+        'id, parent_id, node_type, layout_type, department, position_title, person_name, contact, sort_order, layout_x, layout_y, connector_branch_offset_y, card_color, is_active, created_at, updated_at',
       )
       .eq('is_active', true)
       .order('sort_order', { ascending: true })
@@ -1049,7 +1091,7 @@ export default function OrganizationChart({
           error.code === '42P01'
             ? '조직도 테이블이 없습니다. 조직도 SQL을 먼저 실행해주세요.'
             : error.code === '42703'
-              ? 'v51.7 조직도 SQL을 먼저 실행해주세요. 부서 색상 저장 열이 아직 없습니다.'
+              ? 'v51.9 조직도 SQL을 먼저 실행해주세요. 분기선 위치 저장 열이 아직 없습니다.'
               : `조직도를 불러오지 못했습니다: ${error.message}`,
       });
     } else {
@@ -1059,6 +1101,11 @@ export default function OrganizationChart({
             ...node,
             node_type: node.node_type || NODE_TYPES.PERSON,
             layout_type: node.layout_type || LAYOUT_TYPES.NORMAL,
+            connector_branch_offset_y: isFiniteCoordinate(
+              node.connector_branch_offset_y,
+            )
+              ? Number(node.connector_branch_offset_y)
+              : null,
             card_color:
               node.node_type === NODE_TYPES.DEPARTMENT
                 ? normalizeHexColor(node.card_color)
@@ -1068,6 +1115,8 @@ export default function OrganizationChart({
       );
       setPositionOverrides({});
       positionOverridesRef.current = {};
+      setBranchOverrides({});
+      branchOverridesRef.current = {};
     }
 
     setLoading(false);
@@ -1177,6 +1226,95 @@ export default function OrganizationChart({
     [itemSizeById, resolvedPositions, structuralNodes],
   );
 
+  const branchGroups = useMemo(() => {
+    const groups = [];
+
+    structuralNodes.forEach((parentNode) => {
+      const parentRect = layoutRects.get(parentNode.id);
+      if (!parentRect) return;
+
+      const downwardChildren = (
+        structuralGraph.children.get(parentNode.id) || []
+      )
+        .map((childNode) => ({
+          node: childNode,
+          rect: layoutRects.get(childNode.id),
+        }))
+        .filter(
+          ({ rect }) =>
+            rect &&
+            rect.y >=
+              parentRect.y +
+                parentRect.height +
+                BRANCH_LINE.edgeGap,
+        );
+
+      if (downwardChildren.length === 0) return;
+
+      const parentBottom = parentRect.y + parentRect.height;
+      const closestChildTop = Math.min(
+        ...downwardChildren.map(({ rect }) => rect.y),
+      );
+      const minimumY = parentBottom + BRANCH_LINE.edgeGap;
+      const maximumY = closestChildTop - BRANCH_LINE.edgeGap;
+      if (maximumY <= minimumY) return;
+
+      const defaultY =
+        parentBottom + (closestChildTop - parentBottom) / 2;
+      const overrideY = branchOverrides[parentNode.id];
+      const storedOffset = parentNode.connector_branch_offset_y;
+      const requestedY = isFiniteCoordinate(overrideY)
+        ? Number(overrideY)
+        : isFiniteCoordinate(storedOffset)
+          ? parentBottom + Number(storedOffset)
+          : defaultY;
+      const branchY = snapCoordinateWithinRange(
+        requestedY,
+        minimumY,
+        maximumY,
+        SNAP_GRID.y,
+      );
+      const parentCenterX =
+        parentRect.x + parentRect.width / 2;
+      const childCenters = downwardChildren.map(
+        ({ rect }) => rect.x + rect.width / 2,
+      );
+
+      groups.push({
+        parentId: parentNode.id,
+        parentLabel:
+          parentNode.department ||
+          parentNode.person_name ||
+          '상위 조직',
+        y: branchY,
+        x1: Math.min(parentCenterX, ...childCenters),
+        x2: Math.max(parentCenterX, ...childCenters),
+        minimumY,
+        maximumY,
+        parentBottom,
+        childCount: downwardChildren.length,
+      });
+    });
+
+    return groups;
+  }, [
+    branchOverrides,
+    layoutRects,
+    structuralGraph.children,
+    structuralNodes,
+  ]);
+
+  const branchGroupByParent = useMemo(
+    () =>
+      new Map(
+        branchGroups.map((branchGroup) => [
+          branchGroup.parentId,
+          branchGroup,
+        ]),
+      ),
+    [branchGroups],
+  );
+
   const connectionSegments = useMemo(() => {
     const rawSegments = [];
 
@@ -1189,12 +1327,21 @@ export default function OrganizationChart({
       if (!parentRect || !childRect) return;
 
       rawSegments.push(
-        ...createConnectorSegments(parentRect, childRect),
+        ...createConnectorSegments(
+          parentRect,
+          childRect,
+          branchGroupByParent.get(parentId)?.y,
+        ),
       );
     });
 
     return mergeConnectorSegments(rawSegments);
-  }, [layoutRects, structuralGraph.parentById, structuralNodes]);
+  }, [
+    branchGroupByParent,
+    layoutRects,
+    structuralGraph.parentById,
+    structuralNodes,
+  ]);
 
   const canvasSize = useMemo(() => {
     let maximumX = LAYOUT.minCanvasWidth;
@@ -1587,6 +1734,174 @@ export default function OrganizationChart({
       });
     },
     [currentUserId, isSuperAdmin, loadNodes],
+  );
+
+  const persistBranchPosition = useCallback(
+    async ({
+      parentId,
+      parentLabel,
+      parentBottom,
+      minimumY,
+      maximumY,
+      finalY,
+    }) => {
+      if (!isSuperAdmin || !parentId) return;
+
+      const safeY = snapCoordinateWithinRange(
+        finalY,
+        minimumY,
+        maximumY,
+        SNAP_GRID.y,
+      );
+      const safeOffset = Number(
+        (safeY - parentBottom).toFixed(3),
+      );
+
+      setSavingLayout(true);
+      setNodes((previous) =>
+        previous.map((node) =>
+          node.id === parentId
+            ? {
+                ...node,
+                connector_branch_offset_y: safeOffset,
+                updated_at: new Date().toISOString(),
+              }
+            : node,
+        ),
+      );
+
+      const { error } = await supabase
+        .from(TABLE_NAME)
+        .update({
+          connector_branch_offset_y: safeOffset,
+          updated_by: currentUserId || null,
+        })
+        .eq('id', parentId);
+
+      setSavingLayout(false);
+
+      if (error) {
+        console.error('조직도 분기선 위치 저장 오류:', error);
+        await loadNodes();
+        setMessage({
+          severity: 'error',
+          text: `분기선 위치를 저장하지 못했습니다: ${error.message}`,
+        });
+        return;
+      }
+
+      setBranchOverrides((previous) => {
+        const next = { ...previous };
+        delete next[parentId];
+        branchOverridesRef.current = next;
+        return next;
+      });
+      setMessage({
+        severity: 'success',
+        text: `${parentLabel} 아래 가로 분기선 위치를 저장했습니다.`,
+      });
+    },
+    [currentUserId, isSuperAdmin, loadNodes],
+  );
+
+  useEffect(() => {
+    if (!movingBranchParentId) return undefined;
+
+    const handleBranchPointerMove = (event) => {
+      const drag = branchDragStateRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+
+      const nextY = snapCoordinateWithinRange(
+        drag.originY +
+          (event.clientY - drag.startClientY) / renderScale,
+        drag.minimumY,
+        drag.maximumY,
+        SNAP_GRID.y,
+      );
+      drag.latestY = nextY;
+
+      setBranchOverrides((previous) => {
+        const next = {
+          ...previous,
+          [drag.parentId]: nextY,
+        };
+        branchOverridesRef.current = next;
+        return next;
+      });
+    };
+
+    const finishBranchPointerMove = (event) => {
+      const drag = branchDragStateRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+
+      branchDragStateRef.current = null;
+      setMovingBranchParentId('');
+      persistBranchPosition({
+        ...drag,
+        finalY: drag.latestY ?? drag.originY,
+      });
+    };
+
+    window.addEventListener(
+      'pointermove',
+      handleBranchPointerMove,
+    );
+    window.addEventListener(
+      'pointerup',
+      finishBranchPointerMove,
+    );
+    window.addEventListener(
+      'pointercancel',
+      finishBranchPointerMove,
+    );
+
+    return () => {
+      window.removeEventListener(
+        'pointermove',
+        handleBranchPointerMove,
+      );
+      window.removeEventListener(
+        'pointerup',
+        finishBranchPointerMove,
+      );
+      window.removeEventListener(
+        'pointercancel',
+        finishBranchPointerMove,
+      );
+    };
+  }, [
+    movingBranchParentId,
+    persistBranchPosition,
+    renderScale,
+  ]);
+
+  const handleBranchPointerDown = useCallback(
+    (event, branchGroup) => {
+      if (
+        !layoutMode ||
+        savingLayout ||
+        event.button !== 0 ||
+        branchGroup.childCount < 2
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      branchDragStateRef.current = {
+        parentId: branchGroup.parentId,
+        parentLabel: branchGroup.parentLabel,
+        pointerId: event.pointerId,
+        startClientY: event.clientY,
+        originY: branchGroup.y,
+        latestY: branchGroup.y,
+        minimumY: branchGroup.minimumY,
+        maximumY: branchGroup.maximumY,
+        parentBottom: branchGroup.parentBottom,
+      };
+      setMovingBranchParentId(branchGroup.parentId);
+    },
+    [layoutMode, savingLayout],
   );
 
   useEffect(() => {
@@ -2010,8 +2325,9 @@ export default function OrganizationChart({
       if (
         event.button !== 0 ||
         movingNodeId ||
+        movingBranchParentId ||
         event.target?.closest?.(
-          '[data-chart-node="true"], button, input, textarea, select, a, [role="button"]',
+          '[data-chart-node="true"], [data-branch-handle="true"], button, input, textarea, select, a, [role="button"]',
         )
       ) {
         return;
@@ -2027,7 +2343,7 @@ export default function OrganizationChart({
       };
       setIsPanning(true);
     },
-    [movingNodeId],
+    [movingBranchParentId, movingNodeId],
   );
 
   const handleViewportPointerMove = useCallback(
@@ -2103,6 +2419,13 @@ export default function OrganizationChart({
         overflow: 'hidden',
         borderColor: '#cbd5e1',
         bgcolor: '#ffffff',
+        fontFamily: CHART_FONT_FAMILY,
+        textRendering: 'geometricPrecision',
+        WebkitFontSmoothing: 'antialiased',
+        '& .MuiTypography-root, & .MuiButton-root, & .MuiMenuItem-root, & .MuiInputBase-root, & .MuiFormLabel-root, & .MuiFormHelperText-root':
+          {
+            fontFamily: 'inherit',
+          },
       }}
     >
       <Box
@@ -2138,7 +2461,7 @@ export default function OrganizationChart({
             </Typography>
             <Typography sx={{ color: '#64748b', fontSize: '0.68rem' }}>
               {layoutMode
-                ? '부서 제목을 끌면 하위 조직 전체가 격자에 맞춰 함께 이동하고, 직원을 다른 부서에 놓으면 소속이 변경됩니다.'
+                ? '부서 제목을 끌면 하위 조직 전체가 함께 이동하고, 가로 분기선을 위·아래로 끌면 높이가 24px 격자에 맞춰 저장됩니다.'
                 : '빈 화면을 끌어 이동하고 마우스 위치에서 휠로 확대·축소할 수 있습니다.'}
               {latestUpdatedAt
                 ? ` 최종 수정 ${formatDateTime(latestUpdatedAt)}`
@@ -2237,9 +2560,14 @@ export default function OrganizationChart({
           minHeight: 0,
           overflow: 'hidden',
           bgcolor: '#f8fafc',
-          cursor: isPanning ? 'grabbing' : 'grab',
+          cursor: movingBranchParentId
+            ? 'ns-resize'
+            : isPanning
+              ? 'grabbing'
+              : 'grab',
           touchAction: 'none',
-          userSelect: isPanning ? 'none' : 'auto',
+          userSelect:
+            isPanning || movingBranchParentId ? 'none' : 'auto',
         }}
       >
         {loading ? (
@@ -2306,6 +2634,16 @@ export default function OrganizationChart({
                   height: canvasSize.height,
                   overflow: 'visible',
                   pointerEvents: 'none',
+                  '& .branch-drag-handle': {
+                    pointerEvents: layoutMode ? 'stroke' : 'none',
+                    cursor: layoutMode ? 'ns-resize' : 'default',
+                    transition:
+                      'stroke 120ms ease, opacity 120ms ease',
+                  },
+                  '& .branch-drag-handle:hover': {
+                    stroke: 'rgba(14,165,233,0.72)',
+                    opacity: 1,
+                  },
                 }}
               >
                 {connectionSegments.map((segment) => (
@@ -2315,12 +2653,52 @@ export default function OrganizationChart({
                     y1={segment.y1}
                     x2={segment.x2}
                     y2={segment.y2}
-                    stroke="#64748b"
-                    strokeWidth="1.6"
+                    stroke="#526278"
+                    strokeWidth="1.8"
                     strokeLinecap="round"
                     vectorEffect="non-scaling-stroke"
                   />
                 ))}
+                {layoutMode &&
+                  branchGroups
+                    .filter(
+                      (branchGroup) =>
+                        branchGroup.childCount >= 2 &&
+                        branchGroup.x2 - branchGroup.x1 > 1,
+                    )
+                    .map((branchGroup) => (
+                      <line
+                        key={`branch-handle-${branchGroup.parentId}`}
+                        className="branch-drag-handle"
+                        data-branch-handle="true"
+                        x1={branchGroup.x1}
+                        y1={branchGroup.y}
+                        x2={branchGroup.x2}
+                        y2={branchGroup.y}
+                        stroke={
+                          movingBranchParentId ===
+                          branchGroup.parentId
+                            ? 'rgba(14,165,233,0.86)'
+                            : 'rgba(14,165,233,0.05)'
+                        }
+                        strokeWidth={
+                          BRANCH_LINE.handleStrokeWidth
+                        }
+                        strokeLinecap="round"
+                        vectorEffect="non-scaling-stroke"
+                        onPointerDown={(event) =>
+                          handleBranchPointerDown(
+                            event,
+                            branchGroup,
+                          )
+                        }
+                      >
+                        <title>
+                          {branchGroup.parentLabel} 아래 가로
+                          분기선 높이 이동
+                        </title>
+                      </line>
+                    ))}
               </Box>
 
               {structuralNodes.map((node) => {
