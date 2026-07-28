@@ -39,6 +39,15 @@ const LAYOUT_TYPES = {
   SIDE: 'side',
 };
 
+const BASE_RENDER_SCALE = 0.7;
+const ZOOM_MIN = 0.6;
+const ZOOM_MAX = 1.4;
+const ZOOM_STEP = 0.1;
+const SNAP_GRID = {
+  x: 24,
+  y: 24,
+};
+
 const LAYOUT = {
   padding: 48,
   departmentWidth: 190,
@@ -49,7 +58,7 @@ const LAYOUT = {
   memberGap: 8,
   memberPadding: 10,
   horizontalGap: 72,
-  verticalGap: 108,
+  verticalGap: 48,
   minCanvasWidth: 1400,
   minCanvasHeight: 820,
 };
@@ -70,6 +79,15 @@ const normalizeParentId = (value) => value || '';
 const getParentKey = (value) => normalizeParentId(value) || ROOT_KEY;
 const isFiniteCoordinate = (value) =>
   value !== null && value !== '' && Number.isFinite(Number(value));
+const snapCoordinate = (value, step) =>
+  Math.max(
+    0,
+    Math.round(Number(value || 0) / step) * step,
+  );
+const snapPosition = (position) => ({
+  x: snapCoordinate(position?.x, SNAP_GRID.x),
+  y: snapCoordinate(position?.y, SNAP_GRID.y),
+});
 
 const formatDateTime = (value) => {
   if (!value) return '';
@@ -344,10 +362,10 @@ const createAutoLayout = ({
     };
     const depth = depthById.get(node.id) || 0;
 
-    positions[node.id] = {
+    positions[node.id] = snapPosition({
       x: Math.round(left + (subtreeWidth - ownSize.width) / 2),
       y: Math.round(yByDepth[depth] || LAYOUT.padding),
-    };
+    });
 
     const children = structuralChildren.get(node.id) || [];
     const childrenTotalWidth = children.reduce(
@@ -383,13 +401,13 @@ const createAutoLayout = ({
   structuralNodes
     .filter((node) => !positions[node.id])
     .forEach((node, index) => {
-      positions[node.id] = {
+      positions[node.id] = snapPosition({
         x:
           LAYOUT.padding +
           (rootsTotalWidth > 0 ? rootsTotalWidth + LAYOUT.horizontalGap : 0) +
           index * (LAYOUT.personWidth + LAYOUT.horizontalGap),
         y: LAYOUT.padding,
-      };
+      });
     });
 
   return positions;
@@ -793,6 +811,7 @@ export default function OrganizationChart({
   const [editMode, setEditMode] = useState(false);
   const [layoutMode, setLayoutMode] = useState(false);
   const [zoom, setZoom] = useState(1);
+  const renderScale = zoom * BASE_RENDER_SCALE;
   const [movingNodeId, setMovingNodeId] = useState('');
   const [positionOverrides, setPositionOverrides] = useState({});
   const [memberDraggingId, setMemberDraggingId] = useState('');
@@ -896,7 +915,7 @@ export default function OrganizationChart({
     structuralNodes.forEach((node) => {
       const override = positionOverrides[node.id];
       if (override) {
-        result[node.id] = override;
+        result[node.id] = snapPosition(override);
         return;
       }
 
@@ -904,17 +923,17 @@ export default function OrganizationChart({
         isFiniteCoordinate(node.layout_x) &&
         isFiniteCoordinate(node.layout_y)
       ) {
-        result[node.id] = {
+        result[node.id] = snapPosition({
           x: Number(node.layout_x),
           y: Number(node.layout_y),
-        };
+        });
         return;
       }
 
-      result[node.id] = autoPositions[node.id] || {
+      result[node.id] = snapPosition(autoPositions[node.id] || {
         x: LAYOUT.padding,
         y: LAYOUT.padding,
-      };
+      });
     });
 
     return result;
@@ -1057,34 +1076,34 @@ export default function OrganizationChart({
         : null;
 
       if (siblingRects.length > 0) {
-        return {
+        return snapPosition({
           x:
             Math.max(
               ...siblingRects.map((rect) => rect.x + rect.width),
             ) + LAYOUT.horizontalGap,
           y: Math.min(...siblingRects.map((rect) => rect.y)),
-        };
+        });
       }
 
       if (parentRect) {
-        return {
+        return snapPosition({
           x: Math.max(LAYOUT.padding, parentRect.x),
           y: parentRect.y + parentRect.height + LAYOUT.verticalGap,
-        };
+        });
       }
 
       const rootRects = (structuralGraph.children.get(ROOT_KEY) || [])
         .map((node) => layoutRects.get(node.id))
         .filter(Boolean);
 
-      return {
+      return snapPosition({
         x:
           rootRects.length > 0
             ? Math.max(...rootRects.map((rect) => rect.x + rect.width)) +
               LAYOUT.horizontalGap
             : LAYOUT.padding,
         y: LAYOUT.padding,
-      };
+      });
     },
     [
       layoutRects,
@@ -1223,63 +1242,81 @@ export default function OrganizationChart({
       severity: 'success',
       text: form.id
         ? '조직도 정보를 수정했습니다.'
-        : '조직도 항목을 추가했습니다. 배치 편집에서 위치를 자유롭게 옮길 수 있습니다.',
+        : '조직도 항목을 추가했습니다. 배치 편집에서 위치를 격자에 맞춰 옮길 수 있습니다.',
     });
   };
 
-  const persistPosition = useCallback(
-    async (nodeId, position) => {
+  const persistPositions = useCallback(
+    async (positionsById) => {
       if (!isSuperAdmin) return;
 
-      const safePosition = {
-        x: Math.max(0, Math.round(position.x)),
-        y: Math.max(0, Math.round(position.y)),
-      };
+      const safePositions = Object.fromEntries(
+        Object.entries(positionsById || {}).map(([nodeId, position]) => [
+          nodeId,
+          snapPosition(position),
+        ]),
+      );
+      const positionEntries = Object.entries(safePositions);
+      if (positionEntries.length === 0) return;
 
       setSavingLayout(true);
       setNodes((previous) =>
-        previous.map((node) =>
-          node.id === nodeId
+        previous.map((node) => {
+          const safePosition = safePositions[node.id];
+          return safePosition
             ? {
                 ...node,
                 layout_x: safePosition.x,
                 layout_y: safePosition.y,
                 updated_at: new Date().toISOString(),
               }
-            : node,
-        ),
+            : node;
+        }),
       );
 
-      const { error } = await supabase
-        .from(TABLE_NAME)
-        .update({
-          layout_x: safePosition.x,
-          layout_y: safePosition.y,
-          updated_by: currentUserId || null,
-        })
-        .eq('id', nodeId);
+      let saveError = null;
+      for (const [nodeId, safePosition] of positionEntries) {
+        const { error } = await supabase
+          .from(TABLE_NAME)
+          .update({
+            layout_x: safePosition.x,
+            layout_y: safePosition.y,
+            updated_by: currentUserId || null,
+          })
+          .eq('id', nodeId);
+
+        if (error) {
+          saveError = error;
+          break;
+        }
+      }
 
       setSavingLayout(false);
 
-      if (error) {
-        console.error('조직도 좌표 저장 오류:', error);
+      if (saveError) {
+        console.error('조직도 좌표 저장 오류:', saveError);
         await loadNodes();
         setMessage({
           severity: 'error',
-          text: `배치 위치를 저장하지 못했습니다: ${error.message}`,
+          text: `배치 위치를 저장하지 못했습니다: ${saveError.message}`,
         });
         return;
       }
 
       setPositionOverrides((previous) => {
         const next = { ...previous };
-        delete next[nodeId];
+        positionEntries.forEach(([nodeId]) => {
+          delete next[nodeId];
+        });
         positionOverridesRef.current = next;
         return next;
       });
       setMessage({
         severity: 'success',
-        text: '박스 위치를 저장했습니다.',
+        text:
+          positionEntries.length > 1
+            ? `상위 박스와 하위 조직 ${positionEntries.length - 1}개의 위치를 함께 저장했습니다.`
+            : '박스 위치를 저장했습니다.',
       });
     },
     [currentUserId, isSuperAdmin, loadNodes],
@@ -1292,20 +1329,31 @@ export default function OrganizationChart({
       const drag = dragStateRef.current;
       if (!drag || drag.pointerId !== event.pointerId) return;
 
-      const nextPosition = {
-        x: Math.max(
-          0,
-          drag.origin.x + (event.clientX - drag.startClientX) / zoom,
-        ),
-        y: Math.max(
-          0,
-          drag.origin.y + (event.clientY - drag.startClientY) / zoom,
-        ),
+      const nextRootPosition = snapPosition({
+        x:
+          drag.rootOrigin.x +
+          (event.clientX - drag.startClientX) / renderScale,
+        y:
+          drag.rootOrigin.y +
+          (event.clientY - drag.startClientY) / renderScale,
+      });
+      const delta = {
+        x: nextRootPosition.x - drag.rootOrigin.x,
+        y: nextRootPosition.y - drag.rootOrigin.y,
       };
-      drag.latest = nextPosition;
+      const nextPositions = Object.fromEntries(
+        Object.entries(drag.origins).map(([nodeId, origin]) => [
+          nodeId,
+          snapPosition({
+            x: origin.x + delta.x,
+            y: origin.y + delta.y,
+          }),
+        ]),
+      );
+      drag.latest = nextPositions;
 
       setPositionOverrides((previous) => {
-        const next = { ...previous, [drag.nodeId]: nextPosition };
+        const next = { ...previous, ...nextPositions };
         positionOverridesRef.current = next;
         return next;
       });
@@ -1315,13 +1363,12 @@ export default function OrganizationChart({
       const drag = dragStateRef.current;
       if (!drag || drag.pointerId !== event.pointerId) return;
 
-      const finalPosition =
+      const finalPositions =
         drag.latest ||
-        positionOverridesRef.current[drag.nodeId] ||
-        drag.origin;
+        drag.origins;
       dragStateRef.current = null;
       setMovingNodeId('');
-      persistPosition(drag.nodeId, finalPosition);
+      persistPositions(finalPositions);
     };
 
     window.addEventListener('pointermove', handlePointerMove);
@@ -1333,7 +1380,7 @@ export default function OrganizationChart({
       window.removeEventListener('pointerup', finishPointerMove);
       window.removeEventListener('pointercancel', finishPointerMove);
     };
-  }, [movingNodeId, persistPosition, zoom]);
+  }, [movingNodeId, persistPositions, renderScale]);
 
   const handleNodePointerDown = useCallback(
     (event, node) => {
@@ -1343,18 +1390,39 @@ export default function OrganizationChart({
       event.stopPropagation();
       const origin = resolvedPositions[node.id];
       if (!origin) return;
+      const movingNodeIds = new Set([node.id]);
+      getDescendantIds(node.id).forEach((descendantId) => {
+        if (structuralNodeIds.has(descendantId)) {
+          movingNodeIds.add(descendantId);
+        }
+      });
+      const origins = Object.fromEntries(
+        [...movingNodeIds]
+          .map((nodeId) => [
+            nodeId,
+            resolvedPositions[nodeId],
+          ])
+          .filter(([, position]) => Boolean(position)),
+      );
 
       dragStateRef.current = {
         nodeId: node.id,
         pointerId: event.pointerId,
         startClientX: event.clientX,
         startClientY: event.clientY,
-        origin,
-        latest: origin,
+        rootOrigin: origin,
+        origins,
+        latest: origins,
       };
       setMovingNodeId(node.id);
     },
-    [layoutMode, resolvedPositions, savingLayout],
+    [
+      getDescendantIds,
+      layoutMode,
+      resolvedPositions,
+      savingLayout,
+      structuralNodeIds,
+    ],
   );
 
   const handleMemberDragStart = useCallback(
@@ -1483,12 +1551,13 @@ export default function OrganizationChart({
     for (const node of structuralNodes) {
       const position = autoPositions[node.id];
       if (!position) continue;
+      const snappedPosition = snapPosition(position);
 
       const { error } = await supabase
         .from(TABLE_NAME)
         .update({
-          layout_x: Math.round(position.x),
-          layout_y: Math.round(position.y),
+          layout_x: snappedPosition.x,
+          layout_y: snappedPosition.y,
           updated_by: currentUserId || null,
         })
         .eq('id', node.id);
@@ -1600,7 +1669,13 @@ export default function OrganizationChart({
 
   const changeZoom = (difference) => {
     setZoom((previous) =>
-      Math.min(1.4, Math.max(0.6, Number((previous + difference).toFixed(1)))),
+      Math.min(
+        ZOOM_MAX,
+        Math.max(
+          ZOOM_MIN,
+          Number((previous + difference).toFixed(1)),
+        ),
+      ),
     );
   };
 
@@ -1615,16 +1690,27 @@ export default function OrganizationChart({
 
     const frame = window.requestAnimationFrame(() => {
       const viewport = chartViewportRef.current;
-      const firstRoot = structuralGraph.children.get(ROOT_KEY)?.[0];
-      const firstRect = firstRoot ? layoutRects.get(firstRoot.id) : null;
-      if (!viewport || !firstRect) return;
+      if (!viewport || layoutRects.size === 0) return;
+      let minimumX = Number.POSITIVE_INFINITY;
+      let maximumX = 0;
+      let minimumY = Number.POSITIVE_INFINITY;
+
+      layoutRects.forEach((rect) => {
+        minimumX = Math.min(minimumX, rect.x);
+        maximumX = Math.max(maximumX, rect.x + rect.width);
+        minimumY = Math.min(minimumY, rect.y);
+      });
+      const chartCenterX = (minimumX + maximumX) / 2;
 
       viewport.scrollLeft = Math.max(
         0,
-        (firstRect.x + firstRect.width / 2) * zoom -
+        chartCenterX * renderScale -
           viewport.clientWidth / 2,
       );
-      viewport.scrollTop = Math.max(0, firstRect.y * zoom - 24);
+      viewport.scrollTop = Math.max(
+        0,
+        minimumY * renderScale - 24,
+      );
       hasCenteredRef.current = true;
     });
 
@@ -1632,9 +1718,8 @@ export default function OrganizationChart({
   }, [
     layoutRects,
     loading,
-    structuralGraph.children,
+    renderScale,
     structuralNodes.length,
-    zoom,
   ]);
 
   return (
@@ -1683,7 +1768,7 @@ export default function OrganizationChart({
             </Typography>
             <Typography sx={{ color: '#64748b', fontSize: '0.68rem' }}>
               {layoutMode
-                ? '부서 제목을 끌면 자유 이동, 직원을 다른 부서에 놓으면 소속이 변경됩니다.'
+                ? '부서 제목을 끌면 하위 조직 전체가 격자에 맞춰 함께 이동하고, 직원을 다른 부서에 놓으면 소속이 변경됩니다.'
                 : '부서 위치와 연결선이 저장된 좌표에 따라 표시됩니다.'}
               {latestUpdatedAt
                 ? ` 최종 수정 ${formatDateTime(latestUpdatedAt)}`
@@ -1696,7 +1781,7 @@ export default function OrganizationChart({
           <Stack direction="row" spacing={0.2} alignItems="center">
             <Tooltip title="축소">
               <span>
-                <IconButton size="small" onClick={() => changeZoom(-0.1)} disabled={zoom <= 0.6}>
+                <IconButton size="small" onClick={() => changeZoom(-ZOOM_STEP)} disabled={zoom <= ZOOM_MIN}>
                   <Typography sx={{ fontSize: 18, fontWeight: 900 }}>−</Typography>
                 </IconButton>
               </span>
@@ -1706,7 +1791,7 @@ export default function OrganizationChart({
             </Typography>
             <Tooltip title="확대">
               <span>
-                <IconButton size="small" onClick={() => changeZoom(0.1)} disabled={zoom >= 1.4}>
+                <IconButton size="small" onClick={() => changeZoom(ZOOM_STEP)} disabled={zoom >= ZOOM_MAX}>
                   <Typography sx={{ fontSize: 18, fontWeight: 900 }}>+</Typography>
                 </IconButton>
               </span>
@@ -1813,25 +1898,39 @@ export default function OrganizationChart({
           <Box
             sx={{
               position: 'relative',
-              width: canvasSize.width * zoom,
-              height: canvasSize.height * zoom,
+              display: 'flex',
+              justifyContent: 'center',
+              alignItems: 'flex-start',
+              width: 'max-content',
+              minWidth: '100%',
+              minHeight: '100%',
             }}
           >
             <Box
               sx={{
-                position: 'absolute',
-                left: 0,
-                top: 0,
-                width: canvasSize.width,
-                height: canvasSize.height,
-                transform: `scale(${zoom})`,
-                transformOrigin: '0 0',
-                backgroundImage: layoutMode
-                  ? 'linear-gradient(rgba(148,163,184,0.16) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.16) 1px, transparent 1px)'
-                  : 'none',
-                backgroundSize: layoutMode ? '24px 24px' : 'auto',
+                position: 'relative',
+                flex: '0 0 auto',
+                width: canvasSize.width * renderScale,
+                height: canvasSize.height * renderScale,
               }}
             >
+              <Box
+                sx={{
+                  position: 'absolute',
+                  left: 0,
+                  top: 0,
+                  width: canvasSize.width,
+                  height: canvasSize.height,
+                  transform: `scale(${renderScale})`,
+                  transformOrigin: '0 0',
+                  backgroundImage: layoutMode
+                    ? 'linear-gradient(rgba(148,163,184,0.16) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.16) 1px, transparent 1px)'
+                    : 'none',
+                  backgroundSize: layoutMode
+                    ? `${SNAP_GRID.x}px ${SNAP_GRID.y}px`
+                    : 'auto',
+                }}
+              >
               <Box
                 component="svg"
                 viewBox={`0 0 ${canvasSize.width} ${canvasSize.height}`}
@@ -1918,6 +2017,7 @@ export default function OrganizationChart({
                   />
                 );
               })}
+              </Box>
             </Box>
           </Box>
         )}
@@ -1968,7 +2068,7 @@ export default function OrganizationChart({
                       : previous.department,
                 }));
               }}
-              helperText="하위 부서는 생성 후 같은 단계의 빈 위치에 놓이며, 배치 편집에서 자유롭게 옮길 수 있습니다."
+              helperText="하위 부서는 생성 후 같은 단계의 빈 위치에 놓이며, 배치 편집에서 격자에 맞춰 옮길 수 있습니다."
             >
               <MenuItem value="">최상위</MenuItem>
               {sortNodes(parentOptions).map((node) => (
