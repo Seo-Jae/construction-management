@@ -16,6 +16,7 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  Fade,
   FormControl,
   FormControlLabel,
   IconButton,
@@ -23,6 +24,7 @@ import {
   MenuItem,
   Paper,
   Select,
+  Snackbar,
   Stack,
   Table,
   TableBody,
@@ -2924,8 +2926,6 @@ export default function LaborContractManagement({
     loadingStoredRows;
 
   const notificationCount = [
-    Boolean(successMessage),
-    Boolean(errorMessage),
     Boolean(
       accessInfo &&
       analyzedWorkers.length > storedRows.length,
@@ -3323,6 +3323,65 @@ export default function LaborContractManagement({
         </Alert>
       )}
 
+      <Snackbar
+        open={Boolean(errorMessage || successMessage)}
+        autoHideDuration={3000}
+        anchorOrigin={{
+          vertical: 'top',
+          horizontal: 'center',
+        }}
+        TransitionComponent={Fade}
+        transitionDuration={{
+          enter: 220,
+          exit: 500,
+        }}
+        onClose={(_event, reason) => {
+          if (reason === 'clickaway') {
+            return;
+          }
+
+          setErrorMessage('');
+          setSuccessMessage('');
+        }}
+        sx={{
+          top: '72px !important',
+          zIndex:
+            (theme) =>
+              theme.zIndex.snackbar +
+              10,
+          '& .MuiAlert-root': {
+            width: 'max-content',
+            minWidth: {
+              xs: 280,
+              sm: 420,
+            },
+            maxWidth:
+              'min(920px, calc(100vw - 32px))',
+            boxShadow:
+              '0 12px 30px rgba(15, 23, 42, 0.22)',
+          },
+          '& .MuiAlert-message': {
+            whiteSpace: 'normal',
+          },
+        }}
+      >
+        <Alert
+          severity={
+            errorMessage
+              ? 'error'
+              : 'success'
+          }
+          variant="filled"
+          onClose={() => {
+            setErrorMessage('');
+            setSuccessMessage('');
+          }}
+        >
+          {errorMessage ||
+            successMessage}
+        </Alert>
+      </Snackbar>
+
       {notificationCount > 0 && (
         notificationsMinimized ? (
           <Paper
@@ -3390,30 +3449,6 @@ export default function LaborContractManagement({
             >
               알림 최소화
             </Button>
-
-            {successMessage && (
-              <Alert
-                severity="success"
-                onClose={() =>
-                  setSuccessMessage('')
-                }
-                sx={{ pr: 16 }}
-              >
-                {successMessage}
-              </Alert>
-            )}
-
-            {errorMessage && (
-              <Alert
-                severity="error"
-                onClose={() =>
-                  setErrorMessage('')
-                }
-                sx={{ pr: 16 }}
-              >
-                {errorMessage}
-              </Alert>
-            )}
 
             {accessInfo &&
               analyzedWorkers.length >

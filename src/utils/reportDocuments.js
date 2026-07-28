@@ -139,3 +139,36 @@ export const saveReportDocumentDraft = async ({
   window.dispatchEvent(new Event('report-documents-changed'));
   return data;
 };
+
+export const deleteProposalReportDocuments = async (documentIds) => {
+  const targetIds = Array.from(
+    new Set(
+      (Array.isArray(documentIds) ? documentIds : [])
+        .map((documentId) => String(documentId || '').trim())
+        .filter(Boolean),
+    ),
+  );
+
+  if (targetIds.length === 0) {
+    throw new Error('삭제할 품의 보고를 선택해주세요.');
+  }
+
+  const { data, error } = await supabase.rpc(
+    'delete_proposal_report_documents',
+    {
+      p_document_ids: targetIds,
+    },
+  );
+
+  if (error) throw error;
+
+  window.dispatchEvent(new Event('report-documents-changed'));
+  window.dispatchEvent(new Event('approval-workflow-changed'));
+
+  return {
+    deletedCount: Number(data?.deletedCount || data?.deleted_count || 0),
+    requestedCount: Number(
+      data?.requestedCount || data?.requested_count || targetIds.length,
+    ),
+  };
+};

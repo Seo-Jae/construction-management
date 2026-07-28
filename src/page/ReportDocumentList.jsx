@@ -3,10 +3,13 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
+  Fade,
   IconButton,
   Paper,
+  Snackbar,
   Table,
   TableBody,
   TableCell,
@@ -17,12 +20,14 @@ import {
   Typography,
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
 import DownloadIcon from '@mui/icons-material/Download';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import VisibilityOutlinedIcon from '@mui/icons-material/VisibilityOutlined';
 import {
   REPORT_STATUS_META,
+  deleteProposalReportDocuments,
   fetchReportDocuments,
   toApprovalRequest,
 } from '../utils/reportDocuments.js';
@@ -74,14 +79,59 @@ export default function ReportDocumentList({
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [message, setMessage] = useState(null);
   const [previewDocument, setPreviewDocument] = useState(null);
   const [downloadingId, setDownloadingId] = useState('');
   const [currentUserId, setCurrentUserId] = useState('');
+  const [currentUserRole, setCurrentUserRole] = useState('');
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState([]);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setCurrentUserId(data?.user?.id || '');
-    });
+    let active = true;
+
+    const loadCurrentUser = async () => {
+      const {
+        data,
+        error,
+      } = await supabase.auth.getUser();
+
+      if (error) {
+        console.error('보고서 목록 사용자 확인 실패:', error);
+        return;
+      }
+
+      const userId = data?.user?.id || '';
+
+      if (!active) return;
+      setCurrentUserId(userId);
+
+      if (!userId) return;
+
+      const {
+        data: profile,
+        error: profileError,
+      } = await supabase
+        .from('user_profiles')
+        .select('role')
+        .eq('auth_user_id', userId)
+        .maybeSingle();
+
+      if (profileError) {
+        console.error('보고서 목록 사용자 권한 확인 실패:', profileError);
+        return;
+      }
+
+      if (active) {
+        setCurrentUserRole(profile?.role || '');
+      }
+    };
+
+    loadCurrentUser();
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   const loadDocuments = useCallback(async () => {
@@ -121,6 +171,60 @@ export default function ReportDocumentList({
     };
   }, [loadDocuments]);
 
+  const isSuperAdmin = currentUserRole === '최고관리자';
+
+  const canDeleteDocument = useCallback(
+    (document) =>
+      reportType === 'proposal' &&
+      (
+        isSuperAdmin ||
+        (
+          document?.author_user_id === currentUserId &&
+          ['draft', 'rejected', 'cancelled'].includes(document?.status)
+        )
+      ),
+    [currentUserId, isSuperAdmin, reportType],
+  );
+
+  const selectableDocuments = useMemo(
+    () => documents.filter(canDeleteDocument),
+    [canDeleteDocument, documents],
+  );
+
+  useEffect(() => {
+    const selectableIds = new Set(
+      selectableDocuments.map((document) => document.id),
+    );
+
+    setSelectedDocumentIds((previous) =>
+      previous.filter((documentId) => selectableIds.has(documentId)),
+    );
+  }, [selectableDocuments]);
+
+  const allSelectableChecked =
+    selectableDocuments.length > 0 &&
+    selectedDocumentIds.length === selectableDocuments.length;
+
+  const someSelectableChecked =
+    selectedDocumentIds.length > 0 &&
+    !allSelectableChecked;
+
+  const toggleAllSelectableDocuments = (checked) => {
+    setSelectedDocumentIds(
+      checked
+        ? selectableDocuments.map((document) => document.id)
+        : [],
+    );
+  };
+
+  const toggleDocument = (documentId, checked) => {
+    setSelectedDocumentIds((previous) =>
+      checked
+        ? Array.from(new Set([...previous, documentId]))
+        : previous.filter((id) => id !== documentId),
+    );
+  };
+
   const previewRequest = useMemo(
     () =>
       previewDocument
@@ -150,6 +254,66 @@ export default function ReportDocumentList({
       setDownloadingId('');
     }
   };
+
+  const handleDeleteDocuments = async (documentIds) => {
+    const targetIds = Array.from(new Set(documentIds || [])).filter(
+      (documentId) =>
+        documents.some(
+          (document) =>
+            document.id === documentId &&
+            canDeleteDocument(document),
+        ),
+    );
+
+    if (targetIds.length === 0) {
+      setErrorMessage('삭제할 수 있는 품의 보고를 선택해주세요.');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `선택한 품의 보고 ${targetIds.length.toLocaleString()}건을 삭제하시겠습니까?\n` +
+        '삭제하면 목록과 연결된 결재 단계가 함께 삭제되며 복구할 수 없습니다.',
+    );
+
+    if (!confirmed) return;
+
+    setDeleting(true);
+    setErrorMessage('');
+    setMessage(null);
+
+    try {
+      const result = await deleteProposalReportDocuments(targetIds);
+      const deletedCount = Number(result?.deletedCount || 0);
+      const skippedCount = Math.max(0, targetIds.length - deletedCount);
+
+      if (
+        previewDocument &&
+        targetIds.includes(previewDocument.id)
+      ) {
+        setPreviewDocument(null);
+      }
+
+      setSelectedDocumentIds([]);
+      setMessage({
+        severity: skippedCount > 0 ? 'warning' : 'success',
+        text:
+          skippedCount > 0
+            ? `품의 보고 ${deletedCount.toLocaleString()}건을 삭제했습니다. 권한 또는 문서 상태로 삭제하지 못한 ${skippedCount.toLocaleString()}건은 유지했습니다.`
+            : `품의 보고 ${deletedCount.toLocaleString()}건을 삭제했습니다.`,
+      });
+
+      await loadDocuments();
+    } catch (error) {
+      console.error('품의 보고 목록 삭제 실패:', error);
+      setErrorMessage(
+        error?.message || '선택한 품의 보고를 삭제하지 못했습니다.',
+      );
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const tableColumnCount = reportType === 'proposal' ? 7 : 6;
 
   return (
     <Box
@@ -182,6 +346,37 @@ export default function ReportDocumentList({
           </Box>
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.7 }}>
+            {reportType === 'proposal' && (
+              <Tooltip
+                title={
+                  selectedDocumentIds.length > 0
+                    ? `선택 품의 보고 ${selectedDocumentIds.length.toLocaleString()}건 삭제`
+                    : '삭제할 품의 보고를 먼저 선택하세요'
+                }
+              >
+                <span>
+                  <IconButton
+                    size="small"
+                    color="error"
+                    onClick={() =>
+                      handleDeleteDocuments(selectedDocumentIds)
+                    }
+                    disabled={deleting || selectedDocumentIds.length === 0}
+                    sx={{
+                      border: '1px solid #fecaca',
+                      borderRadius: 1,
+                    }}
+                  >
+                    {deleting ? (
+                      <CircularProgress size={17} color="inherit" />
+                    ) : (
+                      <DeleteOutlineIcon fontSize="small" />
+                    )}
+                  </IconButton>
+                </span>
+              </Tooltip>
+            )}
+
             <Tooltip title="목록 새로고침">
               <IconButton
                 size="small"
@@ -206,11 +401,42 @@ export default function ReportDocumentList({
         </Box>
       </Paper>
 
-      {errorMessage && (
-        <Alert severity="error" sx={{ fontSize: '0.72rem' }}>
-          {errorMessage}
+      <Snackbar
+        open={Boolean(errorMessage || message)}
+        autoHideDuration={3000}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        TransitionComponent={Fade}
+        transitionDuration={{ enter: 220, exit: 500 }}
+        onClose={(_event, reason) => {
+          if (reason === 'clickaway') return;
+          setErrorMessage('');
+          setMessage(null);
+        }}
+        sx={{
+          top: '72px !important',
+          zIndex: (theme) => theme.zIndex.snackbar + 10,
+          '& .MuiAlert-root': {
+            width: 'max-content',
+            minWidth: { xs: 280, sm: 420 },
+            maxWidth: 'min(920px, calc(100vw - 32px))',
+            boxShadow: '0 12px 30px rgba(15, 23, 42, 0.22)',
+          },
+          '& .MuiAlert-message': {
+            whiteSpace: 'normal',
+          },
+        }}
+      >
+        <Alert
+          severity={errorMessage ? 'error' : message?.severity || 'info'}
+          variant="filled"
+          onClose={() => {
+            setErrorMessage('');
+            setMessage(null);
+          }}
+        >
+          {errorMessage || message?.text || ''}
         </Alert>
-      )}
+      </Snackbar>
 
       <Paper
         variant="outlined"
@@ -226,19 +452,40 @@ export default function ReportDocumentList({
           <Table stickyHeader size="small">
             <TableHead>
               <TableRow>
+                {reportType === 'proposal' && (
+                  <TableCell
+                    padding="checkbox"
+                    sx={{ ...headerCellSx, width: 48 }}
+                  >
+                    <Checkbox
+                      size="small"
+                      checked={allSelectableChecked}
+                      indeterminate={someSelectableChecked}
+                      disabled={deleting || selectableDocuments.length === 0}
+                      onChange={(event) =>
+                        toggleAllSelectableDocuments(event.target.checked)
+                      }
+                      inputProps={{
+                        'aria-label': '삭제 가능한 품의 보고 전체 선택',
+                      }}
+                    />
+                  </TableCell>
+                )}
                 <TableCell sx={{ ...headerCellSx, width: '36%' }}>제목</TableCell>
                 <TableCell align="center" sx={{ ...headerCellSx, width: 126 }}>작성된 날</TableCell>
                 <TableCell align="center" sx={{ ...headerCellSx, width: 126 }}>결재요청한 날</TableCell>
                 <TableCell align="center" sx={{ ...headerCellSx, width: 126 }}>결재완료된 날</TableCell>
                 <TableCell align="center" sx={{ ...headerCellSx, width: 110 }}>상태</TableCell>
-                <TableCell align="center" sx={{ ...headerCellSx, width: 128, borderRight: 'none' }}>보기 / 다운로드</TableCell>
+                <TableCell align="center" sx={{ ...headerCellSx, width: reportType === 'proposal' ? 164 : 128, borderRight: 'none' }}>
+                  {reportType === 'proposal' ? '보기 / 다운로드 / 삭제' : '보기 / 다운로드'}
+                </TableCell>
               </TableRow>
             </TableHead>
 
             <TableBody>
               {!loading && documents.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} align="center" sx={{ py: 12, color: '#64748b', fontSize: '0.78rem' }}>
+                  <TableCell colSpan={tableColumnCount} align="center" sx={{ py: 12, color: '#64748b', fontSize: '0.78rem' }}>
                     작성된 {reportName}가 없습니다. 우측 상단의 작성 버튼을 눌러 시작해주세요.
                   </TableCell>
                 </TableRow>
@@ -250,6 +497,8 @@ export default function ReportDocumentList({
                   const canEdit =
                     ['draft', 'rejected'].includes(document.status) &&
                     document.author_user_id === currentUserId;
+                  const canDelete = canDeleteDocument(document);
+                  const isSelected = selectedDocumentIds.includes(document.id);
 
                   return (
                     <TableRow
@@ -258,6 +507,28 @@ export default function ReportDocumentList({
                       onClick={() => setPreviewDocument(document)}
                       sx={{ cursor: 'pointer' }}
                     >
+                      {reportType === 'proposal' && (
+                        <TableCell
+                          padding="checkbox"
+                          sx={bodyCellSx}
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <Checkbox
+                            size="small"
+                            checked={isSelected}
+                            disabled={!canDelete || deleting}
+                            onChange={(event) =>
+                              toggleDocument(
+                                document.id,
+                                event.target.checked,
+                              )
+                            }
+                            inputProps={{
+                              'aria-label': `${document.title || '제목 없음'} 삭제 선택`,
+                            }}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell sx={bodyCellSx}>
                         <Typography sx={{ color: '#1e293b', fontSize: '0.75rem', fontWeight: 900 }}>
                           {document.title || '제목 없음'}
@@ -318,6 +589,23 @@ export default function ReportDocumentList({
                             )}
                           </IconButton>
                         </Tooltip>
+                        {reportType === 'proposal' && canDelete && (
+                          <Tooltip title="이 품의 보고 삭제">
+                            <span>
+                              <IconButton
+                                size="small"
+                                color="error"
+                                disabled={deleting}
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleDeleteDocuments([document.id]);
+                                }}
+                              >
+                                <DeleteOutlineIcon fontSize="small" />
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        )}
                       </TableCell>
                     </TableRow>
                   );
