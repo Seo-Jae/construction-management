@@ -9,6 +9,7 @@ import {
   Alert,
   Box,
   Button,
+  ClickAwayListener,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -16,9 +17,10 @@ import {
   DialogTitle,
   Divider,
   IconButton,
-  Menu,
   MenuItem,
+  MenuList,
   Paper,
+  Popper,
   Stack,
   TextField,
   Tooltip,
@@ -574,9 +576,16 @@ function NodeMenu({
         <IconButton
           size="small"
           aria-label="조직도 메뉴"
+          aria-haspopup="menu"
+          aria-expanded={Boolean(anchor) ? 'true' : undefined}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+          }}
           onClick={(event) => {
             event.stopPropagation();
-            setAnchor(event.currentTarget);
+            setAnchor((previous) =>
+              previous ? null : event.currentTarget,
+            );
           }}
           sx={{
             position: 'absolute',
@@ -601,43 +610,89 @@ function NodeMenu({
         </IconButton>
       </Tooltip>
 
-      <Menu
+      <Popper
         anchorEl={anchor}
         open={Boolean(anchor)}
-        onClose={close}
-        MenuListProps={{ dense: true }}
-        PaperProps={{
-          sx: {
-            minWidth: 158,
-            boxShadow: '0 8px 24px rgba(15,23,42,0.16)',
+        placement="bottom-end"
+        modifiers={[
+          {
+            name: 'offset',
+            options: { offset: [0, 4] },
           },
+          {
+            name: 'flip',
+            enabled: true,
+          },
+          {
+            name: 'preventOverflow',
+            enabled: true,
+            options: { padding: 8 },
+          },
+        ]}
+        sx={{
+          zIndex: (theme) => theme.zIndex.modal + 1,
         }}
       >
-        <MenuItem onClick={() => run(onAddDepartment)} sx={{ fontSize: '0.75rem' }}>
-          하위 부서 추가
-        </MenuItem>
-        <MenuItem onClick={() => run(onAddPerson)} sx={{ fontSize: '0.75rem' }}>
-          하위 직원 추가
-        </MenuItem>
-        <MenuItem onClick={() => run(onAddSibling)} sx={{ fontSize: '0.75rem' }}>
-          같은 단계에 추가
-        </MenuItem>
-        {node.node_type === NODE_TYPES.DEPARTMENT && onChangeColor && (
-          <MenuItem onClick={() => run(onChangeColor)} sx={{ fontSize: '0.75rem' }}>
-            색 수정
-          </MenuItem>
-        )}
-        <Divider />
-        <MenuItem onClick={() => run(onEdit)} sx={{ fontSize: '0.75rem' }}>
-          수정
-        </MenuItem>
-        <MenuItem
-          onClick={() => run(onDelete)}
-          sx={{ color: '#dc2626', fontSize: '0.75rem' }}
+        <ClickAwayListener
+          mouseEvent="onMouseDown"
+          touchEvent="onTouchStart"
+          onClickAway={close}
         >
-          삭제
-        </MenuItem>
-      </Menu>
+          <Paper
+            elevation={8}
+            onPointerDown={(event) => {
+              event.stopPropagation();
+            }}
+            onClick={(event) => {
+              event.stopPropagation();
+            }}
+            sx={{
+              minWidth: 158,
+              overflow: 'hidden',
+              border: '1px solid #e2e8f0',
+              boxShadow: '0 8px 24px rgba(15,23,42,0.16)',
+            }}
+          >
+            <MenuList
+              dense
+              autoFocusItem={Boolean(anchor)}
+              aria-label={`${node.department || node.person_name || '조직도'} 수정 메뉴`}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  close();
+                }
+              }}
+            >
+              <MenuItem onClick={() => run(onAddDepartment)} sx={{ fontSize: '0.75rem' }}>
+                하위 부서 추가
+              </MenuItem>
+              <MenuItem onClick={() => run(onAddPerson)} sx={{ fontSize: '0.75rem' }}>
+                하위 직원 추가
+              </MenuItem>
+              <MenuItem onClick={() => run(onAddSibling)} sx={{ fontSize: '0.75rem' }}>
+                같은 단계에 추가
+              </MenuItem>
+              {node.node_type === NODE_TYPES.DEPARTMENT && onChangeColor && (
+                <MenuItem onClick={() => run(onChangeColor)} sx={{ fontSize: '0.75rem' }}>
+                  색 수정
+                </MenuItem>
+              )}
+              <Divider />
+              <MenuItem onClick={() => run(onEdit)} sx={{ fontSize: '0.75rem' }}>
+                수정
+              </MenuItem>
+              <MenuItem
+                onClick={() => run(onDelete)}
+                sx={{ color: '#dc2626', fontSize: '0.75rem' }}
+              >
+                삭제
+              </MenuItem>
+            </MenuList>
+          </Paper>
+        </ClickAwayListener>
+      </Popper>
     </>
   );
 }
