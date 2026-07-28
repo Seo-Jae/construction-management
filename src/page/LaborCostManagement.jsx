@@ -2,10 +2,12 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Checkbox,
@@ -16,11 +18,13 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  Fade,
   FormControlLabel,
   IconButton,
   InputBase,
   MenuItem,
   Paper,
+  Snackbar,
   Stack,
   Tab,
   Table,
@@ -38,6 +42,7 @@ import {
 import AddCircleOutlineRoundedIcon from '@mui/icons-material/AddCircleOutlineRounded';
 import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import DeleteSweepRoundedIcon from '@mui/icons-material/DeleteSweepRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
@@ -48,6 +53,32 @@ import { getProjectCellKeys } from '../utils/buildingUnits.js';
 
 const DEFAULT_UNIT = '㎡';
 const DEFAULT_CHANGE_REASON = '실행 예산 기준 최초 등록';
+const GUIDE_PROCESS_OPTIONS = [
+  '바닥먹',
+  '허리먹',
+  '단열',
+  '합지',
+  '경량골조',
+  '경량석고',
+  '합지석고',
+  '세대천정',
+  '1차몰딩',
+  '2차몰딩',
+  '1차 걸레받이',
+  '2차 걸레받이',
+];
+const UNIT_OPTIONS = ['세대', '㎡', 'm', 'EA', '식'];
+const RATE_EDITABLE_FIELDS = [
+  'sortOrder',
+  'processType',
+  'unit',
+  'contractLaborAmount',
+  'executionLaborTotal',
+  'plannedQuantity',
+  'confirmedUnitPrice',
+  'effectiveFrom',
+  'changeReason',
+];
 const SUPABASE_WRITE_CHUNK_SIZE = 500;
 const SUPABASE_READ_PAGE_SIZE = 1000;
 
@@ -225,6 +256,7 @@ const createEditor = (
   setting = null,
   processCatalog = null,
 ) => ({
+  sortOrder: processCatalog?.sort_order ?? '',
   processType,
   unit: setting?.unit || processCatalog?.unit || DEFAULT_UNIT,
   contractLaborAmount:
@@ -235,8 +267,11 @@ const createEditor = (
     setting?.planned_quantity ?? '',
   confirmedUnitPrice:
     setting?.confirmed_unit_price ?? '',
-  effectiveFrom: getKoreaDateKey(),
-  changeReason: DEFAULT_CHANGE_REASON,
+  effectiveFrom:
+    String(setting?.effective_from || '').slice(0, 10) ||
+    getKoreaDateKey(),
+  changeReason:
+    setting?.change_reason || DEFAULT_CHANGE_REASON,
 });
 
 const splitIntoChunks = (items, chunkSize) => {
@@ -341,22 +376,18 @@ export default function LaborCostManagement({
   const [unitTypes, setUnitTypes] = useState({});
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyProcess, setHistoryProcess] = useState('');
-  const [processDialogOpen, setProcessDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedProcesses, setSelectedProcesses] = useState(
     () => new Set(),
   );
-  const [newProcessName, setNewProcessName] = useState('');
-  const [newProcessUnit, setNewProcessUnit] = useState(DEFAULT_UNIT);
-  const [newProcessContractAmount, setNewProcessContractAmount] =
+  const [editingOriginalProcess, setEditingOriginalProcess] =
     useState('');
-  const [editor, setEditor] = useState(() =>
-    createEditor(processOptions[0] || ''),
-  );
+  const [isAddingProcess, setIsAddingProcess] = useState(false);
+  const [, setActiveEditorField] = useState('');
+  const [editor, setEditor] = useState(() => createEditor(''));
+  const rateInputRefs = useRef({});
 
-  const [quantityProcess, setQuantityProcess] = useState(
-    processOptions[0] || '',
-  );
+  const [quantityProcess, setQuantityProcess] = useState('');
   const [quantities, setQuantities] = useState({});
   const [selectedUnits, setSelectedUnits] = useState(() => new Set());
   const [buildingFilter, setBuildingFilter] = useState('전체');
@@ -398,41 +429,23 @@ export default function LaborCostManagement({
   );
 
   const allProcessOptions = useMemo(() => {
-    const activeProcesses = processCatalog
+    if (!overviewLoaded) return [];
+
+    return processCatalog
       .filter((row) => row.is_active !== false)
       .map((row) => row.process_type)
       .filter(Boolean);
+  }, [overviewLoaded, processCatalog]);
 
-    if (overviewLoaded) return activeProcesses;
-
-    return Array.from(
-      new Set([
-        ...(processOptions || []),
-        ...settings.map((setting) => setting.process_type).filter(Boolean),
-      ]),
-    );
-  }, [overviewLoaded, processCatalog, processOptions, settings]);
-
-  const contractLaborGrandTotal = useMemo(
+  const guideProcessOptions = useMemo(
     () =>
-      processCatalog
-        .filter((row) => row.is_active !== false)
-        .reduce(
-          (total, row) =>
-            total + toNumber(row.contract_labor_amount),
-          0,
-        ),
-    [processCatalog],
-  );
-
-  const executionLaborGrandTotal = useMemo(
-    () =>
-      settings.reduce(
-        (total, row) =>
-          total + toNumber(row.execution_labor_total),
-        0,
+      Array.from(
+        new Set([
+          ...GUIDE_PROCESS_OPTIONS,
+          ...(processOptions || []).filter(Boolean),
+        ]),
       ),
-    [settings],
+    [processOptions],
   );
 
   const validUnits = useMemo(() => {
@@ -587,16 +600,6 @@ export default function LaborCostManagement({
     setErrorMessage('');
 
     try {
-      const { error: initializeError } = await supabase.rpc(
-        'initialize_labor_process_catalog',
-        {
-          p_project_name: projectName,
-          p_process_types: processOptions || [],
-        },
-      );
-
-      if (initializeError) throw initializeError;
-
       const { data, error } = await supabase.rpc(
         'get_labor_cost_overview',
         {
@@ -618,39 +621,14 @@ export default function LaborCostManagement({
       const activeProcessNames = nextCatalog
         .filter((row) => row.is_active !== false)
         .map((row) => row.process_type);
-      const requestedProcess =
-        editor.processType || quantityProcess || '';
       const preferredProcess =
-        (activeProcessNames.includes(requestedProcess)
-          ? requestedProcess
+        (activeProcessNames.includes(quantityProcess)
+          ? quantityProcess
           : '') ||
         activeProcessNames[0] ||
         '';
 
-      if (preferredProcess) {
-        const currentSetting = nextSettings.find(
-          (row) => row.process_type === preferredProcess,
-        );
-        const currentCatalog = nextCatalog.find(
-          (row) => row.process_type === preferredProcess,
-        );
-
-        setEditor(
-          createEditor(
-            preferredProcess,
-            currentSetting,
-            currentCatalog,
-          ),
-        );
-        setQuantityProcess((previous) =>
-          activeProcessNames.includes(previous)
-            ? previous
-            : preferredProcess,
-        );
-      } else {
-        setEditor(createEditor(''));
-        setQuantityProcess('');
-      }
+      setQuantityProcess(preferredProcess);
     } catch (error) {
       console.error('노임 기준 불러오기 오류:', error);
       setErrorMessage(
@@ -661,7 +639,7 @@ export default function LaborCostManagement({
     } finally {
       setOverviewLoading(false);
     }
-  }, [projectName, processOptions]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [projectName, quantityProcess]);
 
   const loadUnitTypes = useCallback(async () => {
     if (!projectName) {
@@ -828,6 +806,10 @@ export default function LaborCostManagement({
     setMonthlySummary([]);
     setMonthlyDetails([]);
     setMonthlyTotals({});
+    setEditingOriginalProcess('');
+    setIsAddingProcess(false);
+    setActiveEditorField('');
+    setEditor(createEditor(''));
     setMessage(null);
     setErrorMessage('');
     loadOverview();
@@ -848,28 +830,10 @@ export default function LaborCostManagement({
       !allProcessOptions.includes(quantityProcess)
     ) {
       setQuantityProcess(allProcessOptions[0]);
+    } else if (allProcessOptions.length === 0 && quantityProcess) {
+      setQuantityProcess('');
     }
   }, [allProcessOptions, quantityProcess]);
-
-  useEffect(() => {
-    if (
-      allProcessOptions.length > 0 &&
-      !allProcessOptions.includes(editor.processType)
-    ) {
-      setEditor(
-        createEditor(
-          allProcessOptions[0],
-          settingByProcess[allProcessOptions[0]],
-          catalogByProcess[allProcessOptions[0]],
-        ),
-      );
-    }
-  }, [
-    allProcessOptions,
-    catalogByProcess,
-    editor.processType,
-    settingByProcess,
-  ]);
 
   useEffect(() => {
     setSelectedProcesses((previous) => {
@@ -883,7 +847,41 @@ export default function LaborCostManagement({
     });
   }, [allProcessOptions]);
 
-  const handleEditorProcessChange = (processType) => {
+  const focusRateField = (fieldName) => {
+    setActiveEditorField(fieldName);
+    window.setTimeout(() => {
+      rateInputRefs.current[fieldName]?.focus?.();
+      rateInputRefs.current[fieldName]?.select?.();
+    }, 0);
+  };
+
+  const registerRateInput = (fieldName) => (node) => {
+    if (node) rateInputRefs.current[fieldName] = node;
+    else delete rateInputRefs.current[fieldName];
+  };
+
+  const beginInlineEdit = (
+    processType,
+    focusField = 'processType',
+    force = false,
+  ) => {
+    if (!rateEditable || (saving && !force)) return;
+
+    if (
+      !force &&
+      (isAddingProcess ||
+        (editingOriginalProcess &&
+          editingOriginalProcess !== processType))
+    ) {
+      setMessage({
+        severity: 'warning',
+        text: '현재 수정 중인 행을 먼저 저장하거나 취소해주세요.',
+      });
+      return;
+    }
+
+    setIsAddingProcess(false);
+    setEditingOriginalProcess(processType);
     setEditor(
       createEditor(
         processType,
@@ -893,20 +891,144 @@ export default function LaborCostManagement({
     );
     setMessage(null);
     setErrorMessage('');
+    focusRateField(focusField);
   };
 
-  const handleSaveRate = async () => {
+  const handleAddInlineProcess = () => {
+    if (!rateEditable || saving) return;
+
+    if (isAddingProcess || editingOriginalProcess) {
+      setMessage({
+        severity: 'warning',
+        text: '현재 수정 중인 행을 먼저 저장하거나 취소해주세요.',
+      });
+      return;
+    }
+
+    setEditingOriginalProcess('');
+    setIsAddingProcess(true);
+    setEditor({
+      ...createEditor(''),
+      sortOrder: allProcessOptions.length + 1,
+    });
+    setMessage(null);
+    setErrorMessage('');
+    focusRateField('processType');
+  };
+
+  const handleCancelInlineEdit = () => {
+    setEditingOriginalProcess('');
+    setIsAddingProcess(false);
+    setActiveEditorField('');
+    setEditor(createEditor(''));
+    rateInputRefs.current = {};
+  };
+
+  const updateEditorField = (fieldName, value) => {
+    setEditor((previous) => ({
+      ...previous,
+      [fieldName]: value,
+    }));
+  };
+
+  const handleRateEditorKeyDown = (
+    event,
+    fieldName,
+    isAutocomplete = false,
+  ) => {
+    const autocompleteOpen =
+      isAutocomplete &&
+      event.target.getAttribute('aria-expanded') === 'true';
+
+    if (
+      autocompleteOpen &&
+      ['ArrowUp', 'ArrowDown', 'Enter'].includes(event.key)
+    ) {
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      handleCancelInlineEdit();
+      return;
+    }
+
+    if (event.key === 'Tab') {
+      event.preventDefault();
+      const currentIndex = RATE_EDITABLE_FIELDS.indexOf(fieldName);
+      const nextIndex = event.shiftKey
+        ? currentIndex - 1
+        : currentIndex + 1;
+
+      if (
+        nextIndex >= 0 &&
+        nextIndex < RATE_EDITABLE_FIELDS.length
+      ) {
+        focusRateField(RATE_EDITABLE_FIELDS[nextIndex]);
+      } else {
+        handleSaveInlineRow({
+          moveDirection: event.shiftKey ? -1 : 1,
+          focusField: event.shiftKey
+            ? RATE_EDITABLE_FIELDS[RATE_EDITABLE_FIELDS.length - 1]
+            : RATE_EDITABLE_FIELDS[0],
+        });
+      }
+      return;
+    }
+
+    if (['Enter', 'ArrowUp', 'ArrowDown'].includes(event.key)) {
+      event.preventDefault();
+      const moveDirection =
+        event.key === 'ArrowUp'
+          ? -1
+          : event.key === 'ArrowDown' || event.key === 'Enter'
+            ? 1
+            : 0;
+      handleSaveInlineRow({
+        moveDirection,
+        focusField: fieldName,
+      });
+    }
+  };
+
+  const handleSaveInlineRow = async ({
+    moveDirection = 0,
+    focusField = 'processType',
+  } = {}) => {
     if (!rateEditable) {
       setErrorMessage('공정별 노임단가를 설정할 권한이 없습니다.');
       return;
     }
 
-    if (!editor.processType || !editor.unit || !editor.effectiveFrom) {
-      setErrorMessage('공정, 단위, 적용일을 모두 입력해주세요.');
+    const processName = editor.processType.trim();
+    const unitName = editor.unit.trim();
+    const sortOrder = Math.max(
+      1,
+      Math.round(toNumber(editor.sortOrder)),
+    );
+    const executionUnitPrice =
+      toNumber(editor.plannedQuantity) > 0
+        ? toNumber(editor.executionLaborTotal) /
+          toNumber(editor.plannedQuantity)
+        : 0;
+
+    if (!processName || !unitName || !editor.effectiveFrom) {
+      setErrorMessage('순서, 공정, 단위, 적용일을 모두 입력해주세요.');
       return;
     }
 
-    if (calculatedExecutionUnitPrice <= 0) {
+    if (
+      allProcessOptions.some(
+        (processType) =>
+          processType === processName &&
+          processType !== editingOriginalProcess,
+      )
+    ) {
+      setErrorMessage('같은 이름의 공정이 이미 등록되어 있습니다.');
+      return;
+    }
+
+    if (executionUnitPrice <= 0) {
       setErrorMessage(
         '실행 노임총액과 총 예정물량을 확인해주세요.',
       );
@@ -922,13 +1044,31 @@ export default function LaborCostManagement({
     setMessage(null);
     setErrorMessage('');
 
+    const currentIndex = isAddingProcess
+      ? allProcessOptions.length
+      : allProcessOptions.indexOf(editingOriginalProcess);
+    const targetIndex = currentIndex + moveDirection;
+    const targetProcess =
+      moveDirection !== 0 &&
+      targetIndex >= 0 &&
+      targetIndex < allProcessOptions.length
+        ? allProcessOptions[targetIndex]
+        : '';
+    const originalProcess = editingOriginalProcess;
+    const followRenamedQuantityProcess =
+      originalProcess &&
+      originalProcess !== processName &&
+      quantityProcess === originalProcess;
+
     try {
       const { error } = await supabase.rpc(
-        'save_labor_process_setup',
+        'save_labor_process_inline',
         {
           p_project_name: projectName,
-          p_process_type: editor.processType,
-          p_unit: editor.unit,
+          p_original_process_type: originalProcess || null,
+          p_process_type: processName,
+          p_sort_order: sortOrder,
+          p_unit: unitName,
           p_contract_labor_amount: toNumber(
             editor.contractLaborAmount,
           ),
@@ -946,76 +1086,25 @@ export default function LaborCostManagement({
 
       if (error) throw error;
 
+      handleCancelInlineEdit();
       setMessage({
         severity: 'success',
-        text: `${editor.processType} 계약 노무비와 노임단가를 적용일 ${editor.effectiveFrom} 기준으로 저장했습니다.`,
+        text: `${processName} 공정의 노임단가를 저장했습니다.`,
       });
       await loadOverview();
       await loadMonthly();
+
+      if (followRenamedQuantityProcess) {
+        setQuantityProcess(processName);
+      }
+
+      if (targetProcess && targetProcess !== originalProcess) {
+        beginInlineEdit(targetProcess, focusField, true);
+      }
     } catch (error) {
       console.error('노임단가 저장 오류:', error);
       setErrorMessage(
         `노임단가를 저장하지 못했습니다: ${
-          error?.message || '알 수 없는 오류'
-        }`,
-      );
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleAddProcess = async () => {
-    const processName = newProcessName.trim();
-
-    if (!rateEditable) {
-      setErrorMessage('공정을 추가할 권한이 없습니다.');
-      return;
-    }
-
-    if (!processName) {
-      setErrorMessage('추가할 공정명을 입력해주세요.');
-      return;
-    }
-
-    setSaving(true);
-    setMessage(null);
-    setErrorMessage('');
-
-    try {
-      const { error } = await supabase.rpc(
-        'save_labor_process_catalog',
-        {
-          p_project_name: projectName,
-          p_process_type: processName,
-          p_unit: newProcessUnit,
-          p_contract_labor_amount: toNumber(
-            newProcessContractAmount,
-          ),
-        },
-      );
-
-      if (error) throw error;
-
-      setProcessDialogOpen(false);
-      setNewProcessName('');
-      setNewProcessUnit(DEFAULT_UNIT);
-      setNewProcessContractAmount('');
-      setMessage({
-        severity: 'success',
-        text: `${processName} 공정을 추가했습니다. 실행예산과 예정물량을 입력해 단가를 설정해주세요.`,
-      });
-      await loadOverview();
-      setEditor(
-        createEditor(processName, null, {
-          process_type: processName,
-          unit: newProcessUnit,
-          contract_labor_amount: toNumber(newProcessContractAmount),
-        }),
-      );
-    } catch (error) {
-      console.error('노임 공정 추가 오류:', error);
-      setErrorMessage(
-        `공정을 추가하지 못했습니다: ${
           error?.message || '알 수 없는 오류'
         }`,
       );
@@ -1357,238 +1446,310 @@ export default function LaborCostManagement({
     [quantities, validUnits],
   );
 
+  const editorCellInputSx = {
+    width: '100%',
+    minWidth: 0,
+    px: 0.6,
+    py: 0.35,
+    bgcolor: 'rgba(255, 255, 255, 0.72)',
+    borderRadius: 0.5,
+    '& input': {
+      p: 0,
+      fontSize: '0.69rem',
+    },
+  };
+
+  const renderRateEditorRow = (rowKey) => (
+    <TableRow
+      key={rowKey}
+      sx={{
+        bgcolor: '#fff7d6',
+        '& td': {
+          borderBottomColor: '#f59e0b',
+        },
+        '&:hover': {
+          bgcolor: '#ffefbd',
+        },
+      }}
+    >
+      <TableCell padding="checkbox">
+        <Checkbox size="small" disabled />
+      </TableCell>
+      <TableCell sx={{ ...bodyCellSx, minWidth: 62 }}>
+        <InputBase
+          value={editor.sortOrder}
+          onChange={(event) =>
+            updateEditorField(
+              'sortOrder',
+              normalizeNumericInput(event.target.value, 0),
+            )
+          }
+          onFocus={() => setActiveEditorField('sortOrder')}
+          onKeyDown={(event) =>
+            handleRateEditorKeyDown(event, 'sortOrder')
+          }
+          inputRef={registerRateInput('sortOrder')}
+          inputProps={{
+            inputMode: 'numeric',
+            'aria-label': '공정 순서',
+            style: { textAlign: 'center' },
+          }}
+          sx={editorCellInputSx}
+        />
+      </TableCell>
+      <TableCell sx={{ ...bodyCellSx, minWidth: 145, p: 0.45 }}>
+        <Autocomplete
+          freeSolo
+          disablePortal
+          options={guideProcessOptions}
+          value={editor.processType}
+          inputValue={editor.processType}
+          onChange={(_event, value) =>
+            updateEditorField('processType', value || '')
+          }
+          onInputChange={(_event, value) =>
+            updateEditorField('processType', value || '')
+          }
+          filterOptions={(options, state) => {
+            const keyword = state.inputValue.trim().toLowerCase();
+            if (!keyword) return options;
+            return options.filter((option) =>
+              option.toLowerCase().startsWith(keyword),
+            );
+          }}
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              variant="standard"
+              placeholder="첫 글자 입력"
+              inputRef={registerRateInput('processType')}
+              onFocus={() => setActiveEditorField('processType')}
+              onKeyDown={(event) =>
+                handleRateEditorKeyDown(
+                  event,
+                  'processType',
+                  true,
+                )
+              }
+              InputProps={{
+                ...params.InputProps,
+                disableUnderline: true,
+                sx: {
+                  ...editorCellInputSx,
+                  '& input': {
+                    p: '0 !important',
+                    fontSize: '0.69rem',
+                    fontWeight: 900,
+                  },
+                },
+              }}
+            />
+          )}
+        />
+      </TableCell>
+      <TableCell sx={{ ...bodyCellSx, minWidth: 82, p: 0.45 }}>
+        <Autocomplete
+          freeSolo
+          disablePortal
+          options={UNIT_OPTIONS}
+          value={editor.unit}
+          inputValue={editor.unit}
+          onChange={(_event, value) =>
+            updateEditorField('unit', value || '')
+          }
+          onInputChange={(_event, value) =>
+            updateEditorField('unit', value || '')
+          }
+          renderInput={(params) => (
+            <TextField
+              {...params}
+              variant="standard"
+              inputRef={registerRateInput('unit')}
+              onFocus={() => setActiveEditorField('unit')}
+              onKeyDown={(event) =>
+                handleRateEditorKeyDown(event, 'unit', true)
+              }
+              InputProps={{
+                ...params.InputProps,
+                disableUnderline: true,
+                sx: {
+                  ...editorCellInputSx,
+                  '& input': {
+                    p: '0 !important',
+                    fontSize: '0.69rem',
+                    textAlign: 'center',
+                  },
+                },
+              }}
+            />
+          )}
+        />
+      </TableCell>
+      {[
+        {
+          field: 'contractLaborAmount',
+          digits: 0,
+          inputMode: 'numeric',
+        },
+        {
+          field: 'executionLaborTotal',
+          digits: 0,
+          inputMode: 'numeric',
+        },
+        {
+          field: 'plannedQuantity',
+          digits: 4,
+          inputMode: 'decimal',
+        },
+      ].map(({ field, digits, inputMode }) => (
+        <TableCell
+          key={field}
+          sx={{ ...bodyCellSx, minWidth: 122, p: 0.45 }}
+        >
+          <InputBase
+            value={formatNumericInput(editor[field])}
+            onChange={(event) =>
+              updateEditorField(
+                field,
+                normalizeNumericInput(event.target.value, digits),
+              )
+            }
+            onFocus={() => setActiveEditorField(field)}
+            onKeyDown={(event) =>
+              handleRateEditorKeyDown(event, field)
+            }
+            inputRef={registerRateInput(field)}
+            inputProps={{
+              inputMode,
+              style: { textAlign: 'right' },
+            }}
+            sx={editorCellInputSx}
+          />
+        </TableCell>
+      ))}
+      <TableCell
+        sx={{
+          ...numberCellSx,
+          minWidth: 110,
+          fontWeight: 900,
+          bgcolor: '#fef3c7',
+        }}
+      >
+        {calculatedExecutionUnitPrice > 0
+          ? `${formatMoney(calculatedExecutionUnitPrice)}원`
+          : '-'}
+      </TableCell>
+      <TableCell sx={{ ...bodyCellSx, minWidth: 112, p: 0.45 }}>
+        <InputBase
+          value={formatNumericInput(editor.confirmedUnitPrice)}
+          onChange={(event) =>
+            updateEditorField(
+              'confirmedUnitPrice',
+              normalizeNumericInput(event.target.value, 4),
+            )
+          }
+          onFocus={() => setActiveEditorField('confirmedUnitPrice')}
+          onKeyDown={(event) =>
+            handleRateEditorKeyDown(event, 'confirmedUnitPrice')
+          }
+          inputRef={registerRateInput('confirmedUnitPrice')}
+          placeholder="미확정"
+          inputProps={{
+            inputMode: 'decimal',
+            style: { textAlign: 'right' },
+          }}
+          sx={editorCellInputSx}
+        />
+      </TableCell>
+      <TableCell sx={{ ...bodyCellSx, minWidth: 132, p: 0.45 }}>
+        <InputBase
+          type="date"
+          value={editor.effectiveFrom}
+          onChange={(event) =>
+            updateEditorField('effectiveFrom', event.target.value)
+          }
+          onFocus={() => setActiveEditorField('effectiveFrom')}
+          onKeyDown={(event) =>
+            handleRateEditorKeyDown(event, 'effectiveFrom')
+          }
+          inputRef={registerRateInput('effectiveFrom')}
+          sx={editorCellInputSx}
+        />
+      </TableCell>
+      <TableCell sx={{ ...bodyCellSx, minWidth: 235, p: 0.45 }}>
+        <InputBase
+          value={editor.changeReason}
+          onChange={(event) =>
+            updateEditorField('changeReason', event.target.value)
+          }
+          onFocus={() => setActiveEditorField('changeReason')}
+          onKeyDown={(event) =>
+            handleRateEditorKeyDown(event, 'changeReason')
+          }
+          inputRef={registerRateInput('changeReason')}
+          sx={editorCellInputSx}
+        />
+      </TableCell>
+      <TableCell sx={bodyCellSx} align="center">
+        {!isAddingProcess &&
+        settingByProcess[editingOriginalProcess] ? (
+          <Button
+            size="small"
+            startIcon={<HistoryRoundedIcon />}
+            onClick={() => {
+              setHistoryProcess(editingOriginalProcess);
+              setHistoryOpen(true);
+            }}
+          >
+            보기
+          </Button>
+        ) : (
+          '-'
+        )}
+      </TableCell>
+      <TableCell
+        sx={{ ...bodyCellSx, minWidth: 82 }}
+        align="center"
+      >
+        <Tooltip title="저장" arrow>
+          <span>
+            <IconButton
+              size="small"
+              color="primary"
+              onClick={() => handleSaveInlineRow()}
+              disabled={saving}
+            >
+              {saving ? (
+                <CircularProgress size={17} />
+              ) : (
+                <SaveRoundedIcon fontSize="small" />
+              )}
+            </IconButton>
+          </span>
+        </Tooltip>
+        <Tooltip title="취소" arrow>
+          <IconButton
+            size="small"
+            onClick={handleCancelInlineEdit}
+            disabled={saving}
+          >
+            <CloseRoundedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      </TableCell>
+    </TableRow>
+  );
+
   const renderRateTab = () => (
     <Box
       sx={{
         minHeight: 0,
         flex: 1,
         display: 'grid',
-        gridTemplateRows: 'auto auto minmax(0, 1fr)',
+        gridTemplateRows: 'auto minmax(0, 1fr)',
         gap: 0.8,
       }}
     >
-      <Paper
-        variant="outlined"
-        sx={{
-          p: 1.25,
-          borderColor: '#cbd5e1',
-          boxShadow: 'none',
-        }}
-      >
-        <Stack
-          direction={{ xs: 'column', lg: 'row' }}
-          spacing={1}
-          alignItems={{ lg: 'center' }}
-        >
-          <TextField
-            select
-            size="small"
-            label="공정"
-            value={editor.processType}
-            onChange={(event) =>
-              handleEditorProcessChange(event.target.value)
-            }
-            sx={{ minWidth: 145 }}
-          >
-            {allProcessOptions.map((processType) => (
-              <MenuItem key={processType} value={processType}>
-                {processType}
-              </MenuItem>
-            ))}
-          </TextField>
-
-          <TextField
-            select
-            size="small"
-            label="단위"
-            value={editor.unit}
-            onChange={(event) =>
-              setEditor((previous) => ({
-                ...previous,
-                unit: event.target.value,
-              }))
-            }
-            sx={{ width: 100 }}
-            disabled={!rateEditable}
-          >
-            {['세대', '㎡', 'm', 'EA', '식'].map((unit) => (
-              <MenuItem key={unit} value={unit}>
-                {unit}
-              </MenuItem>
-            ))}
-          </TextField>
-
-          <TextField
-            size="small"
-            label="계약 노무비"
-            value={formatNumericInput(editor.contractLaborAmount)}
-            onChange={(event) =>
-              setEditor((previous) => ({
-                ...previous,
-                contractLaborAmount: normalizeNumericInput(
-                  event.target.value,
-                  0,
-                ),
-              }))
-            }
-            inputProps={{
-              inputMode: 'numeric',
-              style: { textAlign: 'right' },
-            }}
-            sx={{ minWidth: 145 }}
-            disabled={!rateEditable}
-          />
-
-          <TextField
-            size="small"
-            label="실행 노임총액"
-            value={formatNumericInput(editor.executionLaborTotal)}
-            onChange={(event) =>
-              setEditor((previous) => ({
-                ...previous,
-                executionLaborTotal: normalizeNumericInput(
-                  event.target.value,
-                  0,
-                ),
-              }))
-            }
-            inputProps={{
-              inputMode: 'numeric',
-              style: { textAlign: 'right' },
-            }}
-            sx={{ minWidth: 145 }}
-            disabled={!rateEditable}
-          />
-
-          <TextField
-            size="small"
-            label="총 예정물량"
-            value={formatNumericInput(editor.plannedQuantity)}
-            onChange={(event) =>
-              setEditor((previous) => ({
-                ...previous,
-                plannedQuantity: normalizeNumericInput(
-                  event.target.value,
-                  4,
-                ),
-              }))
-            }
-            inputProps={{
-              inputMode: 'decimal',
-              style: { textAlign: 'right' },
-            }}
-            sx={{ minWidth: 125 }}
-            disabled={!rateEditable}
-          />
-
-          <TextField
-            size="small"
-            label="실행단가 (자동계산)"
-            value={
-              calculatedExecutionUnitPrice > 0
-                ? formatMoney(calculatedExecutionUnitPrice)
-                : ''
-            }
-            placeholder="총액 ÷ 예정물량"
-            inputProps={{
-              readOnly: true,
-              style: { textAlign: 'right', fontWeight: 800 },
-            }}
-            sx={{ minWidth: 155 }}
-          />
-
-          <TextField
-            size="small"
-            label="확정단가"
-            value={formatNumericInput(editor.confirmedUnitPrice)}
-            onChange={(event) =>
-              setEditor((previous) => ({
-                ...previous,
-                confirmedUnitPrice: normalizeNumericInput(
-                  event.target.value,
-                  4,
-                ),
-              }))
-            }
-            placeholder="미확정 시 비움"
-            inputProps={{
-              inputMode: 'decimal',
-              style: { textAlign: 'right' },
-            }}
-            sx={{ minWidth: 125 }}
-            disabled={!rateEditable}
-          />
-
-          <TextField
-            size="small"
-            label="적용일"
-            type="date"
-            value={editor.effectiveFrom}
-            onChange={(event) =>
-              setEditor((previous) => ({
-                ...previous,
-                effectiveFrom: event.target.value,
-              }))
-            }
-            InputLabelProps={{ shrink: true }}
-            sx={{ width: 145 }}
-            disabled={!rateEditable}
-          />
-        </Stack>
-
-        <Stack
-          direction={{ xs: 'column', md: 'row' }}
-          spacing={1}
-          alignItems={{ md: 'center' }}
-          sx={{ mt: 1 }}
-        >
-          <TextField
-            size="small"
-            label="등록·변경 사유"
-            value={editor.changeReason}
-            onChange={(event) =>
-              setEditor((previous) => ({
-                ...previous,
-                changeReason: event.target.value,
-              }))
-            }
-            placeholder="예: 공사 시작 전 실행예산 기준 최초 등록"
-            fullWidth
-            disabled={!rateEditable}
-          />
-
-          <Button
-            variant="contained"
-            startIcon={
-              saving ? (
-                <CircularProgress size={15} color="inherit" />
-              ) : (
-                <SaveRoundedIcon />
-              )
-            }
-            onClick={handleSaveRate}
-            disabled={saving || !rateEditable}
-            sx={{ minWidth: 120, whiteSpace: 'nowrap' }}
-          >
-            단가 저장
-          </Button>
-        </Stack>
-
-        <Typography
-          sx={{
-            mt: 0.8,
-            fontSize: '0.65rem',
-            color: '#64748b',
-          }}
-        >
-          실행단가는 실행 노임총액 ÷ 총 예정물량으로 자동 계산됩니다.
-          확정단가를 입력하면 완료일 기준 계산에 우선 사용하며, 단가
-          변경은 기존 값을 덮어쓰지 않고 적용일별 이력으로 보관합니다.
-          {!rateEditable &&
-            ' 현재 계정은 조회와 세대별 물량 입력만 가능합니다.'}
-        </Typography>
-      </Paper>
-
       <Paper
         variant="outlined"
         sx={{
@@ -1608,7 +1769,7 @@ export default function LaborCostManagement({
               size="small"
               color="primary"
               aria-label="공정 추가"
-              onClick={() => setProcessDialogOpen(true)}
+              onClick={handleAddInlineProcess}
               disabled={!rateEditable || saving}
             >
               <AddCircleOutlineRoundedIcon fontSize="small" />
@@ -1626,6 +1787,8 @@ export default function LaborCostManagement({
               disabled={
                 !rateEditable ||
                 saving ||
+                isAddingProcess ||
+                Boolean(editingOriginalProcess) ||
                 selectedProcesses.size === 0
               }
             >
@@ -1643,6 +1806,8 @@ export default function LaborCostManagement({
               disabled={
                 !rateEditable ||
                 saving ||
+                isAddingProcess ||
+                Boolean(editingOriginalProcess) ||
                 selectedProcesses.size === 0
               }
             >
@@ -1660,6 +1825,8 @@ export default function LaborCostManagement({
               disabled={
                 !rateEditable ||
                 saving ||
+                isAddingProcess ||
+                Boolean(editingOriginalProcess) ||
                 selectedProcesses.size === 0
               }
             >
@@ -1672,6 +1839,17 @@ export default function LaborCostManagement({
         <Typography sx={{ fontSize: '0.65rem', color: '#64748b' }}>
           선택 {selectedProcesses.size.toLocaleString()}개
         </Typography>
+        <Box sx={{ flex: 1 }} />
+        <Typography
+          sx={{
+            display: { xs: 'none', lg: 'block' },
+            fontSize: '0.63rem',
+            color: '#64748b',
+          }}
+        >
+          공정명 첫 글자 입력 시 12개 가이드 검색 · 가이드 외 직접 입력
+          가능 · 기존 행 더블클릭 수정
+        </Typography>
       </Paper>
 
       <TableContainer
@@ -1683,7 +1861,7 @@ export default function LaborCostManagement({
           boxShadow: 'none',
         }}
       >
-        <Table stickyHeader size="small">
+        <Table stickyHeader size="small" sx={{ minWidth: 1620 }}>
           <TableHead>
             <TableRow>
               <TableCell padding="checkbox" sx={headerCellSx}>
@@ -1708,15 +1886,18 @@ export default function LaborCostManagement({
                 />
               </TableCell>
               {[
+                '순서',
                 '공정',
                 '단위',
                 '계약 노무비',
                 '실행 노임총액',
-                '예정물량',
+                '총 예정물량',
                 '실행단가',
                 '확정단가',
                 '적용일',
+                '등록·변경 사유',
                 '변경이력',
+                '편집',
               ].map((label) => (
                 <TableCell key={label} sx={headerCellSx} align="center">
                   {label}
@@ -1726,6 +1907,10 @@ export default function LaborCostManagement({
           </TableHead>
           <TableBody>
             {allProcessOptions.map((processType) => {
+              if (editingOriginalProcess === processType) {
+                return renderRateEditorRow(`edit-${processType}`);
+              }
+
               const setting = settingByProcess[processType];
               const processRow = catalogByProcess[processType];
 
@@ -1733,8 +1918,8 @@ export default function LaborCostManagement({
                 <TableRow
                   key={processType}
                   hover
-                  onClick={() => handleEditorProcessChange(processType)}
-                  sx={{ cursor: 'pointer' }}
+                  onDoubleClick={() => beginInlineEdit(processType)}
+                  sx={{ cursor: rateEditable ? 'cell' : 'default' }}
                 >
                   <TableCell padding="checkbox">
                     <Checkbox
@@ -1746,6 +1931,9 @@ export default function LaborCostManagement({
                         'aria-label': `${processType} 공정 선택`,
                       }}
                     />
+                  </TableCell>
+                  <TableCell sx={bodyCellSx} align="center">
+                    {processRow?.sort_order || '-'}
                   </TableCell>
                   <TableCell
                     sx={{ ...bodyCellSx, fontWeight: 900 }}
@@ -1786,6 +1974,9 @@ export default function LaborCostManagement({
                   <TableCell sx={bodyCellSx} align="center">
                     {formatDate(setting?.effective_from)}
                   </TableCell>
+                  <TableCell sx={bodyCellSx}>
+                    {setting?.change_reason || '-'}
+                  </TableCell>
                   <TableCell sx={bodyCellSx} align="center">
                     <Button
                       size="small"
@@ -1800,14 +1991,35 @@ export default function LaborCostManagement({
                       보기
                     </Button>
                   </TableCell>
+                  <TableCell
+                    sx={{ ...bodyCellSx, color: '#94a3b8' }}
+                    align="center"
+                  >
+                    더블클릭
+                  </TableCell>
                 </TableRow>
               );
             })}
 
-            {allProcessOptions.length === 0 && (
+            {isAddingProcess && renderRateEditorRow('new-process')}
+
+            {allProcessOptions.length === 0 && !isAddingProcess && (
               <TableRow>
-                <TableCell colSpan={10} align="center" sx={{ py: 5 }}>
-                  공정 목록이 없습니다.
+                <TableCell colSpan={13} align="center" sx={{ py: 6 }}>
+                  <Typography
+                    sx={{
+                      fontSize: '0.78rem',
+                      fontWeight: 800,
+                      color: '#475569',
+                    }}
+                  >
+                    아직 등록된 공정이 없습니다.
+                  </Typography>
+                  <Typography
+                    sx={{ mt: 0.35, fontSize: '0.68rem', color: '#94a3b8' }}
+                  >
+                    왼쪽 위 + 버튼을 눌러 첫 공정을 입력해주세요.
+                  </Typography>
                 </TableCell>
               </TableRow>
             )}
@@ -2554,55 +2766,11 @@ export default function LaborCostManagement({
 
           <Stack
             direction="row"
-            spacing={{ xs: 1.5, md: 3 }}
+            spacing={0.5}
             alignItems="center"
-            justifyContent={{ xs: 'space-between', md: 'flex-end' }}
+            justifyContent="flex-end"
             sx={{ flexWrap: 'wrap' }}
           >
-            <Box sx={{ minWidth: 145, textAlign: 'right' }}>
-              <Typography
-                sx={{
-                  fontSize: '0.62rem',
-                  fontWeight: 800,
-                  color: '#64748b',
-                }}
-              >
-                계약 노무비 총계
-              </Typography>
-              <Typography
-                sx={{
-                  fontSize: '0.82rem',
-                  fontWeight: 900,
-                  color: '#0f172a',
-                  fontVariantNumeric: 'tabular-nums',
-                }}
-              >
-                {formatMoney(contractLaborGrandTotal)}원
-              </Typography>
-            </Box>
-
-            <Box sx={{ minWidth: 145, textAlign: 'right' }}>
-              <Typography
-                sx={{
-                  fontSize: '0.62rem',
-                  fontWeight: 800,
-                  color: '#64748b',
-                }}
-              >
-                실행 노임총액
-              </Typography>
-              <Typography
-                sx={{
-                  fontSize: '0.82rem',
-                  fontWeight: 900,
-                  color: '#0f766e',
-                  fontVariantNumeric: 'tabular-nums',
-                }}
-              >
-                {formatMoney(executionLaborGrandTotal)}원
-              </Typography>
-            </Box>
-
             {activeTab === 1 && (
               <Tooltip title="현재 공정 물량 전체 삭제" arrow>
                 <span>
@@ -2666,25 +2834,41 @@ export default function LaborCostManagement({
         </Tabs>
       </Paper>
 
-      {errorMessage && (
+      <Snackbar
+        open={Boolean(errorMessage || message)}
+        autoHideDuration={3000}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        TransitionComponent={Fade}
+        transitionDuration={{ enter: 220, exit: 500 }}
+        onClose={(_event, reason) => {
+          if (reason === 'clickaway') return;
+          setErrorMessage('');
+          setMessage(null);
+        }}
+        sx={{
+          top: '72px !important',
+          zIndex: (theme) => theme.zIndex.snackbar + 10,
+          '& .MuiAlert-root': {
+            minWidth: { xs: 280, sm: 420 },
+            maxWidth: 'min(680px, calc(100vw - 32px))',
+            boxShadow: '0 12px 30px rgba(15, 23, 42, 0.22)',
+          },
+        }}
+      >
         <Alert
-          severity="error"
-          onClose={() => setErrorMessage('')}
-          sx={{ py: 0.2 }}
+          severity={
+            errorMessage ? 'error' : message?.severity || 'info'
+          }
+          variant="filled"
+          onClose={() => {
+            setErrorMessage('');
+            setMessage(null);
+          }}
+          sx={{ width: '100%' }}
         >
-          {errorMessage}
+          {errorMessage || message?.text || ''}
         </Alert>
-      )}
-
-      {message && (
-        <Alert
-          severity={message.severity || 'info'}
-          onClose={() => setMessage(null)}
-          sx={{ py: 0.2 }}
-        >
-          {message.text}
-        </Alert>
-      )}
+      </Snackbar>
 
       {overviewLoading && settings.length === 0 ? (
         <Paper
@@ -2711,78 +2895,6 @@ export default function LaborCostManagement({
           {activeTab === 2 && renderMonthlyTab()}
         </>
       )}
-
-      <Dialog
-        open={processDialogOpen}
-        onClose={() => !saving && setProcessDialogOpen(false)}
-        fullWidth
-        maxWidth="sm"
-      >
-        <DialogTitle sx={{ fontWeight: 900 }}>노임 공정 추가</DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={1.5} sx={{ pt: 0.5 }}>
-            <Alert severity="info">
-              복합 공정은 담당자가 실제 지급 기준에 맞게 나누어
-              등록할 수 있습니다. 예: 합지에 포함된 단열과 합지를 각각
-              별도 공정으로 추가
-            </Alert>
-            <TextField
-              autoFocus
-              size="small"
-              label="공정명"
-              value={newProcessName}
-              onChange={(event) => setNewProcessName(event.target.value)}
-              placeholder="예: 단열"
-              fullWidth
-            />
-            <TextField
-              select
-              size="small"
-              label="단위"
-              value={newProcessUnit}
-              onChange={(event) => setNewProcessUnit(event.target.value)}
-              fullWidth
-            >
-              {['세대', '㎡', 'm', 'EA', '식'].map((unit) => (
-                <MenuItem key={unit} value={unit}>
-                  {unit}
-                </MenuItem>
-              ))}
-            </TextField>
-            <TextField
-              size="small"
-              label="계약 노무비"
-              value={formatNumericInput(newProcessContractAmount)}
-              onChange={(event) =>
-                setNewProcessContractAmount(
-                  normalizeNumericInput(event.target.value, 0),
-                )
-              }
-              inputProps={{
-                inputMode: 'numeric',
-                style: { textAlign: 'right' },
-              }}
-              placeholder="0"
-              fullWidth
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button
-            onClick={() => setProcessDialogOpen(false)}
-            disabled={saving}
-          >
-            취소
-          </Button>
-          <Button
-            variant="contained"
-            onClick={handleAddProcess}
-            disabled={saving}
-          >
-            추가
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       <Dialog
         open={deleteDialogOpen}
