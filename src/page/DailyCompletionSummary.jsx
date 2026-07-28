@@ -685,16 +685,27 @@ const stickyCellStyle = (
   left,
   width,
   zIndex = 3,
+  backgroundColor = '#ffffff',
+  isBoundary = false,
 ) => ({
   position: 'sticky',
-  left,
+  left: `${left}px`,
   zIndex,
   width,
   minWidth: width,
   maxWidth: width,
-  bgcolor: '#ffffff',
-  borderRight:
-    '1px solid #cbd5e1',
+  boxSizing: 'border-box',
+  backgroundColor,
+  backgroundClip: 'padding-box',
+  borderRight: isBoundary
+    ? '1px solid #94a3b8'
+    : '1px solid #cbd5e1',
+  ...(isBoundary
+    ? {
+        boxShadow:
+          '7px 0 8px -8px rgba(15, 23, 42, 0.7)',
+      }
+    : {}),
 });
 
 export default function DailyCompletionSummary({
@@ -1464,6 +1475,9 @@ export default function DailyCompletionSummary({
       left: 314,
       width: 68,
     },
+  ];
+
+  const targetColumns = [
     {
       key: 'targetCount',
       label: (
@@ -1473,7 +1487,6 @@ export default function DailyCompletionSummary({
           목표량
         </>
       ),
-      left: 382,
       width: 68,
     },
     {
@@ -1485,7 +1498,6 @@ export default function DailyCompletionSummary({
           완료
         </>
       ),
-      left: 450,
       width: 68,
     },
     {
@@ -1497,7 +1509,6 @@ export default function DailyCompletionSummary({
           잔여
         </>
       ),
-      left: 518,
       width: 68,
     },
     {
@@ -1509,7 +1520,6 @@ export default function DailyCompletionSummary({
           day
         </>
       ),
-      left: 586,
       width: 68,
     },
   ];
@@ -1811,9 +1821,15 @@ export default function DailyCompletionSummary({
 
         <TableContainer
           sx={{
+            position:
+              'relative',
+            isolation:
+              'isolate',
             width: '100%',
             height: '100%',
             overflow: 'auto',
+            overscrollBehavior:
+              'contain',
           }}
         >
           <Table
@@ -1826,6 +1842,9 @@ export default function DailyCompletionSummary({
                   56,
               tableLayout:
                 'fixed',
+              borderCollapse:
+                'separate',
+              borderSpacing: 0,
               '& th, & td': {
                 borderBottom:
                   '1px solid #dbe3ee',
@@ -1842,7 +1861,10 @@ export default function DailyCompletionSummary({
             <TableHead>
               <TableRow>
                 {stickyColumns.map(
-                  (column) => (
+                  (
+                    column,
+                    index,
+                  ) => (
                     <TableCell
                       key={
                         column.key
@@ -1853,17 +1875,47 @@ export default function DailyCompletionSummary({
                           column.left,
                           column.width,
                           8,
+                          '#ffffff',
+                          index ===
+                            stickyColumns.length -
+                              1,
                         ),
                         fontWeight: 800,
+                        whiteSpace:
+                          'normal',
+                        wordBreak:
+                          'keep-all',
+                        lineHeight: 1.15,
+                        px: 0.3,
+                        py: 0.58,
+                        fontSize:
+                          '0.6rem',
+                      }}
+                    >
+                      {column.label}
+                    </TableCell>
+                  ),
+                )}
+
+                {targetColumns.map(
+                  (column) => (
+                    <TableCell
+                      key={
+                        column.key
+                      }
+                      align="center"
+                      sx={{
+                        width:
+                          column.width,
+                        minWidth:
+                          column.width,
+                        maxWidth:
+                          column.width,
+                        boxSizing:
+                          'border-box',
+                        fontWeight: 800,
                         bgcolor:
-                          column.key
-                            .startsWith(
-                              'target',
-                            ) ||
-                          column.key ===
-                            'dday'
-                            ? '#f5f3ff'
-                            : '#ffffff',
+                          '#f5f3ff',
                         whiteSpace:
                           'normal',
                         wordBreak:
@@ -1975,6 +2027,10 @@ export default function DailyCompletionSummary({
                           0,
                           110,
                           5,
+                          index % 2 ===
+                            0
+                            ? '#ffffff'
+                            : '#fbfdff',
                         ),
                         fontWeight: 700,
                         color:
@@ -1994,6 +2050,10 @@ export default function DailyCompletionSummary({
                           110,
                           68,
                           5,
+                          index % 2 ===
+                            0
+                            ? '#ffffff'
+                            : '#fbfdff',
                         ),
                         fontWeight: 700,
                       }}
@@ -2010,6 +2070,10 @@ export default function DailyCompletionSummary({
                           178,
                           68,
                           5,
+                          index % 2 ===
+                            0
+                            ? '#ffffff'
+                            : '#fbfdff',
                         ),
                         fontWeight: 700,
                       }}
@@ -2026,6 +2090,10 @@ export default function DailyCompletionSummary({
                           246,
                           68,
                           5,
+                          index % 2 ===
+                            0
+                            ? '#ffffff'
+                            : '#fbfdff',
                         ),
                         fontWeight: 800,
                         color:
@@ -2045,6 +2113,11 @@ export default function DailyCompletionSummary({
                           314,
                           68,
                           5,
+                          index % 2 ===
+                            0
+                            ? '#ffffff'
+                            : '#fbfdff',
+                          true,
                         ),
                         fontWeight: 700,
                       }}
@@ -2057,11 +2130,11 @@ export default function DailyCompletionSummary({
                     <TableCell
                       align="right"
                       sx={{
-                        ...stickyCellStyle(
-                          382,
-                          68,
-                          5,
-                        ),
+                        width: 68,
+                        minWidth: 68,
+                        maxWidth: 68,
+                        boxSizing:
+                          'border-box',
                         bgcolor:
                           '#faf5ff',
                         fontWeight: 700,
@@ -2077,11 +2150,11 @@ export default function DailyCompletionSummary({
                     <TableCell
                       align="right"
                       sx={{
-                        ...stickyCellStyle(
-                          450,
-                          68,
-                          5,
-                        ),
+                        width: 68,
+                        minWidth: 68,
+                        maxWidth: 68,
+                        boxSizing:
+                          'border-box',
                         bgcolor:
                           '#faf5ff',
                         fontWeight: 700,
@@ -2097,11 +2170,11 @@ export default function DailyCompletionSummary({
                     <TableCell
                       align="right"
                       sx={{
-                        ...stickyCellStyle(
-                          518,
-                          68,
-                          5,
-                        ),
+                        width: 68,
+                        minWidth: 68,
+                        maxWidth: 68,
+                        boxSizing:
+                          'border-box',
                         bgcolor:
                           '#faf5ff',
                         color:
@@ -2123,11 +2196,11 @@ export default function DailyCompletionSummary({
                     <TableCell
                       align="center"
                       sx={{
-                        ...stickyCellStyle(
-                          586,
-                          68,
-                          5,
-                        ),
+                        width: 68,
+                        minWidth: 68,
+                        maxWidth: 68,
+                        boxSizing:
+                          'border-box',
                         bgcolor:
                           '#faf5ff',
                         color:

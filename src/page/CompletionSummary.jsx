@@ -111,15 +111,30 @@ const getRowPeriodKey = (mode, completionDate) => {
 
 const formatNumber = (value) => Number(value || 0).toLocaleString('ko-KR');
 
-const stickyCellStyle = (left, width, zIndex = 3) => ({
-  position: 'sticky',
+const stickyCellStyle = (
   left,
+  width,
+  zIndex = 3,
+  backgroundColor = '#ffffff',
+  isBoundary = false,
+) => ({
+  position: 'sticky',
+  left: `${left}px`,
   zIndex,
   width,
   minWidth: width,
   maxWidth: width,
-  bgcolor: '#ffffff',
-  borderRight: '1px solid #cbd5e1',
+  boxSizing: 'border-box',
+  backgroundColor,
+  backgroundClip: 'padding-box',
+  borderRight: isBoundary
+    ? '1px solid #94a3b8'
+    : '1px solid #cbd5e1',
+  ...(isBoundary
+    ? {
+        boxShadow: '7px 0 8px -8px rgba(15, 23, 42, 0.7)',
+      }
+    : {}),
 });
 
 export default function CompletionSummary({
@@ -424,13 +439,24 @@ export default function CompletionSummary({
           </Box>
         )}
 
-        <TableContainer sx={{ width: '100%', height: '100%', overflow: 'auto' }}>
+        <TableContainer
+          sx={{
+            position: 'relative',
+            isolation: 'isolate',
+            width: '100%',
+            height: '100%',
+            overflow: 'auto',
+            overscrollBehavior: 'contain',
+          }}
+        >
           <Table
             stickyHeader
             size="small"
             sx={{
               minWidth: 500 + periods.length * 84 + (hasOutOfRange ? 120 : 0),
               tableLayout: 'fixed',
+              borderCollapse: 'separate',
+              borderSpacing: 0,
               '& th, & td': {
                 borderBottom: '1px solid #dbe3ee',
                 borderRight: '1px solid #dbe3ee',
@@ -467,7 +493,10 @@ export default function CompletionSummary({
                 </TableCell>
                 <TableCell
                   align="center"
-                  sx={{ ...stickyCellStyle(420, 80, 8), fontWeight: 800 }}
+                  sx={{
+                    ...stickyCellStyle(420, 80, 8, '#ffffff', true),
+                    fontWeight: 800,
+                  }}
                 >
                   잔여
                 </TableCell>
@@ -507,66 +536,88 @@ export default function CompletionSummary({
             </TableHead>
 
             <TableBody>
-              {summaryRows.map((row, index) => (
-                <TableRow
-                  key={row.processName}
-                  hover
-                  sx={{ bgcolor: index % 2 === 0 ? '#ffffff' : '#fbfdff' }}
-                >
-                  <TableCell
-                    sx={{
-                      ...stickyCellStyle(0, 170, 5),
-                      fontWeight: 700,
-                      color: '#1e293b',
-                    }}
-                  >
-                    {row.processName}
-                  </TableCell>
-                  <TableCell
-                    align="right"
-                    sx={{ ...stickyCellStyle(170, 80, 5), fontWeight: 700 }}
-                  >
-                    {formatNumber(row.total)}
-                  </TableCell>
-                  <TableCell
-                    align="right"
-                    sx={{ ...stickyCellStyle(250, 80, 5), fontWeight: 700 }}
-                  >
-                    {formatNumber(row.completed)}
-                  </TableCell>
-                  <TableCell
-                    align="right"
-                    sx={{
-                      ...stickyCellStyle(330, 90, 5),
-                      fontWeight: 800,
-                      color: '#0369a1',
-                    }}
-                  >
-                    {row.progress.toFixed(2)}%
-                  </TableCell>
-                  <TableCell
-                    align="right"
-                    sx={{ ...stickyCellStyle(420, 80, 5), fontWeight: 700 }}
-                  >
-                    {formatNumber(row.remaining)}
-                  </TableCell>
+              {summaryRows.map((row, index) => {
+                const rowBackground =
+                  index % 2 === 0 ? '#ffffff' : '#fbfdff';
 
-                  {periods.map((period) => {
-                    const count = row.periodCounts[period.key] || 0;
-                    return (
-                      <TableCell key={period.key} align="right">
-                        {count > 0 ? formatNumber(count) : ''}
-                      </TableCell>
-                    );
-                  })}
-
-                  {hasOutOfRange && (
-                    <TableCell align="right" sx={{ bgcolor: '#fffaf5' }}>
-                      {row.outOfRange > 0 ? formatNumber(row.outOfRange) : ''}
+                return (
+                  <TableRow
+                    key={row.processName}
+                    hover
+                    sx={{ bgcolor: rowBackground }}
+                  >
+                    <TableCell
+                      sx={{
+                        ...stickyCellStyle(0, 170, 5, rowBackground),
+                        fontWeight: 700,
+                        color: '#1e293b',
+                      }}
+                    >
+                      {row.processName}
                     </TableCell>
-                  )}
-                </TableRow>
-              ))}
+                    <TableCell
+                      align="right"
+                      sx={{
+                        ...stickyCellStyle(170, 80, 5, rowBackground),
+                        fontWeight: 700,
+                      }}
+                    >
+                      {formatNumber(row.total)}
+                    </TableCell>
+                    <TableCell
+                      align="right"
+                      sx={{
+                        ...stickyCellStyle(250, 80, 5, rowBackground),
+                        fontWeight: 700,
+                      }}
+                    >
+                      {formatNumber(row.completed)}
+                    </TableCell>
+                    <TableCell
+                      align="right"
+                      sx={{
+                        ...stickyCellStyle(330, 90, 5, rowBackground),
+                        fontWeight: 800,
+                        color: '#0369a1',
+                      }}
+                    >
+                      {row.progress.toFixed(2)}%
+                    </TableCell>
+                    <TableCell
+                      align="right"
+                      sx={{
+                        ...stickyCellStyle(
+                          420,
+                          80,
+                          5,
+                          rowBackground,
+                          true,
+                        ),
+                        fontWeight: 700,
+                      }}
+                    >
+                      {formatNumber(row.remaining)}
+                    </TableCell>
+
+                    {periods.map((period) => {
+                      const count = row.periodCounts[period.key] || 0;
+                      return (
+                        <TableCell key={period.key} align="right">
+                          {count > 0 ? formatNumber(count) : ''}
+                        </TableCell>
+                      );
+                    })}
+
+                    {hasOutOfRange && (
+                      <TableCell align="right" sx={{ bgcolor: '#fffaf5' }}>
+                        {row.outOfRange > 0
+                          ? formatNumber(row.outOfRange)
+                          : ''}
+                      </TableCell>
+                    )}
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </TableContainer>
