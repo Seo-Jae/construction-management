@@ -39,6 +39,21 @@ const LAYOUT_TYPES = {
   SIDE: 'side',
 };
 
+const DEFAULT_DEPARTMENT_COLOR = '#166534';
+const DEPARTMENT_COLOR_PRESETS = [
+  '#166534',
+  '#0F766E',
+  '#0369A1',
+  '#1D4ED8',
+  '#4338CA',
+  '#7E22CE',
+  '#BE123C',
+  '#B91C1C',
+  '#C2410C',
+  '#A16207',
+  '#475569',
+  '#334155',
+];
 const BASE_RENDER_SCALE = 0.7;
 const ZOOM_MIN = 0.6;
 const ZOOM_MAX = 1.4;
@@ -77,6 +92,15 @@ const emptyForm = {
 const normalizeText = (value) => String(value || '').trim();
 const normalizeParentId = (value) => value || '';
 const getParentKey = (value) => normalizeParentId(value) || ROOT_KEY;
+const normalizeHexColor = (
+  value,
+  fallback = DEFAULT_DEPARTMENT_COLOR,
+) => {
+  const normalized = normalizeText(value).toUpperCase();
+  return /^#[0-9A-F]{6}$/.test(normalized)
+    ? normalized
+    : fallback;
+};
 const isFiniteCoordinate = (value) =>
   value !== null && value !== '' && Number.isFinite(Number(value));
 const snapCoordinate = (value, step) =>
@@ -413,7 +437,7 @@ const createAutoLayout = ({
   return positions;
 };
 
-const createConnectorPath = (parentRect, childRect) => {
+const createConnectorSegments = (parentRect, childRect) => {
   const parentCenterX = parentRect.x + parentRect.width / 2;
   const parentCenterY = parentRect.y + parentRect.height / 2;
   const childCenterX = childRect.x + childRect.width / 2;
@@ -423,27 +447,108 @@ const createConnectorPath = (parentRect, childRect) => {
     const startY = parentRect.y + parentRect.height;
     const endY = childRect.y;
     const middleY = startY + (endY - startY) / 2;
-    return `M ${parentCenterX} ${startY} V ${middleY} H ${childCenterX} V ${endY}`;
+    return [
+      { x1: parentCenterX, y1: startY, x2: parentCenterX, y2: middleY },
+      { x1: parentCenterX, y1: middleY, x2: childCenterX, y2: middleY },
+      { x1: childCenterX, y1: middleY, x2: childCenterX, y2: endY },
+    ];
   }
 
   if (parentRect.y >= childRect.y + childRect.height + 16) {
     const startY = parentRect.y;
     const endY = childRect.y + childRect.height;
     const middleY = endY + (startY - endY) / 2;
-    return `M ${parentCenterX} ${startY} V ${middleY} H ${childCenterX} V ${endY}`;
+    return [
+      { x1: parentCenterX, y1: startY, x2: parentCenterX, y2: middleY },
+      { x1: parentCenterX, y1: middleY, x2: childCenterX, y2: middleY },
+      { x1: childCenterX, y1: middleY, x2: childCenterX, y2: endY },
+    ];
   }
 
   if (childCenterX >= parentCenterX) {
     const startX = parentRect.x + parentRect.width;
     const endX = childRect.x;
     const middleX = startX + (endX - startX) / 2;
-    return `M ${startX} ${parentCenterY} H ${middleX} V ${childCenterY} H ${endX}`;
+    return [
+      { x1: startX, y1: parentCenterY, x2: middleX, y2: parentCenterY },
+      { x1: middleX, y1: parentCenterY, x2: middleX, y2: childCenterY },
+      { x1: middleX, y1: childCenterY, x2: endX, y2: childCenterY },
+    ];
   }
 
   const startX = parentRect.x;
   const endX = childRect.x + childRect.width;
   const middleX = endX + (startX - endX) / 2;
-  return `M ${startX} ${parentCenterY} H ${middleX} V ${childCenterY} H ${endX}`;
+  return [
+    { x1: startX, y1: parentCenterY, x2: middleX, y2: parentCenterY },
+    { x1: middleX, y1: parentCenterY, x2: middleX, y2: childCenterY },
+    { x1: middleX, y1: childCenterY, x2: endX, y2: childCenterY },
+  ];
+};
+
+const mergeConnectorSegments = (segments) => {
+  const groups = new Map();
+  const precision = (value) => Number(Number(value).toFixed(3));
+
+  segments.forEach((segment) => {
+    const vertical = Math.abs(segment.x1 - segment.x2) < 0.001;
+    const horizontal = Math.abs(segment.y1 - segment.y2) < 0.001;
+    if (!vertical && !horizontal) return;
+
+    const fixed = precision(vertical ? segment.x1 : segment.y1);
+    const start = precision(
+      Math.min(
+        vertical ? segment.y1 : segment.x1,
+        vertical ? segment.y2 : segment.x2,
+      ),
+    );
+    const end = precision(
+      Math.max(
+        vertical ? segment.y1 : segment.x1,
+        vertical ? segment.y2 : segment.x2,
+      ),
+    );
+    if (end - start < 0.001) return;
+
+    const key = `${vertical ? 'v' : 'h'}:${fixed}`;
+    const intervals = groups.get(key) || [];
+    intervals.push({ start, end, fixed, vertical });
+    groups.set(key, intervals);
+  });
+
+  const merged = [];
+  groups.forEach((intervals) => {
+    const sorted = [...intervals].sort(
+      (first, second) =>
+        first.start - second.start || first.end - second.end,
+    );
+    let current = null;
+
+    sorted.forEach((interval) => {
+      if (!current) {
+        current = { ...interval };
+        return;
+      }
+
+      if (interval.start <= current.end + 0.001) {
+        current.end = Math.max(current.end, interval.end);
+        return;
+      }
+
+      merged.push(current);
+      current = { ...interval };
+    });
+
+    if (current) merged.push(current);
+  });
+
+  return merged.map((segment, index) => ({
+    id: `${segment.vertical ? 'v' : 'h'}-${segment.fixed}-${segment.start}-${segment.end}-${index}`,
+    x1: segment.vertical ? segment.fixed : segment.start,
+    y1: segment.vertical ? segment.start : segment.fixed,
+    x2: segment.vertical ? segment.fixed : segment.end,
+    y2: segment.vertical ? segment.end : segment.fixed,
+  }));
 };
 
 function NodeMenu({
@@ -452,6 +557,7 @@ function NodeMenu({
   onAddDepartment,
   onAddPerson,
   onAddSibling,
+  onChangeColor,
   onEdit,
   onDelete,
 }) {
@@ -516,6 +622,11 @@ function NodeMenu({
         <MenuItem onClick={() => run(onAddSibling)} sx={{ fontSize: '0.75rem' }}>
           같은 단계에 추가
         </MenuItem>
+        {node.node_type === NODE_TYPES.DEPARTMENT && onChangeColor && (
+          <MenuItem onClick={() => run(onChangeColor)} sx={{ fontSize: '0.75rem' }}>
+            색 수정
+          </MenuItem>
+        )}
         <Divider />
         <MenuItem onClick={() => run(onEdit)} sx={{ fontSize: '0.75rem' }}>
           수정
@@ -533,11 +644,13 @@ function NodeMenu({
 
 function MemberCard({
   node,
+  accentColor,
   editMode,
   layoutMode,
   dragging,
   onDragStart,
   onDragEnd,
+  onShowDetails,
   onAddDepartment,
   onAddPerson,
   onAddSibling,
@@ -547,9 +660,13 @@ function MemberCard({
   return (
     <Paper
       variant="outlined"
+      data-chart-node="true"
       draggable={layoutMode}
       onDragStart={(event) => onDragStart(event, node)}
       onDragEnd={onDragEnd}
+      onClick={() => {
+        if (!layoutMode && node.person_name) onShowDetails(node);
+      }}
       sx={{
         position: 'relative',
         height: LAYOUT.memberHeight,
@@ -560,11 +677,18 @@ function MemberCard({
         borderColor: '#cbd5e1',
         bgcolor: '#ffffff',
         boxShadow: '0 2px 7px rgba(15,23,42,0.06)',
-        cursor: layoutMode ? 'grab' : 'default',
+        cursor: layoutMode ? 'grab' : 'pointer',
         opacity: dragging ? 0.45 : 1,
+        transition: 'border-color 120ms ease, box-shadow 120ms ease',
+        '&:hover': {
+          borderColor: layoutMode ? '#94a3b8' : accentColor,
+          boxShadow: layoutMode
+            ? '0 2px 7px rgba(15,23,42,0.06)'
+            : '0 5px 13px rgba(15,23,42,0.13)',
+        },
       }}
     >
-      <Box sx={{ flex: '0 0 4px', bgcolor: '#16a34a' }} />
+      <Box sx={{ flex: '0 0 4px', bgcolor: accentColor }} />
       <Stack
         spacing={0.15}
         justifyContent="center"
@@ -617,17 +741,22 @@ function DepartmentGroup({
   onMemberDragOver,
   onMemberDragLeave,
   onMemberDrop,
+  onShowDetails,
   onAddDepartment,
   onAddPerson,
   onAddSibling,
+  onChangeColor,
   onEdit,
   onDelete,
 }) {
   const activeMemberDrop = memberDropTargetId === node.id;
+  const departmentColor = normalizeHexColor(node.card_color);
+  const memberCount = members.length + 1;
 
   return (
     <Paper
       variant="outlined"
+      data-chart-node="true"
       onDragOver={(event) => onMemberDragOver(event, node)}
       onDragLeave={(event) => onMemberDragLeave(event, node)}
       onDrop={(event) => onMemberDrop(event, node)}
@@ -659,7 +788,7 @@ function DepartmentGroup({
           justifyContent: 'center',
           px: 1.15,
           pr: editMode ? 3.6 : 1.15,
-          bgcolor: '#166534',
+          bgcolor: departmentColor,
           color: '#ffffff',
           cursor: layoutMode ? (moving ? 'grabbing' : 'grab') : 'default',
           touchAction: layoutMode ? 'none' : 'auto',
@@ -668,8 +797,8 @@ function DepartmentGroup({
         <Typography noWrap sx={{ fontSize: '0.76rem', fontWeight: 900 }}>
           {node.department || '부서 미입력'}
         </Typography>
-        <Typography sx={{ mt: 0.15, color: '#dcfce7', fontSize: '0.57rem', fontWeight: 800 }}>
-          구성원 {members.length}명
+        <Typography sx={{ mt: 0.15, color: 'rgba(255,255,255,0.82)', fontSize: '0.57rem', fontWeight: 800 }}>
+          구성원 {memberCount}명
           {layoutMode ? ' · 끌어서 위치 이동' : ''}
         </Typography>
 
@@ -680,6 +809,7 @@ function DepartmentGroup({
             onAddDepartment={onAddDepartment}
             onAddPerson={onAddPerson}
             onAddSibling={onAddSibling}
+            onChangeColor={onChangeColor}
             onEdit={onEdit}
             onDelete={onDelete}
           />
@@ -692,11 +822,13 @@ function DepartmentGroup({
             <MemberCard
               key={member.id}
               node={member}
+              accentColor={departmentColor}
               editMode={editMode}
               layoutMode={layoutMode}
               dragging={memberDraggingId === member.id}
               onDragStart={onMemberDragStart}
               onDragEnd={onMemberDragEnd}
+              onShowDetails={onShowDetails}
               onAddDepartment={onAddDepartment}
               onAddPerson={onAddPerson}
               onAddSibling={onAddSibling}
@@ -736,6 +868,7 @@ function PersonNode({
   layoutMode,
   moving,
   onPointerDown,
+  onShowDetails,
   onAddDepartment,
   onAddPerson,
   onAddSibling,
@@ -745,7 +878,11 @@ function PersonNode({
   return (
     <Paper
       variant="outlined"
+      data-chart-node="true"
       onPointerDown={(event) => onPointerDown(event, node)}
+      onClick={() => {
+        if (!layoutMode && node.person_name) onShowDetails(node);
+      }}
       sx={{
         position: 'absolute',
         left: position.x,
@@ -760,9 +897,16 @@ function PersonNode({
         boxShadow: moving
           ? '0 14px 32px rgba(15,23,42,0.22)'
           : '0 5px 14px rgba(15,23,42,0.10)',
-        cursor: layoutMode ? (moving ? 'grabbing' : 'grab') : 'default',
+        cursor: layoutMode ? (moving ? 'grabbing' : 'grab') : 'pointer',
         touchAction: layoutMode ? 'none' : 'auto',
         userSelect: layoutMode ? 'none' : 'auto',
+        transition: 'border-color 120ms ease, box-shadow 120ms ease',
+        '&:hover': {
+          borderColor: layoutMode ? '#64748b' : '#0f766e',
+          boxShadow: moving
+            ? '0 14px 32px rgba(15,23,42,0.22)'
+            : '0 7px 18px rgba(15,23,42,0.16)',
+        },
       }}
     >
       <Box sx={{ position: 'relative', py: 0.65, px: 1.2, pr: editMode ? 3.7 : 1.2, bgcolor: '#334155' }}>
@@ -801,6 +945,9 @@ export default function OrganizationChart({
   const isSuperAdmin = userRole === '최고관리자';
   const chartViewportRef = useRef(null);
   const dragStateRef = useRef(null);
+  const panDragStateRef = useRef(null);
+  const panRef = useRef({ x: 0, y: 0 });
+  const zoomRef = useRef(1);
   const positionOverridesRef = useRef({});
   const hasCenteredRef = useRef(false);
 
@@ -812,11 +959,17 @@ export default function OrganizationChart({
   const [layoutMode, setLayoutMode] = useState(false);
   const [zoom, setZoom] = useState(1);
   const renderScale = zoom * BASE_RENDER_SCALE;
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
   const [movingNodeId, setMovingNodeId] = useState('');
   const [positionOverrides, setPositionOverrides] = useState({});
   const [memberDraggingId, setMemberDraggingId] = useState('');
   const [memberDropTargetId, setMemberDropTargetId] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedPerson, setSelectedPerson] = useState(null);
+  const [colorTarget, setColorTarget] = useState(null);
+  const [colorValue, setColorValue] = useState(DEFAULT_DEPARTMENT_COLOR);
+  const [savingColor, setSavingColor] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [message, setMessage] = useState(null);
 
@@ -826,7 +979,7 @@ export default function OrganizationChart({
     const { data, error } = await supabase
       .from(TABLE_NAME)
       .select(
-        'id, parent_id, node_type, layout_type, department, position_title, person_name, contact, sort_order, layout_x, layout_y, is_active, created_at, updated_at',
+        'id, parent_id, node_type, layout_type, department, position_title, person_name, contact, sort_order, layout_x, layout_y, card_color, is_active, created_at, updated_at',
       )
       .eq('is_active', true)
       .order('sort_order', { ascending: true })
@@ -841,7 +994,7 @@ export default function OrganizationChart({
           error.code === '42P01'
             ? '조직도 테이블이 없습니다. 조직도 SQL을 먼저 실행해주세요.'
             : error.code === '42703'
-              ? 'v51.5 조직도 SQL을 먼저 실행해주세요. 자유배치 좌표 열이 아직 없습니다.'
+              ? 'v51.7 조직도 SQL을 먼저 실행해주세요. 부서 색상 저장 열이 아직 없습니다.'
               : `조직도를 불러오지 못했습니다: ${error.message}`,
       });
     } else {
@@ -851,6 +1004,10 @@ export default function OrganizationChart({
             ...node,
             node_type: node.node_type || NODE_TYPES.PERSON,
             layout_type: node.layout_type || LAYOUT_TYPES.NORMAL,
+            card_color:
+              node.node_type === NODE_TYPES.DEPARTMENT
+                ? normalizeHexColor(node.card_color)
+                : null,
           })),
         ),
       );
@@ -965,8 +1122,8 @@ export default function OrganizationChart({
     [itemSizeById, resolvedPositions, structuralNodes],
   );
 
-  const connectionPaths = useMemo(() => {
-    const result = [];
+  const connectionSegments = useMemo(() => {
+    const rawSegments = [];
 
     structuralNodes.forEach((node) => {
       const parentId = structuralGraph.parentById.get(node.id);
@@ -976,13 +1133,12 @@ export default function OrganizationChart({
       const childRect = layoutRects.get(node.id);
       if (!parentRect || !childRect) return;
 
-      result.push({
-        id: `${parentId}-${node.id}`,
-        path: createConnectorPath(parentRect, childRect),
-      });
+      rawSegments.push(
+        ...createConnectorSegments(parentRect, childRect),
+      );
     });
 
-    return result;
+    return mergeConnectorSegments(rawSegments);
   }, [layoutRects, structuralGraph.parentById, structuralNodes]);
 
   const canvasSize = useMemo(() => {
@@ -1148,6 +1304,62 @@ export default function OrganizationChart({
       sort_order: Number(node.sort_order || 0),
     });
     setDialogOpen(true);
+  };
+
+  const openColorDialog = (node) => {
+    if (!isSuperAdmin || node.node_type !== NODE_TYPES.DEPARTMENT) {
+      return;
+    }
+
+    setColorTarget(node);
+    setColorValue(normalizeHexColor(node.card_color));
+  };
+
+  const closeColorDialog = () => {
+    if (savingColor) return;
+    setColorTarget(null);
+    setColorValue(DEFAULT_DEPARTMENT_COLOR);
+  };
+
+  const handleSaveColor = async () => {
+    if (!isSuperAdmin || !colorTarget) return;
+
+    const nextColor = normalizeHexColor(colorValue, '');
+    if (!nextColor) {
+      setMessage({
+        severity: 'warning',
+        text: '색상은 #166534 형식의 6자리 값으로 입력해주세요.',
+      });
+      return;
+    }
+
+    setSavingColor(true);
+    const { error } = await supabase
+      .from(TABLE_NAME)
+      .update({
+        card_color: nextColor,
+        updated_by: currentUserId || null,
+      })
+      .eq('id', colorTarget.id);
+
+    if (error) {
+      console.error('부서 색상 저장 오류:', error);
+      setMessage({
+        severity: 'error',
+        text: `부서 색상을 저장하지 못했습니다: ${error.message}`,
+      });
+      setSavingColor(false);
+      return;
+    }
+
+    await loadNodes();
+    setSavingColor(false);
+    setColorTarget(null);
+    setColorValue(DEFAULT_DEPARTMENT_COLOR);
+    setMessage({
+      severity: 'success',
+      text: `${colorTarget.department} 카드 색상을 변경했습니다.`,
+    });
   };
 
   const closeDialog = () => {
@@ -1667,17 +1879,124 @@ export default function OrganizationChart({
     resetMemberDrag();
   };
 
-  const changeZoom = (difference) => {
-    setZoom((previous) =>
-      Math.min(
+  const setPanPosition = useCallback((nextPan) => {
+    const safePan = {
+      x: Number(nextPan?.x || 0),
+      y: Number(nextPan?.y || 0),
+    };
+    panRef.current = safePan;
+    setPan(safePan);
+  }, []);
+
+  const setZoomAtClientPoint = useCallback(
+    (requestedZoom, clientX, clientY) => {
+      const viewport = chartViewportRef.current;
+      if (!viewport) return;
+
+      const nextZoom = Math.min(
         ZOOM_MAX,
         Math.max(
           ZOOM_MIN,
-          Number((previous + difference).toFixed(1)),
+          Number(Number(requestedZoom).toFixed(2)),
         ),
-      ),
+      );
+      const currentZoom = zoomRef.current;
+      if (Math.abs(nextZoom - currentZoom) < 0.001) return;
+
+      const rect = viewport.getBoundingClientRect();
+      const anchorX = Number.isFinite(clientX)
+        ? clientX - rect.left
+        : rect.width / 2;
+      const anchorY = Number.isFinite(clientY)
+        ? clientY - rect.top
+        : rect.height / 2;
+      const currentScale = currentZoom * BASE_RENDER_SCALE;
+      const nextScale = nextZoom * BASE_RENDER_SCALE;
+      const currentPan = panRef.current;
+      const worldX = (anchorX - currentPan.x) / currentScale;
+      const worldY = (anchorY - currentPan.y) / currentScale;
+      const nextPan = {
+        x: anchorX - worldX * nextScale,
+        y: anchorY - worldY * nextScale,
+      };
+
+      zoomRef.current = nextZoom;
+      setZoom(nextZoom);
+      setPanPosition(nextPan);
+    },
+    [setPanPosition],
+  );
+
+  const changeZoom = (difference) => {
+    const viewport = chartViewportRef.current;
+    const rect = viewport?.getBoundingClientRect();
+    setZoomAtClientPoint(
+      zoomRef.current + difference,
+      rect ? rect.left + rect.width / 2 : undefined,
+      rect ? rect.top + rect.height / 2 : undefined,
     );
   };
+
+  const handleViewportWheel = useCallback(
+    (event) => {
+      event.preventDefault();
+      const zoomFactor = Math.exp(-event.deltaY * 0.0015);
+      setZoomAtClientPoint(
+        zoomRef.current * zoomFactor,
+        event.clientX,
+        event.clientY,
+      );
+    },
+    [setZoomAtClientPoint],
+  );
+
+  const handleViewportPointerDown = useCallback(
+    (event) => {
+      if (
+        event.button !== 0 ||
+        movingNodeId ||
+        event.target?.closest?.(
+          '[data-chart-node="true"], button, input, textarea, select, a, [role="button"]',
+        )
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      event.currentTarget.setPointerCapture?.(event.pointerId);
+      panDragStateRef.current = {
+        pointerId: event.pointerId,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        origin: panRef.current,
+      };
+      setIsPanning(true);
+    },
+    [movingNodeId],
+  );
+
+  const handleViewportPointerMove = useCallback(
+    (event) => {
+      const drag = panDragStateRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+
+      event.preventDefault();
+      setPanPosition({
+        x: drag.origin.x + event.clientX - drag.startClientX,
+        y: drag.origin.y + event.clientY - drag.startClientY,
+      });
+    },
+    [setPanPosition],
+  );
+
+  const finishViewportPan = useCallback((event) => {
+    const drag = panDragStateRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+
+    panDragStateRef.current = null;
+    setIsPanning(false);
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+  }, []);
 
   useEffect(() => {
     if (
@@ -1702,15 +2021,10 @@ export default function OrganizationChart({
       });
       const chartCenterX = (minimumX + maximumX) / 2;
 
-      viewport.scrollLeft = Math.max(
-        0,
-        chartCenterX * renderScale -
-          viewport.clientWidth / 2,
-      );
-      viewport.scrollTop = Math.max(
-        0,
-        minimumY * renderScale - 24,
-      );
+      setPanPosition({
+        x: viewport.clientWidth / 2 - chartCenterX * renderScale,
+        y: 24 - minimumY * renderScale,
+      });
       hasCenteredRef.current = true;
     });
 
@@ -1719,6 +2033,7 @@ export default function OrganizationChart({
     layoutRects,
     loading,
     renderScale,
+    setPanPosition,
     structuralNodes.length,
   ]);
 
@@ -1769,7 +2084,7 @@ export default function OrganizationChart({
             <Typography sx={{ color: '#64748b', fontSize: '0.68rem' }}>
               {layoutMode
                 ? '부서 제목을 끌면 하위 조직 전체가 격자에 맞춰 함께 이동하고, 직원을 다른 부서에 놓으면 소속이 변경됩니다.'
-                : '부서 위치와 연결선이 저장된 좌표에 따라 표시됩니다.'}
+                : '빈 화면을 끌어 이동하고 마우스 위치에서 휠로 확대·축소할 수 있습니다.'}
               {latestUpdatedAt
                 ? ` 최종 수정 ${formatDateTime(latestUpdatedAt)}`
                 : ''}
@@ -1856,11 +2171,20 @@ export default function OrganizationChart({
 
       <Box
         ref={chartViewportRef}
+        onWheel={handleViewportWheel}
+        onPointerDown={handleViewportPointerDown}
+        onPointerMove={handleViewportPointerMove}
+        onPointerUp={finishViewportPan}
+        onPointerCancel={finishViewportPan}
         sx={{
+          position: 'relative',
           flexGrow: 1,
           minHeight: 0,
-          overflow: 'auto',
+          overflow: 'hidden',
           bgcolor: '#f8fafc',
+          cursor: isPanning ? 'grabbing' : 'grab',
+          touchAction: 'none',
+          userSelect: isPanning ? 'none' : 'auto',
         }}
       >
         {loading ? (
@@ -1896,41 +2220,24 @@ export default function OrganizationChart({
           </Stack>
         ) : (
           <Box
+            data-chart-pan-surface="true"
             sx={{
-              position: 'relative',
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'flex-start',
-              width: 'max-content',
-              minWidth: '100%',
-              minHeight: '100%',
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              width: canvasSize.width,
+              height: canvasSize.height,
+              transform: `translate(${pan.x}px, ${pan.y}px) scale(${renderScale})`,
+              transformOrigin: '0 0',
+              backgroundImage: layoutMode
+                ? 'linear-gradient(rgba(148,163,184,0.16) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.16) 1px, transparent 1px)'
+                : 'none',
+              backgroundSize: layoutMode
+                ? `${SNAP_GRID.x}px ${SNAP_GRID.y}px`
+                : 'auto',
+              willChange: 'transform',
             }}
           >
-            <Box
-              sx={{
-                position: 'relative',
-                flex: '0 0 auto',
-                width: canvasSize.width * renderScale,
-                height: canvasSize.height * renderScale,
-              }}
-            >
-              <Box
-                sx={{
-                  position: 'absolute',
-                  left: 0,
-                  top: 0,
-                  width: canvasSize.width,
-                  height: canvasSize.height,
-                  transform: `scale(${renderScale})`,
-                  transformOrigin: '0 0',
-                  backgroundImage: layoutMode
-                    ? 'linear-gradient(rgba(148,163,184,0.16) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.16) 1px, transparent 1px)'
-                    : 'none',
-                  backgroundSize: layoutMode
-                    ? `${SNAP_GRID.x}px ${SNAP_GRID.y}px`
-                    : 'auto',
-                }}
-              >
               <Box
                 component="svg"
                 viewBox={`0 0 ${canvasSize.width} ${canvasSize.height}`}
@@ -1946,15 +2253,16 @@ export default function OrganizationChart({
                   pointerEvents: 'none',
                 }}
               >
-                {connectionPaths.map((connection) => (
-                  <path
-                    key={connection.id}
-                    d={connection.path}
-                    fill="none"
+                {connectionSegments.map((segment) => (
+                  <line
+                    key={segment.id}
+                    x1={segment.x1}
+                    y1={segment.y1}
+                    x2={segment.x2}
+                    y2={segment.y2}
                     stroke="#64748b"
                     strokeWidth="1.6"
                     strokeLinecap="round"
-                    strokeLinejoin="round"
                     vectorEffect="non-scaling-stroke"
                   />
                 ))}
@@ -1990,9 +2298,11 @@ export default function OrganizationChart({
                       onMemberDragOver={handleMemberDragOver}
                       onMemberDragLeave={handleMemberDragLeave}
                       onMemberDrop={handleMemberDrop}
+                      onShowDetails={setSelectedPerson}
                       onAddDepartment={addDepartment}
                       onAddPerson={addPerson}
                       onAddSibling={addSibling}
+                      onChangeColor={openColorDialog}
                       onEdit={openEditDialog}
                       onDelete={handleDelete}
                     />
@@ -2009,6 +2319,7 @@ export default function OrganizationChart({
                     layoutMode={layoutMode}
                     moving={movingNodeId === node.id}
                     onPointerDown={handleNodePointerDown}
+                    onShowDetails={setSelectedPerson}
                     onAddDepartment={addDepartment}
                     onAddPerson={addPerson}
                     onAddSibling={addSibling}
@@ -2017,11 +2328,176 @@ export default function OrganizationChart({
                   />
                 );
               })}
-              </Box>
-            </Box>
           </Box>
         )}
       </Box>
+
+      <Dialog
+        open={Boolean(selectedPerson)}
+        onClose={() => setSelectedPerson(null)}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle sx={{ pr: 6, fontWeight: 900 }}>
+          구성원 정보
+          <IconButton
+            onClick={() => setSelectedPerson(null)}
+            sx={{ position: 'absolute', right: 8, top: 8 }}
+          >
+            <Typography component="span" sx={{ fontSize: 22, lineHeight: 1 }}>
+              ×
+            </Typography>
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={1.15}>
+            {[
+              ['이름', selectedPerson?.person_name || '미입력'],
+              ['직책', selectedPerson?.position_title || '미입력'],
+              ['전화번호', selectedPerson?.contact || '미입력'],
+            ].map(([label, value]) => (
+              <Box
+                key={label}
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: '76px minmax(0, 1fr)',
+                  alignItems: 'center',
+                  gap: 1.2,
+                  px: 1.2,
+                  py: 1,
+                  borderRadius: 1,
+                  bgcolor: '#f8fafc',
+                  border: '1px solid #e2e8f0',
+                }}
+              >
+                <Typography sx={{ color: '#64748b', fontSize: '0.72rem', fontWeight: 800 }}>
+                  {label}
+                </Typography>
+                <Typography sx={{ color: '#0f172a', fontSize: '0.82rem', fontWeight: 900 }}>
+                  {value}
+                </Typography>
+              </Box>
+            ))}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSelectedPerson(null)}>닫기</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(colorTarget)}
+        onClose={closeColorDialog}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle sx={{ pr: 6, fontWeight: 900 }}>
+          부서 카드 색 수정
+          <IconButton
+            onClick={closeColorDialog}
+            disabled={savingColor}
+            sx={{ position: 'absolute', right: 8, top: 8 }}
+          >
+            <Typography component="span" sx={{ fontSize: 22, lineHeight: 1 }}>
+              ×
+            </Typography>
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={1.6}>
+            <Typography sx={{ color: '#475569', fontSize: '0.74rem', fontWeight: 800 }}>
+              {colorTarget?.department || '선택한 부서'}
+            </Typography>
+
+            <Box
+              sx={{
+                height: 58,
+                px: 1.4,
+                display: 'flex',
+                alignItems: 'center',
+                borderRadius: 1.2,
+                color: '#ffffff',
+                bgcolor: normalizeHexColor(colorValue),
+                boxShadow: '0 5px 14px rgba(15,23,42,0.14)',
+              }}
+            >
+              <Typography sx={{ fontSize: '0.82rem', fontWeight: 900 }}>
+                {colorTarget?.department || '부서명'}
+              </Typography>
+            </Box>
+
+            <Box>
+              <Typography sx={{ mb: 0.75, color: '#64748b', fontSize: '0.68rem', fontWeight: 800 }}>
+                기본 색상
+              </Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 0.75 }}>
+                {DEPARTMENT_COLOR_PRESETS.map((preset) => (
+                  <Box
+                    key={preset}
+                    component="button"
+                    type="button"
+                    aria-label={`${preset} 색상 선택`}
+                    onClick={() => setColorValue(preset)}
+                    sx={{
+                      height: 34,
+                      p: 0,
+                      borderRadius: 1,
+                      border:
+                        normalizeHexColor(colorValue) === preset
+                          ? '3px solid #0f172a'
+                          : '2px solid #ffffff',
+                      outline: '1px solid #cbd5e1',
+                      bgcolor: preset,
+                      cursor: 'pointer',
+                    }}
+                  />
+                ))}
+              </Box>
+            </Box>
+
+            <Stack direction="row" spacing={1.2} alignItems="center">
+              <Box
+                component="input"
+                type="color"
+                value={normalizeHexColor(colorValue)}
+                onChange={(event) => setColorValue(event.target.value.toUpperCase())}
+                aria-label="직접 색상 선택"
+                sx={{
+                  width: 54,
+                  height: 40,
+                  p: 0.25,
+                  border: '1px solid #cbd5e1',
+                  borderRadius: 1,
+                  bgcolor: '#ffffff',
+                  cursor: 'pointer',
+                }}
+              />
+              <TextField
+                fullWidth
+                size="small"
+                label="색상 코드"
+                value={colorValue}
+                onChange={(event) => setColorValue(event.target.value.toUpperCase())}
+                placeholder="#166534"
+                inputProps={{ maxLength: 7 }}
+              />
+            </Stack>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ px: 2.5, py: 1.5 }}>
+          <Button onClick={closeColorDialog} disabled={savingColor}>
+            취소
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleSaveColor}
+            disabled={savingColor}
+            startIcon={savingColor ? <CircularProgress size={15} /> : undefined}
+          >
+            색상 저장
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog open={dialogOpen} onClose={closeDialog} fullWidth maxWidth="sm">
         <DialogTitle sx={{ pr: 6, fontWeight: 900 }}>
