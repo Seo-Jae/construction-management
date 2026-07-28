@@ -55,19 +55,19 @@ const DEFAULT_UNIT = '㎡';
 const DEFAULT_CHANGE_REASON = '실행 예산 기준 최초 등록';
 const GUIDE_PROCESS_OPTIONS = [
   '바닥먹',
-  '허리먹',
   '단열',
   '합지',
-  '경량골조',
-  '경량석고',
-  '합지석고',
+  '경량벽체',
   '세대천정',
-  '1차몰딩',
-  '2차몰딩',
-  '1차 걸레받이',
-  '2차 걸레받이',
+  '공용홀천정',
+  '몰딩',
+  '걸레받이',
+  '수장',
+  '외주',
+  '직영',
+  '기타',
 ];
-const UNIT_OPTIONS = ['세대', '㎡', 'm', 'EA', '식'];
+const UNIT_OPTIONS = ['㎡', 'm', 'EA', '식', '세대'];
 const RATE_EDITABLE_FIELDS = [
   'sortOrder',
   'processType',
@@ -436,17 +436,6 @@ export default function LaborCostManagement({
       .map((row) => row.process_type)
       .filter(Boolean);
   }, [overviewLoaded, processCatalog]);
-
-  const guideProcessOptions = useMemo(
-    () =>
-      Array.from(
-        new Set([
-          ...GUIDE_PROCESS_OPTIONS,
-          ...(processOptions || []).filter(Boolean),
-        ]),
-      ),
-    [processOptions],
-  );
 
   const validUnits = useMemo(() => {
     const rows = Array.from(getProjectCellKeys(buildingConfigs)).map(
@@ -1501,7 +1490,7 @@ export default function LaborCostManagement({
         <Autocomplete
           freeSolo
           disablePortal
-          options={guideProcessOptions}
+          options={GUIDE_PROCESS_OPTIONS}
           value={editor.processType}
           inputValue={editor.processType}
           onChange={(_event, value) =>
@@ -1521,7 +1510,6 @@ export default function LaborCostManagement({
             <TextField
               {...params}
               variant="standard"
-              placeholder="첫 글자 입력"
               inputRef={registerRateInput('processType')}
               onFocus={() => setActiveEditorField('processType')}
               onKeyDown={(event) =>
@@ -1536,11 +1524,22 @@ export default function LaborCostManagement({
                 disableUnderline: true,
                 sx: {
                   ...editorCellInputSx,
-                  '& input': {
+                  '& .MuiAutocomplete-input': {
                     p: '0 !important',
                     fontSize: '0.69rem',
                     fontWeight: 900,
+                    textAlign: 'center',
                   },
+                },
+              }}
+              inputProps={{
+                ...params.inputProps,
+                style: {
+                  ...params.inputProps?.style,
+                  padding: 0,
+                  fontSize: '0.69rem',
+                  fontWeight: 900,
+                  textAlign: 'center',
                 },
               }}
             />
@@ -1574,11 +1573,22 @@ export default function LaborCostManagement({
                 disableUnderline: true,
                 sx: {
                   ...editorCellInputSx,
-                  '& input': {
+                  '& .MuiAutocomplete-input': {
                     p: '0 !important',
                     fontSize: '0.69rem',
+                    fontWeight: 400,
                     textAlign: 'center',
                   },
+                },
+              }}
+              inputProps={{
+                ...params.inputProps,
+                style: {
+                  ...params.inputProps?.style,
+                  padding: 0,
+                  fontSize: '0.69rem',
+                  fontWeight: 400,
+                  textAlign: 'center',
                 },
               }}
             />
@@ -1840,16 +1850,6 @@ export default function LaborCostManagement({
           선택 {selectedProcesses.size.toLocaleString()}개
         </Typography>
         <Box sx={{ flex: 1 }} />
-        <Typography
-          sx={{
-            display: { xs: 'none', lg: 'block' },
-            fontSize: '0.63rem',
-            color: '#64748b',
-          }}
-        >
-          공정명 첫 글자 입력 시 12개 가이드 검색 · 가이드 외 직접 입력
-          가능 · 기존 행 더블클릭 수정
-        </Typography>
       </Paper>
 
       <TableContainer
