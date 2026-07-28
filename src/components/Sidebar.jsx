@@ -75,6 +75,10 @@ const laborMenus = [
     label: '근로계약서작성',
   },
   {
+    value: 'labor-cost',
+    label: '공정별 노임작성',
+  },
+  {
     value: 'labor-documents',
     label: '노임서류작성',
     disabled: true,

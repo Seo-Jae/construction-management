@@ -46,6 +46,7 @@ import WeeklyOverviewArchive from './page/WeeklyOverviewArchive.jsx';
 import MaterialOrderUpload from './page/MaterialOrderUpload.jsx';
 import MaterialInputStatus from './page/MaterialInputStatus.jsx';
 import LaborContractManagement from './page/LaborContractManagement.jsx';
+import LaborCostManagement from './page/LaborCostManagement.jsx';
 import ProgressClaimManagement from './page/ProgressClaimManagement.jsx';
 import ContractItemProcessMapping from './page/ContractItemProcessMapping.jsx';
 import AdminDashboard from './page/AdminDashboard.jsx';
@@ -303,6 +304,7 @@ const viewTitles = {
   'payment-contract-mapping': '계약품목 공정연결',
   'payment-sales-status': '매입매출현황',
   'labor-contract': '근로계약서작성',
+  'labor-cost': '공정별 노임작성',
   'report-weekly': '주간 업무 보고',
   'report-approval': '품의 보고',
   'report-outsourcing-approval': '외주 품의 보고',
@@ -3159,6 +3161,17 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               <LaborContractManagement
                 projectName={activeProjectName}
                 userProfile={activeUserProfile}
+              />
+            )}
+
+          {currentView ===
+            'labor-cost' &&
+            activeProjectName && (
+              <LaborCostManagement
+                projectName={activeProjectName}
+                userProfile={activeUserProfile}
+                processOptions={activeProcessOptions}
+                buildingConfigs={buildingConfigs}
               />
             )}
 
