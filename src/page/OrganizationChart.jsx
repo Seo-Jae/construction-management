@@ -235,6 +235,45 @@ const getEmbeddedMembers = (
       !structuralNodeIds.has(node.id),
   );
 
+const buildDepartmentMemberStats = (nodes, childrenByParent) => {
+  const stats = new Map();
+
+  nodes
+    .filter((node) => node.node_type === NODE_TYPES.DEPARTMENT)
+    .forEach((department) => {
+      const visitedNodeIds = new Set();
+      const personIds = new Set();
+      let includesSubdepartments = false;
+      const pendingNodes = [
+        ...(childrenByParent.get(department.id) || []),
+      ];
+
+      while (pendingNodes.length > 0) {
+        const current = pendingNodes.pop();
+        if (!current || visitedNodeIds.has(current.id)) continue;
+
+        visitedNodeIds.add(current.id);
+
+        if (current.node_type === NODE_TYPES.PERSON) {
+          personIds.add(current.id);
+        } else if (current.node_type === NODE_TYPES.DEPARTMENT) {
+          includesSubdepartments = true;
+        }
+
+        (childrenByParent.get(current.id) || []).forEach((child) => {
+          if (!visitedNodeIds.has(child.id)) pendingNodes.push(child);
+        });
+      }
+
+      stats.set(department.id, {
+        count: personIds.size,
+        includesSubdepartments,
+      });
+    });
+
+  return stats;
+};
+
 const getLayoutItemSize = (
   node,
   childrenByParent,
@@ -820,6 +859,8 @@ function MemberCard({
 function DepartmentGroup({
   node,
   members,
+  memberCount,
+  showsAggregateCount,
   position,
   size,
   editMode,
@@ -843,7 +884,6 @@ function DepartmentGroup({
 }) {
   const activeMemberDrop = memberDropTargetId === node.id;
   const departmentColor = normalizeHexColor(node.card_color);
-  const memberCount = members.length + 1;
 
   return (
     <Paper
@@ -890,7 +930,7 @@ function DepartmentGroup({
           {node.department || '부서 미입력'}
         </Typography>
         <Typography sx={{ mt: 0.15, color: 'rgba(255,255,255,0.94)', fontSize: '0.65rem', fontWeight: 800, letterSpacing: '-0.01em' }}>
-          구성원 {memberCount}명
+          {showsAggregateCount ? '총 구성원' : '구성원'} {memberCount}명
           {layoutMode ? ' · 끌어서 위치 이동' : ''}
         </Typography>
 
@@ -1132,6 +1172,10 @@ export default function OrganizationChart({
 
   const nodeById = useMemo(() => buildNodeMap(nodes), [nodes]);
   const childrenByParent = useMemo(() => buildChildrenMap(nodes), [nodes]);
+  const departmentMemberStats = useMemo(
+    () => buildDepartmentMemberStats(nodes, childrenByParent),
+    [childrenByParent, nodes],
+  );
   const structuralNodeIds = useMemo(
     () => getStructuralNodeIds(nodes, childrenByParent, nodeById),
     [childrenByParent, nodeById, nodes],
@@ -2712,12 +2756,20 @@ export default function OrganizationChart({
                     childrenByParent,
                     structuralNodeIds,
                   );
+                  const memberStats = departmentMemberStats.get(node.id) || {
+                    count: 0,
+                    includesSubdepartments: false,
+                  };
 
                   return (
                     <DepartmentGroup
                       key={node.id}
                       node={node}
                       members={members}
+                      memberCount={memberStats.count}
+                      showsAggregateCount={
+                        memberStats.includesSubdepartments
+                      }
                       position={position}
                       size={size}
                       editMode={editMode}
