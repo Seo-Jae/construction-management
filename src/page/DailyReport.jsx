@@ -16,6 +16,23 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import HistoricalDailyReportUpload from './HistoricalDailyReportUpload.jsx';
 import AdminDashboardReportPreview from './AdminDashboardReportPreview.jsx';
 
+const downwardSelectMenuProps = {
+  anchorOrigin: {
+    vertical: 'bottom',
+    horizontal: 'left',
+  },
+  transformOrigin: {
+    vertical: 'top',
+    horizontal: 'left',
+  },
+  marginThreshold: null,
+  PaperProps: {
+    sx: {
+      mt: 0.5,
+    },
+  },
+};
+
 export default function DailyReport({
   weekDays,
   calendarCells,
@@ -56,13 +73,21 @@ export default function DailyReport({
     setPickerMonth,
   ] = useState(viewMonth);
 
+  const currentKoreaYear = todayMidnight.getFullYear();
+  const firstPickerYear = currentKoreaYear - 3;
+  const lastPickerYear = currentKoreaYear + 3;
   const yearOptions = Array.from(
-    { length: 101 },
-    (_, index) => 2000 + index,
+    { length: 7 },
+    (_, index) => firstPickerYear + index,
   );
 
   const handleOpenMonthPicker = (event) => {
-    setPickerYear(viewYear);
+    setPickerYear(
+      Math.min(
+        Math.max(viewYear, firstPickerYear),
+        lastPickerYear,
+      ),
+    );
     setPickerMonth(viewMonth);
     setMonthPickerAnchor(event.currentTarget);
   };
@@ -213,11 +238,7 @@ export default function DailyReport({
                 onChange={(event) =>
                   setPickerYear(Number(event.target.value))
                 }
-                MenuProps={{
-                  PaperProps: {
-                    sx: { maxHeight: 300 },
-                  },
-                }}
+                MenuProps={downwardSelectMenuProps}
                 inputProps={{ 'aria-label': '이동할 연도' }}
                 sx={{ fontSize: '0.78rem', fontWeight: 700 }}
               >
@@ -235,6 +256,7 @@ export default function DailyReport({
                 onChange={(event) =>
                   setPickerMonth(Number(event.target.value))
                 }
+                MenuProps={downwardSelectMenuProps}
                 inputProps={{ 'aria-label': '이동할 월' }}
                 sx={{ fontSize: '0.78rem', fontWeight: 700 }}
               >
