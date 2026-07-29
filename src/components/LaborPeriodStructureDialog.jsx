@@ -184,6 +184,7 @@ export default function LaborPeriodStructureDialog({
   startMonth = '',
   endMonth = '',
   validUnits = [],
+  buildingConfigs = {},
   onProcessChange,
   onSaved,
 }) {
@@ -338,26 +339,84 @@ export default function LaborPeriodStructureDialog({
   }, [structureByCell, structureRows, validUnits]);
 
   const buildingGroups = useMemo(() => {
-    const grouped = new Map();
+    const rowsByBuilding = visualRows.reduce((result, row) => {
+      if (!result.has(row.building)) result.set(row.building, []);
+      result.get(row.building).push(row);
+      return result;
+    }, new Map());
 
-    visualRows.forEach((row) => {
-      if (!grouped.has(row.building)) grouped.set(row.building, []);
-      grouped.get(row.building).push(row);
-    });
+    const buildingNames = Array.from(
+      new Set([
+        ...Object.keys(buildingConfigs || {}),
+        ...Array.from(rowsByBuilding.keys()),
+      ]),
+    ).sort((first, second) =>
+      String(first).localeCompare(String(second), 'ko', { numeric: true }),
+    );
 
-    return Array.from(grouped.entries()).map(([building, rows]) => {
-      const lineKeys = Array.from(
-        new Set(rows.map((row) => resolveLine(row.unit))),
-      ).sort((first, second) =>
-        String(first).localeCompare(String(second), 'ko', { numeric: true }),
+    return buildingNames.map((building) => {
+      const rows = rowsByBuilding.get(building) || [];
+      const config = buildingConfigs?.[building] || {};
+      const configuredUnitsPerFloor = Math.max(
+        0,
+        Math.round(toNumber(config.unitsPerFloor)),
       );
-      const floors = Array.from(new Set(rows.map((row) => row.floor))).sort(
-        (first, second) => second - first,
+      const configuredFloorCount = Math.max(
+        0,
+        Math.round(toNumber(config.floors)),
       );
+
+      const lineKeys =
+        configuredUnitsPerFloor > 0
+          ? Array.from(
+              { length: configuredUnitsPerFloor },
+              (_, index) => String(index + 1).padStart(2, '0'),
+            )
+          : Array.from(
+              new Set(rows.map((row) => resolveLine(row.unit))),
+            ).sort((first, second) =>
+              String(first).localeCompare(String(second), 'ko', {
+                numeric: true,
+              }),
+            );
+
+      const floors =
+        configuredFloorCount > 0
+          ? Array.from(
+              { length: configuredFloorCount },
+              (_, index) => configuredFloorCount - index,
+            )
+          : Array.from(new Set(rows.map((row) => row.floor))).sort(
+              (first, second) => second - first,
+            );
+
       const rowByFloorLine = rows.reduce((result, row) => {
         result.set(`${row.floor}-${resolveLine(row.unit)}`, row);
         return result;
       }, new Map());
+
+      const unitTypeByLine = lineKeys.reduce((result, lineKey) => {
+        const types = Array.from(
+          new Set(
+            rows
+              .filter((row) => resolveLine(row.unit) === lineKey)
+              .map((row) => String(row.unitType || '미지정'))
+              .filter((unitType) => unitType && unitType !== '미지정'),
+          ),
+        );
+        result.set(lineKey, types.length > 0 ? types.join('/') : '-');
+        return result;
+      }, new Map());
+
+      const periodCompletedUnits = rows.filter(
+        (row) => row.actualState === 'in_period',
+      ).length;
+      const completedUnits = rows.filter(
+        (row) => row.actualState !== 'unworked',
+      ).length;
+      const forecastUnits = rows.filter(
+        (row) => forecastCells.has(row.cellKey),
+      ).length;
 
       return {
         building,
@@ -365,9 +424,15 @@ export default function LaborPeriodStructureDialog({
         lineKeys,
         floors,
         rowByFloorLine,
+        unitTypeByLine,
+        totalUnits: rows.length,
+        completedUnits,
+        periodCompletedUnits,
+        forecastUnits,
+        cardWidth: 42 + Math.max(lineKeys.length, 1) * 42 + 16,
       };
     });
-  }, [visualRows]);
+  }, [buildingConfigs, forecastCells, visualRows]);
 
   const summary = useMemo(() => {
     const periodCompletedRows = visualRows.filter(
@@ -529,7 +594,7 @@ export default function LaborPeriodStructureDialog({
         >
           <Box>
             <Typography sx={{ fontSize: '0.95rem', fontWeight: 900 }}>
-              해당기간 골구도 조회
+              예상노임조회
             </Typography>
             <Typography sx={{ mt: 0.15, fontSize: '0.66rem', color: '#64748b' }}>
               {projectName} · {startMonth} ~ {endMonth} 작업완료와 {endMonth} 월말 예상범주
@@ -720,168 +785,254 @@ export default function LaborPeriodStructureDialog({
               </Typography>
             </Stack>
           ) : (
-            <Box sx={{ p: 1, minWidth: 760 }}>
-              <Stack spacing={1.2}>
+            <Box sx={{ p: 1, minWidth: 'max-content' }}>
+              <Box
+                sx={{
+                  display: 'flex',
+                  flexWrap: 'wrap',
+                  gap: 1,
+                  alignItems: 'flex-start',
+                }}
+              >
                 {buildingGroups.map((group) => (
                   <Paper
                     key={group.building}
                     variant="outlined"
                     sx={{
-                      p: 0.85,
-                      borderColor: '#cbd5e1',
+                      width: group.cardWidth,
+                      flex: '0 0 auto',
+                      overflow: 'hidden',
+                      borderColor: '#94a3b8',
                       boxShadow: 'none',
+                      bgcolor: '#ffffff',
                     }}
                   >
                     <Stack
                       direction="row"
                       alignItems="center"
-                      spacing={1}
-                      sx={{ mb: 0.7 }}
+                      justifyContent="space-between"
+                      spacing={0.6}
+                      sx={{
+                        minHeight: 28,
+                        px: 0.75,
+                        py: 0.35,
+                        bgcolor: '#f1f5f9',
+                        borderBottom: '1px solid #cbd5e1',
+                      }}
                     >
-                      <Typography sx={{ fontSize: '0.78rem', fontWeight: 900 }}>
+                      <Typography
+                        sx={{
+                          fontSize: '0.7rem',
+                          fontWeight: 900,
+                          color: '#0f172a',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
                         {group.building}
                       </Typography>
-                      <Typography sx={{ fontSize: '0.64rem', color: '#64748b' }}>
-                        {group.rows.length.toLocaleString()}세대
+                      <Typography
+                        title={`전체 작업완료 ${group.completedUnits}세대 · 조회기간 ${group.periodCompletedUnits}세대 · 월말 예상 ${group.forecastUnits}세대`}
+                        sx={{
+                          fontSize: '0.53rem',
+                          fontWeight: 800,
+                          color: '#64748b',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        완료 {group.completedUnits}/{group.totalUnits}
+                        {group.forecastUnits > 0
+                          ? ` · 예상 ${group.forecastUnits}`
+                          : ''}
                       </Typography>
                     </Stack>
 
-                    <Box
-                      sx={{
-                        display: 'grid',
-                        gridTemplateColumns: `44px repeat(${Math.max(
-                          group.lineKeys.length,
-                          1,
-                        )}, minmax(52px, 1fr))`,
-                        gap: 0.38,
-                        alignItems: 'stretch',
-                      }}
-                    >
-                      <Box />
-                      {group.lineKeys.map((lineKey) => (
+                    <Box sx={{ p: 0.55 }}>
+                      <Box
+                        sx={{
+                          display: 'grid',
+                          gridTemplateColumns: `34px repeat(${Math.max(
+                            group.lineKeys.length,
+                            1,
+                          )}, 40px)`,
+                          gap: '1px',
+                          alignItems: 'stretch',
+                        }}
+                      >
+                        {group.floors.flatMap((floor) => {
+                          const items = [
+                            <Box
+                              key={`${group.building}-${floor}-floor`}
+                              sx={{
+                                height: 18,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                border: '1px solid #cbd5e1',
+                                borderRadius: 0.3,
+                                bgcolor: '#e2e8f0',
+                                color: '#334155',
+                                fontSize: '0.5rem',
+                                fontWeight: 900,
+                                lineHeight: 1,
+                              }}
+                            >
+                              {floor}층
+                            </Box>,
+                          ];
+
+                          group.lineKeys.forEach((lineKey) => {
+                            const row = group.rowByFloorLine.get(
+                              `${floor}-${lineKey}`,
+                            );
+
+                            if (!row) {
+                              items.push(
+                                <Box
+                                  key={`${group.building}-${floor}-${lineKey}-empty`}
+                                  title={`${group.building} ${floor}${lineKey}호 · 세대 없음/필로티`}
+                                  sx={{
+                                    height: 18,
+                                    border: '1px solid #e2e8f0',
+                                    borderRadius: 0.3,
+                                    background:
+                                      'repeating-linear-gradient(135deg, #f8fafc 0px, #f8fafc 4px, #e2e8f0 4px, #e2e8f0 5px)',
+                                  }}
+                                />,
+                              );
+                              return;
+                            }
+
+                            const isForecastSelected = forecastCells.has(
+                              row.cellKey,
+                            );
+                            const visual = getCellVisual(
+                              row,
+                              isForecastSelected,
+                            );
+                            const isClickable =
+                              editingForecast &&
+                              row.forecastEligible &&
+                              !saving;
+                            const missingCalculation =
+                              (row.actualState === 'in_period' ||
+                                isForecastSelected) &&
+                              row.calculationMissing;
+                            const tooltip = [
+                              `${group.building} ${row.unit}호`,
+                              `상태: ${visual.label}`,
+                              row.actualCompletionDate
+                                ? `완료일: ${row.actualCompletionDate}`
+                                : '완료일: -',
+                              row.sourceProcessType
+                                ? `공정진척 공정: ${row.sourceProcessType}`
+                                : `공정진척 공정: ${processType}`,
+                              `타입: ${row.unitType || '미지정'}`,
+                              `물량: ${formatQuantity(row.quantity)} ${
+                                row.unitName || ''
+                              }`,
+                              row.confirmationRound > 0
+                                ? `적용차수: ${row.confirmationRound}차`
+                                : '적용차수: 미지정',
+                              row.appliedUnitPrice > 0
+                                ? `적용단가: ${formatMoney(
+                                    row.appliedUnitPrice,
+                                  )}원`
+                                : '적용단가: 미설정',
+                              `계산금액: ${formatMoney(row.amount)}원`,
+                            ].join('\n');
+
+                            items.push(
+                              <Button
+                                key={row.cellKey}
+                                type="button"
+                                title={tooltip}
+                                onClick={() => handleCellClick(row)}
+                                disableRipple={!isClickable}
+                                sx={{
+                                  minWidth: 0,
+                                  width: 40,
+                                  height: 18,
+                                  minHeight: 18,
+                                  px: 0,
+                                  py: 0,
+                                  border: `1px ${
+                                    missingCalculation ? 'dashed' : 'solid'
+                                  } ${
+                                    missingCalculation
+                                      ? '#dc2626'
+                                      : visual.borderColor
+                                  }`,
+                                  borderRadius: 0.3,
+                                  bgcolor: visual.backgroundColor,
+                                  color: visual.color,
+                                  fontSize: '0.48rem',
+                                  fontWeight: 900,
+                                  lineHeight: 1,
+                                  cursor: isClickable ? 'pointer' : 'default',
+                                  '&:hover': {
+                                    bgcolor: visual.backgroundColor,
+                                    filter: isClickable
+                                      ? 'brightness(0.94)'
+                                      : 'none',
+                                  },
+                                }}
+                              >
+                                {row.unit}
+                              </Button>,
+                            );
+                          });
+
+                          return items;
+                        })}
+
                         <Box
-                          key={`${group.building}-line-${lineKey}`}
                           sx={{
-                            py: 0.25,
-                            textAlign: 'center',
-                            fontSize: '0.59rem',
-                            fontWeight: 800,
-                            color: '#64748b',
+                            height: 19,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            border: '1px solid #cbd5e1',
+                            borderRadius: 0.3,
+                            bgcolor: '#334155',
+                            color: '#ffffff',
+                            fontSize: '0.48rem',
+                            fontWeight: 900,
                           }}
                         >
-                          {Number(lineKey) || lineKey}호
+                          타입
                         </Box>
-                      ))}
-
-                      {group.floors.flatMap((floor) => {
-                        const items = [
+                        {group.lineKeys.map((lineKey) => (
                           <Box
-                            key={`${group.building}-${floor}-floor`}
+                            key={`${group.building}-${lineKey}-type`}
+                            title={`${Number(lineKey) || lineKey}호 라인 타입: ${
+                              group.unitTypeByLine.get(lineKey) || '-'
+                            }`}
                             sx={{
-                              minHeight: 38,
+                              height: 19,
+                              px: 0.2,
                               display: 'flex',
                               alignItems: 'center',
                               justifyContent: 'center',
-                              borderRadius: 0.7,
-                              bgcolor: '#e2e8f0',
+                              overflow: 'hidden',
+                              border: '1px solid #cbd5e1',
+                              borderRadius: 0.3,
+                              bgcolor: '#ffffff',
                               color: '#334155',
-                              fontSize: '0.64rem',
-                              fontWeight: 900,
+                              fontSize: '0.46rem',
+                              fontWeight: 800,
+                              lineHeight: 1,
+                              whiteSpace: 'nowrap',
+                              textOverflow: 'ellipsis',
                             }}
                           >
-                            {floor}층
-                          </Box>,
-                        ];
-
-                        group.lineKeys.forEach((lineKey) => {
-                          const row = group.rowByFloorLine.get(
-                            `${floor}-${lineKey}`,
-                          );
-
-                          if (!row) {
-                            items.push(
-                              <Box
-                                key={`${group.building}-${floor}-${lineKey}-empty`}
-                                sx={{ minHeight: 38 }}
-                              />,
-                            );
-                            return;
-                          }
-
-                          const isForecastSelected = forecastCells.has(row.cellKey);
-                          const visual = getCellVisual(row, isForecastSelected);
-                          const isClickable =
-                            editingForecast && row.forecastEligible && !saving;
-                          const missingCalculation =
-                            (row.actualState === 'in_period' || isForecastSelected) &&
-                            row.calculationMissing;
-                          const tooltip = [
-                            `${group.building} ${row.unit}호`,
-                            `상태: ${visual.label}`,
-                            row.actualCompletionDate
-                              ? `완료일: ${row.actualCompletionDate}`
-                              : '완료일: -',
-                            row.sourceProcessType
-                              ? `공정진척 공정: ${row.sourceProcessType}`
-                              : `공정진척 공정: ${processType}`,
-                            `타입: ${row.unitType || '미지정'}`,
-                            `물량: ${formatQuantity(row.quantity)} ${
-                              row.unitName || ''
-                            }`,
-                            row.confirmationRound > 0
-                              ? `적용차수: ${row.confirmationRound}차`
-                              : '적용차수: 미지정',
-                            row.appliedUnitPrice > 0
-                              ? `적용단가: ${formatMoney(
-                                  row.appliedUnitPrice,
-                                )}원`
-                              : '적용단가: 미설정',
-                            `계산금액: ${formatMoney(row.amount)}원`,
-                          ].join('\n');
-
-                          items.push(
-                            <Button
-                              key={row.cellKey}
-                              type="button"
-                              title={tooltip}
-                              onClick={() => handleCellClick(row)}
-                              disableRipple={!isClickable}
-                              sx={{
-                                minWidth: 0,
-                                minHeight: 38,
-                                px: 0.25,
-                                py: 0.3,
-                                border: `1px ${
-                                  missingCalculation ? 'dashed' : 'solid'
-                                } ${
-                                  missingCalculation
-                                    ? '#dc2626'
-                                    : visual.borderColor
-                                }`,
-                                borderRadius: 0.7,
-                                bgcolor: visual.backgroundColor,
-                                color: visual.color,
-                                fontSize: '0.62rem',
-                                fontWeight: 900,
-                                lineHeight: 1.1,
-                                cursor: isClickable ? 'pointer' : 'default',
-                                '&:hover': {
-                                  bgcolor: visual.backgroundColor,
-                                  filter: isClickable ? 'brightness(0.94)' : 'none',
-                                },
-                              }}
-                            >
-                              {row.unit}
-                            </Button>,
-                          );
-                        });
-
-                        return items;
-                      })}
+                            {group.unitTypeByLine.get(lineKey) || '-'}
+                          </Box>
+                        ))}
+                      </Box>
                     </Box>
                   </Paper>
                 ))}
-              </Stack>
+              </Box>
             </Box>
           )}
         </Paper>

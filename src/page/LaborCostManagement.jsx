@@ -3695,7 +3695,7 @@ export default function LaborCostManagement({
             disabled={monthlyLoading || rateProcessOrder.length === 0}
             sx={{ whiteSpace: 'nowrap' }}
           >
-            해당기간 골구도 조회
+            예상노임조회
           </Button>
           <Typography sx={{ fontSize: '0.68rem', color: '#64748b' }}>
             선택 기간의 `작업완료` 완료일을 기준으로 집계하며, 골구도에서 종료월 월말 예상범주를 별도로 조정할 수 있습니다.
@@ -4188,6 +4188,7 @@ export default function LaborCostManagement({
         startMonth={startMonth}
         endMonth={endMonth}
         validUnits={validUnits}
+        buildingConfigs={buildingConfigs}
         onProcessChange={setDetailProcess}
         onSaved={({ processType, savedCount }) => {
           setDetailProcess(processType);
