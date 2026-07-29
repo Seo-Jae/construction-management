@@ -1955,19 +1955,28 @@ export default function LaborCostManagement({
       return;
     }
 
-    const rows = Object.entries(quantities).map(([cellKey, quantity]) => {
+    const draftCellKeys = new Set([
+      ...Object.keys(quantities),
+      ...Object.keys(quantityRounds),
+    ]);
+    const rows = Array.from(draftCellKeys).map((cellKey) => {
       const { building, unit } = splitCellKey(cellKey);
+      const quantity = quantities[cellKey];
+      const hasQuantity = String(quantity ?? '').trim() !== '';
+
       return {
         building,
         unit,
-        quantity: Math.max(0, toNumber(quantity)),
+        quantity: hasQuantity
+          ? Math.max(0, toNumber(quantity))
+          : null,
         confirmation_round:
           Math.round(toNumber(quantityRounds[cellKey])) || null,
       };
     });
 
     if (rows.length === 0) {
-      setErrorMessage('저장할 세대별 물량이 없습니다.');
+      setErrorMessage('저장할 작성 내용이 없습니다.');
       return;
     }
 
@@ -1980,7 +1989,7 @@ export default function LaborCostManagement({
 
       for (const chunk of chunks) {
         const { error } = await supabase.rpc(
-          'save_labor_unit_quantities',
+          'save_labor_unit_quantity_drafts',
           {
             p_project_name: projectName,
             p_process_type: quantityProcess,
@@ -1989,39 +1998,18 @@ export default function LaborCostManagement({
         );
 
         if (error) throw error;
-
-        const roundRows = chunk
-          .filter((row) => row.quantity > 0)
-          .map((row) => ({
-            building: row.building,
-            unit: row.unit,
-            confirmation_round: row.confirmation_round,
-          }));
-
-        if (roundRows.length > 0) {
-          const { error: roundError } = await supabase.rpc(
-            'save_labor_unit_quantity_rounds',
-            {
-              p_project_name: projectName,
-              p_process_type: quantityProcess,
-              p_rows: roundRows,
-            },
-          );
-
-          if (roundError) throw roundError;
-        }
       }
 
       setMessage({
         severity: 'success',
-        text: `${quantityProcess} 세대별 물량 ${rows.length.toLocaleString()}건을 저장했습니다.`,
+        text: `${quantityProcess} 현재 작성내용 ${rows.length.toLocaleString()}건을 저장했습니다.`,
       });
       await loadQuantities();
       await loadMonthly();
     } catch (error) {
-      console.error('세대별 물량 저장 오류:', error);
+      console.error('세대별 작성내용 저장 오류:', error);
       setErrorMessage(
-        `세대별 물량을 저장하지 못했습니다: ${
+        `세대별 작성내용을 저장하지 못했습니다: ${
           error?.message || '알 수 없는 오류'
         }`,
       );
@@ -3006,7 +2994,7 @@ export default function LaborCostManagement({
             disabled={saving || quantityLoading}
             sx={{ whiteSpace: 'nowrap' }}
           >
-            물량 저장
+            저장
           </Button>
 
           <Box sx={{ flex: 1 }} />
