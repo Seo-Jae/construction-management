@@ -3,8 +3,9 @@ import ExcelJS from 'exceljs';
 export const LABOR_QUANTITY_EXCEL_TEST_PROJECT =
   '한라건설 용인금어지구';
 
-const TEMPLATE_VERSION = '1';
+const TEMPLATE_VERSION = '2';
 const DATA_SHEET_NAME = '세대별 물량';
+const REFERENCE_SHEET_NAME = '세대정보';
 const META_SHEET_NAME = '_시스템정보';
 const HEADER_ROW_NUMBER = 7;
 const DATA_START_ROW_NUMBER = HEADER_ROW_NUMBER + 1;
@@ -13,6 +14,7 @@ const MAX_IMPORT_ROWS = 10000;
 const HEADER_ALIASES = {
   combinedUnit: [
     '동호수',
+    '동호수①',
     '동호',
     '동호실',
     '동호실번호',
@@ -26,6 +28,7 @@ const HEADER_ALIASES = {
   unitType: ['타입', '세대타입', '주택형', '형별', 'type'],
   quantity: [
     '물량',
+    '물량②',
     '수량',
     '세대물량',
     '작업물량',
@@ -49,6 +52,7 @@ const headerLookup = Object.entries(HEADER_ALIASES).reduce(
         String(alias)
           .trim()
           .toLowerCase()
+          .replace(/[\u2460-\u2473]/g, '')
           .replace(/[\s_\-./()[\]{}<>·]/g, '')
       ] = fieldName;
     });
@@ -79,6 +83,7 @@ const normalizeHeader = (value) =>
   String(toPlainCellValue(value) ?? '')
     .trim()
     .toLowerCase()
+    .replace(/[\u2460-\u2473]/g, '')
     .replace(/[\s_\-./()[\]{}<>·]/g, '');
 
 const normalizeBuilding = (value) => {
@@ -111,21 +116,16 @@ const normalizeCombinedUnit = (value) =>
     .replace(/[동호실]/gu, '')
     .replace(/[^\p{L}\p{N}]/gu, '');
 
-const pairKey = (building, unit) =>
-  `${normalizeBuilding(building)}::${normalizeUnit(unit)}`;
-
 const createUnitLookups = (validUnits) => {
-  const byPair = new Map();
   const byCombined = new Map();
+  const ambiguousCombined = new Set();
 
   (validUnits || []).forEach((row) => {
-    const key = pairKey(row.building, row.unit);
     const building = normalizeBuilding(row.building);
     const unit = normalizeUnit(row.unit);
 
     if (!building || !unit || !row.cellKey) return;
 
-    byPair.set(key, row);
     [
       `${building}${unit}`,
       `${row.building}${row.unit}`,
@@ -133,11 +133,20 @@ const createUnitLookups = (validUnits) => {
       `${row.building}-${row.unit}`,
     ].forEach((alias) => {
       const normalizedAlias = normalizeCombinedUnit(alias);
-      if (normalizedAlias) byCombined.set(normalizedAlias, row);
+      if (!normalizedAlias || ambiguousCombined.has(normalizedAlias)) return;
+
+      const existing = byCombined.get(normalizedAlias);
+      if (existing && existing.cellKey !== row.cellKey) {
+        byCombined.delete(normalizedAlias);
+        ambiguousCombined.add(normalizedAlias);
+        return;
+      }
+
+      byCombined.set(normalizedAlias, row);
     });
   });
 
-  return { byPair, byCombined };
+  return { byCombined, ambiguousCombined };
 };
 
 const getCellText = (cell) => {
@@ -214,21 +223,17 @@ const mapHeaderRow = (worksheet, rowNumber) => {
     }
   }
 
-  const hasUnitIdentifier =
-    Boolean(fields.combinedUnit) ||
-    Boolean(fields.unit) ||
-    Boolean(fields.building && fields.unit);
   const score =
     Object.keys(fields).length +
     (fields.quantity ? 5 : 0) +
-    (hasUnitIdentifier ? 5 : 0);
+    (fields.combinedUnit ? 5 : 0);
 
   return {
     worksheet,
     rowNumber,
     fields,
     score,
-    valid: Boolean(fields.quantity && hasUnitIdentifier),
+    valid: Boolean(fields.quantity && fields.combinedUnit),
   };
 };
 
@@ -276,23 +281,22 @@ export const createLaborQuantityWorkbook = ({
   const workbook = new ExcelJS.Workbook();
   workbook.creator = '현장관리 시스템';
   workbook.created = new Date();
+  workbook.calcProperties.fullCalcOnLoad = true;
 
   const worksheet = workbook.addWorksheet(DATA_SHEET_NAME, {
     views: [{ state: 'frozen', ySplit: HEADER_ROW_NUMBER }],
+    properties: { tabColor: { argb: 'FF2563EB' } },
   });
 
   worksheet.columns = [
-    { key: 'combinedUnit', width: 15 },
-    { key: 'building', width: 10 },
-    { key: 'floor', width: 9 },
-    { key: 'unit', width: 11 },
-    { key: 'unitType', width: 13 },
-    { key: 'quantity', width: 15 },
-    { key: 'confirmationRound', width: 18 },
-    { key: 'unitName', width: 10 },
+    { key: 'combinedUnit', width: 17 },
+    { key: 'quantity', width: 17 },
+    { key: 'unitType', width: 16 },
+    { key: 'confirmationRound', width: 21 },
+    { key: 'unitName', width: 11 },
   ];
 
-  worksheet.mergeCells('A1:H1');
+  worksheet.mergeCells('A1:E1');
   worksheet.getCell('A1').value = `${processType} 세대별 물량 입력`;
   worksheet.getCell('A1').font = {
     name: '맑은 고딕',
@@ -313,14 +317,15 @@ export const createLaborQuantityWorkbook = ({
 
   worksheet.getCell('A2').value = '현장';
   worksheet.getCell('B2').value = projectName;
-  worksheet.getCell('D2').value = '공정';
-  worksheet.getCell('E2').value = processType;
-  worksheet.getCell('G2').value = '단위';
-  worksheet.getCell('H2').value = unitName || '-';
+  worksheet.getCell('C2').value = '공정';
+  worksheet.mergeCells('D2:E2');
+  worksheet.getCell('D2').value = processType;
+  worksheet.getCell('A3').value = '단위';
+  worksheet.getCell('B3').value = unitName || '-';
 
-  worksheet.mergeCells('A4:H4');
+  worksheet.mergeCells('A4:E4');
   worksheet.getCell('A4').value =
-    '노란색 열에 물량과 적용 확정차수를 입력하세요. 행 순서를 바꿔도 동호수 기준으로 불러옵니다.';
+    '① 동호수와 ② 물량을 입력하세요. 행 순서와 관계없이 동호수①만을 기준으로 불러옵니다.';
   worksheet.getCell('A4').font = {
     name: '맑은 고딕',
     size: 10,
@@ -334,9 +339,9 @@ export const createLaborQuantityWorkbook = ({
   };
   worksheet.getCell('A4').alignment = { horizontal: 'left' };
 
-  worksheet.mergeCells('A5:H5');
+  worksheet.mergeCells('A5:E5');
   worksheet.getCell('A5').value =
-    '다른 파일을 사용할 때는 동호수+물량 또는 동+호+물량 열이 있으면 됩니다. 층·타입은 확인용입니다.';
+    '타입은 옆의 세대정보 시트에서 자동 조회됩니다. 동·층·호·타입은 업로드 판정에 사용하지 않습니다.';
   worksheet.getCell('A5').font = {
     name: '맑은 고딕',
     size: 9,
@@ -344,14 +349,18 @@ export const createLaborQuantityWorkbook = ({
   };
 
   const headerLabels = [
-    '동호수',
-    '동',
-    '층',
-    '호',
-    '타입',
-    '물량',
-    '적용 확정차수',
+    '동호수①',
+    '물량②',
+    '타입(자동)',
+    '적용 확정차수(선택)',
     '단위',
+  ];
+  const headerFillColors = [
+    'FF1D4ED8',
+    'FFD97706',
+    'FF64748B',
+    'FF7C3AED',
+    'FF475569',
   ];
   const headerRow = worksheet.getRow(HEADER_ROW_NUMBER);
   headerLabels.forEach((label, index) => {
@@ -366,7 +375,7 @@ export const createLaborQuantityWorkbook = ({
     cell.fill = {
       type: 'pattern',
       pattern: 'solid',
-      fgColor: { argb: 'FF334155' },
+      fgColor: { argb: headerFillColors[index] },
     };
     cell.alignment = { horizontal: 'center', vertical: 'middle' };
     cell.border = {
@@ -378,6 +387,67 @@ export const createLaborQuantityWorkbook = ({
   });
   headerRow.height = 25;
 
+  const referenceSheet = workbook.addWorksheet(REFERENCE_SHEET_NAME, {
+    views: [{ state: 'frozen', ySplit: 1 }],
+    properties: { tabColor: { argb: 'FF94A3B8' } },
+  });
+  referenceSheet.columns = [
+    { key: 'combinedUnit', width: 17 },
+    { key: 'unitType', width: 16 },
+  ];
+  const referenceHeader = referenceSheet.getRow(1);
+  referenceHeader.values = ['동호수', '타입'];
+  referenceHeader.height = 25;
+  for (let columnNumber = 1; columnNumber <= 2; columnNumber += 1) {
+    const cell = referenceHeader.getCell(columnNumber);
+    cell.font = {
+      name: '맑은 고딕',
+      size: 10,
+      bold: true,
+      color: { argb: 'FFFFFFFF' },
+    };
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF475569' },
+    };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      left: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+      right: { style: 'thin', color: { argb: 'FFCBD5E1' } },
+    };
+  }
+
+  (units || []).forEach((unitRow, index) => {
+    const row = referenceSheet.getRow(index + 2);
+    const combinedUnit = `${normalizeBuilding(
+      unitRow.building,
+    )}${normalizeUnit(unitRow.unit)}`;
+    const unitType =
+      unitRow.unitType === '미지정' ? '' : unitRow.unitType || '';
+
+    row.values = [combinedUnit, unitType];
+    row.height = 20;
+    row.getCell(1).numFmt = '@';
+    for (let columnNumber = 1; columnNumber <= 2; columnNumber += 1) {
+      const cell = row.getCell(columnNumber);
+      cell.font = { name: '맑은 고딕', size: 9 };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = {
+        bottom: { style: 'hair', color: { argb: 'FFE2E8F0' } },
+        right: { style: 'hair', color: { argb: 'FFE2E8F0' } },
+      };
+    }
+  });
+
+  const referenceLastRow = Math.max(2, (units || []).length + 1);
+  referenceSheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: referenceLastRow, column: 2 },
+  };
+
   (units || []).forEach((unitRow, index) => {
     const rowNumber = DATA_START_ROW_NUMBER + index;
     const row = worksheet.getRow(rowNumber);
@@ -388,39 +458,60 @@ export const createLaborQuantityWorkbook = ({
     const hasQuantity = String(quantity ?? '').trim() !== '';
     const confirmationRound = Number(quantityRounds?.[cellKey]) || 0;
 
-    row.values = [
-      `${normalizeBuilding(building)}${normalizeUnit(unit)}`,
+    const combinedUnit = `${normalizeBuilding(
       building,
-      unitRow.floor || '',
-      unit,
-      unitRow.unitType === '미지정' ? '' : unitRow.unitType || '',
-      hasQuantity ? Number(quantity) : '',
-      confirmationRound > 0 ? `${confirmationRound}차 확정` : '',
+    )}${normalizeUnit(unit)}`;
+    const unitType =
+      unitRow.unitType === '미지정' ? '' : unitRow.unitType || '';
+
+    row.values = [
+      combinedUnit,
+      hasQuantity ? Number(quantity) : null,
+      null,
+      confirmationRound > 0 ? `${confirmationRound}차 확정` : null,
       unitName || '-',
     ];
+    row.getCell(3).value = {
+      formula: `IF(A${rowNumber}="","",IFERROR(INDEX('${REFERENCE_SHEET_NAME}'!$B$2:$B$${referenceLastRow},MATCH(A${rowNumber}&"",'${REFERENCE_SHEET_NAME}'!$A$2:$A$${referenceLastRow},0)),"동호수 확인"))`,
+      result: unitType,
+    };
 
     row.height = 21;
-    for (let columnNumber = 1; columnNumber <= 8; columnNumber += 1) {
+    for (let columnNumber = 1; columnNumber <= 5; columnNumber += 1) {
       const cell = row.getCell(columnNumber);
       cell.font = { name: '맑은 고딕', size: 9 };
       cell.alignment = {
-        horizontal: columnNumber === 6 ? 'right' : 'center',
+        horizontal: columnNumber === 2 ? 'right' : 'center',
         vertical: 'middle',
       };
       cell.border = {
         bottom: { style: 'hair', color: { argb: 'FFE2E8F0' } },
         right: { style: 'hair', color: { argb: 'FFE2E8F0' } },
       };
-      if (columnNumber === 6 || columnNumber === 7) {
+      if (columnNumber === 1) {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFEFF6FF' },
+        };
+      }
+      if (columnNumber === 2 || columnNumber === 4) {
         cell.fill = {
           type: 'pattern',
           pattern: 'solid',
           fgColor: { argb: 'FFFFF7CC' },
         };
       }
+      if (columnNumber === 3) {
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFF1F5F9' },
+        };
+      }
     }
     row.getCell(1).numFmt = '@';
-    row.getCell(6).numFmt = '#,##0.####';
+    row.getCell(2).numFmt = '#,##0.####';
   });
 
   const lastRow = Math.max(
@@ -429,7 +520,7 @@ export const createLaborQuantityWorkbook = ({
   );
   worksheet.autoFilter = {
     from: { row: HEADER_ROW_NUMBER, column: 1 },
-    to: { row: lastRow, column: 8 },
+    to: { row: lastRow, column: 5 },
   };
 
   const metadataSheet = workbook.addWorksheet(META_SHEET_NAME);
@@ -459,7 +550,7 @@ export const createLaborQuantityWorkbook = ({
       rowNumber <= lastRow;
       rowNumber += 1
     ) {
-      worksheet.getCell(rowNumber, 7).dataValidation = {
+      worksheet.getCell(rowNumber, 4).dataValidation = {
         type: 'list',
         allowBlank: true,
         formulae: [
@@ -534,7 +625,7 @@ export const parseLaborQuantityWorkbookBuffer = async ({
   const header = findImportHeader(workbook);
   if (!header) {
     throw new Error(
-      '동호수+물량 또는 동+호+물량 머리글을 찾지 못했습니다.',
+      '동호수①(또는 동호수)와 물량②(또는 물량) 머리글을 찾지 못했습니다.',
     );
   }
 
@@ -546,7 +637,7 @@ export const parseLaborQuantityWorkbookBuffer = async ({
     );
   }
 
-  const { byPair, byCombined } = createUnitLookups(validUnits);
+  const { byCombined, ambiguousCombined } = createUnitLookups(validUnits);
   const allowedRoundSet = new Set(
     (allowedRounds || [])
       .map((value) => Number(value))
@@ -591,31 +682,27 @@ export const parseLaborQuantityWorkbookBuffer = async ({
 
     let matchedUnit = null;
     let identifier = '';
-    const buildingValue = fields.building
-      ? getCellText(row.getCell(fields.building))
-      : '';
-    const unitValue = fields.unit
-      ? getCellText(row.getCell(fields.unit))
-      : '';
     const combinedValue = fields.combinedUnit
       ? getCellText(row.getCell(fields.combinedUnit))
       : '';
 
-    if (buildingValue && unitValue) {
-      matchedUnit = byPair.get(pairKey(buildingValue, unitValue)) || null;
-      identifier = `${buildingValue}동 ${unitValue}호`;
+    const normalizedCombinedValue =
+      normalizeCombinedUnit(combinedValue);
+    identifier = combinedValue;
+
+    if (
+      normalizedCombinedValue &&
+      ambiguousCombined.has(normalizedCombinedValue)
+    ) {
+      invalidRows.push({
+        rowNumber,
+        message: `${combinedValue} 동호수는 여러 세대와 겹쳐 자동으로 구분할 수 없습니다.`,
+      });
+      continue;
     }
 
-    if (!matchedUnit && combinedValue) {
-      matchedUnit =
-        byCombined.get(normalizeCombinedUnit(combinedValue)) || null;
-      identifier = combinedValue;
-    }
-
-    if (!matchedUnit && unitValue) {
-      matchedUnit =
-        byCombined.get(normalizeCombinedUnit(unitValue)) || null;
-      identifier = unitValue;
+    if (normalizedCombinedValue) {
+      matchedUnit = byCombined.get(normalizedCombinedValue) || null;
     }
 
     if (!matchedUnit) {
