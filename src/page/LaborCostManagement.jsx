@@ -56,6 +56,7 @@ import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded';
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import { supabase } from '../supabaseClient';
+import LaborPeriodStructureDialog from '../components/LaborPeriodStructureDialog.jsx';
 import { getProjectCellKeys } from '../utils/buildingUnits.js';
 import {
   LABOR_QUANTITY_EXCEL_TEST_PROJECT,
@@ -753,6 +754,7 @@ export default function LaborCostManagement({
   const [monthlyDetails, setMonthlyDetails] = useState([]);
   const [monthlyTotals, setMonthlyTotals] = useState({});
   const [detailProcess, setDetailProcess] = useState('');
+  const [periodStructureOpen, setPeriodStructureOpen] = useState(false);
   const monthlyRangeLabel = getMonthRangeLabel(startMonth, endMonth);
 
   const rateEditable = canManageRates(userProfile);
@@ -3672,8 +3674,31 @@ export default function LaborCostManagement({
           >
             조회
           </Button>
+          <Button
+            variant="contained"
+            startIcon={<VisibilityRoundedIcon />}
+            onClick={() => {
+              const targetProcess =
+                detailProcess || rateProcessOrder[0] || '';
+
+              if (!targetProcess) {
+                setMessage({
+                  severity: 'warning',
+                  text: '골구도로 확인할 노임 공정이 없습니다.',
+                });
+                return;
+              }
+
+              setDetailProcess(targetProcess);
+              setPeriodStructureOpen(true);
+            }}
+            disabled={monthlyLoading || rateProcessOrder.length === 0}
+            sx={{ whiteSpace: 'nowrap' }}
+          >
+            해당기간 골구도 조회
+          </Button>
           <Typography sx={{ fontSize: '0.68rem', color: '#64748b' }}>
-            선택 기간의 `작업완료` 완료일을 기준으로 집계합니다.
+            선택 기간의 `작업완료` 완료일을 기준으로 집계하며, 골구도에서 종료월 월말 예상범주를 별도로 조정할 수 있습니다.
           </Typography>
         </Stack>
       </Paper>
@@ -4153,6 +4178,25 @@ export default function LaborCostManagement({
           {activeTab === 2 && renderMonthlyTab()}
         </>
       )}
+
+      <LaborPeriodStructureDialog
+        open={periodStructureOpen}
+        onClose={() => setPeriodStructureOpen(false)}
+        projectName={projectName}
+        processOptions={rateProcessOrder}
+        initialProcess={detailProcess || rateProcessOrder[0] || ''}
+        startMonth={startMonth}
+        endMonth={endMonth}
+        validUnits={validUnits}
+        onProcessChange={setDetailProcess}
+        onSaved={({ processType, savedCount }) => {
+          setDetailProcess(processType);
+          setMessage({
+            severity: 'success',
+            text: `${endMonth} 월말 예상범주 ${savedCount.toLocaleString()}세대를 저장했습니다.`,
+          });
+        }}
+      />
 
       <Dialog
         open={deleteDialogOpen}
