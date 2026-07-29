@@ -19,9 +19,9 @@ import {
   DialogTitle,
   Divider,
   Fade,
-  FormControlLabel,
   IconButton,
   InputBase,
+  Menu,
   MenuItem,
   Paper,
   Snackbar,
@@ -40,14 +40,19 @@ import {
   Typography,
 } from '@mui/material';
 import AddCircleOutlineRoundedIcon from '@mui/icons-material/AddCircleOutlineRounded';
+import ArrowDropDownRoundedIcon from '@mui/icons-material/ArrowDropDownRounded';
 import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import DeleteSweepRoundedIcon from '@mui/icons-material/DeleteSweepRounded';
+import FilterAltOffRoundedIcon from '@mui/icons-material/FilterAltOffRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import RemoveCircleOutlineRoundedIcon from '@mui/icons-material/RemoveCircleOutlineRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
+import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded';
+import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import { supabase } from '../supabaseClient';
 import { getProjectCellKeys } from '../utils/buildingUnits.js';
 
@@ -81,6 +86,17 @@ const RATE_EDITABLE_FIELDS = [
 ];
 const SUPABASE_WRITE_CHUNK_SIZE = 500;
 const SUPABASE_READ_PAGE_SIZE = 1000;
+const createEmptyQuantityColumnFilters = () => ({
+  building: [],
+  floor: [],
+  unitType: [],
+  unit: [],
+  quantityStatus: [],
+  unitName: [],
+  confirmationRound: [],
+  appliedRateStatus: [],
+  amountStatus: [],
+});
 
 const moneyFormatter = new Intl.NumberFormat('ko-KR', {
   maximumFractionDigits: 0,
@@ -454,6 +470,171 @@ const numberCellSx = {
   fontVariantNumeric: 'tabular-nums',
 };
 
+const quantityBodyCellSx = {
+  ...bodyCellSx,
+  height: 30,
+  py: 0.18,
+};
+
+function ExcelFilterHeaderCell({
+  label,
+  options = [],
+  selectedValues = [],
+  onChange,
+  minWidth,
+}) {
+  const [anchorElement, setAnchorElement] = useState(null);
+  const [searchText, setSearchText] = useState('');
+  const selectedSet = useMemo(
+    () => new Set(selectedValues.map(String)),
+    [selectedValues],
+  );
+  const visibleOptions = useMemo(() => {
+    const keyword = searchText.trim().toLowerCase();
+    if (!keyword) return options;
+
+    return options.filter((option) =>
+      String(option.label ?? option.value)
+        .toLowerCase()
+        .includes(keyword),
+    );
+  }, [options, searchText]);
+  const isActive = selectedSet.size > 0;
+
+  const closeMenu = () => {
+    setAnchorElement(null);
+    setSearchText('');
+  };
+
+  const toggleOption = (value) => {
+    const next = new Set(selectedSet);
+    const stringValue = String(value);
+
+    if (next.has(stringValue)) next.delete(stringValue);
+    else next.add(stringValue);
+
+    onChange(Array.from(next));
+  };
+
+  return (
+    <TableCell
+      sx={{
+        ...headerCellSx,
+        minWidth,
+        p: 0,
+        bgcolor: isActive ? '#dbeafe' : headerCellSx.bgcolor,
+      }}
+      align="center"
+    >
+      <Button
+        fullWidth
+        size="small"
+        color="inherit"
+        endIcon={<ArrowDropDownRoundedIcon fontSize="small" />}
+        onClick={(event) => setAnchorElement(event.currentTarget)}
+        sx={{
+          minWidth: 0,
+          minHeight: 34,
+          px: 0.65,
+          borderRadius: 0,
+          justifyContent: 'center',
+          color: isActive ? '#1d4ed8' : '#334155',
+          fontSize: '0.68rem',
+          fontWeight: 900,
+          whiteSpace: 'nowrap',
+          '& .MuiButton-endIcon': {
+            ml: 0.15,
+          },
+        }}
+      >
+        {label}
+        {isActive ? ` (${selectedSet.size})` : ''}
+      </Button>
+
+      <Menu
+        anchorEl={anchorElement}
+        open={Boolean(anchorElement)}
+        onClose={closeMenu}
+        MenuListProps={{ dense: true }}
+        slotProps={{
+          paper: {
+            sx: {
+              width: 230,
+              maxHeight: 390,
+              border: '1px solid #cbd5e1',
+              boxShadow: '0 12px 28px rgba(15, 23, 42, 0.18)',
+            },
+          },
+        }}
+      >
+        <Box
+          sx={{ px: 1, pt: 0.7, pb: 0.45 }}
+          onKeyDown={(event) => event.stopPropagation()}
+        >
+          <InputBase
+            autoFocus
+            fullWidth
+            value={searchText}
+            onChange={(event) => setSearchText(event.target.value)}
+            placeholder={`${label} 검색`}
+            sx={{
+              height: 30,
+              px: 0.9,
+              border: '1px solid #cbd5e1',
+              borderRadius: 1,
+              bgcolor: '#fff',
+              fontSize: '0.69rem',
+            }}
+          />
+        </Box>
+        <MenuItem
+          onClick={() => {
+            onChange([]);
+            closeMenu();
+          }}
+          sx={{ fontSize: '0.69rem', fontWeight: 800 }}
+        >
+          <Checkbox size="small" checked={!isActive} sx={{ p: 0.45, mr: 0.5 }} />
+          전체 표시
+        </MenuItem>
+        <Divider />
+        {visibleOptions.map((option) => {
+          const optionValue = String(option.value);
+          return (
+            <MenuItem
+              key={optionValue}
+              onClick={() => toggleOption(optionValue)}
+              sx={{ minHeight: 30, fontSize: '0.68rem' }}
+            >
+              <Checkbox
+                size="small"
+                checked={selectedSet.has(optionValue)}
+                sx={{ p: 0.45, mr: 0.5 }}
+              />
+              <Box
+                component="span"
+                sx={{
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {option.label ?? option.value}
+              </Box>
+            </MenuItem>
+          );
+        })}
+        {visibleOptions.length === 0 && (
+          <MenuItem disabled sx={{ fontSize: '0.68rem' }}>
+            검색 결과가 없습니다.
+          </MenuItem>
+        )}
+      </Menu>
+    </TableCell>
+  );
+}
+
 function SummaryCard({ label, value, helper, color = '#0f172a' }) {
   return (
     <Paper
@@ -522,6 +703,9 @@ export default function LaborCostManagement({
   const [unitTypes, setUnitTypes] = useState({});
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyProcess, setHistoryProcess] = useState('');
+  const [showHiddenHistory, setShowHiddenHistory] = useState(false);
+  const [historyActionId, setHistoryActionId] = useState('');
+  const [historyDeleteTarget, setHistoryDeleteTarget] = useState(null);
   const [rateRoundSavingId, setRateRoundSavingId] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedProcesses, setSelectedProcesses] = useState(
@@ -538,14 +722,9 @@ export default function LaborCostManagement({
   const [quantities, setQuantities] = useState({});
   const [quantityRounds, setQuantityRounds] = useState({});
   const [selectedUnits, setSelectedUnits] = useState(() => new Set());
-  const [buildingFilter, setBuildingFilter] = useState('전체');
-  const [floorFilter, setFloorFilter] = useState('전체');
-  const [typeFilter, setTypeFilter] = useState('전체');
-  const [onlyUnassignedQuantity, setOnlyUnassignedQuantity] =
-    useState(false);
-  const [onlyUnassignedRate, setOnlyUnassignedRate] =
-    useState(false);
-  const [unitKeyword, setUnitKeyword] = useState('');
+  const [quantityColumnFilters, setQuantityColumnFilters] = useState(
+    createEmptyQuantityColumnFilters,
+  );
   const [bulkQuantity, setBulkQuantity] = useState('');
   const [bulkRateRound, setBulkRateRound] = useState('');
   const [quantityPage, setQuantityPage] = useState(0);
@@ -590,6 +769,31 @@ export default function LaborCostManagement({
       .filter(Boolean);
   }, [overviewLoaded, processCatalog]);
 
+  const rateProcessOrder = useMemo(() => {
+    if (!overviewLoaded) return [];
+
+    return processCatalog
+      .map((row, index) => ({ ...row, originalIndex: index }))
+      .filter(
+        (row) =>
+          row.is_active !== false &&
+          Boolean(settingByProcess[row.process_type]),
+      )
+      .sort((first, second) => {
+        const firstOrder = toNumber(first.sort_order);
+        const secondOrder = toNumber(second.sort_order);
+
+        if (firstOrder > 0 && secondOrder > 0) {
+          return firstOrder - secondOrder;
+        }
+        if (firstOrder > 0) return -1;
+        if (secondOrder > 0) return 1;
+        return first.originalIndex - second.originalIndex;
+      })
+      .map((row) => row.process_type)
+      .filter(Boolean);
+  }, [overviewLoaded, processCatalog, settingByProcess]);
+
   const validUnits = useMemo(() => {
     const rows = Array.from(getProjectCellKeys(buildingConfigs)).map(
       (cellKey) => {
@@ -618,108 +822,124 @@ export default function LaborCostManagement({
     });
   }, [buildingConfigs, unitTypes]);
 
-  const buildingOptions = useMemo(
-    () =>
-      Array.from(new Set(validUnits.map((row) => row.building))).sort(
-        (first, second) =>
-          String(first).localeCompare(String(second), 'ko', {
-            numeric: true,
-          }),
+  const quantityFilterOptions = useMemo(() => {
+    const toOptions = (values, labelFormatter = (value) => value) =>
+      Array.from(new Set(values.map((value) => String(value))))
+        .filter(Boolean)
+        .sort((first, second) =>
+          first.localeCompare(second, 'ko', { numeric: true }),
+        )
+        .map((value) => ({
+          value,
+          label: labelFormatter(value),
+        }));
+
+    const confirmationRounds = rateHistory
+      .filter(
+        (row) =>
+          row.process_type === quantityProcess &&
+          toNumber(row.confirmation_round) > 0 &&
+          toNumber(row.confirmed_unit_price) > 0,
+      )
+      .map((row) => String(toNumber(row.confirmation_round)));
+    const unitName =
+      settingByProcess[quantityProcess]?.unit || '-';
+
+    return {
+      building: toOptions(validUnits.map((row) => row.building)),
+      floor: toOptions(
+        validUnits
+          .map((row) => row.floor)
+          .filter((floor) => floor > 0),
+        (floor) => `${floor}층`,
       ),
-    [validUnits],
-  );
-
-  const floorOptions = useMemo(() => {
-    const source =
-      buildingFilter === '전체'
-        ? validUnits
-        : validUnits.filter((row) => row.building === buildingFilter);
-
-    return Array.from(new Set(source.map((row) => row.floor)))
-      .filter((floor) => floor > 0)
-      .sort((first, second) => second - first);
-  }, [buildingFilter, validUnits]);
-
-  const typeOptions = useMemo(() => {
-    const source = validUnits.filter((row) => {
-      if (buildingFilter !== '전체' && row.building !== buildingFilter) {
-        return false;
-      }
-
-      if (
-        floorFilter !== '전체' &&
-        row.floor !== Number(floorFilter)
-      ) {
-        return false;
-      }
-
-      return true;
-    });
-
-    return Array.from(new Set(source.map((row) => row.unitType)))
-      .filter(Boolean)
-      .sort((first, second) =>
-        String(first).localeCompare(String(second), 'ko', {
-          numeric: true,
-        }),
-      );
-  }, [buildingFilter, floorFilter, validUnits]);
-
-  const filteredUnits = useMemo(() => {
-    const keyword = String(unitKeyword || '').trim().toLowerCase();
-
-    return validUnits.filter((row) => {
-      if (buildingFilter !== '전체' && row.building !== buildingFilter) {
-        return false;
-      }
-
-      if (
-        floorFilter !== '전체' &&
-        row.floor !== Number(floorFilter)
-      ) {
-        return false;
-      }
-
-      if (typeFilter !== '전체' && row.unitType !== typeFilter) {
-        return false;
-      }
-
-      if (
-        onlyUnassignedQuantity &&
-        toNumber(quantities[row.cellKey]) > 0
-      ) {
-        return false;
-      }
-
-      if (
-        onlyUnassignedRate &&
-        toNumber(quantityRounds[row.cellKey]) > 0
-      ) {
-        return false;
-      }
-
-      if (
-        keyword &&
-        !`${row.building} ${row.unit} ${row.unitType}`
-          .toLowerCase()
-          .includes(keyword)
-      ) {
-        return false;
-      }
-
-      return true;
-    });
+      unitType: toOptions(validUnits.map((row) => row.unitType)),
+      unit: toOptions(validUnits.map((row) => row.unit)),
+      quantityStatus: [
+        { value: '입력완료', label: '입력완료' },
+        { value: '미입력', label: '미입력' },
+      ],
+      unitName: [{ value: unitName, label: unitName }],
+      confirmationRound: [
+        { value: '미지정', label: '미지정' },
+        ...toOptions(
+          confirmationRounds,
+          (round) => `${round}차 확정`,
+        ),
+      ],
+      appliedRateStatus: [
+        { value: '설정됨', label: '설정됨' },
+        { value: '미설정', label: '미설정' },
+      ],
+      amountStatus: [
+        { value: '계산됨', label: '계산됨' },
+        { value: '미계산', label: '미계산' },
+      ],
+    };
   }, [
-    buildingFilter,
-    floorFilter,
-    onlyUnassignedQuantity,
-    onlyUnassignedRate,
-    quantities,
-    quantityRounds,
-    typeFilter,
-    unitKeyword,
+    quantityProcess,
+    rateHistory,
+    settingByProcess,
     validUnits,
   ]);
+
+  const filteredUnits = useMemo(() => {
+    const matches = (filterName, value) => {
+      const selected = quantityColumnFilters[filterName] || [];
+      return (
+        selected.length === 0 ||
+        selected.includes(String(value))
+      );
+    };
+    const unitName =
+      settingByProcess[quantityProcess]?.unit || '-';
+
+    return validUnits.filter((row) => {
+      const quantity = toNumber(quantities[row.cellKey]);
+      const confirmationRound = toNumber(
+        quantityRounds[row.cellKey],
+      );
+      const quantityStatus =
+        quantity > 0 ? '입력완료' : '미입력';
+      const roundValue =
+        confirmationRound > 0
+          ? String(confirmationRound)
+          : '미지정';
+      const appliedRateStatus =
+        confirmationRound > 0 ? '설정됨' : '미설정';
+      const amountStatus =
+        quantity > 0 && confirmationRound > 0
+          ? '계산됨'
+          : '미계산';
+
+      return (
+        matches('building', row.building) &&
+        matches('floor', row.floor) &&
+        matches('unitType', row.unitType) &&
+        matches('unit', row.unit) &&
+        matches('quantityStatus', quantityStatus) &&
+        matches('unitName', unitName) &&
+        matches('confirmationRound', roundValue) &&
+        matches('appliedRateStatus', appliedRateStatus) &&
+        matches('amountStatus', amountStatus)
+      );
+    });
+  }, [
+    quantityColumnFilters,
+    quantityProcess,
+    quantities,
+    quantityRounds,
+    settingByProcess,
+    validUnits,
+  ]);
+
+  const activeQuantityFilterCount = useMemo(
+    () =>
+      Object.values(quantityColumnFilters).filter(
+        (values) => values.length > 0,
+      ).length,
+    [quantityColumnFilters],
+  );
 
   const paginatedUnits = useMemo(
     () =>
@@ -819,7 +1039,7 @@ export default function LaborCostManagement({
           error: rateRoundError,
         } = await supabase
           .from('labor_process_rate_versions')
-          .select('id, confirmation_round')
+          .select('id, confirmation_round, is_hidden')
           .eq('project_name', projectName)
           .range(
             rateRoundOffset,
@@ -842,14 +1062,20 @@ export default function LaborCostManagement({
         result[row.id] = row.confirmation_round;
         return result;
       }, {});
+      const hiddenByRateId = rateRoundRows.reduce((result, row) => {
+        result[row.id] = row.is_hidden === true;
+        return result;
+      }, {});
 
       const nextSettings = (data?.settings || []).map((row) => ({
         ...row,
         confirmation_round: roundByRateId[row.id] ?? null,
+        is_hidden: hiddenByRateId[row.id] === true,
       }));
       const nextHistory = (data?.history || []).map((row) => ({
         ...row,
         confirmation_round: roundByRateId[row.id] ?? null,
+        is_hidden: hiddenByRateId[row.id] === true,
       }));
       const nextCatalog = data?.processes || [];
 
@@ -1066,10 +1292,59 @@ export default function LaborCostManagement({
       const mergedResult =
         mergeMonthlyStatusResults(monthlyResults);
 
-      const nextSummary = mergedResult.summary;
+      const rawSummaryByProcess = new Map(
+        mergedResult.summary.map((row) => [
+          row.process_type,
+          row,
+        ]),
+      );
+      const allowedProcesses = new Set(rateProcessOrder);
+      const nextSummary = rateProcessOrder.map(
+        (processType) =>
+          rawSummaryByProcess.get(processType) || {
+            process_type: processType,
+            current_completed_units: 0,
+            current_quantity: 0,
+            current_amount: 0,
+            cumulative_quantity: 0,
+            cumulative_amount: 0,
+            average_unit_price: 0,
+            missing_quantity_units: 0,
+            missing_rate_units: 0,
+          },
+      );
+      const nextDetails = mergedResult.details.filter((row) =>
+        allowedProcesses.has(row.process_type),
+      );
+      const nextTotals = {
+        current_completed_units: nextSummary.reduce(
+          (total, row) =>
+            total + toNumber(row.current_completed_units),
+          0,
+        ),
+        current_amount: nextSummary.reduce(
+          (total, row) => total + toNumber(row.current_amount),
+          0,
+        ),
+        cumulative_amount: nextSummary.reduce(
+          (total, row) => total + toNumber(row.cumulative_amount),
+          0,
+        ),
+        missing_quantity_units: nextSummary.reduce(
+          (total, row) =>
+            total + toNumber(row.missing_quantity_units),
+          0,
+        ),
+        missing_rate_units: nextSummary.reduce(
+          (total, row) =>
+            total + toNumber(row.missing_rate_units),
+          0,
+        ),
+      };
+
       setMonthlySummary(nextSummary);
-      setMonthlyDetails(mergedResult.details);
-      setMonthlyTotals(mergedResult.totals);
+      setMonthlyDetails(nextDetails);
+      setMonthlyTotals(nextTotals);
       setDetailProcess((previous) => {
         if (
           previous &&
@@ -1090,7 +1365,7 @@ export default function LaborCostManagement({
     } finally {
       setMonthlyLoading(false);
     }
-  }, [endMonth, projectName, startMonth]);
+  }, [endMonth, projectName, rateProcessOrder, startMonth]);
 
   useEffect(() => {
     setSettings([]);
@@ -1102,8 +1377,10 @@ export default function LaborCostManagement({
     setQuantityRounds({});
     setBulkQuantity('');
     setBulkRateRound('');
-    setOnlyUnassignedQuantity(false);
-    setOnlyUnassignedRate(false);
+    setQuantityColumnFilters(createEmptyQuantityColumnFilters());
+    setShowHiddenHistory(false);
+    setHistoryActionId('');
+    setHistoryDeleteTarget(null);
     setRateRoundSavingId('');
     setMonthlySummary([]);
     setMonthlyDetails([]);
@@ -1579,6 +1856,22 @@ export default function LaborCostManagement({
     });
   };
 
+  const handleQuantityColumnFilterChange = (
+    filterName,
+    selectedValues,
+  ) => {
+    setQuantityColumnFilters((previous) => ({
+      ...previous,
+      [filterName]: selectedValues,
+    }));
+    setQuantityPage(0);
+  };
+
+  const resetQuantityColumnFilters = () => {
+    setQuantityColumnFilters(createEmptyQuantityColumnFilters());
+    setQuantityPage(0);
+  };
+
   const handleToggleVisibleUnits = () => {
     const visibleKeys = filteredUnits.map((row) => row.cellKey);
     const allSelected =
@@ -1764,8 +2057,7 @@ export default function LaborCostManagement({
       setSelectedUnits(new Set());
       setBulkQuantity('');
       setBulkRateRound('');
-      setOnlyUnassignedQuantity(false);
-      setOnlyUnassignedRate(false);
+      setQuantityColumnFilters(createEmptyQuantityColumnFilters());
       setMessage({
         severity: 'success',
         text: `${quantityProcess} 공정의 저장 물량 ${toNumber(
@@ -1832,7 +2124,91 @@ export default function LaborCostManagement({
     }
   };
 
-  const selectedProcessHistory = useMemo(
+  const handleToggleRateHistoryHidden = async (rateRow) => {
+    if (!rateEditable || !rateRow?.id) return;
+
+    const nextHidden = rateRow.is_hidden !== true;
+    setHistoryActionId(rateRow.id);
+    setMessage(null);
+    setErrorMessage('');
+
+    try {
+      const { error } = await supabase.rpc(
+        'set_labor_rate_history_hidden',
+        {
+          p_project_name: projectName,
+          p_rate_id: rateRow.id,
+          p_is_hidden: nextHidden,
+        },
+      );
+
+      if (error) throw error;
+
+      setMessage({
+        severity: 'success',
+        text: nextHidden
+          ? '선택한 변경이력을 숨겼습니다.'
+          : '숨긴 변경이력을 다시 표시했습니다.',
+      });
+      await loadOverview();
+    } catch (error) {
+      console.error('노임단가 변경이력 숨김 오류:', error);
+      setErrorMessage(
+        `변경이력 표시 상태를 바꾸지 못했습니다: ${
+          error?.message || '알 수 없는 오류'
+        }`,
+      );
+    } finally {
+      setHistoryActionId('');
+    }
+  };
+
+  const handleDeleteRateHistory = async () => {
+    const rateRow = historyDeleteTarget;
+    if (!rateEditable || !rateRow?.id) return;
+
+    setHistoryActionId(rateRow.id);
+    setMessage(null);
+    setErrorMessage('');
+
+    try {
+      const { data, error } = await supabase.rpc(
+        'delete_labor_rate_history',
+        {
+          p_project_name: projectName,
+          p_rate_id: rateRow.id,
+        },
+      );
+
+      if (error) throw error;
+
+      const clearedQuantityCount = toNumber(
+        data?.cleared_quantity_count,
+      );
+      setHistoryDeleteTarget(null);
+      setMessage({
+        severity: 'success',
+        text:
+          clearedQuantityCount > 0
+            ? `변경이력을 삭제하고 연결된 ${clearedQuantityCount.toLocaleString()}세대의 확정차수를 미지정으로 변경했습니다.`
+            : '선택한 변경이력을 삭제했습니다.',
+      });
+      await loadOverview();
+      await loadQuantities();
+      await loadMonthly();
+    } catch (error) {
+      console.error('노임단가 변경이력 삭제 오류:', error);
+      setErrorMessage(
+        `변경이력을 삭제하지 못했습니다: ${
+          error?.message || '알 수 없는 오류'
+        }`,
+      );
+    } finally {
+      setHistoryActionId('');
+    }
+  };
+
+  const allSelectedProcessHistory = useMemo(
     () =>
       rateHistory.filter(
         (row) => row.process_type === historyProcess,
@@ -1840,15 +2216,31 @@ export default function LaborCostManagement({
     [historyProcess, rateHistory],
   );
 
+  const selectedProcessHistory = useMemo(
+    () =>
+      allSelectedProcessHistory.filter(
+        (row) => showHiddenHistory || row.is_hidden !== true,
+      ),
+    [allSelectedProcessHistory, showHiddenHistory],
+  );
+
+  const hiddenHistoryCount = useMemo(
+    () =>
+      allSelectedProcessHistory.filter(
+        (row) => row.is_hidden === true,
+      ).length,
+    [allSelectedProcessHistory],
+  );
+
   const historyRoundOptions = useMemo(() => {
-    const highestRound = selectedProcessHistory.reduce(
+    const highestRound = allSelectedProcessHistory.reduce(
       (highest, row) =>
         Math.max(highest, toNumber(row.confirmation_round)),
       0,
     );
     const optionCount = Math.max(
       1,
-      selectedProcessHistory.length,
+      allSelectedProcessHistory.length,
       highestRound + 1,
     );
 
@@ -1856,7 +2248,7 @@ export default function LaborCostManagement({
       { length: optionCount },
       (_unused, index) => index + 1,
     );
-  }, [selectedProcessHistory]);
+  }, [allSelectedProcessHistory]);
 
   const visibleMonthlyDetails = useMemo(
     () =>
@@ -2170,6 +2562,7 @@ export default function LaborCostManagement({
             startIcon={<HistoryRoundedIcon />}
             onClick={() => {
               setHistoryProcess(editingOriginalProcess);
+              setShowHiddenHistory(false);
               setHistoryOpen(true);
             }}
           >
@@ -2453,6 +2846,7 @@ export default function LaborCostManagement({
                       onClick={(event) => {
                         event.stopPropagation();
                         setHistoryProcess(processType);
+                        setShowHiddenHistory(false);
                         setHistoryOpen(true);
                       }}
                     >
@@ -2533,6 +2927,10 @@ export default function LaborCostManagement({
               setQuantityRounds({});
               setSelectedUnits(new Set());
               setBulkRateRound('');
+              setQuantityColumnFilters(
+                createEmptyQuantityColumnFilters(),
+              );
+              setQuantityPage(0);
             }}
             sx={{ minWidth: 145 }}
           >
@@ -2542,127 +2940,6 @@ export default function LaborCostManagement({
               </MenuItem>
             ))}
           </TextField>
-
-          <TextField
-            select
-            size="small"
-            label="동"
-            value={buildingFilter}
-            onChange={(event) => {
-              setBuildingFilter(event.target.value);
-              setFloorFilter('전체');
-              setTypeFilter('전체');
-              setQuantityPage(0);
-            }}
-            sx={{ minWidth: 125 }}
-          >
-            <MenuItem value="전체">전체 동</MenuItem>
-            {buildingOptions.map((building) => (
-              <MenuItem key={building} value={building}>
-                {building}
-              </MenuItem>
-            ))}
-          </TextField>
-
-          <TextField
-            select
-            size="small"
-            label="층"
-            value={floorFilter}
-            onChange={(event) => {
-              setFloorFilter(event.target.value);
-              setTypeFilter('전체');
-              setQuantityPage(0);
-            }}
-            sx={{ minWidth: 105 }}
-          >
-            <MenuItem value="전체">전체 층</MenuItem>
-            {floorOptions.map((floor) => (
-              <MenuItem key={floor} value={floor}>
-                {floor}층
-              </MenuItem>
-            ))}
-          </TextField>
-
-          <TextField
-            select
-            size="small"
-            label="타입"
-            value={typeFilter}
-            onChange={(event) => {
-              setTypeFilter(event.target.value);
-              setQuantityPage(0);
-            }}
-            sx={{ minWidth: 115 }}
-          >
-            <MenuItem value="전체">전체 타입</MenuItem>
-            {typeOptions.map((unitType) => (
-              <MenuItem key={unitType} value={unitType}>
-                {unitType}
-              </MenuItem>
-            ))}
-          </TextField>
-
-          <FormControlLabel
-            control={
-              <Checkbox
-                size="small"
-                checked={onlyUnassignedQuantity}
-                onChange={(event) => {
-                  setOnlyUnassignedQuantity(event.target.checked);
-                  setQuantityPage(0);
-                }}
-              />
-            }
-            label={
-              <Typography sx={{ fontSize: '0.69rem' }}>
-                공정 물량 미지정만
-              </Typography>
-            }
-            sx={{
-              mr: 0,
-              whiteSpace: 'nowrap',
-              '& .MuiFormControlLabel-label': {
-                lineHeight: 1,
-              },
-            }}
-          />
-
-          <FormControlLabel
-            control={
-              <Checkbox
-                size="small"
-                checked={onlyUnassignedRate}
-                onChange={(event) => {
-                  setOnlyUnassignedRate(event.target.checked);
-                  setQuantityPage(0);
-                }}
-              />
-            }
-            label={
-              <Typography sx={{ fontSize: '0.69rem' }}>
-                확정차수 미지정만
-              </Typography>
-            }
-            sx={{
-              mr: 0,
-              whiteSpace: 'nowrap',
-              '& .MuiFormControlLabel-label': {
-                lineHeight: 1,
-              },
-            }}
-          />
-
-          <TextField
-            size="small"
-            label="동·세대·타입 검색"
-            value={unitKeyword}
-            onChange={(event) => {
-              setUnitKeyword(event.target.value);
-              setQuantityPage(0);
-            }}
-            sx={{ minWidth: 145 }}
-          />
 
           <Divider
             orientation="vertical"
@@ -2764,6 +3041,24 @@ export default function LaborCostManagement({
           <Typography sx={{ fontSize: '0.67rem', color: '#64748b' }}>
             예상 노임 {formatMoney(currentQuantityAmount)}원
           </Typography>
+          {activeQuantityFilterCount > 0 && (
+            <Button
+              size="small"
+              color="inherit"
+              startIcon={<FilterAltOffRoundedIcon />}
+              onClick={resetQuantityColumnFilters}
+              sx={{
+                minHeight: 22,
+                px: 0.7,
+                py: 0,
+                color: '#1d4ed8',
+                fontSize: '0.65rem',
+                fontWeight: 800,
+              }}
+            >
+              필터 {activeQuantityFilterCount}개 해제
+            </Button>
+          )}
         </Stack>
       </Paper>
 
@@ -2779,7 +3074,10 @@ export default function LaborCostManagement({
         <Table stickyHeader size="small">
           <TableHead>
             <TableRow>
-              <TableCell padding="checkbox" sx={headerCellSx}>
+              <TableCell
+                padding="checkbox"
+                sx={{ ...headerCellSx, width: 42, py: 0 }}
+              >
                 <Checkbox
                   size="small"
                   checked={
@@ -2797,23 +3095,99 @@ export default function LaborCostManagement({
                     )
                   }
                   onChange={handleToggleVisibleUnits}
+                  sx={{ p: 0.45 }}
                 />
               </TableCell>
-              {[
-                '동',
-                '층',
-                '타입',
-                '세대',
-                '물량',
-                '단위',
-                '확정차수',
-                '적용단가',
-                '예상 노임',
-              ].map((label) => (
-                <TableCell key={label} sx={headerCellSx} align="center">
-                  {label}
-                </TableCell>
-              ))}
+              <ExcelFilterHeaderCell
+                label="동"
+                options={quantityFilterOptions.building}
+                selectedValues={quantityColumnFilters.building}
+                onChange={(values) =>
+                  handleQuantityColumnFilterChange('building', values)
+                }
+                minWidth={88}
+              />
+              <ExcelFilterHeaderCell
+                label="층"
+                options={quantityFilterOptions.floor}
+                selectedValues={quantityColumnFilters.floor}
+                onChange={(values) =>
+                  handleQuantityColumnFilterChange('floor', values)
+                }
+                minWidth={72}
+              />
+              <ExcelFilterHeaderCell
+                label="타입"
+                options={quantityFilterOptions.unitType}
+                selectedValues={quantityColumnFilters.unitType}
+                onChange={(values) =>
+                  handleQuantityColumnFilterChange('unitType', values)
+                }
+                minWidth={86}
+              />
+              <ExcelFilterHeaderCell
+                label="세대"
+                options={quantityFilterOptions.unit}
+                selectedValues={quantityColumnFilters.unit}
+                onChange={(values) =>
+                  handleQuantityColumnFilterChange('unit', values)
+                }
+                minWidth={88}
+              />
+              <ExcelFilterHeaderCell
+                label="물량"
+                options={quantityFilterOptions.quantityStatus}
+                selectedValues={quantityColumnFilters.quantityStatus}
+                onChange={(values) =>
+                  handleQuantityColumnFilterChange(
+                    'quantityStatus',
+                    values,
+                  )
+                }
+                minWidth={112}
+              />
+              <ExcelFilterHeaderCell
+                label="단위"
+                options={quantityFilterOptions.unitName}
+                selectedValues={quantityColumnFilters.unitName}
+                onChange={(values) =>
+                  handleQuantityColumnFilterChange('unitName', values)
+                }
+                minWidth={72}
+              />
+              <ExcelFilterHeaderCell
+                label="확정차수"
+                options={quantityFilterOptions.confirmationRound}
+                selectedValues={quantityColumnFilters.confirmationRound}
+                onChange={(values) =>
+                  handleQuantityColumnFilterChange(
+                    'confirmationRound',
+                    values,
+                  )
+                }
+                minWidth={145}
+              />
+              <ExcelFilterHeaderCell
+                label="적용단가"
+                options={quantityFilterOptions.appliedRateStatus}
+                selectedValues={quantityColumnFilters.appliedRateStatus}
+                onChange={(values) =>
+                  handleQuantityColumnFilterChange(
+                    'appliedRateStatus',
+                    values,
+                  )
+                }
+                minWidth={100}
+              />
+              <ExcelFilterHeaderCell
+                label="예상 노임"
+                options={quantityFilterOptions.amountStatus}
+                selectedValues={quantityColumnFilters.amountStatus}
+                onChange={(values) =>
+                  handleQuantityColumnFilterChange('amountStatus', values)
+                }
+                minWidth={110}
+              />
             </TableRow>
           </TableHead>
           <TableBody>
@@ -2833,30 +3207,39 @@ export default function LaborCostManagement({
                   key={row.cellKey}
                   hover
                   selected={selectedUnits.has(row.cellKey)}
+                  sx={{
+                    height: 32,
+                    '& .MuiTableCell-root': {
+                      py: 0.18,
+                    },
+                  }}
                 >
-                  <TableCell padding="checkbox">
+                  <TableCell padding="checkbox" sx={{ width: 42 }}>
                     <Checkbox
                       size="small"
                       checked={selectedUnits.has(row.cellKey)}
                       onChange={() => handleToggleUnit(row.cellKey)}
+                      sx={{ p: 0.45 }}
                     />
                   </TableCell>
-                  <TableCell sx={bodyCellSx} align="center">
+                  <TableCell sx={quantityBodyCellSx} align="center">
                     {row.building}
                   </TableCell>
-                  <TableCell sx={bodyCellSx} align="center">
+                  <TableCell sx={quantityBodyCellSx} align="center">
                     {row.floor || '-'}
                   </TableCell>
-                  <TableCell sx={bodyCellSx} align="center">
+                  <TableCell sx={quantityBodyCellSx} align="center">
                     {row.unitType || '미지정'}
                   </TableCell>
                   <TableCell
-                    sx={{ ...bodyCellSx, fontWeight: 900 }}
+                    sx={{ ...quantityBodyCellSx, fontWeight: 900 }}
                     align="center"
                   >
                     {row.unit}
                   </TableCell>
-                  <TableCell sx={{ ...bodyCellSx, width: 155 }}>
+                  <TableCell
+                    sx={{ ...quantityBodyCellSx, width: 130 }}
+                  >
                     <InputBase
                       value={formatNumericInput(quantity)}
                       onChange={(event) =>
@@ -2871,25 +3254,26 @@ export default function LaborCostManagement({
                       inputProps={{ inputMode: 'decimal' }}
                       sx={{
                         width: '100%',
-                        px: 0.8,
-                        py: 0.25,
+                        height: 25,
+                        px: 0.65,
+                        py: 0,
                         border: '1px solid #cbd5e1',
                         borderRadius: 0.75,
                         bgcolor: '#fff',
                         '& input': {
                           textAlign: 'right',
-                          fontSize: '0.7rem',
-                          py: 0.3,
+                          fontSize: '0.68rem',
+                          py: 0,
                         },
                       }}
                     />
                   </TableCell>
-                  <TableCell sx={bodyCellSx} align="center">
+                  <TableCell sx={quantityBodyCellSx} align="center">
                     {selectedSetting?.unit || '-'}
                   </TableCell>
                   <TableCell
                     sx={{
-                      ...bodyCellSx,
+                      ...quantityBodyCellSx,
                       minWidth: 145,
                       bgcolor:
                         toNumber(quantity) > 0 && !confirmationRound
@@ -2915,8 +3299,13 @@ export default function LaborCostManagement({
                       }}
                       sx={{
                         '& .MuiInputBase-root': {
+                          minHeight: 27,
+                          height: 27,
                           fontSize: '0.68rem',
                           bgcolor: '#fff',
+                        },
+                        '& .MuiSelect-select': {
+                          py: 0.35,
                         },
                       }}
                     >
@@ -2931,7 +3320,9 @@ export default function LaborCostManagement({
                       ))}
                     </TextField>
                   </TableCell>
-                  <TableCell sx={numberCellSx}>
+                  <TableCell
+                    sx={{ ...numberCellSx, height: 30, py: 0.18 }}
+                  >
                     {appliedRate
                       ? `${formatMoney(appliedUnitPrice)}원`
                       : '-'}
@@ -2939,6 +3330,8 @@ export default function LaborCostManagement({
                   <TableCell
                     sx={{
                       ...numberCellSx,
+                      height: 30,
+                      py: 0.18,
                       fontWeight: 900,
                       color: amount > 0 ? '#0f766e' : '#94a3b8',
                     }}
@@ -3408,25 +3801,73 @@ export default function LaborCostManagement({
 
         <Tabs
           value={activeTab}
+          variant="scrollable"
+          scrollButtons={false}
           onChange={(_event, value) => {
             setActiveTab(value);
             setMessage(null);
             setErrorMessage('');
           }}
           sx={{
-            mt: 0.35,
-            minHeight: 34,
+            mt: 0.55,
+            mb: 0.7,
+            minHeight: 36,
+            width: 'fit-content',
+            maxWidth: '100%',
+            p: 0.35,
+            border: '1px solid #cbd5e1',
+            borderRadius: 999,
+            bgcolor: '#f8fafc',
+            '& .MuiTabs-indicator': {
+              display: 'none',
+            },
+            '& .MuiTabs-flexContainer': {
+              gap: 0.45,
+            },
             '& .MuiTab-root': {
-              minHeight: 34,
-              py: 0.5,
+              minHeight: 29,
+              minWidth: 0,
+              px: 1.35,
+              py: 0.35,
+              border: '1px solid transparent',
+              borderRadius: 999,
               fontSize: '0.72rem',
-              fontWeight: 800,
+              fontWeight: 900,
+              textTransform: 'none',
+              transition: 'all 160ms ease',
+            },
+            '& .MuiTab-root:nth-of-type(1)': {
+              color: '#1d4ed8',
+              bgcolor: '#eff6ff',
+              '&.Mui-selected': {
+                color: '#fff',
+                bgcolor: '#2563eb',
+                boxShadow: '0 3px 9px rgba(37, 99, 235, 0.3)',
+              },
+            },
+            '& .MuiTab-root:nth-of-type(2)': {
+              color: '#0f766e',
+              bgcolor: '#ecfdf5',
+              '&.Mui-selected': {
+                color: '#fff',
+                bgcolor: '#0f766e',
+                boxShadow: '0 3px 9px rgba(15, 118, 110, 0.28)',
+              },
+            },
+            '& .MuiTab-root:nth-of-type(3)': {
+              color: '#7e22ce',
+              bgcolor: '#faf5ff',
+              '&.Mui-selected': {
+                color: '#fff',
+                bgcolor: '#7e22ce',
+                boxShadow: '0 3px 9px rgba(126, 34, 206, 0.28)',
+              },
             },
           }}
         >
-          <Tab label="1. 공정별 노임단가" />
-          <Tab label="2. 세대별 물량 입력" />
-          <Tab label="3. 월별 노임 예상현황" />
+          <Tab disableRipple label="1. 공정별 노임단가" />
+          <Tab disableRipple label="2. 세대별 물량 입력" />
+          <Tab disableRipple label="3. 월별 노임 예상현황" />
         </Tabs>
       </Paper>
 
@@ -3607,11 +4048,38 @@ export default function LaborCostManagement({
           {historyProcess} 노임단가 변경이력
         </DialogTitle>
         <DialogContent dividers>
-          <Alert severity="info" sx={{ mb: 1.2 }}>
-            실제 적용할 확정단가만 1차·2차·3차로 지정하세요.
-            미확정 이력은 월별 노임 계산에서 제외됩니다. 같은 차수를
-            다른 이력에 지정하면 기존 이력은 자동으로 미확정 처리됩니다.
-          </Alert>
+          <Stack
+            direction={{ xs: 'column', sm: 'row' }}
+            spacing={0.8}
+            alignItems={{ sm: 'center' }}
+            sx={{ mb: 1.2 }}
+          >
+            <Alert severity="info" sx={{ flex: 1 }}>
+              실제 적용할 확정단가만 1차·2차·3차로 지정하세요.
+              숨기기는 목록 표시만 바꾸고 계산에는 영향을 주지 않습니다.
+              삭제한 확정이력은 연결 세대도 확정차수 미지정으로 바뀝니다.
+            </Alert>
+            {hiddenHistoryCount > 0 && (
+              <Button
+                size="small"
+                variant={showHiddenHistory ? 'contained' : 'outlined'}
+                startIcon={
+                  showHiddenHistory ? (
+                    <VisibilityRoundedIcon />
+                  ) : (
+                    <VisibilityOffRoundedIcon />
+                  )
+                }
+                onClick={() =>
+                  setShowHiddenHistory((previous) => !previous)
+                }
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                숨김 {hiddenHistoryCount.toLocaleString()}건{' '}
+                {showHiddenHistory ? '감추기' : '보기'}
+              </Button>
+            )}
+          </Stack>
           <TableContainer>
             <Table size="small">
               <TableHead>
@@ -3625,6 +4093,7 @@ export default function LaborCostManagement({
                     '확정차수',
                     '사유',
                     '등록자',
+                    '관리',
                   ].map((label) => (
                     <TableCell key={label} sx={headerCellSx} align="center">
                       {label}
@@ -3634,7 +4103,14 @@ export default function LaborCostManagement({
               </TableHead>
               <TableBody>
                 {selectedProcessHistory.map((row) => (
-                  <TableRow key={row.id}>
+                  <TableRow
+                    key={row.id}
+                    sx={{
+                      bgcolor:
+                        row.is_hidden === true ? '#f8fafc' : '#fff',
+                      opacity: row.is_hidden === true ? 0.72 : 1,
+                    }}
+                  >
                     <TableCell sx={bodyCellSx} align="center">
                       {formatDate(row.effective_from)}
                     </TableCell>
@@ -3714,14 +4190,131 @@ export default function LaborCostManagement({
                     <TableCell sx={bodyCellSx} align="center">
                       {row.created_by_name || '-'}
                     </TableCell>
+                    <TableCell
+                      sx={{ ...bodyCellSx, minWidth: 92 }}
+                      align="center"
+                    >
+                      <Stack
+                        direction="row"
+                        spacing={0.2}
+                        justifyContent="center"
+                      >
+                        <Tooltip
+                          title={
+                            row.is_hidden === true
+                              ? '변경이력 다시 표시'
+                              : '변경이력 숨기기'
+                          }
+                          arrow
+                        >
+                          <span>
+                            <IconButton
+                              size="small"
+                              onClick={() =>
+                                handleToggleRateHistoryHidden(row)
+                              }
+                              disabled={
+                                !rateEditable ||
+                                historyActionId === row.id
+                              }
+                            >
+                              {row.is_hidden === true ? (
+                                <VisibilityRoundedIcon fontSize="small" />
+                              ) : (
+                                <VisibilityOffRoundedIcon fontSize="small" />
+                              )}
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                        <Tooltip title="변경이력 삭제" arrow>
+                          <span>
+                            <IconButton
+                              size="small"
+                              color="error"
+                              onClick={() =>
+                                setHistoryDeleteTarget(row)
+                              }
+                              disabled={
+                                !rateEditable ||
+                                historyActionId === row.id
+                              }
+                            >
+                              <DeleteOutlineRoundedIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </Stack>
+                    </TableCell>
                   </TableRow>
                 ))}
+                {selectedProcessHistory.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={9} align="center" sx={{ py: 4 }}>
+                      {hiddenHistoryCount > 0
+                        ? '숨김 처리된 변경이력만 있습니다.'
+                        : '등록된 변경이력이 없습니다.'}
+                    </TableCell>
+                  </TableRow>
+                )}
               </TableBody>
             </Table>
           </TableContainer>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setHistoryOpen(false)}>닫기</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(historyDeleteTarget)}
+        onClose={() =>
+          !historyActionId && setHistoryDeleteTarget(null)
+        }
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle sx={{ fontWeight: 900 }}>
+          변경이력 삭제
+        </DialogTitle>
+        <DialogContent dividers>
+          <Alert severity="warning" sx={{ mb: 1 }}>
+            삭제한 변경이력은 되돌릴 수 없습니다.
+          </Alert>
+          <Typography sx={{ fontSize: '0.8rem', lineHeight: 1.65 }}>
+            <strong>
+              {historyDeleteTarget
+                ? `${formatDate(
+                    historyDeleteTarget.effective_from,
+                  )} · ${formatMoney(
+                    historyDeleteTarget.applied_unit_price,
+                  )}원`
+                : ''}
+            </strong>
+            의 변경이력을 삭제하시겠습니까?
+          </Typography>
+          <Typography
+            sx={{ mt: 0.8, fontSize: '0.69rem', color: '#64748b' }}
+          >
+            이 이력에 확정차수가 지정되어 있다면 해당 차수를 사용하던
+            세대는 자동으로 미지정 처리됩니다. 물량 자체는 삭제되지
+            않습니다.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            onClick={() => setHistoryDeleteTarget(null)}
+            disabled={Boolean(historyActionId)}
+          >
+            취소
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            onClick={handleDeleteRateHistory}
+            disabled={Boolean(historyActionId)}
+          >
+            삭제
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

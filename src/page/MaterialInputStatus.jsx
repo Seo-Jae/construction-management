@@ -5036,6 +5036,8 @@ export default function MaterialInputStatus({
       >
         <Tabs
           value={tabValue}
+          variant="scrollable"
+          scrollButtons={false}
           onChange={(
             _event,
             value,
@@ -5043,23 +5045,64 @@ export default function MaterialInputStatus({
             setTabValue(value)
           }
           sx={{
-            minHeight: 38,
-            borderBottom:
-              '1px solid #e2e8f0',
-            '& .MuiTab-root':
-              {
-                minHeight: 38,
-                py: 0,
-                fontSize:
-                  '0.72rem',
-                fontWeight:
-                  800,
+            minHeight: 36,
+            width: 'fit-content',
+            maxWidth: 'calc(100% - 16px)',
+            m: 0.8,
+            mb: 0.65,
+            p: 0.35,
+            border: '1px solid #cbd5e1',
+            borderRadius: 999,
+            bgcolor: '#f8fafc',
+            '& .MuiTabs-indicator': {
+              display: 'none',
+            },
+            '& .MuiTabs-flexContainer': {
+              gap: 0.45,
+            },
+            '& .MuiTab-root': {
+              minHeight: 29,
+              minWidth: 0,
+              px: 1.35,
+              py: 0.35,
+              borderRadius: 999,
+              fontSize: '0.72rem',
+              fontWeight: 900,
+              textTransform: 'none',
+              transition: 'all 160ms ease',
+            },
+            '& .MuiTab-root:nth-of-type(1)': {
+              color: '#1d4ed8',
+              bgcolor: '#eff6ff',
+              '&.Mui-selected': {
+                color: '#fff',
+                bgcolor: '#2563eb',
+                boxShadow: '0 3px 9px rgba(37, 99, 235, 0.3)',
               },
+            },
+            '& .MuiTab-root:nth-of-type(2)': {
+              color: '#0f766e',
+              bgcolor: '#ecfdf5',
+              '&.Mui-selected': {
+                color: '#fff',
+                bgcolor: '#0f766e',
+                boxShadow: '0 3px 9px rgba(15, 118, 110, 0.28)',
+              },
+            },
+            '& .MuiTab-root:nth-of-type(3)': {
+              color: '#7e22ce',
+              bgcolor: '#faf5ff',
+              '&.Mui-selected': {
+                color: '#fff',
+                bgcolor: '#7e22ce',
+                boxShadow: '0 3px 9px rgba(126, 34, 206, 0.28)',
+              },
+            },
           }}
         >
-          <Tab label="월 원본 상세" />
-          <Tab label="업체별 월·누계" />
-          <Tab label="품목별 월·누계" />
+          <Tab disableRipple label="월 원본 상세" />
+          <Tab disableRipple label="업체별 월·누계" />
+          <Tab disableRipple label="품목별 월·누계" />
         </Tabs>
 
         <Box
