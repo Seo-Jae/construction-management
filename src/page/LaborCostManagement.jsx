@@ -46,15 +46,23 @@ import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import DeleteSweepRoundedIcon from '@mui/icons-material/DeleteSweepRounded';
+import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import FilterAltOffRoundedIcon from '@mui/icons-material/FilterAltOffRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import RemoveCircleOutlineRoundedIcon from '@mui/icons-material/RemoveCircleOutlineRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
+import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded';
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import { supabase } from '../supabaseClient';
 import { getProjectCellKeys } from '../utils/buildingUnits.js';
+import {
+  LABOR_QUANTITY_EXCEL_TEST_PROJECT,
+  isLaborQuantityExcelTestProject,
+  parseLaborQuantityWorkbookFile,
+  saveLaborQuantityWorkbook,
+} from '../utils/laborQuantityExcel.js';
 
 const DEFAULT_UNIT = '㎡';
 const DEFAULT_CHANGE_REASON = '실행 예산 기준 최초 등록';
@@ -731,6 +739,11 @@ export default function LaborCostManagement({
   const [quantityRowsPerPage, setQuantityRowsPerPage] = useState(100);
   const [quantityDeleteDialogOpen, setQuantityDeleteDialogOpen] =
     useState(false);
+  const [quantityExcelLoading, setQuantityExcelLoading] =
+    useState(false);
+  const [quantityExcelResult, setQuantityExcelResult] =
+    useState(null);
+  const quantityExcelFileInputRef = useRef(null);
 
   const [startMonth, setStartMonth] = useState(getKoreaMonthKey());
   const [endMonth, setEndMonth] = useState(getKoreaMonthKey());
@@ -741,6 +754,8 @@ export default function LaborCostManagement({
   const monthlyRangeLabel = getMonthRangeLabel(startMonth, endMonth);
 
   const rateEditable = canManageRates(userProfile);
+  const quantityExcelTestEnabled =
+    isLaborQuantityExcelTestProject(projectName);
 
   const settingByProcess = useMemo(
     () =>
@@ -1949,6 +1964,135 @@ export default function LaborCostManagement({
     setErrorMessage('');
   };
 
+  const handleDownloadQuantityExcel = async () => {
+    if (!quantityExcelTestEnabled) {
+      setErrorMessage(
+        `현재 엑셀 물량 입력은 ${LABOR_QUANTITY_EXCEL_TEST_PROJECT}에서만 시험할 수 있습니다.`,
+      );
+      return;
+    }
+    if (!quantityProcess) {
+      setErrorMessage('엑셀로 내려받을 공정을 선택해주세요.');
+      return;
+    }
+    if (validUnits.length === 0) {
+      setErrorMessage('엑셀로 내려받을 실제 세대정보가 없습니다.');
+      return;
+    }
+
+    setQuantityExcelLoading(true);
+    setMessage(null);
+    setErrorMessage('');
+
+    try {
+      const rowCount = await saveLaborQuantityWorkbook({
+        projectName,
+        processType: quantityProcess,
+        unitName: selectedSetting?.unit || '',
+        units: validUnits,
+        quantities,
+        quantityRounds,
+        rateOptions: quantityRateOptions,
+      });
+
+      setMessage({
+        severity: 'success',
+        text: `${quantityProcess} 세대별 물량 양식 ${rowCount.toLocaleString()}세대를 내려받았습니다.`,
+      });
+    } catch (error) {
+      console.error('세대별 물량 엑셀 다운로드 오류:', error);
+      setErrorMessage(
+        `세대별 물량 엑셀을 만들지 못했습니다: ${
+          error?.message || '알 수 없는 오류'
+        }`,
+      );
+    } finally {
+      setQuantityExcelLoading(false);
+    }
+  };
+
+  const handleUploadQuantityExcel = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!quantityExcelTestEnabled) {
+      setErrorMessage(
+        `현재 엑셀 물량 입력은 ${LABOR_QUANTITY_EXCEL_TEST_PROJECT}에서만 시험할 수 있습니다.`,
+      );
+      event.target.value = '';
+      return;
+    }
+    if (!quantityProcess) {
+      setErrorMessage('엑셀을 불러올 공정을 선택해주세요.');
+      event.target.value = '';
+      return;
+    }
+
+    setQuantityExcelLoading(true);
+    setQuantityExcelResult(null);
+    setMessage(null);
+    setErrorMessage('');
+
+    try {
+      const result = await parseLaborQuantityWorkbookFile({
+        file,
+        projectName,
+        processType: quantityProcess,
+        validUnits,
+        allowedRounds: quantityRateOptions.map(
+          (row) => row.confirmation_round,
+        ),
+      });
+
+      setQuantities((previous) => {
+        const next = { ...previous };
+        result.updates.forEach((row) => {
+          if (row.quantity !== undefined) {
+            next[row.cellKey] = row.quantity;
+          }
+        });
+        return next;
+      });
+      setQuantityRounds((previous) => {
+        const next = { ...previous };
+        result.updates.forEach((row) => {
+          if (row.confirmationRound !== undefined) {
+            next[row.cellKey] = row.confirmationRound || '';
+          }
+        });
+        return next;
+      });
+      setSelectedUnits(
+        new Set(result.updates.map((row) => row.cellKey)),
+      );
+      setQuantityPage(0);
+      setQuantityExcelResult({
+        ...result,
+        fileName: file.name,
+        processType: quantityProcess,
+      });
+
+      const issueCount =
+        result.unknownRows.length +
+        result.invalidRows.length +
+        result.duplicateRows.length;
+      setMessage({
+        severity: issueCount > 0 ? 'warning' : 'success',
+        text: `${quantityProcess} ${result.matchedRows.toLocaleString()}세대의 작성값을 화면에 불러왔습니다. 검토 후 저장 버튼을 눌러주세요.`,
+      });
+    } catch (error) {
+      console.error('세대별 물량 엑셀 업로드 오류:', error);
+      setErrorMessage(
+        `세대별 물량 엑셀을 불러오지 못했습니다: ${
+          error?.message || '알 수 없는 오류'
+        }`,
+      );
+    } finally {
+      setQuantityExcelLoading(false);
+      event.target.value = '';
+    }
+  };
+
   const handleSaveQuantities = async () => {
     if (!quantityProcess) {
       setErrorMessage('공정을 선택해주세요.');
@@ -2915,6 +3059,7 @@ export default function LaborCostManagement({
               setQuantityRounds({});
               setSelectedUnits(new Set());
               setBulkRateRound('');
+              setQuantityExcelResult(null);
               setQuantityColumnFilters(
                 createEmptyQuantityColumnFilters(),
               );
@@ -2934,6 +3079,51 @@ export default function LaborCostManagement({
             flexItem
             sx={{ display: { xs: 'none', lg: 'block' }, mx: 0.25 }}
           />
+
+          <input
+            ref={quantityExcelFileInputRef}
+            type="file"
+            accept=".xlsx,.xlsm,.xls"
+            hidden
+            onChange={handleUploadQuantityExcel}
+          />
+
+          <Button
+            variant="outlined"
+            startIcon={
+              quantityExcelLoading ? (
+                <CircularProgress size={15} color="inherit" />
+              ) : (
+                <DownloadRoundedIcon />
+              )
+            }
+            onClick={handleDownloadQuantityExcel}
+            disabled={
+              quantityExcelLoading ||
+              quantityLoading ||
+              !quantityProcess ||
+              !quantityExcelTestEnabled
+            }
+            sx={{ whiteSpace: 'nowrap' }}
+          >
+            엑셀 다운로드
+          </Button>
+
+          <Button
+            variant="outlined"
+            color="success"
+            startIcon={<UploadFileRoundedIcon />}
+            onClick={() => quantityExcelFileInputRef.current?.click()}
+            disabled={
+              quantityExcelLoading ||
+              quantityLoading ||
+              !quantityProcess ||
+              !quantityExcelTestEnabled
+            }
+            sx={{ whiteSpace: 'nowrap' }}
+          >
+            엑셀 업로드
+          </Button>
 
           <TextField
             size="small"
@@ -2998,6 +3188,17 @@ export default function LaborCostManagement({
           </Button>
 
           <Box sx={{ flex: 1 }} />
+
+          <Chip
+            size="small"
+            color={quantityExcelTestEnabled ? 'success' : 'default'}
+            variant="outlined"
+            label={
+              quantityExcelTestEnabled
+                ? '용인금어지구 엑셀 시험'
+                : '엑셀 시험 대상 현장 아님'
+            }
+          />
 
           <Chip
             size="small"
@@ -4022,6 +4223,128 @@ export default function LaborCostManagement({
             disabled={saving || !quantityProcess}
           >
             전체 삭제
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(quantityExcelResult)}
+        onClose={() => setQuantityExcelResult(null)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle sx={{ fontWeight: 900 }}>
+          세대별 물량 엑셀 불러오기 결과
+        </DialogTitle>
+        <DialogContent dividers>
+          <Typography sx={{ fontSize: '0.78rem', color: '#475569' }}>
+            {quantityExcelResult?.fileName || ''} ·{' '}
+            {quantityExcelResult?.sourceSheet || ''} 시트 ·{' '}
+            {quantityExcelResult?.processType || quantityProcess} 공정
+          </Typography>
+
+          <Stack
+            direction="row"
+            spacing={0.7}
+            useFlexGap
+            flexWrap="wrap"
+            sx={{ mt: 1.2 }}
+          >
+            <Chip
+              color="success"
+              label={`정상 ${toNumber(
+                quantityExcelResult?.matchedRows,
+              ).toLocaleString()}세대`}
+            />
+            <Chip
+              variant="outlined"
+              label={`물량 ${toNumber(
+                quantityExcelResult?.quantityRows,
+              ).toLocaleString()}건`}
+            />
+            <Chip
+              variant="outlined"
+              label={`확정차수 ${toNumber(
+                quantityExcelResult?.roundRows,
+              ).toLocaleString()}건`}
+            />
+            <Chip
+              variant="outlined"
+              label={`빈 행 건너뜀 ${toNumber(
+                quantityExcelResult?.blankRows,
+              ).toLocaleString()}건`}
+            />
+          </Stack>
+
+          <Alert severity="info" sx={{ mt: 1.2 }}>
+            정상 행은 동호수 기준으로 화면에 반영했고 해당 세대가
+            선택되어 있습니다. 내용을 확인한 뒤 기존 <strong>저장</strong>{' '}
+            버튼을 눌러야 DB에 확정됩니다.
+          </Alert>
+
+          {[
+            {
+              label: '일치하지 않는 동호수',
+              rows: quantityExcelResult?.unknownRows || [],
+              formatter: (row) =>
+                `${row.rowNumber}행 · ${row.identifier}`,
+            },
+            {
+              label: '입력값 오류',
+              rows: quantityExcelResult?.invalidRows || [],
+              formatter: (row) =>
+                `${row.rowNumber}행 · ${row.message}`,
+            },
+            {
+              label: '중복 동호수',
+              rows: quantityExcelResult?.duplicateRows || [],
+              formatter: (row) =>
+                `${row.rowNumber}행 · ${row.identifier}`,
+            },
+          ]
+            .filter((section) => section.rows.length > 0)
+            .map((section) => (
+              <Box key={section.label} sx={{ mt: 1.3 }}>
+                <Typography
+                  sx={{
+                    fontSize: '0.75rem',
+                    fontWeight: 900,
+                    color: '#b45309',
+                  }}
+                >
+                  {section.label} {section.rows.length.toLocaleString()}건
+                </Typography>
+                <Box
+                  component="ul"
+                  sx={{
+                    m: 0,
+                    mt: 0.45,
+                    pl: 2.3,
+                    color: '#64748b',
+                    fontSize: '0.7rem',
+                    lineHeight: 1.65,
+                  }}
+                >
+                  {section.rows.slice(0, 8).map((row, index) => (
+                    <li key={`${section.label}-${row.rowNumber}-${index}`}>
+                      {section.formatter(row)}
+                    </li>
+                  ))}
+                  {section.rows.length > 8 && (
+                    <li>
+                      외 {(section.rows.length - 8).toLocaleString()}건
+                    </li>
+                  )}
+                </Box>
+              </Box>
+            ))}
+        </DialogContent>
+        <DialogActions>
+          <Button
+            variant="contained"
+            onClick={() => setQuantityExcelResult(null)}
+          >
+            확인
           </Button>
         </DialogActions>
       </Dialog>
