@@ -55,66 +55,6 @@ const TARGET_SELECT_COLUMNS = `
   updated_at
 `;
 
-const UNIT_TYPE_PAGE_SIZE = 1000;
-
-const normalizeUnitTypeBuildingName = (value) => {
-  const text = String(value || '').trim();
-
-  if (!text) {
-    return '';
-  }
-
-  if (/^\d+$/.test(text)) {
-    return `${text}동`;
-  }
-
-  return text;
-};
-
-const normalizeUnitTypeUnitCode = (value) => {
-  const text = String(value || '').trim();
-
-  if (!text) {
-    return '';
-  }
-
-  if (/^\d+$/.test(text)) {
-    return String(Number(text));
-  }
-
-  return text;
-};
-
-const fetchAllProjectUnitTypes = async (projectName) => {
-  const rows = [];
-  let offset = 0;
-
-  while (true) {
-    const { data, error } = await supabase
-      .from('project_unit_types')
-      .select('building, unit, unit_type')
-      .eq('project_name', projectName)
-      .order('building', { ascending: true })
-      .order('unit', { ascending: true })
-      .range(offset, offset + UNIT_TYPE_PAGE_SIZE - 1);
-
-    if (error) {
-      throw error;
-    }
-
-    const pageRows = data || [];
-    rows.push(...pageRows);
-
-    if (pageRows.length < UNIT_TYPE_PAGE_SIZE) {
-      break;
-    }
-
-    offset += UNIT_TYPE_PAGE_SIZE;
-  }
-
-  return rows;
-};
-
 const getKoreaDateKey = (
   date = new Date(),
 ) => {
@@ -808,18 +748,11 @@ export default function ProgressInput({
     setTargetError,
   ] = useState('');
 
-  const [
-    unitTypeData,
-    setUnitTypeData,
-  ] = useState({});
-
-  const [
-    unitTypeError,
-    setUnitTypeError,
-  ] = useState('');
-
   const selectionCount =
     selectedCells?.size ?? 0;
+
+  const todayDateKey =
+    getKoreaDateKey();
 
   const protectedCompletedCount =
     Object.values(
@@ -836,72 +769,6 @@ export default function ProgressInput({
         numeric: true,
       }),
   );
-
-  const loadProjectUnitTypes =
-    useCallback(async () => {
-      if (!projectName) {
-        setUnitTypeData({});
-        setUnitTypeError('');
-        return;
-      }
-
-      setUnitTypeError('');
-
-      try {
-        const rows =
-          await fetchAllProjectUnitTypes(
-            projectName,
-          );
-
-        const mapped = {};
-
-        rows.forEach((row) => {
-          const buildingName =
-            normalizeUnitTypeBuildingName(
-              row?.building,
-            );
-          const unitCode =
-            normalizeUnitTypeUnitCode(
-              row?.unit,
-            );
-          const unitType =
-            String(
-              row?.unit_type || '',
-            ).trim();
-
-          if (
-            !buildingName ||
-            !unitCode ||
-            !unitType
-          ) {
-            return;
-          }
-
-          mapped[
-            `${buildingName}-${unitCode}`
-          ] = unitType;
-        });
-
-        setUnitTypeData(mapped);
-      } catch (error) {
-        console.error(
-          '세대 타입 조회 실패:',
-          error,
-        );
-
-        setUnitTypeData({});
-        setUnitTypeError(
-          error?.code === '42P01'
-            ? '세대 타입 테이블이 없습니다. 제공된 v47 SQL을 먼저 실행해주세요.'
-            : error?.message ||
-                '세대 타입 정보를 불러오지 못했습니다.',
-        );
-      }
-    }, [projectName]);
-
-  useEffect(() => {
-    loadProjectUnitTypes();
-  }, [loadProjectUnitTypes]);
 
   const loadProgressTargets =
     useCallback(async () => {
@@ -2511,7 +2378,23 @@ export default function ProgressInput({
               type="date"
               size="small"
               value={progressDate}
-              onChange={(event) => setProgressDate?.(event.target.value)}
+              onChange={(event) => {
+                const nextDate =
+                  event.target.value;
+
+                if (
+                  !nextDate ||
+                  nextDate <=
+                    todayDateKey
+                ) {
+                  setProgressDate?.(
+                    nextDate,
+                  );
+                }
+              }}
+              inputProps={{
+                max: todayDateKey,
+              }}
               sx={{
                 width: 145,
                 bgcolor: '#ffffff',
@@ -2526,7 +2409,13 @@ export default function ProgressInput({
             <Button
               variant="contained"
               size="small"
-              disabled={selectionCount === 0 || !progressDate}
+              disabled={
+                selectionCount ===
+                  0 ||
+                !progressDate ||
+                progressDate >
+                  todayDateKey
+              }
               onClick={handleSaveProgress}
               sx={{
                 minWidth: 62,
@@ -2569,29 +2458,12 @@ export default function ProgressInput({
         sx={{
           flexGrow: 1,
           minHeight: 0,
-          overflowX: 'auto',
-          overflowY: 'hidden',
+          overflow: 'auto',
           bgcolor: '#f1f5f9',
           borderRadius: 1,
-          scrollbarGutter: 'stable',
+          scrollbarGutter: 'stable both-edges',
         }}
       >
-        {unitTypeError && (
-          <Alert
-            severity="warning"
-            sx={{
-              mb: 0.75,
-              py: 0,
-              '& .MuiAlert-message': {
-                py: 0.5,
-                fontSize: '0.72rem',
-              },
-            }}
-          >
-            {unitTypeError}
-          </Alert>
-        )}
-
         {sortedBuildings.length === 0 ? (
           <Box
             sx={{
@@ -2611,14 +2483,14 @@ export default function ProgressInput({
               display: 'flex',
               flexWrap: 'nowrap',
               alignItems: 'flex-end',
-              gap: 3,
+              gap: 4,
               width: 'max-content',
               minWidth: '100%',
               minHeight: '100%',
               height: 'max-content',
-              px: 1,
-              pt: 0.25,
-              pb: 0.5,
+              px: 1.5,
+              pt: 0.5,
+              pb: 1,
             }}
           >
             {sortedBuildings.map(([name, config]) => (
@@ -2638,7 +2510,6 @@ export default function ProgressInput({
                       : handleGridCellClick
                   }
                   unitData={unitProgressData}
-                  unitTypeData={unitTypeData}
                   onFloorClick={
                     handleEffectiveFloorClick
                   }

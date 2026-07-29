@@ -1,18 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Alert,
   AppBar,
   Autocomplete,
   Box,
   Button,
   Checkbox,
   Drawer,
-  Fade,
   IconButton,
   InputBase,
   Modal,
   Paper,
-  Snackbar,
   Table,
   TableBody,
   TableCell,
@@ -604,7 +601,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const [progressDate, setProgressDate] = useState(() =>
     formatYYYYMMDD(formatYYMMDD(createKoreaCalendarDate())),
   );
-  const [progressToast, setProgressToast] = useState(null);
   
   const [unitProgressData, setUnitProgressData] = useState({});
 
@@ -2542,18 +2538,43 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
   const handleSaveProgress = async () => {
     if (!activeProjectName) {
-      setProgressToast({
-        severity: 'error',
-        text: '선택된 현장이 없습니다.',
-      });
+      alert('선택된 현장이 없습니다.');
       return;
     }
 
     if (selectedCells.size === 0) {
-      setProgressToast({
-        severity: 'warning',
-        text: '변경할 세대를 선택해주세요.',
-      });
+      alert('변경할 세대를 선택해주세요.');
+      return;
+    }
+
+    const todayProgressDate =
+      formatYYYYMMDD(
+        formatYYMMDD(
+          createKoreaCalendarDate(),
+        ),
+      );
+
+    if (
+      !/^\d{4}-\d{2}-\d{2}$/.test(
+        progressDate,
+      )
+    ) {
+      alert(
+        '공정 완료일을 올바르게 선택해주세요.',
+      );
+      return;
+    }
+
+    if (
+      progressDate >
+      todayProgressDate
+    ) {
+      setProgressDate(
+        todayProgressDate,
+      );
+      alert(
+        '공정 완료일은 오늘 이후 날짜로 저장할 수 없습니다.',
+      );
       return;
     }
 
@@ -2595,11 +2616,9 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         new Set(),
       );
 
-      setProgressToast({
-        severity: 'warning',
-        text:
-          '선택한 세대는 모두 이미 작업완료 상태입니다. 기존 완료일은 변경되지 않습니다.',
-      });
+      alert(
+        '선택한 세대는 모두 이미 작업완료 상태입니다.\n기존 완료일은 변경되지 않습니다.',
+      );
       return;
     }
 
@@ -2669,11 +2688,9 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             ? `\n이미 완료된 ${protectedCompletedCellKeys.length.toLocaleString()}세대는 변경하지 않았습니다.`
             : '';
 
-        setProgressToast({
-          severity: 'success',
-          text:
-            `${selectedCellKeys.length.toLocaleString()}세대를 작업전으로 되돌렸습니다.${protectedMessage}`,
-        });
+        alert(
+          `${selectedCellKeys.length.toLocaleString()}세대를 작업전으로 되돌렸습니다.${protectedMessage}`,
+        );
         return;
       }
 
@@ -2735,18 +2752,12 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           ? `\n이미 완료된 ${protectedCompletedCellKeys.length.toLocaleString()}세대는 기존 완료일을 유지했습니다.`
           : '';
 
-      setProgressToast({
-        severity: 'success',
-        text:
-          `${selectedCellKeys.length.toLocaleString()}세대가 저장되었습니다.${protectedMessage}`,
-      });
+      alert(
+        `${selectedCellKeys.length.toLocaleString()}세대가 저장되었습니다.${protectedMessage}`,
+      );
     } catch (error) {
       console.error('공정 상태 저장 오류:', error);
-      setProgressToast({
-        severity: 'error',
-        text:
-          `저장 실패: ${error?.message || '알 수 없는 오류'}`,
-      });
+      alert(`저장 실패: ${error?.message || '알 수 없는 오류'}`);
     }
   };
 
@@ -2764,40 +2775,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
   return (
     <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
-      <Snackbar
-        key={progressToast?.text || 'progress-toast'}
-        open={Boolean(progressToast)}
-        autoHideDuration={3000}
-        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
-        TransitionComponent={Fade}
-        transitionDuration={{ enter: 220, exit: 500 }}
-        onClose={(_event, reason) => {
-          if (reason === 'clickaway') return;
-          setProgressToast(null);
-        }}
-        sx={{
-          top: '72px !important',
-          zIndex: (theme) => theme.zIndex.snackbar + 10,
-          '& .MuiAlert-root': {
-            width: 'max-content',
-            minWidth: { xs: 280, sm: 420 },
-            maxWidth: 'min(920px, calc(100vw - 32px))',
-            boxShadow: '0 12px 30px rgba(15, 23, 42, 0.22)',
-          },
-          '& .MuiAlert-message': {
-            whiteSpace: 'normal',
-          },
-        }}
-      >
-        <Alert
-          severity={progressToast?.severity || 'info'}
-          variant="filled"
-          onClose={() => setProgressToast(null)}
-        >
-          {progressToast?.text || ''}
-        </Alert>
-      </Snackbar>
-
       <AppBar
         position="absolute"
         sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, bgcolor: '#1e293b' }}
