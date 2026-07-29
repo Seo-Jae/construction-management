@@ -126,12 +126,26 @@ const createUnitLookups = (validUnits) => {
 
     if (!building || !unit || !row.cellKey) return;
 
-    [
+    const aliases = [
       `${building}${unit}`,
       `${row.building}${row.unit}`,
       `${row.building}동${row.unit}호`,
       `${row.building}-${row.unit}`,
-    ].forEach((alias) => {
+    ];
+
+    /*
+      9층 이하 세대를 담당자마다 아래 두 방식으로 관리하고 있습니다.
+      - 101동 901호  → 101901
+      - 101동 0901호 → 1010901
+
+      시스템에 등록된 호수가 숫자라면 호수를 네 자리로 0 채운 별칭도
+      함께 만들어 두 방식 모두 같은 세대로 매칭합니다.
+    */
+    if (/^\d+$/.test(unit)) {
+      aliases.push(`${building}${unit.padStart(4, '0')}`);
+    }
+
+    aliases.forEach((alias) => {
       const normalizedAlias = normalizeCombinedUnit(alias);
       if (!normalizedAlias || ambiguousCombined.has(normalizedAlias)) return;
 
@@ -325,7 +339,7 @@ export const createLaborQuantityWorkbook = ({
 
   worksheet.mergeCells('A4:E4');
   worksheet.getCell('A4').value =
-    '① 동호수와 ② 물량을 입력하세요. 행 순서와 관계없이 동호수①만을 기준으로 불러옵니다.';
+    '① 동호수와 ② 물량을 입력하세요. 9층 이하는 101901·1010901 형식을 모두 인식합니다.';
   worksheet.getCell('A4').font = {
     name: '맑은 고딕',
     size: 10,

@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Checkbox,
@@ -36,8 +37,6 @@ import LinkRoundedIcon from '@mui/icons-material/LinkRounded';
 import LinkOffRoundedIcon from '@mui/icons-material/LinkOffRounded';
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
-import CheckBoxRoundedIcon from '@mui/icons-material/CheckBoxRounded';
-import CheckBoxOutlineBlankRoundedIcon from '@mui/icons-material/CheckBoxOutlineBlankRounded';
 import { supabase } from '../supabaseClient';
 
 const PAGE_SIZE = 1000;
@@ -273,6 +272,11 @@ function ContractItemProcessMapping({
   const [processDialogTargetIds, setProcessDialogTargetIds] = useState([]);
   const [processDialogValues, setProcessDialogValues] = useState([]);
   const [processDialogTitle, setProcessDialogTitle] = useState('공정 연결');
+  const [processDialogKeyword, setProcessDialogKeyword] = useState('');
+  const [processDialogTypeFilter, setProcessDialogTypeFilter] = useState('전체');
+  const [processDialogMappingFilter, setProcessDialogMappingFilter] =
+    useState('전체');
+  const deferredProcessDialogKeyword = useDeferredValue(processDialogKeyword);
 
   const claimProcessOptions = useMemo(
     () => buildProcessOptions(processOptions),
@@ -380,6 +384,21 @@ function ContractItemProcessMapping({
     [items],
   );
 
+  const processDialogTypeOptions = useMemo(() => {
+    const counts = new Map();
+
+    items.forEach((item) => {
+      const label = getTypeLabel(item);
+      counts.set(label, (counts.get(label) || 0) + 1);
+    });
+
+    return Array.from(counts.entries())
+      .map(([label, count]) => ({ label, count }))
+      .sort((first, second) =>
+        first.label.localeCompare(second.label, 'ko'),
+      );
+  }, [items]);
+
   const filteredRows = useMemo(() => {
     const normalizedKeyword = normalizeText(deferredKeyword);
 
@@ -416,6 +435,62 @@ function ContractItemProcessMapping({
       ).includes(normalizedKeyword);
     });
   }, [deferredKeyword, itemById, mappingFilter, optionFilter, sourceRows, typeFilter]);
+
+  const processDialogRows = useMemo(() => {
+    const normalizedKeyword = normalizeText(deferredProcessDialogKeyword);
+
+    return sourceRows.filter((row) => {
+      const rowIds = getRowIds(row);
+      const underlying = rowIds
+        .map((id) => itemById.get(id))
+        .filter(Boolean);
+      const typeLabel = getTypeLabel(row);
+      const mappedCount = underlying.filter(
+        (item) => decodeProcessTypes(item.process_type).length > 0,
+      ).length;
+
+      if (
+        processDialogTypeFilter !== '전체' &&
+        typeLabel !== processDialogTypeFilter
+      ) {
+        return false;
+      }
+
+      if (
+        processDialogMappingFilter === '연결' &&
+        mappedCount !== underlying.length
+      ) {
+        return false;
+      }
+
+      if (
+        processDialogMappingFilter === '미연결' &&
+        mappedCount === underlying.length
+      ) {
+        return false;
+      }
+
+      if (!normalizedKeyword) return true;
+
+      return normalizeText(
+        [
+          typeLabel,
+          row.option_type,
+          row.item_name,
+          row.base_item_name,
+          row.specification,
+          row.unit,
+          row.process_type,
+        ].join(' '),
+      ).includes(normalizedKeyword);
+    });
+  }, [
+    deferredProcessDialogKeyword,
+    itemById,
+    processDialogMappingFilter,
+    processDialogTypeFilter,
+    sourceRows,
+  ]);
 
   useEffect(() => {
     setTablePage(0);
@@ -458,6 +533,18 @@ function ContractItemProcessMapping({
   const someFilteredSelected =
     !allFilteredSelected && filteredItemIds.some((id) => selectedIds.has(id));
 
+  const processDialogItemIds = useMemo(
+    () => Array.from(new Set(processDialogRows.flatMap(getRowIds))),
+    [processDialogRows],
+  );
+
+  const allProcessDialogSelected =
+    processDialogItemIds.length > 0 &&
+    processDialogItemIds.every((id) => processDialogTargetIds.includes(id));
+  const someProcessDialogSelected =
+    !allProcessDialogSelected &&
+    processDialogItemIds.some((id) => processDialogTargetIds.includes(id));
+
   const updateSelectedIds = useCallback((ids, checked) => {
     setSelectedIds((previous) => {
       const next = new Set(previous);
@@ -466,6 +553,17 @@ function ContractItemProcessMapping({
         else next.delete(id);
       });
       return next;
+    });
+  }, []);
+
+  const updateProcessDialogTargetIds = useCallback((ids, checked) => {
+    setProcessDialogTargetIds((previous) => {
+      const next = new Set(previous);
+      ids.forEach((id) => {
+        if (checked) next.add(id);
+        else next.delete(id);
+      });
+      return Array.from(next);
     });
   }, []);
 
@@ -502,10 +600,20 @@ function ContractItemProcessMapping({
         : [],
     );
     setProcessDialogTitle(title || '공정 연결');
+    setProcessDialogKeyword('');
+    setProcessDialogTypeFilter('전체');
+    setProcessDialogMappingFilter('전체');
     setProcessDialogOpen(true);
   }, [items]);
 
   const handleApplyDialogProcess = useCallback(() => {
+    if (
+      processDialogTargetIds.length === 0 ||
+      processDialogValues.length === 0
+    ) {
+      return;
+    }
+
     applyProcessToIds(processDialogTargetIds, encodeProcessTypes(processDialogValues));
     setProcessDialogOpen(false);
     setMessage({
@@ -513,6 +621,17 @@ function ContractItemProcessMapping({
       text: `${processDialogTargetIds.length.toLocaleString()}개 계약 품목의 공정 연결을 변경했습니다. 저장 버튼을 눌러 반영해주세요.`,
     });
   }, [applyProcessToIds, processDialogTargetIds, processDialogValues]);
+
+  const handleClearDialogMappings = useCallback(() => {
+    if (processDialogTargetIds.length === 0) return;
+
+    applyProcessToIds(processDialogTargetIds, '');
+    setProcessDialogOpen(false);
+    setMessage({
+      severity: 'info',
+      text: `${processDialogTargetIds.length.toLocaleString()}개 계약 품목의 공정 연결을 해제했습니다. 저장 버튼을 눌러 반영해주세요.`,
+    });
+  }, [applyProcessToIds, processDialogTargetIds]);
 
   const handleVersionChange = (nextVersionId) => {
     if (
@@ -1044,56 +1163,424 @@ function ContractItemProcessMapping({
         open={processDialogOpen}
         onClose={() => setProcessDialogOpen(false)}
         fullWidth
-        maxWidth="sm"
+        maxWidth="lg"
+        scroll="paper"
+        sx={{
+          '& .MuiDialog-paper': {
+            width: '100%',
+            height: 'calc(100vh - 48px)',
+            minHeight: 'calc(100vh - 48px)',
+            maxHeight: 'calc(100vh - 48px)',
+            m: 3,
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+          },
+        }}
       >
-        <DialogTitle sx={{ pb: 1 }}>{processDialogTitle}</DialogTitle>
-        <DialogContent dividers>
-          <Typography sx={{ mb: 1.25, fontSize: '0.76rem', color: '#64748b' }}>
-            여러 공정을 동시에 선택할 수 있습니다. 선택을 모두 해제하면 미연결 상태가 됩니다.
+        <DialogTitle sx={{ pb: 1, flexShrink: 0 }}>
+          <Typography sx={{ fontSize: '1rem', fontWeight: 900 }}>
+            {processDialogTitle}
           </Typography>
-          <Stack direction="row" spacing={0.75} flexWrap="wrap" useFlexGap>
-            {claimProcessOptions.map((process) => {
-              const checked = processDialogValues.includes(process);
-              return (
-                <Button
-                  key={process}
+          <Typography sx={{ mt: 0.25, color: '#64748b', fontSize: '0.7rem' }}>
+            타입을 고르고 품명 또는 규격을 검색한 뒤, 필요한 계약 품목을
+            선택해 공정을 한 번에 연결합니다.
+          </Typography>
+        </DialogTitle>
+
+        <DialogContent
+          dividers
+          sx={{
+            p: 1.5,
+            flex: 1,
+            minHeight: 0,
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+          }}
+        >
+          <Box sx={{ mb: 1.1 }}>
+            <Typography
+              sx={{
+                mb: 0.55,
+                color: '#475569',
+                fontSize: '0.7rem',
+                fontWeight: 900,
+              }}
+            >
+              타입 구분
+            </Typography>
+            <Stack direction="row" spacing={0.55} useFlexGap flexWrap="wrap">
+              <Chip
+                size="small"
+                clickable
+                color={
+                  processDialogTypeFilter === '전체' ? 'primary' : 'default'
+                }
+                variant={
+                  processDialogTypeFilter === '전체' ? 'filled' : 'outlined'
+                }
+                label={`전체 ${items.length.toLocaleString()}`}
+                onClick={() => setProcessDialogTypeFilter('전체')}
+              />
+              {processDialogTypeOptions.map((type) => (
+                <Chip
+                  key={type.label}
                   size="small"
-                  variant={checked ? 'contained' : 'outlined'}
-                  onClick={() => {
-                    setProcessDialogValues((previous) =>
-                      previous.includes(process)
-                        ? previous.filter((value) => value !== process)
-                        : [...previous, process],
-                    );
-                  }}
-                  sx={{
-                    bgcolor: checked ? '#0f766e' : undefined,
-                    '&:hover': checked ? { bgcolor: '#115e59' } : undefined,
-                  }}
-                  startIcon={
-                    checked ? (
-                      <CheckBoxRoundedIcon fontSize="small" />
-                    ) : (
-                      <CheckBoxOutlineBlankRoundedIcon fontSize="small" />
-                    )
+                  clickable
+                  color={
+                    processDialogTypeFilter === type.label
+                      ? 'primary'
+                      : 'default'
                   }
-                >
-                  {process}
-                </Button>
-              );
-            })}
+                  variant={
+                    processDialogTypeFilter === type.label
+                      ? 'filled'
+                      : 'outlined'
+                  }
+                  label={`${type.label} ${type.count.toLocaleString()}`}
+                  onClick={() => setProcessDialogTypeFilter(type.label)}
+                />
+              ))}
+            </Stack>
+          </Box>
+
+          <Stack
+            direction={{ xs: 'column', md: 'row' }}
+            spacing={1}
+            alignItems={{ xs: 'stretch', md: 'center' }}
+          >
+            <TextField
+              autoFocus
+              size="small"
+              label="품명 또는 규격 검색"
+              value={processDialogKeyword}
+              onChange={(event) => setProcessDialogKeyword(event.target.value)}
+              sx={{ flex: 1, minWidth: 260 }}
+            />
+
+            <TextField
+              select
+              size="small"
+              label="연결 상태"
+              value={processDialogMappingFilter}
+              onChange={(event) =>
+                setProcessDialogMappingFilter(event.target.value)
+              }
+              sx={{ width: 125 }}
+            >
+              <MenuItem value="전체">전체</MenuItem>
+              <MenuItem value="연결">연결</MenuItem>
+              <MenuItem value="미연결">미연결</MenuItem>
+            </TextField>
+
+            <Chip
+              size="small"
+              color="warning"
+              variant="outlined"
+              label={`검색 ${processDialogRows.length.toLocaleString()} / 전체 ${items.length.toLocaleString()}`}
+            />
+            <Chip
+              size="small"
+              color="primary"
+              label={`품목 선택 ${processDialogTargetIds.length.toLocaleString()}`}
+            />
           </Stack>
+
+          <Box
+            sx={{
+              mt: 1.2,
+              p: 1,
+              border: '1px solid #cbd5e1',
+              borderRadius: 1,
+              bgcolor: '#f8fafc',
+            }}
+          >
+            <Stack
+              direction={{ xs: 'column', sm: 'row' }}
+              spacing={0.8}
+              alignItems={{ xs: 'stretch', sm: 'center' }}
+            >
+              <Autocomplete
+                multiple
+                disableCloseOnSelect
+                fullWidth
+                size="small"
+                options={claimProcessOptions}
+                value={processDialogValues}
+                onChange={(_event, nextValues) => {
+                  setProcessDialogValues(Array.from(new Set(nextValues)));
+                }}
+                isOptionEqualToValue={(option, value) => option === value}
+                getOptionLabel={(option) => option}
+                renderTags={(selected) => (
+                  <Typography
+                    noWrap
+                    sx={{
+                      maxWidth: '100%',
+                      color: '#334155',
+                      fontSize: '0.75rem',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {selected.join(PROCESS_SEPARATOR)}
+                  </Typography>
+                )}
+                renderOption={(props, option, { selected }) => {
+                  const { key, ...optionProps } = props;
+                  return (
+                    <li key={key} {...optionProps}>
+                      <Checkbox
+                        size="small"
+                        checked={selected}
+                        sx={{ p: 0.4, mr: 0.5 }}
+                      />
+                      <Typography sx={{ fontSize: '0.75rem' }}>
+                        {option}
+                      </Typography>
+                    </li>
+                  );
+                }}
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    label="연결할 공정 · 복수 선택"
+                    placeholder={
+                      processDialogValues.length === 0
+                        ? '공정을 선택하세요'
+                        : ''
+                    }
+                  />
+                )}
+                slotProps={{
+                  paper: { sx: { mt: 0.5 } },
+                  listbox: { sx: { maxHeight: 280 } },
+                }}
+                sx={{ flex: 1, minWidth: 0 }}
+              />
+              <Button
+                size="small"
+                variant="outlined"
+                disabled={processDialogValues.length === 0}
+                onClick={() => setProcessDialogValues([])}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                공정 전체 해제
+              </Button>
+              <Chip
+                size="small"
+                color="success"
+                variant="outlined"
+                label={`공정 선택 ${processDialogValues.length.toLocaleString()}`}
+              />
+            </Stack>
+            <Typography
+              sx={{ mt: 0.7, color: '#64748b', fontSize: '0.64rem' }}
+            >
+              드롭다운에서 공정을 복수 선택한 뒤 선택 계약 품목에 한 번에
+              적용합니다.
+            </Typography>
+          </Box>
+
+          <TableContainer
+            component={Paper}
+            variant="outlined"
+            sx={{
+              mt: 1.2,
+              flex: 1,
+              minHeight: 0,
+              height: '100%',
+              overflow: 'auto',
+            }}
+          >
+            <Table stickyHeader size="small" sx={{ minWidth: 900 }}>
+              <TableHead>
+                <TableRow>
+                  <TableCell
+                    align="center"
+                    sx={{
+                      width: 48,
+                      bgcolor: '#e2e8f0',
+                      fontWeight: 900,
+                    }}
+                  >
+                    <Checkbox
+                      size="small"
+                      checked={allProcessDialogSelected}
+                      indeterminate={someProcessDialogSelected}
+                      disabled={processDialogRows.length === 0}
+                      onChange={(event) =>
+                        updateProcessDialogTargetIds(
+                          processDialogItemIds,
+                          event.target.checked,
+                        )
+                      }
+                      inputProps={{
+                        'aria-label': '검색된 계약 품목 전체 선택',
+                      }}
+                      sx={{ p: 0.4 }}
+                    />
+                  </TableCell>
+                  {[
+                    ['행', 65],
+                    ['타입·공구', 125],
+                    ['품명', 220],
+                    ['규격', 300],
+                    ['현재 공정', 170],
+                  ].map(([label, width]) => (
+                    <TableCell
+                      key={label}
+                      sx={{
+                        width,
+                        minWidth: width,
+                        bgcolor: '#e2e8f0',
+                        color: '#334155',
+                        fontSize: '0.7rem',
+                        fontWeight: 900,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {label}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {processDialogRows.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={6}
+                      align="center"
+                      sx={{ py: 5, color: '#94a3b8' }}
+                    >
+                      검색 조건에 해당하는 계약 품목이 없습니다.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  processDialogRows.map((row) => {
+                    const rowIds = getRowIds(row);
+                    const selectedCount = rowIds.filter((id) =>
+                      processDialogTargetIds.includes(id),
+                    ).length;
+                    const rowSelected =
+                      rowIds.length > 0 && selectedCount === rowIds.length;
+                    const rowIndeterminate =
+                      selectedCount > 0 && selectedCount < rowIds.length;
+                    const processLabel = row.group_process_mixed
+                      ? '공정 혼합'
+                      : getProcessLabel(row.process_type);
+
+                    return (
+                      <TableRow
+                        key={row.id}
+                        hover
+                        selected={rowSelected}
+                        onClick={() =>
+                          updateProcessDialogTargetIds(
+                            rowIds,
+                            !rowSelected,
+                          )
+                        }
+                        sx={{ cursor: 'pointer' }}
+                      >
+                        <TableCell align="center" sx={{ p: 0.2 }}>
+                          <Checkbox
+                            size="small"
+                            checked={rowSelected}
+                            indeterminate={rowIndeterminate}
+                            onChange={(event) =>
+                              updateProcessDialogTargetIds(
+                                rowIds,
+                                event.target.checked,
+                              )
+                            }
+                            onClick={(event) => event.stopPropagation()}
+                            sx={{ p: 0.4 }}
+                          />
+                        </TableCell>
+                        <TableCell
+                          sx={{ fontSize: '0.67rem', whiteSpace: 'nowrap' }}
+                        >
+                          {row.source_row_no}
+                        </TableCell>
+                        <TableCell sx={{ fontSize: '0.67rem' }}>
+                          <Typography
+                            sx={{ fontSize: '0.67rem', fontWeight: 800 }}
+                          >
+                            {getTypeLabel(row)}
+                          </Typography>
+                          <Typography
+                            sx={{ color: '#64748b', fontSize: '0.6rem' }}
+                          >
+                            {row.work_zone || '-'}
+                          </Typography>
+                        </TableCell>
+                        <TableCell sx={{ fontSize: '0.67rem' }}>
+                          <Typography
+                            sx={{ fontSize: '0.67rem', fontWeight: 800 }}
+                          >
+                            {row.item_name || '-'}
+                          </Typography>
+                          {row.group_count > 1 && (
+                            <Typography
+                              sx={{ color: '#64748b', fontSize: '0.6rem' }}
+                            >
+                              원본 {row.group_count.toLocaleString()}행
+                            </Typography>
+                          )}
+                        </TableCell>
+                        <TableCell sx={{ fontSize: '0.67rem' }}>
+                          {row.specification || '-'}
+                        </TableCell>
+                        <TableCell sx={{ fontSize: '0.67rem' }}>
+                          <Chip
+                            size="small"
+                            color={
+                              processLabel === '미연결'
+                                ? 'warning'
+                                : 'success'
+                            }
+                            variant="outlined"
+                            label={processLabel}
+                            sx={{
+                              maxWidth: 160,
+                              '& .MuiChip-label': {
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                              },
+                            }}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setProcessDialogValues([])} color="inherit">
-            전체 해제
+        <DialogActions sx={{ px: 2, py: 1.2, flexShrink: 0 }}>
+          <Button
+            color="inherit"
+            disabled={processDialogTargetIds.length === 0}
+            onClick={handleClearDialogMappings}
+          >
+            선택 연결 해제
           </Button>
           <Box sx={{ flex: 1 }} />
           <Button onClick={() => setProcessDialogOpen(false)} color="inherit">
             취소
           </Button>
-          <Button variant="contained" onClick={handleApplyDialogProcess}>
-            적용
+          <Button
+            variant="contained"
+            disabled={
+              processDialogTargetIds.length === 0 ||
+              processDialogValues.length === 0
+            }
+            onClick={handleApplyDialogProcess}
+            sx={{ bgcolor: '#0f766e', '&:hover': { bgcolor: '#115e59' } }}
+          >
+            선택 품목에 적용
           </Button>
         </DialogActions>
       </Dialog>
