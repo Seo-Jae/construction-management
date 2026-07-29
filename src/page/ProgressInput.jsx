@@ -1146,6 +1146,22 @@ export default function ProgressInput({
         activeTargetId,
     ) || null;
 
+  /*
+    현재 선택한 방통 차수의 라인 안에 포함되는 실제 세대수입니다.
+    차수에 연결된 공정은 같은 동·층 라인을 공유하므로,
+    선택 공정 집계를 우선 사용하고 없으면 첫 공정 집계를 사용합니다.
+  */
+  const activeTargetHouseholdCount =
+    activeTargetItem
+      ?.selectedProcessSummary
+      ?.summary
+      ?.targetCount ??
+    activeTargetItem
+      ?.processSummaries?.[0]
+      ?.summary
+      ?.targetCount ??
+    0;
+
   const openNewTargetDialog =
     () => {
       const nextSequence =
@@ -2178,6 +2194,30 @@ export default function ProgressInput({
                         .target_date,
                     ),
                   )}
+                </Typography>
+
+                <Typography
+                  sx={{
+                    px: 0.65,
+                    py: 0.12,
+                    color:
+                      activeTargetItem
+                        .color,
+                    bgcolor:
+                      `${activeTargetItem.color}12`,
+                    border:
+                      `1px solid ${activeTargetItem.color}40`,
+                    borderRadius: 0.75,
+                    fontSize:
+                      '0.59rem',
+                    fontWeight: 900,
+                    whiteSpace:
+                      'nowrap',
+                  }}
+                >
+                  대상{' '}
+                  {activeTargetHouseholdCount.toLocaleString()}
+                  세대
                 </Typography>
 
                 <Typography
