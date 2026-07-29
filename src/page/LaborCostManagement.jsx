@@ -522,6 +522,7 @@ export default function LaborCostManagement({
   const [unitTypes, setUnitTypes] = useState({});
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyProcess, setHistoryProcess] = useState('');
+  const [rateRoundSavingId, setRateRoundSavingId] = useState('');
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedProcesses, setSelectedProcesses] = useState(
     () => new Set(),
@@ -535,14 +536,18 @@ export default function LaborCostManagement({
 
   const [quantityProcess, setQuantityProcess] = useState('');
   const [quantities, setQuantities] = useState({});
+  const [quantityRounds, setQuantityRounds] = useState({});
   const [selectedUnits, setSelectedUnits] = useState(() => new Set());
   const [buildingFilter, setBuildingFilter] = useState('전체');
   const [floorFilter, setFloorFilter] = useState('전체');
   const [typeFilter, setTypeFilter] = useState('전체');
   const [onlyUnassignedQuantity, setOnlyUnassignedQuantity] =
     useState(false);
+  const [onlyUnassignedRate, setOnlyUnassignedRate] =
+    useState(false);
   const [unitKeyword, setUnitKeyword] = useState('');
   const [bulkQuantity, setBulkQuantity] = useState('');
+  const [bulkRateRound, setBulkRateRound] = useState('');
   const [quantityPage, setQuantityPage] = useState(0);
   const [quantityRowsPerPage, setQuantityRowsPerPage] = useState(100);
   const [quantityDeleteDialogOpen, setQuantityDeleteDialogOpen] =
@@ -687,6 +692,13 @@ export default function LaborCostManagement({
       }
 
       if (
+        onlyUnassignedRate &&
+        toNumber(quantityRounds[row.cellKey]) > 0
+      ) {
+        return false;
+      }
+
+      if (
         keyword &&
         !`${row.building} ${row.unit} ${row.unitType}`
           .toLowerCase()
@@ -701,7 +713,9 @@ export default function LaborCostManagement({
     buildingFilter,
     floorFilter,
     onlyUnassignedQuantity,
+    onlyUnassignedRate,
     quantities,
+    quantityRounds,
     typeFilter,
     unitKeyword,
     validUnits,
@@ -717,8 +731,58 @@ export default function LaborCostManagement({
   );
 
   const selectedSetting = settingByProcess[quantityProcess] || null;
-  const selectedAppliedPrice = toNumber(
-    selectedSetting?.applied_unit_price,
+  const confirmedRatesByProcess = useMemo(
+    () =>
+      rateHistory.reduce((result, row) => {
+        const confirmationRound = Math.round(
+          toNumber(row.confirmation_round),
+        );
+
+        if (
+          confirmationRound <= 0 ||
+          toNumber(row.confirmed_unit_price) <= 0
+        ) {
+          return result;
+        }
+
+        const current = result[row.process_type];
+
+        if (
+          !current ||
+          confirmationRound > toNumber(current.confirmation_round)
+        ) {
+          result[row.process_type] = row;
+        }
+
+        return result;
+      }, {}),
+    [rateHistory],
+  );
+
+  const quantityRateOptions = useMemo(
+    () =>
+      rateHistory
+        .filter(
+          (row) =>
+            row.process_type === quantityProcess &&
+            toNumber(row.confirmation_round) > 0 &&
+            toNumber(row.confirmed_unit_price) > 0,
+        )
+        .sort(
+          (first, second) =>
+            toNumber(first.confirmation_round) -
+            toNumber(second.confirmation_round),
+        ),
+    [quantityProcess, rateHistory],
+  );
+
+  const quantityRateByRound = useMemo(
+    () =>
+      quantityRateOptions.reduce((result, row) => {
+        result[toNumber(row.confirmation_round)] = row;
+        return result;
+      }, {}),
+    [quantityRateOptions],
   );
 
   const calculatedExecutionUnitPrice = useMemo(() => {
@@ -746,8 +810,47 @@ export default function LaborCostManagement({
 
       if (error) throw error;
 
-      const nextSettings = data?.settings || [];
-      const nextHistory = data?.history || [];
+      const rateRoundRows = [];
+      let rateRoundOffset = 0;
+
+      while (true) {
+        const {
+          data: rateRoundPage,
+          error: rateRoundError,
+        } = await supabase
+          .from('labor_process_rate_versions')
+          .select('id, confirmation_round')
+          .eq('project_name', projectName)
+          .range(
+            rateRoundOffset,
+            rateRoundOffset + SUPABASE_READ_PAGE_SIZE - 1,
+          );
+
+        if (rateRoundError) throw rateRoundError;
+
+        const pageRows = rateRoundPage || [];
+        rateRoundRows.push(...pageRows);
+
+        if (pageRows.length < SUPABASE_READ_PAGE_SIZE) {
+          break;
+        }
+
+        rateRoundOffset += SUPABASE_READ_PAGE_SIZE;
+      }
+
+      const roundByRateId = rateRoundRows.reduce((result, row) => {
+        result[row.id] = row.confirmation_round;
+        return result;
+      }, {});
+
+      const nextSettings = (data?.settings || []).map((row) => ({
+        ...row,
+        confirmation_round: roundByRateId[row.id] ?? null,
+      }));
+      const nextHistory = (data?.history || []).map((row) => ({
+        ...row,
+        confirmation_round: roundByRateId[row.id] ?? null,
+      }));
       const nextCatalog = data?.processes || [];
 
       setSettings(nextSettings);
@@ -838,6 +941,7 @@ export default function LaborCostManagement({
   const loadQuantities = useCallback(async () => {
     if (!projectName || !quantityProcess) {
       setQuantities({});
+      setQuantityRounds({});
       return;
     }
 
@@ -871,12 +975,50 @@ export default function LaborCostManagement({
         offset += SUPABASE_READ_PAGE_SIZE;
       }
 
+      const quantityRoundRows = [];
+      let quantityRoundOffset = 0;
+
+      while (true) {
+        const {
+          data: quantityRoundPage,
+          error: quantityRoundError,
+        } = await supabase
+          .from('labor_unit_quantities')
+          .select('building, unit, confirmation_round')
+          .eq('project_name', projectName)
+          .eq('process_type', quantityProcess)
+          .range(
+            quantityRoundOffset,
+            quantityRoundOffset + SUPABASE_READ_PAGE_SIZE - 1,
+          );
+
+        if (quantityRoundError) throw quantityRoundError;
+
+        const pageRows = quantityRoundPage || [];
+        quantityRoundRows.push(...pageRows);
+
+        if (pageRows.length < SUPABASE_READ_PAGE_SIZE) {
+          break;
+        }
+
+        quantityRoundOffset += SUPABASE_READ_PAGE_SIZE;
+      }
+
       const nextQuantities = rows.reduce((result, row) => {
         result[`${row.building}-${row.unit}`] = row.quantity;
         return result;
       }, {});
+      const nextQuantityRounds = quantityRoundRows.reduce(
+        (result, row) => {
+          result[`${row.building}-${row.unit}`] =
+            row.confirmation_round || '';
+          return result;
+        },
+        {},
+      );
 
       setQuantities(nextQuantities);
+      setQuantityRounds(nextQuantityRounds);
       setSelectedUnits(new Set());
     } catch (error) {
       console.error('세대별 물량 불러오기 오류:', error);
@@ -957,6 +1099,12 @@ export default function LaborCostManagement({
     setOverviewLoaded(false);
     setUnitTypes({});
     setQuantities({});
+    setQuantityRounds({});
+    setBulkQuantity('');
+    setBulkRateRound('');
+    setOnlyUnassignedQuantity(false);
+    setOnlyUnassignedRate(false);
+    setRateRoundSavingId('');
     setMonthlySummary([]);
     setMonthlyDetails([]);
     setMonthlyTotals({});
@@ -1453,21 +1601,57 @@ export default function LaborCostManagement({
       return;
     }
 
-    const value = Math.max(0, toNumber(bulkQuantity));
+    const applyQuantity = String(bulkQuantity).trim() !== '';
+    const applyRateRound = String(bulkRateRound) !== '';
 
-    setQuantities((previous) => {
-      const next = { ...previous };
-      selectedUnits.forEach((cellKey) => {
-        next[cellKey] = value;
+    if (!applyQuantity && !applyRateRound) {
+      setErrorMessage(
+        '일괄 적용할 물량 또는 확정차수를 선택해주세요.',
+      );
+      return;
+    }
+
+    const value = Math.max(0, toNumber(bulkQuantity));
+    const confirmationRound = Math.max(
+      0,
+      Math.round(toNumber(bulkRateRound)),
+    );
+
+    if (applyQuantity) {
+      setQuantities((previous) => {
+        const next = { ...previous };
+        selectedUnits.forEach((cellKey) => {
+          next[cellKey] = value;
+        });
+        return next;
       });
-      return next;
-    });
+    }
+
+    if (applyRateRound) {
+      setQuantityRounds((previous) => {
+        const next = { ...previous };
+        selectedUnits.forEach((cellKey) => {
+          next[cellKey] = confirmationRound || '';
+        });
+        return next;
+      });
+    }
 
     setMessage({
       severity: 'info',
-      text: `${selectedUnits.size.toLocaleString()}세대에 ${formatQuantity(
-        value,
-      )}${selectedSetting?.unit || ''}를 입력했습니다. 저장 버튼을 눌러 확정해주세요.`,
+      text: `${selectedUnits.size.toLocaleString()}세대에 ${
+        applyQuantity
+          ? `${formatQuantity(value)}${selectedSetting?.unit || ''}`
+          : '기존 물량'
+      }${
+        applyRateRound
+          ? ` · ${
+              confirmationRound > 0
+                ? `${confirmationRound}차 확정`
+                : '확정차수 미지정'
+            }`
+          : ''
+      }을 입력했습니다. 저장 버튼을 눌러 확정해주세요.`,
     });
     setErrorMessage('');
   };
@@ -1484,6 +1668,8 @@ export default function LaborCostManagement({
         building,
         unit,
         quantity: Math.max(0, toNumber(quantity)),
+        confirmation_round:
+          Math.round(toNumber(quantityRounds[cellKey])) || null,
       };
     });
 
@@ -1510,6 +1696,27 @@ export default function LaborCostManagement({
         );
 
         if (error) throw error;
+
+        const roundRows = chunk
+          .filter((row) => row.quantity > 0)
+          .map((row) => ({
+            building: row.building,
+            unit: row.unit,
+            confirmation_round: row.confirmation_round,
+          }));
+
+        if (roundRows.length > 0) {
+          const { error: roundError } = await supabase.rpc(
+            'save_labor_unit_quantity_rounds',
+            {
+              p_project_name: projectName,
+              p_process_type: quantityProcess,
+              p_rows: roundRows,
+            },
+          );
+
+          if (roundError) throw roundError;
+        }
       }
 
       setMessage({
@@ -1553,9 +1760,12 @@ export default function LaborCostManagement({
 
       setQuantityDeleteDialogOpen(false);
       setQuantities({});
+      setQuantityRounds({});
       setSelectedUnits(new Set());
       setBulkQuantity('');
+      setBulkRateRound('');
       setOnlyUnassignedQuantity(false);
+      setOnlyUnassignedRate(false);
       setMessage({
         severity: 'success',
         text: `${quantityProcess} 공정의 저장 물량 ${toNumber(
@@ -1575,6 +1785,53 @@ export default function LaborCostManagement({
     }
   };
 
+  const handleChangeRateConfirmationRound = async (
+    rateRow,
+    nextValue,
+  ) => {
+    if (!rateEditable || !rateRow?.id) return;
+
+    const confirmationRound =
+      String(nextValue) === ''
+        ? null
+        : Math.max(1, Math.round(toNumber(nextValue)));
+
+    setRateRoundSavingId(rateRow.id);
+    setMessage(null);
+    setErrorMessage('');
+
+    try {
+      const { error } = await supabase.rpc(
+        'set_labor_rate_confirmation_round',
+        {
+          p_project_name: projectName,
+          p_rate_id: rateRow.id,
+          p_confirmation_round: confirmationRound,
+        },
+      );
+
+      if (error) throw error;
+
+      setMessage({
+        severity: 'success',
+        text: confirmationRound
+          ? `${rateRow.process_type} 단가이력을 ${confirmationRound}차 확정으로 지정했습니다.`
+          : `${rateRow.process_type} 단가이력을 미확정(적용 제외)으로 변경했습니다.`,
+      });
+      await loadOverview();
+      await loadMonthly();
+    } catch (error) {
+      console.error('노임단가 확정차수 변경 오류:', error);
+      setErrorMessage(
+        `확정차수를 변경하지 못했습니다: ${
+          error?.message || '알 수 없는 오류'
+        }`,
+      );
+    } finally {
+      setRateRoundSavingId('');
+    }
+  };
+
   const selectedProcessHistory = useMemo(
     () =>
       rateHistory.filter(
@@ -1582,6 +1839,24 @@ export default function LaborCostManagement({
       ),
     [historyProcess, rateHistory],
   );
+
+  const historyRoundOptions = useMemo(() => {
+    const highestRound = selectedProcessHistory.reduce(
+      (highest, row) =>
+        Math.max(highest, toNumber(row.confirmation_round)),
+      0,
+    );
+    const optionCount = Math.max(
+      1,
+      selectedProcessHistory.length,
+      highestRound + 1,
+    );
+
+    return Array.from(
+      { length: optionCount },
+      (_unused, index) => index + 1,
+    );
+  }, [selectedProcessHistory]);
 
   const visibleMonthlyDetails = useMemo(
     () =>
@@ -1598,6 +1873,28 @@ export default function LaborCostManagement({
         0,
       ),
     [quantities, validUnits],
+  );
+
+  const currentQuantityAmount = useMemo(
+    () =>
+      validUnits.reduce((total, row) => {
+        const confirmationRound = toNumber(
+          quantityRounds[row.cellKey],
+        );
+        const rate = quantityRateByRound[confirmationRound];
+
+        return (
+          total +
+          toNumber(quantities[row.cellKey]) *
+            toNumber(rate?.confirmed_unit_price)
+        );
+      }, 0),
+    [
+      quantities,
+      quantityRateByRound,
+      quantityRounds,
+      validUnits,
+    ],
   );
 
   const editorCellInputSx = {
@@ -2078,6 +2375,8 @@ export default function LaborCostManagement({
 
               const setting = settingByProcess[processType];
               const processRow = catalogByProcess[processType];
+              const confirmedRate =
+                confirmedRatesByProcess[processType] || null;
 
               return (
                 <TableRow
@@ -2132,8 +2431,12 @@ export default function LaborCostManagement({
                       : '-'}
                   </TableCell>
                   <TableCell sx={numberCellSx}>
-                    {setting?.confirmed_unit_price
-                      ? `${formatMoney(setting.confirmed_unit_price)}원`
+                    {confirmedRate
+                      ? `${toNumber(
+                          confirmedRate.confirmation_round,
+                        )}차 · ${formatMoney(
+                          confirmedRate.confirmed_unit_price,
+                        )}원`
                       : '미확정'}
                   </TableCell>
                   <TableCell sx={bodyCellSx} align="center">
@@ -2215,7 +2518,9 @@ export default function LaborCostManagement({
         <Stack
           direction={{ xs: 'column', lg: 'row' }}
           spacing={0.8}
+          useFlexGap
           alignItems={{ lg: 'center' }}
+          sx={{ flexWrap: 'wrap' }}
         >
           <TextField
             select
@@ -2225,7 +2530,9 @@ export default function LaborCostManagement({
             onChange={(event) => {
               setQuantityProcess(event.target.value);
               setQuantities({});
+              setQuantityRounds({});
               setSelectedUnits(new Set());
+              setBulkRateRound('');
             }}
             sx={{ minWidth: 145 }}
           >
@@ -2321,6 +2628,31 @@ export default function LaborCostManagement({
             }}
           />
 
+          <FormControlLabel
+            control={
+              <Checkbox
+                size="small"
+                checked={onlyUnassignedRate}
+                onChange={(event) => {
+                  setOnlyUnassignedRate(event.target.checked);
+                  setQuantityPage(0);
+                }}
+              />
+            }
+            label={
+              <Typography sx={{ fontSize: '0.69rem' }}>
+                확정차수 미지정만
+              </Typography>
+            }
+            sx={{
+              mr: 0,
+              whiteSpace: 'nowrap',
+              '& .MuiFormControlLabel-label': {
+                lineHeight: 1,
+              },
+            }}
+          />
+
           <TextField
             size="small"
             label="동·세대·타입 검색"
@@ -2354,6 +2686,27 @@ export default function LaborCostManagement({
             sx={{ minWidth: 145 }}
           />
 
+          <TextField
+            select
+            size="small"
+            label="적용 확정차수"
+            value={bulkRateRound}
+            onChange={(event) => setBulkRateRound(event.target.value)}
+            sx={{ minWidth: 165 }}
+          >
+            <MenuItem value="">차수 변경 안 함</MenuItem>
+            <MenuItem value="0">미지정(계산 제외)</MenuItem>
+            {quantityRateOptions.map((rateRow) => (
+              <MenuItem
+                key={rateRow.id}
+                value={String(rateRow.confirmation_round)}
+              >
+                {rateRow.confirmation_round}차 확정 ·{' '}
+                {formatMoney(rateRow.confirmed_unit_price)}원
+              </MenuItem>
+            ))}
+          </TextField>
+
           <Button
             variant="outlined"
             onClick={handleApplyBulkQuantity}
@@ -2383,18 +2736,12 @@ export default function LaborCostManagement({
 
           <Chip
             size="small"
-            color={selectedSetting ? 'primary' : 'warning'}
+            color={quantityRateOptions.length > 0 ? 'primary' : 'warning'}
             variant="outlined"
             label={
-              selectedSetting
-                ? `${
-                    selectedSetting.confirmed_unit_price
-                      ? '확정단가'
-                      : '실행단가'
-                  } ${formatMoney(selectedAppliedPrice)}원/${
-                    selectedSetting.unit
-                  }`
-                : '노임단가 미설정'
+              quantityRateOptions.length > 0
+                ? `확정단가 ${quantityRateOptions.length.toLocaleString()}개 차수`
+                : '확정차수 미설정'
             }
           />
         </Stack>
@@ -2415,10 +2762,7 @@ export default function LaborCostManagement({
             {selectedSetting?.unit || ''}
           </Typography>
           <Typography sx={{ fontSize: '0.67rem', color: '#64748b' }}>
-            예상 노임 {formatMoney(
-              currentQuantityTotal * selectedAppliedPrice,
-            )}
-            원
+            예상 노임 {formatMoney(currentQuantityAmount)}원
           </Typography>
         </Stack>
       </Paper>
@@ -2462,6 +2806,7 @@ export default function LaborCostManagement({
                 '세대',
                 '물량',
                 '단위',
+                '확정차수',
                 '적용단가',
                 '예상 노임',
               ].map((label) => (
@@ -2474,7 +2819,14 @@ export default function LaborCostManagement({
           <TableBody>
             {paginatedUnits.map((row) => {
               const quantity = quantities[row.cellKey] ?? '';
-              const amount = toNumber(quantity) * selectedAppliedPrice;
+              const confirmationRound =
+                quantityRounds[row.cellKey] || '';
+              const appliedRate =
+                quantityRateByRound[toNumber(confirmationRound)] || null;
+              const appliedUnitPrice = toNumber(
+                appliedRate?.confirmed_unit_price,
+              );
+              const amount = toNumber(quantity) * appliedUnitPrice;
 
               return (
                 <TableRow
@@ -2535,9 +2887,53 @@ export default function LaborCostManagement({
                   <TableCell sx={bodyCellSx} align="center">
                     {selectedSetting?.unit || '-'}
                   </TableCell>
+                  <TableCell
+                    sx={{
+                      ...bodyCellSx,
+                      minWidth: 145,
+                      bgcolor:
+                        toNumber(quantity) > 0 && !confirmationRound
+                          ? '#fff7ed'
+                          : undefined,
+                    }}
+                  >
+                    <TextField
+                      select
+                      size="small"
+                      fullWidth
+                      value={String(confirmationRound)}
+                      onChange={(event) =>
+                        setQuantityRounds((previous) => ({
+                          ...previous,
+                          [row.cellKey]: event.target.value
+                            ? Number(event.target.value)
+                            : '',
+                        }))
+                      }
+                      SelectProps={{
+                        displayEmpty: true,
+                      }}
+                      sx={{
+                        '& .MuiInputBase-root': {
+                          fontSize: '0.68rem',
+                          bgcolor: '#fff',
+                        },
+                      }}
+                    >
+                      <MenuItem value="">미지정</MenuItem>
+                      {quantityRateOptions.map((rateRow) => (
+                        <MenuItem
+                          key={rateRow.id}
+                          value={String(rateRow.confirmation_round)}
+                        >
+                          {rateRow.confirmation_round}차 확정
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  </TableCell>
                   <TableCell sx={numberCellSx}>
-                    {selectedSetting
-                      ? `${formatMoney(selectedAppliedPrice)}원`
+                    {appliedRate
+                      ? `${formatMoney(appliedUnitPrice)}원`
                       : '-'}
                   </TableCell>
                   <TableCell
@@ -2555,7 +2951,7 @@ export default function LaborCostManagement({
 
             {!quantityLoading && filteredUnits.length === 0 && (
               <TableRow>
-                <TableCell colSpan={9} align="center" sx={{ py: 5 }}>
+                <TableCell colSpan={10} align="center" sx={{ py: 5 }}>
                   조건에 맞는 실제 세대가 없습니다.
                 </TableCell>
               </TableRow>
@@ -3205,12 +3601,17 @@ export default function LaborCostManagement({
         open={historyOpen}
         onClose={() => setHistoryOpen(false)}
         fullWidth
-        maxWidth="md"
+        maxWidth="lg"
       >
         <DialogTitle sx={{ fontWeight: 900 }}>
           {historyProcess} 노임단가 변경이력
         </DialogTitle>
         <DialogContent dividers>
+          <Alert severity="info" sx={{ mb: 1.2 }}>
+            실제 적용할 확정단가만 1차·2차·3차로 지정하세요.
+            미확정 이력은 월별 노임 계산에서 제외됩니다. 같은 차수를
+            다른 이력에 지정하면 기존 이력은 자동으로 미확정 처리됩니다.
+          </Alert>
           <TableContainer>
             <Table size="small">
               <TableHead>
@@ -3221,6 +3622,7 @@ export default function LaborCostManagement({
                     '실행단가',
                     '확정단가',
                     '적용단가',
+                    '확정차수',
                     '사유',
                     '등록자',
                   ].map((label) => (
@@ -3249,6 +3651,62 @@ export default function LaborCostManagement({
                     </TableCell>
                     <TableCell sx={numberCellSx}>
                       {formatMoney(row.applied_unit_price)}원
+                    </TableCell>
+                    <TableCell sx={{ ...bodyCellSx, minWidth: 175 }}>
+                      <TextField
+                        select
+                        size="small"
+                        fullWidth
+                        value={
+                          row.confirmation_round
+                            ? String(row.confirmation_round)
+                            : ''
+                        }
+                        onChange={(event) =>
+                          handleChangeRateConfirmationRound(
+                            row,
+                            event.target.value,
+                          )
+                        }
+                        disabled={
+                          !rateEditable ||
+                          rateRoundSavingId === row.id ||
+                          toNumber(row.confirmed_unit_price) <= 0
+                        }
+                        SelectProps={{ displayEmpty: true }}
+                        sx={{
+                          '& .MuiInputBase-root': {
+                            fontSize: '0.68rem',
+                            bgcolor: row.confirmation_round
+                              ? '#ecfdf5'
+                              : '#fff',
+                          },
+                        }}
+                      >
+                        <MenuItem value="">
+                          미확정(적용 제외)
+                        </MenuItem>
+                        {historyRoundOptions.map((round) => (
+                          <MenuItem
+                            key={round}
+                            value={String(round)}
+                          >
+                            {round}차 확정
+                          </MenuItem>
+                        ))}
+                      </TextField>
+                      {toNumber(row.confirmed_unit_price) <= 0 && (
+                        <Typography
+                          sx={{
+                            mt: 0.35,
+                            fontSize: '0.58rem',
+                            color: '#b45309',
+                            textAlign: 'center',
+                          }}
+                        >
+                          확정단가 입력 후 지정 가능
+                        </Typography>
+                      )}
                     </TableCell>
                     <TableCell sx={bodyCellSx}>
                       {row.change_reason || '-'}
