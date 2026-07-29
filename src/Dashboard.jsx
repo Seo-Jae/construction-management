@@ -607,6 +607,8 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const [progressToast, setProgressToast] = useState(null);
   
   const [unitProgressData, setUnitProgressData] = useState({});
+  const [unitProgressProjectName, setUnitProgressProjectName] = useState('');
+  const [unitProgressProcess, setUnitProgressProcess] = useState('');
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -980,17 +982,24 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   ]);
 
   useEffect(() => {
+    let active = true;
+
     if (!activeProjectName) {
       setBuildingConfigs({});
       setUnitProgressData({});
+      setUnitProgressProjectName('');
+      setUnitProgressProcess('');
       setSavedData({});
       setManualStatus({});
-      return;
+      return () => {
+        active = false;
+      };
     }
 
     const fetchBuildingConfigs = async () => {
         const { data, error } = await supabase.from("building_settings").select("*").eq("project_name", activeProjectName);
         if (error) return console.error(error);
+        if (!active) return;
         const configs = {};
         data.forEach(row => { configs[row.building_name] = row.config_json; });
         setBuildingConfigs(configs);
@@ -999,6 +1008,8 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     const fetchUnitProgress = async () => {
       // 공정이 바뀔 때 이전 공정 색상이 잠시 남지 않도록 먼저 비웁니다.
       setUnitProgressData({});
+      setUnitProgressProjectName('');
+      setUnitProgressProcess('');
 
       try {
         /*
@@ -1022,9 +1033,14 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           };
         });
 
+        if (!active) return;
         setUnitProgressData(mapped);
+        setUnitProgressProjectName(activeProjectName);
+        setUnitProgressProcess(selectedProcess);
       } catch (error) {
-        console.error('공정 데이터 전체 조회 오류:', error);
+        if (active) {
+          console.error('공정 데이터 전체 조회 오류:', error);
+        }
       }
     };
 
@@ -1050,6 +1066,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           }
         });
 
+        if (!active) return;
         setSavedData(newData);
         setManualStatus(newStatus);
       } catch (error) {
@@ -1061,6 +1078,9 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     fetchUnitProgress();
     fetchReports();
 
+    return () => {
+      active = false;
+    };
   }, [activeProjectName, selectedProcess]);
 
   const syncDataToDB = async (
@@ -3185,6 +3205,8 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               processOptions={activeProcessOptions}
               buildingConfigs={buildingConfigs}
               unitProgressData={unitProgressData}
+              unitProgressProjectName={unitProgressProjectName}
+              unitProgressProcess={unitProgressProcess}
               handleGridCellClick={handleGridCellClick}
               handleFloorClick={handleFloorClick}
             />

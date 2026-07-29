@@ -9,6 +9,7 @@ import {
   Autocomplete,
   Box,
   Button,
+  Checkbox,
   Dialog,
   DialogActions,
   DialogContent,
@@ -56,6 +57,153 @@ const TARGET_SELECT_COLUMNS = `
 `;
 
 const UNIT_TYPE_PAGE_SIZE = 1000;
+
+const getTargetPreferenceStorageKey = (
+  projectName,
+  preferenceName,
+) =>
+  `progress-input:${encodeURIComponent(
+    String(projectName || 'default'),
+  )}:${preferenceName}`;
+
+const readStoredTargetPanelMinimized = (
+  projectName,
+) => {
+  if (
+    typeof window === 'undefined' ||
+    !projectName
+  ) {
+    return false;
+  }
+
+  try {
+    return (
+      window.localStorage.getItem(
+        getTargetPreferenceStorageKey(
+          projectName,
+          'target-panel-minimized',
+        ),
+      ) === 'true'
+    );
+  } catch (error) {
+    console.warn(
+      '방통구간 최소화 상태 조회 실패:',
+      error,
+    );
+    return false;
+  }
+};
+
+const readStoredHiddenTargetSequences = (
+  projectName,
+) => {
+  if (
+    typeof window === 'undefined' ||
+    !projectName
+  ) {
+    return [];
+  }
+
+  try {
+    const storedValue =
+      window.localStorage.getItem(
+        getTargetPreferenceStorageKey(
+          projectName,
+          'hidden-target-sequences',
+        ),
+      );
+
+    const parsedValue =
+      storedValue
+        ? JSON.parse(storedValue)
+        : [];
+
+    return Array.from(
+      new Set(
+        (
+          Array.isArray(parsedValue)
+            ? parsedValue
+            : []
+        )
+          .map((item) =>
+            Number(item),
+          )
+          .filter(
+            (item) =>
+              Number.isInteger(
+                item,
+              ) &&
+              item > 0,
+          ),
+      ),
+    ).sort(
+      (first, second) =>
+        first - second,
+    );
+  } catch (error) {
+    console.warn(
+      '숨긴 방통구간 조회 실패:',
+      error,
+    );
+    return [];
+  }
+};
+
+const storeTargetPanelMinimized = (
+  projectName,
+  minimized,
+) => {
+  if (
+    typeof window === 'undefined' ||
+    !projectName
+  ) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      getTargetPreferenceStorageKey(
+        projectName,
+        'target-panel-minimized',
+      ),
+      minimized ? 'true' : 'false',
+    );
+  } catch (error) {
+    console.warn(
+      '방통구간 최소화 상태 저장 실패:',
+      error,
+    );
+  }
+};
+
+const storeHiddenTargetSequences = (
+  projectName,
+  sequences,
+) => {
+  if (
+    typeof window === 'undefined' ||
+    !projectName
+  ) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      getTargetPreferenceStorageKey(
+        projectName,
+        'hidden-target-sequences',
+      ),
+      JSON.stringify(
+        sequences,
+      ),
+    );
+  } catch (error) {
+    console.warn(
+      '숨긴 방통구간 저장 실패:',
+      error,
+    );
+  }
+};
 
 const normalizeUnitTypeBuildingName = (value) => {
   const text = String(value || '').trim();
@@ -315,14 +463,19 @@ const getTargetSummary = ({
   target,
   buildingConfigs,
   unitProgressData,
+  targetCellKeys:
+    providedTargetCellKeys,
 }) => {
   const targetCellKeys =
-    getTargetCellKeys({
-      buildingFloorTargets:
-        target
-          ?.building_floor_targets,
-      buildingConfigs,
-    });
+    providedTargetCellKeys instanceof
+    Set
+      ? providedTargetCellKeys
+      : getTargetCellKeys({
+          buildingFloorTargets:
+            target
+              ?.building_floor_targets,
+          buildingConfigs,
+        });
 
   let completedCount = 0;
 
@@ -613,6 +766,24 @@ const fetchAllTargetProgressRows =
           'process_type',
           normalizedTypes,
         )
+        .order(
+          'process_type',
+          {
+            ascending: true,
+          },
+        )
+        .order(
+          'building',
+          {
+            ascending: true,
+          },
+        )
+        .order(
+          'unit',
+          {
+            ascending: true,
+          },
+        )
         .range(
           from,
           from +
@@ -746,6 +917,8 @@ export default function ProgressInput({
   processOptions = [],
   buildingConfigs = {},
   unitProgressData = {},
+  unitProgressProjectName = '',
+  unitProgressProcess = '',
   handleGridCellClick,
   handleFloorClick,
 }) {
@@ -768,6 +941,21 @@ export default function ProgressInput({
     targetMenuAnchor,
     setTargetMenuAnchor,
   ] = useState(null);
+
+  const [
+    targetVisibilityMenuAnchor,
+    setTargetVisibilityMenuAnchor,
+  ] = useState(null);
+
+  const [
+    hiddenTargetSequences,
+    setHiddenTargetSequences,
+  ] = useState([]);
+
+  const [
+    targetPanelMinimized,
+    setTargetPanelMinimized,
+  ] = useState(false);
 
   const [
     targetDialogOpen,
@@ -1061,12 +1249,34 @@ export default function ProgressInput({
     );
   }, [projectName]);
 
+  useEffect(() => {
+    setTargetPanelMinimized(
+      readStoredTargetPanelMinimized(
+        projectName,
+      ),
+    );
+    setHiddenTargetSequences(
+      readStoredHiddenTargetSequences(
+        projectName,
+      ),
+    );
+    setTargetVisibilityMenuAnchor(
+      null,
+    );
+  }, [projectName]);
+
   /*
     현재 화면에서 수정한 공정은 Dashboard의 최신 데이터를
     차수별 집계 데이터에도 즉시 반영합니다.
   */
   useEffect(() => {
-    if (!selectedProcess) {
+    if (
+      !selectedProcess ||
+      unitProgressProjectName !==
+        projectName ||
+      unitProgressProcess !==
+        selectedProcess
+    ) {
       return;
     }
 
@@ -1078,23 +1288,71 @@ export default function ProgressInput({
       }),
     );
   }, [
+    projectName,
     selectedProcess,
     unitProgressData,
+    unitProgressProjectName,
+    unitProgressProcess,
   ]);
 
   const targetSummaries =
     useMemo(
-      () =>
-        progressTargets.map(
+      () => {
+        /*
+          progress_targets의 목표층은 1층부터 해당 차수 최종층까지의
+          누적 범위로 저장됩니다.
+
+          따라서 2차 이후의 실제 차수 물량은 현재 누적 범위에서
+          이전 모든 차수의 누적 범위를 제외해야 합니다.
+          이 방식은 3차, 4차 이후가 추가되어도 같은 규칙으로 동작합니다.
+        */
+        const previousTargetCellKeys =
+          new Set();
+
+        return progressTargets.map(
           (target, index) => {
+            const cumulativeTargetCellKeys =
+              getTargetCellKeys({
+                buildingFloorTargets:
+                  target
+                    .building_floor_targets,
+                buildingConfigs,
+              });
+
+            const currentTargetCellKeys =
+              new Set(
+                Array.from(
+                  cumulativeTargetCellKeys,
+                ).filter(
+                  (cellKey) =>
+                    !previousTargetCellKeys.has(
+                      cellKey,
+                    ),
+                ),
+              );
+
+            cumulativeTargetCellKeys.forEach(
+              (cellKey) =>
+                previousTargetCellKeys.add(
+                  cellKey,
+                ),
+            );
+
             const processSummaries =
               target.process_types.map(
                 (
                   processType,
                 ) => {
-                  const processData =
+                  const currentProcessIsLoaded =
                     processType ===
-                    selectedProcess
+                      selectedProcess &&
+                    unitProgressProjectName ===
+                      projectName &&
+                    unitProgressProcess ===
+                      selectedProcess;
+
+                  const processData =
+                    currentProcessIsLoaded
                       ? unitProgressData
                       : targetProcessProgressData[
                           processType
@@ -1108,6 +1366,8 @@ export default function ProgressInput({
                         buildingConfigs,
                         unitProgressData:
                           processData,
+                        targetCellKeys:
+                          currentTargetCellKeys,
                       }),
                   };
                 },
@@ -1129,13 +1389,17 @@ export default function ProgressInput({
                 ) || null,
             };
           },
-        ),
+        );
+      },
       [
         buildingConfigs,
         progressTargets,
+        projectName,
         selectedProcess,
         targetProcessProgressData,
         unitProgressData,
+        unitProgressProjectName,
+        unitProgressProcess,
       ],
     );
 
@@ -1145,6 +1409,25 @@ export default function ProgressInput({
         item.target.id ===
         activeTargetId,
     ) || null;
+
+  const hiddenTargetSequenceSet =
+    useMemo(
+      () =>
+        new Set(
+          hiddenTargetSequences,
+        ),
+      [hiddenTargetSequences],
+    );
+
+  const hiddenTargetCount =
+    progressTargets.filter(
+      (target) =>
+        hiddenTargetSequenceSet.has(
+          Number(
+            target.sequence,
+          ),
+        ),
+    ).length;
 
   /*
     현재 선택한 방통 차수의 라인 안에 포함되는 실제 세대수입니다.
@@ -1665,6 +1948,70 @@ export default function ProgressInput({
     setSelectedCells?.(new Set());
   };
 
+  const toggleTargetPanelMinimized =
+    () => {
+      setTargetPanelMinimized(
+        (previous) => {
+          const next =
+            !previous;
+
+          storeTargetPanelMinimized(
+            projectName,
+            next,
+          );
+
+          return next;
+        },
+      );
+    };
+
+  const toggleTargetLineVisibility =
+    (sequence) => {
+      const normalizedSequence =
+        Number(sequence);
+
+      if (
+        !Number.isInteger(
+          normalizedSequence,
+        ) ||
+        normalizedSequence <= 0
+      ) {
+        return;
+      }
+
+      setHiddenTargetSequences(
+        (previous) => {
+          const next =
+            previous.includes(
+              normalizedSequence,
+            )
+              ? previous.filter(
+                  (item) =>
+                    item !==
+                    normalizedSequence,
+                )
+              : [
+                  ...previous,
+                  normalizedSequence,
+                ].sort(
+                  (
+                    first,
+                    second,
+                  ) =>
+                    first -
+                    second,
+                );
+
+          storeHiddenTargetSequences(
+            projectName,
+            next,
+          );
+
+          return next;
+        },
+      );
+    };
+
   return (
     <Box
       sx={{
@@ -1776,6 +2123,151 @@ export default function ProgressInput({
           >
             전체선택해제
           </Button>
+
+          <Button
+            size="small"
+            variant="outlined"
+            disabled={
+              progressTargets.length ===
+              0
+            }
+            onClick={(event) =>
+              setTargetVisibilityMenuAnchor(
+                event.currentTarget,
+              )
+            }
+            sx={{
+              minWidth: 126,
+              py: 0.1,
+              pl: 0.25,
+              pr: 0.75,
+              color: '#475569',
+              borderColor: '#cbd5e1',
+              bgcolor:
+                hiddenTargetCount > 0
+                  ? '#f8fafc'
+                  : '#ffffff',
+              fontSize: '0.68rem',
+              fontWeight: 800,
+              boxShadow: 'none',
+              '&:hover': {
+                borderColor: '#94a3b8',
+                bgcolor: '#f8fafc',
+              },
+            }}
+          >
+            <Checkbox
+              size="small"
+              checked={
+                hiddenTargetCount > 0
+              }
+              indeterminate={
+                hiddenTargetCount > 0 &&
+                hiddenTargetCount <
+                  progressTargets.length
+              }
+              disableRipple
+              tabIndex={-1}
+              sx={{
+                p: 0.3,
+                mr: 0.2,
+                pointerEvents: 'none',
+                '& .MuiSvgIcon-root': {
+                  fontSize: 17,
+                },
+              }}
+            />
+            방통구간 숨기기
+            {hiddenTargetCount > 0
+              ? ` (${hiddenTargetCount})`
+              : ''}
+          </Button>
+
+          <Menu
+            anchorEl={
+              targetVisibilityMenuAnchor
+            }
+            open={Boolean(
+              targetVisibilityMenuAnchor,
+            )}
+            onClose={() =>
+              setTargetVisibilityMenuAnchor(
+                null,
+              )
+            }
+            MenuListProps={{
+              dense: true,
+            }}
+            PaperProps={{
+              sx: {
+                minWidth: 190,
+                maxHeight: 320,
+                mt: 0.35,
+                border:
+                  '1px solid #cbd5e1',
+                boxShadow:
+                  '0 10px 24px rgba(15, 23, 42, 0.14)',
+              },
+            }}
+          >
+            {progressTargets.map(
+              (target) => {
+                const sequence =
+                  Number(
+                    target.sequence,
+                  );
+                const hidden =
+                  hiddenTargetSequenceSet.has(
+                    sequence,
+                  );
+
+                return (
+                  <MenuItem
+                    key={
+                      target.id
+                    }
+                    onClick={() =>
+                      toggleTargetLineVisibility(
+                        sequence,
+                      )
+                    }
+                    sx={{
+                      minHeight: 34,
+                      px: 0.75,
+                    }}
+                  >
+                    <Checkbox
+                      size="small"
+                      checked={
+                        hidden
+                      }
+                      sx={{
+                        p: 0.35,
+                        mr: 0.45,
+                      }}
+                    />
+                    <Typography
+                      sx={{
+                        color:
+                          '#334155',
+                        fontSize:
+                          '0.7rem',
+                        fontWeight:
+                          hidden
+                            ? 900
+                            : 700,
+                      }}
+                    >
+                      {
+                        target.target_name
+                      }{' '}
+                      숨기기
+                    </Typography>
+                  </MenuItem>
+                );
+              },
+            )}
+          </Menu>
         </Box>
 
         <Typography
@@ -1834,7 +2326,10 @@ export default function ProgressInput({
         elevation={1}
         sx={{
           mt: 0.5,
-          minHeight: 58,
+          minHeight:
+            targetPanelMinimized
+              ? 42
+              : 58,
           flexShrink: 0,
           display: 'grid',
           gridTemplateColumns:
@@ -1842,7 +2337,10 @@ export default function ProgressInput({
           alignItems: 'center',
           gap: 0.7,
           px: 1,
-          py: 0.6,
+          py:
+            targetPanelMinimized
+              ? 0.35
+              : 0.6,
           bgcolor: '#ffffff',
           border: targetLineEditMode
             ? '1px solid #f59e0b'
@@ -2329,9 +2827,34 @@ export default function ProgressInput({
           >
             설정수정
           </Button>
+
+          <Button
+            size="small"
+            variant="outlined"
+            disabled={
+              progressTargets.length ===
+              0
+            }
+            onClick={
+              toggleTargetPanelMinimized
+            }
+            sx={{
+              minWidth: 58,
+              px: 0.65,
+              color: '#475569',
+              borderColor: '#cbd5e1',
+              fontSize: '0.63rem',
+              fontWeight: 900,
+            }}
+          >
+            {targetPanelMinimized
+              ? '펼치기'
+              : '최소화'}
+          </Button>
         </Box>
 
-        {activeTargetItem && (
+        {activeTargetItem &&
+          !targetPanelMinimized && (
           <Box
             sx={{
               gridColumn: '1 / -1',
@@ -2449,7 +2972,8 @@ export default function ProgressInput({
           </Box>
         )}
 
-        {(targetLineEditMode ||
+        {((!targetPanelMinimized &&
+          targetLineEditMode) ||
           targetError) && (
           <Box
             sx={{
@@ -2457,7 +2981,8 @@ export default function ProgressInput({
               minWidth: 0,
             }}
           >
-            {targetLineEditMode && (
+            {!targetPanelMinimized &&
+              targetLineEditMode && (
               <Alert
                 severity="warning"
                 sx={{
@@ -2720,14 +3245,17 @@ export default function ProgressInput({
                     targetSummaries
                       .filter(
                         ({ target }) =>
-                          (
-                            targetLineEditMode &&
-                            target.id ===
+                          targetLineEditMode
+                            ? target.id ===
                               activeTargetId
-                          ) ||
-                          target.process_types.includes(
-                            selectedProcess,
-                          ),
+                            : target.process_types.includes(
+                                selectedProcess,
+                              ) &&
+                              !hiddenTargetSequenceSet.has(
+                                Number(
+                                  target.sequence,
+                                ),
+                              ),
                       )
                       .map(
                         ({
