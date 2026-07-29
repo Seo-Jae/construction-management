@@ -743,6 +743,8 @@ export default function LaborCostManagement({
     useState(false);
   const [quantityExcelResult, setQuantityExcelResult] =
     useState(null);
+  const [quantityHasPendingChanges, setQuantityHasPendingChanges] =
+    useState(false);
   const quantityExcelFileInputRef = useRef(null);
 
   const [startMonth, setStartMonth] = useState(getKoreaMonthKey());
@@ -1261,6 +1263,7 @@ export default function LaborCostManagement({
       setQuantities(nextQuantities);
       setQuantityRounds(nextQuantityRounds);
       setSelectedUnits(new Set());
+      setQuantityHasPendingChanges(false);
     } catch (error) {
       console.error('세대별 물량 불러오기 오류:', error);
       setErrorMessage(
@@ -1390,6 +1393,7 @@ export default function LaborCostManagement({
     setUnitTypes({});
     setQuantities({});
     setQuantityRounds({});
+    setQuantityHasPendingChanges(false);
     setBulkQuantity('');
     setBulkRateRound('');
     setQuantityColumnFilters(createEmptyQuantityColumnFilters());
@@ -1945,6 +1949,7 @@ export default function LaborCostManagement({
       });
     }
 
+    setQuantityHasPendingChanges(true);
     setMessage({
       severity: 'info',
       text: `${selectedUnits.size.toLocaleString()}세대에 ${
@@ -2042,6 +2047,10 @@ export default function LaborCostManagement({
         allowedRounds: quantityRateOptions.map(
           (row) => row.confirmation_round,
         ),
+        defaultConfirmationRound:
+          quantityRateOptions.length === 1
+            ? quantityRateOptions[0].confirmation_round
+            : 0,
       });
 
       setQuantities((previous) => {
@@ -2065,6 +2074,7 @@ export default function LaborCostManagement({
       setSelectedUnits(
         new Set(result.updates.map((row) => row.cellKey)),
       );
+      setQuantityHasPendingChanges(true);
       setQuantityPage(0);
       setQuantityExcelResult({
         ...result,
@@ -2078,7 +2088,11 @@ export default function LaborCostManagement({
         result.duplicateRows.length;
       setMessage({
         severity: issueCount > 0 ? 'warning' : 'success',
-        text: `${quantityProcess} ${result.matchedRows.toLocaleString()}세대의 작성값을 화면에 불러왔습니다. 검토 후 저장 버튼을 눌러주세요.`,
+        text: `${quantityProcess} ${result.matchedRows.toLocaleString()}세대의 작성값을 화면에 불러왔습니다.${
+          result.autoAssignedRoundRows > 0
+            ? ` 단일 확정차수를 ${result.autoAssignedRoundRows.toLocaleString()}세대에 자동 적용했습니다.`
+            : ''
+        } 검토 후 저장 버튼을 눌러주세요.`,
       });
     } catch (error) {
       console.error('세대별 물량 엑셀 업로드 오류:', error);
@@ -2148,6 +2162,7 @@ export default function LaborCostManagement({
         severity: 'success',
         text: `${quantityProcess} 현재 작성내용 ${rows.length.toLocaleString()}건을 저장했습니다.`,
       });
+      setQuantityHasPendingChanges(false);
       await loadQuantities();
       await loadMonthly();
     } catch (error) {
@@ -2186,6 +2201,7 @@ export default function LaborCostManagement({
       setQuantityDeleteDialogOpen(false);
       setQuantities({});
       setQuantityRounds({});
+      setQuantityHasPendingChanges(false);
       setSelectedUnits(new Set());
       setBulkQuantity('');
       setBulkRateRound('');
@@ -3057,6 +3073,7 @@ export default function LaborCostManagement({
               setQuantityProcess(event.target.value);
               setQuantities({});
               setQuantityRounds({});
+              setQuantityHasPendingChanges(false);
               setSelectedUnits(new Set());
               setBulkRateRound('');
               setQuantityExcelResult(null);
@@ -3431,15 +3448,16 @@ export default function LaborCostManagement({
                   >
                     <InputBase
                       value={formatNumericInput(quantity)}
-                      onChange={(event) =>
+                      onChange={(event) => {
                         setQuantities((previous) => ({
                           ...previous,
                           [row.cellKey]: normalizeNumericInput(
                             event.target.value,
                             4,
                           ),
-                        }))
-                      }
+                        }));
+                        setQuantityHasPendingChanges(true);
+                      }}
                       inputProps={{ inputMode: 'decimal' }}
                       sx={{
                         width: '100%',
@@ -3475,14 +3493,15 @@ export default function LaborCostManagement({
                       size="small"
                       fullWidth
                       value={String(confirmationRound)}
-                      onChange={(event) =>
+                      onChange={(event) => {
                         setQuantityRounds((previous) => ({
                           ...previous,
                           [row.cellKey]: event.target.value
                             ? Number(event.target.value)
                             : '',
-                        }))
-                      }
+                        }));
+                        setQuantityHasPendingChanges(true);
+                      }}
                       SelectProps={{
                         displayEmpty: true,
                       }}
@@ -3670,7 +3689,7 @@ export default function LaborCostManagement({
         <SummaryCard
           label={`${monthlyRangeLabel} 노임 예상`}
           value={`${formatMoney(monthlyTotals.current_amount)}원`}
-          helper="세대물량 × 완료일 적용단가"
+          helper="완료세대 물량 × 적용 확정단가"
           color="#0f766e"
         />
         <SummaryCard
@@ -3685,7 +3704,7 @@ export default function LaborCostManagement({
             toNumber(monthlyTotals.missing_quantity_units) +
             toNumber(monthlyTotals.missing_rate_units)
           ).toLocaleString()}건`}
-          helper="물량 또는 단가가 없는 완료세대"
+          helper="물량 또는 확정차수·단가가 없는 완료세대"
           color={
             toNumber(monthlyTotals.missing_quantity_units) +
               toNumber(monthlyTotals.missing_rate_units) >
@@ -3717,7 +3736,7 @@ export default function LaborCostManagement({
                 '누계 물량',
                 '누계 노임',
                 '물량 미입력',
-                '단가 미설정',
+                '차수/단가 미설정',
               ].map((label) => (
                 <TableCell key={label} sx={headerCellSx} align="center">
                   {label}
@@ -3993,9 +4012,22 @@ export default function LaborCostManagement({
           variant="scrollable"
           scrollButtons={false}
           onChange={(_event, value) => {
+            if (
+              value === 2 &&
+              activeTab === 1 &&
+              quantityHasPendingChanges
+            ) {
+              setMessage({
+                severity: 'warning',
+                text: '세대별 물량에 저장하지 않은 변경내용이 있습니다. 저장 후 월별 노임 예상현황으로 이동해주세요.',
+              });
+              setErrorMessage('');
+              return;
+            }
             setActiveTab(value);
             setMessage(null);
             setErrorMessage('');
+            if (value === 2) loadMonthly();
           }}
           sx={{
             mt: 0.55,

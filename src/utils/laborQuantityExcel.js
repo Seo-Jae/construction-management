@@ -3,7 +3,7 @@ import ExcelJS from 'exceljs';
 export const LABOR_QUANTITY_EXCEL_TEST_PROJECT =
   '한라건설 용인금어지구';
 
-const TEMPLATE_VERSION = '2';
+const TEMPLATE_VERSION = '3';
 const DATA_SHEET_NAME = '세대별 물량';
 const REFERENCE_SHEET_NAME = '세대정보';
 const META_SHEET_NAME = '_시스템정보';
@@ -73,6 +73,12 @@ const toPlainCellValue = (value) => {
     }
     if (value?.text !== undefined && value?.text !== null) {
       return value.text;
+    }
+    if (
+      value?.formula !== undefined ||
+      value?.sharedFormula !== undefined
+    ) {
+      return '';
     }
   }
 
@@ -339,7 +345,7 @@ export const createLaborQuantityWorkbook = ({
 
   worksheet.mergeCells('A4:E4');
   worksheet.getCell('A4').value =
-    '① 동호수와 ② 물량을 입력하세요. 9층 이하는 101901·1010901 형식을 모두 인식합니다.';
+    '① 동호수와 ② 물량을 입력하세요. 월별 노임 계산에는 ③ 적용 확정차수가 필요합니다.';
   worksheet.getCell('A4').font = {
     name: '맑은 고딕',
     size: 10,
@@ -355,7 +361,11 @@ export const createLaborQuantityWorkbook = ({
 
   worksheet.mergeCells('A5:E5');
   worksheet.getCell('A5').value =
-    '타입은 옆의 세대정보 시트에서 자동 조회됩니다. 동·층·호·타입은 업로드 판정에 사용하지 않습니다.';
+    (rateOptions || []).length === 1
+      ? `확정단가가 1개이므로 물량 입력 시 ${(rateOptions || [])[0]?.confirmation_round}차 확정이 자동 적용됩니다. 타입은 세대정보 시트에서 자동 조회됩니다.`
+      : (rateOptions || []).length > 1
+        ? '확정단가가 여러 개이면 세대별 적용 차수를 선택하세요. 타입은 세대정보 시트에서 자동 조회됩니다.'
+        : '월별 노임 계산 전에 공정별 노임단가에서 확정차수를 먼저 등록하세요. 타입은 세대정보 시트에서 자동 조회됩니다.';
   worksheet.getCell('A5').font = {
     name: '맑은 고딕',
     size: 9,
@@ -366,7 +376,7 @@ export const createLaborQuantityWorkbook = ({
     '동호수①',
     '물량②',
     '타입(자동)',
-    '적용 확정차수(선택)',
+    '적용 확정차수③',
     '단위',
   ];
   const headerFillColors = [
@@ -457,6 +467,10 @@ export const createLaborQuantityWorkbook = ({
   });
 
   const referenceLastRow = Math.max(2, (units || []).length + 1);
+  const singleConfirmationRound =
+    (rateOptions || []).length === 1
+      ? Number((rateOptions || [])[0]?.confirmation_round) || 0
+      : 0;
   referenceSheet.autoFilter = {
     from: { row: 1, column: 1 },
     to: { row: referenceLastRow, column: 2 },
@@ -482,13 +496,23 @@ export const createLaborQuantityWorkbook = ({
       combinedUnit,
       hasQuantity ? Number(quantity) : null,
       null,
-      confirmationRound > 0 ? `${confirmationRound}차 확정` : null,
+      null,
       unitName || '-',
     ];
     row.getCell(3).value = {
       formula: `IF(A${rowNumber}="","",IFERROR(INDEX('${REFERENCE_SHEET_NAME}'!$B$2:$B$${referenceLastRow},MATCH(A${rowNumber}&"",'${REFERENCE_SHEET_NAME}'!$A$2:$A$${referenceLastRow},0)),"동호수 확인"))`,
       result: unitType,
     };
+    if (confirmationRound > 0) {
+      row.getCell(4).value = `${confirmationRound}차 확정`;
+    } else if (singleConfirmationRound > 0) {
+      row.getCell(4).value = {
+        formula: `IF(B${rowNumber}="","","${singleConfirmationRound}차 확정")`,
+        result: hasQuantity
+          ? `${singleConfirmationRound}차 확정`
+          : '',
+      };
+    }
 
     row.height = 21;
     for (let columnNumber = 1; columnNumber <= 5; columnNumber += 1) {
@@ -612,6 +636,7 @@ export const parseLaborQuantityWorkbookBuffer = async ({
   processType,
   validUnits,
   allowedRounds = [],
+  defaultConfirmationRound = 0,
 }) => {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(arrayBuffer);
@@ -665,6 +690,8 @@ export const parseLaborQuantityWorkbookBuffer = async ({
   let blankRows = 0;
   let quantityRows = 0;
   let roundRows = 0;
+  let autoAssignedRoundRows = 0;
+  const normalizedDefaultRound = Number(defaultConfirmationRound) || 0;
 
   for (
     let rowNumber = headerRowNumber + 1;
@@ -737,21 +764,31 @@ export const parseLaborQuantityWorkbookBuffer = async ({
       continue;
     }
 
+    const shouldAutoAssignRound =
+      quantityResult.provided &&
+      !roundResult.provided &&
+      normalizedDefaultRound > 0 &&
+      allowedRoundSet.has(normalizedDefaultRound);
+    const effectiveRoundResult = shouldAutoAssignRound
+      ? { provided: true, value: normalizedDefaultRound }
+      : roundResult;
+
     if (
-      roundResult.provided &&
-      roundResult.value > 0 &&
-      !allowedRoundSet.has(roundResult.value)
+      effectiveRoundResult.provided &&
+      effectiveRoundResult.value > 0 &&
+      !allowedRoundSet.has(effectiveRoundResult.value)
     ) {
       invalidRows.push({
         rowNumber,
-        message: `${roundResult.value}차 확정단가가 현재 공정에 등록되어 있지 않습니다.`,
+        message: `${effectiveRoundResult.value}차 확정단가가 현재 공정에 등록되어 있지 않습니다.`,
       });
       continue;
     }
 
     seenCellKeys.add(matchedUnit.cellKey);
     if (quantityResult.provided) quantityRows += 1;
-    if (roundResult.provided) roundRows += 1;
+    if (effectiveRoundResult.provided) roundRows += 1;
+    if (shouldAutoAssignRound) autoAssignedRoundRows += 1;
     updates.push({
       cellKey: matchedUnit.cellKey,
       building: matchedUnit.building,
@@ -759,8 +796,8 @@ export const parseLaborQuantityWorkbookBuffer = async ({
       quantity: quantityResult.provided
         ? quantityResult.value
         : undefined,
-      confirmationRound: roundResult.provided
-        ? roundResult.value
+      confirmationRound: effectiveRoundResult.provided
+        ? effectiveRoundResult.value
         : undefined,
     });
   }
@@ -782,6 +819,7 @@ export const parseLaborQuantityWorkbookBuffer = async ({
     matchedRows: updates.length,
     quantityRows,
     roundRows,
+    autoAssignedRoundRows,
     blankRows,
     unknownRows,
     invalidRows,
