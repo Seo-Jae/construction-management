@@ -3,7 +3,7 @@ import ExcelJS from 'exceljs';
 export const LABOR_QUANTITY_EXCEL_TEST_PROJECT =
   '한라건설 용인금어지구';
 
-const TEMPLATE_VERSION = '3';
+const TEMPLATE_VERSION = '4';
 const DATA_SHEET_NAME = '세대별 물량';
 const REFERENCE_SHEET_NAME = '세대정보';
 const META_SHEET_NAME = '_시스템정보';
@@ -121,6 +121,61 @@ const normalizeCombinedUnit = (value) =>
     .replace(/\.0+$/, '')
     .replace(/[동호실]/gu, '')
     .replace(/[^\p{L}\p{N}]/gu, '');
+
+const createCombinedUnitAliases = (buildingValue, unitValue) => {
+  const building = normalizeBuilding(buildingValue);
+  const unit = normalizeUnit(unitValue);
+
+  if (!building || !unit) return [];
+
+  const aliases = new Set([`${building}${unit}`]);
+
+  // 9층 이하 호수를 0901, 0802처럼 네 자리로 작성해도
+  // 세대정보 자동조회 수식이 정상적으로 타입을 찾도록 별칭을 제공합니다.
+  if (/^\d+$/.test(unit)) {
+    aliases.add(`${building}${unit.padStart(4, '0')}`);
+  }
+
+  return Array.from(aliases);
+};
+
+const createReferenceRows = (units) => {
+  const aliasMap = new Map();
+  const ambiguousAliases = new Set();
+
+  (units || []).forEach((unitRow) => {
+    const unitType =
+      unitRow.unitType === '미지정' ? '' : unitRow.unitType || '';
+    const cellKey = String(unitRow.cellKey || '').trim();
+
+    createCombinedUnitAliases(unitRow.building, unitRow.unit).forEach(
+      (alias) => {
+        const normalizedAlias = normalizeCombinedUnit(alias);
+        if (!normalizedAlias || ambiguousAliases.has(normalizedAlias)) return;
+
+        const existing = aliasMap.get(normalizedAlias);
+        if (existing && existing.cellKey !== cellKey) {
+          aliasMap.delete(normalizedAlias);
+          ambiguousAliases.add(normalizedAlias);
+          return;
+        }
+
+        aliasMap.set(normalizedAlias, {
+          combinedUnit: alias,
+          unitType,
+          cellKey,
+        });
+      },
+    );
+  });
+
+  return Array.from(aliasMap.values()).sort((first, second) =>
+    first.combinedUnit.localeCompare(second.combinedUnit, 'ko-KR', {
+      numeric: true,
+      sensitivity: 'base',
+    }),
+  );
+};
 
 const createUnitLookups = (validUnits) => {
   const byCombined = new Map();
@@ -362,10 +417,10 @@ export const createLaborQuantityWorkbook = ({
   worksheet.mergeCells('A5:E5');
   worksheet.getCell('A5').value =
     (rateOptions || []).length === 1
-      ? `확정단가가 1개이므로 물량 입력 시 ${(rateOptions || [])[0]?.confirmation_round}차 확정이 자동 적용됩니다. 타입은 세대정보 시트에서 자동 조회됩니다.`
+      ? `확정단가가 1개이므로 물량 입력 시 ${(rateOptions || [])[0]?.confirmation_round}차 확정이 자동 적용됩니다. 타입은 세대정보 시트에서 자동 조회되며 101901·1010901 형식을 모두 인식합니다.`
       : (rateOptions || []).length > 1
-        ? '확정단가가 여러 개이면 세대별 적용 차수를 선택하세요. 타입은 세대정보 시트에서 자동 조회됩니다.'
-        : '월별 노임 계산 전에 공정별 노임단가에서 확정차수를 먼저 등록하세요. 타입은 세대정보 시트에서 자동 조회됩니다.';
+        ? '확정단가가 여러 개이면 세대별 적용 차수를 선택하세요. 타입은 세대정보 시트에서 자동 조회되며 101901·1010901 형식을 모두 인식합니다.'
+        : '월별 노임 계산 전에 공정별 노임단가에서 확정차수를 먼저 등록하세요. 타입은 세대정보 시트에서 자동 조회되며 101901·1010901 형식을 모두 인식합니다.';
   worksheet.getCell('A5').font = {
     name: '맑은 고딕',
     size: 9,
@@ -444,15 +499,11 @@ export const createLaborQuantityWorkbook = ({
     };
   }
 
-  (units || []).forEach((unitRow, index) => {
-    const row = referenceSheet.getRow(index + 2);
-    const combinedUnit = `${normalizeBuilding(
-      unitRow.building,
-    )}${normalizeUnit(unitRow.unit)}`;
-    const unitType =
-      unitRow.unitType === '미지정' ? '' : unitRow.unitType || '';
+  const referenceRows = createReferenceRows(units);
 
-    row.values = [combinedUnit, unitType];
+  referenceRows.forEach((referenceRow, index) => {
+    const row = referenceSheet.getRow(index + 2);
+    row.values = [referenceRow.combinedUnit, referenceRow.unitType];
     row.height = 20;
     row.getCell(1).numFmt = '@';
     for (let columnNumber = 1; columnNumber <= 2; columnNumber += 1) {
@@ -466,7 +517,7 @@ export const createLaborQuantityWorkbook = ({
     }
   });
 
-  const referenceLastRow = Math.max(2, (units || []).length + 1);
+  const referenceLastRow = Math.max(2, referenceRows.length + 1);
   const singleConfirmationRound =
     (rateOptions || []).length === 1
       ? Number((rateOptions || [])[0]?.confirmation_round) || 0

@@ -755,6 +755,11 @@ export default function LaborCostManagement({
   const [monthlyTotals, setMonthlyTotals] = useState({});
   const [detailProcess, setDetailProcess] = useState('');
   const [periodStructureOpen, setPeriodStructureOpen] = useState(false);
+  const [progressMappings, setProgressMappings] = useState({});
+  const [mappingDraft, setMappingDraft] = useState([]);
+  const [mappingLoading, setMappingLoading] = useState(false);
+  const [mappingSaving, setMappingSaving] = useState(false);
+  const [mappingDirty, setMappingDirty] = useState(false);
   const monthlyRangeLabel = getMonthRangeLabel(startMonth, endMonth);
 
   const rateEditable = canManageRates(userProfile);
@@ -788,6 +793,23 @@ export default function LaborCostManagement({
       .filter(Boolean);
   }, [overviewLoaded, processCatalog]);
 
+  const progressProcessOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          [
+            ...(processOptions || []),
+            ...Object.values(progressMappings || {}).flat(),
+          ]
+            .map((processType) => String(processType || '').trim())
+            .filter(Boolean),
+        ),
+      ).sort((first, second) =>
+        first.localeCompare(second, 'ko', { numeric: true }),
+      ),
+    [processOptions, progressMappings],
+  );
+
   const rateProcessOrder = useMemo(() => {
     if (!overviewLoaded) return [];
 
@@ -812,6 +834,23 @@ export default function LaborCostManagement({
       .map((row) => row.process_type)
       .filter(Boolean);
   }, [overviewLoaded, processCatalog, settingByProcess]);
+
+  const getEffectiveProgressProcesses = useCallback(
+    (laborProcessType) => {
+      const explicitMappings = progressMappings[laborProcessType] || [];
+      if (explicitMappings.length > 0) return explicitMappings;
+
+      return progressProcessOptions.includes(laborProcessType)
+        ? [laborProcessType]
+        : [];
+    },
+    [progressMappings, progressProcessOptions],
+  );
+
+  const detailProgressProcesses = useMemo(
+    () => getEffectiveProgressProcesses(detailProcess),
+    [detailProcess, getEffectiveProgressProcesses],
+  );
 
   const validUnits = useMemo(() => {
     const rows = Array.from(getProjectCellKeys(buildingConfigs)).map(
@@ -1278,6 +1317,123 @@ export default function LaborCostManagement({
     }
   }, [projectName, quantityProcess]);
 
+  const loadProgressMappings = useCallback(async () => {
+    if (!projectName) {
+      setProgressMappings({});
+      return;
+    }
+
+    setMappingLoading(true);
+
+    try {
+      const rows = [];
+      let offset = 0;
+
+      while (true) {
+        const { data, error } = await supabase
+          .from('labor_progress_process_mappings')
+          .select(
+            'labor_process_type, progress_process_type, sort_order',
+          )
+          .eq('project_name', projectName)
+          .order('labor_process_type', { ascending: true })
+          .order('sort_order', { ascending: true })
+          .order('progress_process_type', { ascending: true })
+          .range(
+            offset,
+            offset + SUPABASE_READ_PAGE_SIZE - 1,
+          );
+
+        if (error) throw error;
+
+        const pageRows = data || [];
+        rows.push(...pageRows);
+
+        if (pageRows.length < SUPABASE_READ_PAGE_SIZE) break;
+        offset += SUPABASE_READ_PAGE_SIZE;
+      }
+
+      const nextMappings = rows.reduce((result, row) => {
+        const laborProcessType = String(
+          row.labor_process_type || '',
+        ).trim();
+        const progressProcessType = String(
+          row.progress_process_type || '',
+        ).trim();
+
+        if (!laborProcessType || !progressProcessType) return result;
+        if (!result[laborProcessType]) result[laborProcessType] = [];
+        if (!result[laborProcessType].includes(progressProcessType)) {
+          result[laborProcessType].push(progressProcessType);
+        }
+        return result;
+      }, {});
+
+      setProgressMappings(nextMappings);
+    } catch (error) {
+      console.error('노임-공정진척 연결 불러오기 오류:', error);
+      setErrorMessage(
+        `공정진척 연결을 불러오지 못했습니다: ${
+          error?.message || '알 수 없는 오류'
+        }`,
+      );
+    } finally {
+      setMappingLoading(false);
+    }
+  }, [projectName]);
+
+  const saveProgressMappings = async () => {
+    if (!projectName || !detailProcess || mappingSaving) return;
+
+    setMappingSaving(true);
+    setErrorMessage('');
+
+    try {
+      const normalizedMappings = Array.from(
+        new Set(
+          (mappingDraft || [])
+            .map((processType) => String(processType || '').trim())
+            .filter(Boolean),
+        ),
+      );
+
+      const { data, error } = await supabase.rpc(
+        'save_labor_progress_process_mappings',
+        {
+          p_project_name: projectName,
+          p_labor_process_type: detailProcess,
+          p_progress_process_types: normalizedMappings,
+        },
+      );
+
+      if (error) throw error;
+
+      await loadProgressMappings();
+      setMappingDirty(false);
+      setMessage({
+        severity: 'success',
+        text:
+          normalizedMappings.length > 0
+            ? `${detailProcess} 노임을 ${normalizedMappings.join(
+                ', ',
+              )} 공정진척과 연결했습니다.`
+            : `${detailProcess}의 별도 연결을 초기화했습니다. 동일명 공정이 있으면 자동으로 연결됩니다.`,
+      });
+      await loadMonthly();
+
+      return data;
+    } catch (error) {
+      console.error('노임-공정진척 연결 저장 오류:', error);
+      setErrorMessage(
+        `공정진척 연결을 저장하지 못했습니다: ${
+          error?.message || '알 수 없는 오류'
+        }`,
+      );
+    } finally {
+      setMappingSaving(false);
+    }
+  };
+
   const loadMonthly = useCallback(async () => {
     if (!projectName || !startMonth || !endMonth) return;
 
@@ -1406,6 +1562,9 @@ export default function LaborCostManagement({
     setMonthlySummary([]);
     setMonthlyDetails([]);
     setMonthlyTotals({});
+    setProgressMappings({});
+    setMappingDraft([]);
+    setMappingDirty(false);
     setEditingOriginalProcess('');
     setIsAddingProcess(false);
     setActiveEditorField('');
@@ -1414,6 +1573,7 @@ export default function LaborCostManagement({
     setErrorMessage('');
     loadOverview();
     loadUnitTypes();
+    loadProgressMappings();
   }, [projectName]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -1423,6 +1583,11 @@ export default function LaborCostManagement({
   useEffect(() => {
     loadMonthly();
   }, [loadMonthly]);
+
+  useEffect(() => {
+    setMappingDraft(getEffectiveProgressProcesses(detailProcess));
+    setMappingDirty(false);
+  }, [detailProcess, getEffectiveProgressProcesses]);
 
   useEffect(() => {
     if (
@@ -3610,7 +3775,8 @@ export default function LaborCostManagement({
         minHeight: 0,
         flex: 1,
         display: 'grid',
-        gridTemplateRows: 'auto auto minmax(220px, 1fr) minmax(170px, 0.72fr)',
+        gridTemplateRows:
+          'auto auto minmax(200px, 1fr) auto minmax(170px, 0.72fr)',
         gap: 1,
       }}
     >
@@ -3689,6 +3855,18 @@ export default function LaborCostManagement({
                 return;
               }
 
+              const linkedProgressProcesses =
+                getEffectiveProgressProcesses(targetProcess);
+
+              if (linkedProgressProcesses.length === 0) {
+                setDetailProcess(targetProcess);
+                setMessage({
+                  severity: 'warning',
+                  text: `${targetProcess}에 적용할 공정진척을 아래 공정진척 연결에서 먼저 선택해주세요.`,
+                });
+                return;
+              }
+
               setDetailProcess(targetProcess);
               setPeriodStructureOpen(true);
             }}
@@ -3698,23 +3876,23 @@ export default function LaborCostManagement({
             예상노임조회
           </Button>
           <Typography sx={{ fontSize: '0.68rem', color: '#64748b' }}>
-            선택 기간의 `작업완료` 완료일을 기준으로 집계하며, 골구도에서 종료월 월말 예상범주를 별도로 조정할 수 있습니다.
+            선택한 공정진척의 `작업완료` 완료일을 기준으로 집계하며, 예상노임조회에서 종료월 월말 예상세대를 별도로 조정할 수 있습니다.
           </Typography>
         </Stack>
       </Paper>
 
       <Stack direction="row" spacing={1} sx={{ flexWrap: 'wrap' }}>
         <SummaryCard
-          label={`${monthlyRangeLabel} 완료 세대`}
+          label={`${monthlyRangeLabel} 완료건`}
           value={`${toNumber(
             monthlyTotals.current_completed_units,
-          ).toLocaleString()}세대`}
-          helper="공정별 완료세대 합계"
+          ).toLocaleString()}건`}
+          helper="공정별 완료건 합계"
         />
         <SummaryCard
           label={`${monthlyRangeLabel} 노임 예상`}
           value={`${formatMoney(monthlyTotals.current_amount)}원`}
-          helper="완료세대 물량 × 적용 확정단가"
+          helper="연결 공정진척 완료건의 물량 × 적용 확정단가"
           color="#0f766e"
         />
         <SummaryCard
@@ -3724,12 +3902,12 @@ export default function LaborCostManagement({
           color="#1d4ed8"
         />
         <SummaryCard
-          label="계산 누락 세대"
+          label="계산 누락 건"
           value={`${(
             toNumber(monthlyTotals.missing_quantity_units) +
             toNumber(monthlyTotals.missing_rate_units)
           ).toLocaleString()}건`}
-          helper="물량 또는 확정차수·단가가 없는 완료세대"
+          helper="물량 또는 확정차수·단가가 없는 공정·세대"
           color={
             toNumber(monthlyTotals.missing_quantity_units) +
               toNumber(monthlyTotals.missing_rate_units) >
@@ -3754,7 +3932,8 @@ export default function LaborCostManagement({
             <TableRow>
               {[
                 '공정',
-                '기간 완료세대',
+                '연결 공정진척',
+                '기간 완료건',
                 '기간 물량',
                 '평균 적용단가',
                 '기간 노임',
@@ -3775,7 +3954,9 @@ export default function LaborCostManagement({
                 key={row.process_type}
                 hover
                 selected={detailProcess === row.process_type}
-                onClick={() => setDetailProcess(row.process_type)}
+                onClick={() => {
+                  setDetailProcess(row.process_type);
+                }}
                 sx={{ cursor: 'pointer' }}
               >
                 <TableCell
@@ -3783,6 +3964,11 @@ export default function LaborCostManagement({
                   align="center"
                 >
                   {row.process_type}
+                </TableCell>
+                <TableCell sx={bodyCellSx} align="center">
+                  {getEffectiveProgressProcesses(row.process_type).length > 0
+                    ? getEffectiveProgressProcesses(row.process_type).join(', ')
+                    : '미연결'}
                 </TableCell>
                 <TableCell sx={numberCellSx}>
                   {toNumber(row.current_completed_units).toLocaleString()}
@@ -3843,7 +4029,7 @@ export default function LaborCostManagement({
 
             {!monthlyLoading && monthlySummary.length === 0 && (
               <TableRow>
-                <TableCell colSpan={9} align="center" sx={{ py: 5 }}>
+                <TableCell colSpan={10} align="center" sx={{ py: 5 }}>
                   선택한 기간의 완료 공정이 없습니다.
                 </TableCell>
               </TableRow>
@@ -3851,6 +4037,104 @@ export default function LaborCostManagement({
           </TableBody>
         </Table>
       </TableContainer>
+
+      <Paper
+        variant="outlined"
+        sx={{
+          px: 1.2,
+          py: 0.85,
+          borderColor: '#cbd5e1',
+          boxShadow: 'none',
+        }}
+      >
+        <Stack
+          direction={{ xs: 'column', lg: 'row' }}
+          spacing={1}
+          alignItems={{ xs: 'stretch', lg: 'center' }}
+        >
+          <Box sx={{ minWidth: 170 }}>
+            <Typography sx={{ fontSize: '0.72rem', fontWeight: 900 }}>
+              공정진척 연결
+            </Typography>
+            <Typography sx={{ mt: 0.15, fontSize: '0.62rem', color: '#64748b' }}>
+              {detailProcess || '공정 선택'} 노임의 완료 기준
+            </Typography>
+          </Box>
+
+          <Autocomplete
+            multiple
+            size="small"
+            options={progressProcessOptions}
+            value={mappingDraft}
+            onChange={(_event, nextValue) => {
+              setMappingDraft(nextValue);
+              setMappingDirty(true);
+            }}
+            disabled={
+              !detailProcess ||
+              mappingLoading ||
+              mappingSaving ||
+              monthlyLoading
+            }
+            disableCloseOnSelect
+            filterSelectedOptions
+            renderTags={(value, getTagProps) =>
+              value.map((option, index) => (
+                <Chip
+                  {...getTagProps({ index })}
+                  key={option}
+                  size="small"
+                  label={option}
+                  sx={{ height: 22, fontSize: '0.64rem', fontWeight: 800 }}
+                />
+              ))
+            }
+            renderInput={(params) => (
+              <TextField
+                {...params}
+                label="적용할 공정진척 선택"
+                placeholder={
+                  detailProcess
+                    ? '1개 이상 선택 가능'
+                    : '먼저 위 공정을 선택하세요'
+                }
+                InputLabelProps={{ shrink: true }}
+              />
+            )}
+            sx={{ flex: 1, minWidth: 280 }}
+          />
+
+          <Button
+            variant="contained"
+            startIcon={<SaveRoundedIcon />}
+            onClick={saveProgressMappings}
+            disabled={
+              !detailProcess ||
+              !mappingDirty ||
+              mappingSaving ||
+              mappingLoading ||
+              monthlyLoading
+            }
+            sx={{ whiteSpace: 'nowrap' }}
+          >
+            {mappingSaving ? '적용 중...' : '연결 적용'}
+          </Button>
+
+          <Typography
+            sx={{
+              maxWidth: 420,
+              fontSize: '0.62rem',
+              lineHeight: 1.55,
+              color: '#64748b',
+            }}
+          >
+            선택한 공정진척의 작업완료 건을 각각 계산합니다. 복수선택 시
+            같은 세대가 공정별로 각각 집계되며, 물량·확정차수·단가는{' '}
+            <strong>{detailProcess || '선택한 노임 공정'}</strong>에 입력한 값을
+            그대로 적용합니다.
+          </Typography>
+        </Stack>
+      </Paper>
 
       <TableContainer
         component={Paper}
@@ -3878,13 +4162,14 @@ export default function LaborCostManagement({
           <TableHead>
             <TableRow>
               {[
+                '연결 공정진척',
                 '동',
                 '세대',
                 '완료일',
                 '물량',
                 '단위',
                 '적용단가',
-                '구분',
+                '단가 구분',
                 '예상 노임',
               ].map((label) => (
                 <TableCell key={label} sx={headerCellSx} align="center">
@@ -3895,7 +4180,12 @@ export default function LaborCostManagement({
           </TableHead>
           <TableBody>
             {visibleMonthlyDetails.map((row) => (
-              <TableRow key={`${row.process_type}-${row.building}-${row.unit}`}>
+              <TableRow
+                key={`${row.process_type}-${row.source_process_type || ''}-${row.building}-${row.unit}`}
+              >
+                <TableCell sx={{ ...bodyCellSx, fontWeight: 800 }} align="center">
+                  {row.source_process_type || row.process_type || '-'}
+                </TableCell>
                 <TableCell sx={bodyCellSx} align="center">
                   {row.building}
                 </TableCell>
@@ -3932,7 +4222,7 @@ export default function LaborCostManagement({
 
             {detailProcess && visibleMonthlyDetails.length === 0 && (
               <TableRow>
-                <TableCell colSpan={8} align="center" sx={{ py: 3 }}>
+                <TableCell colSpan={9} align="center" sx={{ py: 3 }}>
                   표시할 세대별 계산자료가 없습니다.
                 </TableCell>
               </TableRow>
@@ -4184,6 +4474,8 @@ export default function LaborCostManagement({
         onClose={() => setPeriodStructureOpen(false)}
         projectName={projectName}
         processOptions={rateProcessOrder}
+        progressProcessOptions={progressProcessOptions}
+        progressMappings={progressMappings}
         initialProcess={detailProcess || rateProcessOrder[0] || ''}
         startMonth={startMonth}
         endMonth={endMonth}
@@ -4194,7 +4486,7 @@ export default function LaborCostManagement({
           setDetailProcess(processType);
           setMessage({
             severity: 'success',
-            text: `${endMonth} 월말 예상범주 ${savedCount.toLocaleString()}세대를 저장했습니다.`,
+            text: `${endMonth} 월말 예상세대 ${savedCount.toLocaleString()}건을 저장했습니다.`,
           });
         }}
       />

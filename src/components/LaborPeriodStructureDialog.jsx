@@ -9,6 +9,7 @@ import {
   Alert,
   Box,
   Button,
+  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -42,20 +43,29 @@ const toNumber = (value) => {
 const formatMoney = (value) => moneyFormatter.format(toNumber(value));
 const formatQuantity = (value) => quantityFormatter.format(toNumber(value));
 
-const createCellKey = (building, unit) => `${building}-${unit}`;
+const createPhysicalCellKey = (building, unit) =>
+  JSON.stringify([String(building || ''), String(unit || '')]);
 
-const splitCellKey = (cellKey) => {
-  const text = String(cellKey || '');
-  const separatorIndex = text.lastIndexOf('-');
+const createProgressCellKey = (sourceProcessType, building, unit) =>
+  JSON.stringify([
+    String(sourceProcessType || ''),
+    String(building || ''),
+    String(unit || ''),
+  ]);
 
-  if (separatorIndex < 0) {
-    return { building: '', unit: text };
+const splitProgressCellKey = (cellKey) => {
+  try {
+    const [sourceProcessType, building, unit] = JSON.parse(
+      String(cellKey || '[]'),
+    );
+    return {
+      sourceProcessType: String(sourceProcessType || ''),
+      building: String(building || ''),
+      unit: String(unit || ''),
+    };
+  } catch (_error) {
+    return { sourceProcessType: '', building: '', unit: '' };
   }
-
-  return {
-    building: text.slice(0, separatorIndex),
-    unit: text.slice(separatorIndex + 1),
-  };
 };
 
 const resolveFloor = (unit) => {
@@ -94,7 +104,7 @@ const getCellVisual = (row, isForecastSelected) => {
       backgroundColor: '#f59e0b',
       color: '#ffffff',
       borderColor: '#d97706',
-      label: '월말 예상범주',
+      label: '월말 예상세대',
     };
   }
 
@@ -195,6 +205,7 @@ const fetchAllLaborPeriodStructureRows = async ({
         p_start_month: `${startMonth}-01`,
         p_end_month: `${endMonth}-01`,
       })
+      .order('source_process_type', { ascending: true })
       .order('building', { ascending: true })
       .order('unit', { ascending: true })
       .range(from, from + SUPABASE_RPC_PAGE_SIZE - 1);
@@ -210,10 +221,16 @@ const fetchAllLaborPeriodStructureRows = async ({
 
   const uniqueRows = new Map();
   rows.forEach((row) => {
+    const sourceProcessType = String(
+      row?.source_process_type || '',
+    ).trim();
     const building = String(row?.building || '').trim();
     const unit = String(row?.unit || '').trim();
-    if (!building || !unit) return;
-    uniqueRows.set(createCellKey(building, unit), row);
+    if (!sourceProcessType || !building || !unit) return;
+    uniqueRows.set(
+      createProgressCellKey(sourceProcessType, building, unit),
+      row,
+    );
   });
 
   return Array.from(uniqueRows.values());
@@ -224,6 +241,8 @@ export default function LaborPeriodStructureDialog({
   onClose,
   projectName = '',
   processOptions = [],
+  progressProcessOptions = [],
+  progressMappings = {},
   initialProcess = '',
   startMonth = '',
   endMonth = '',
@@ -286,7 +305,13 @@ export default function LaborPeriodStructureDialog({
       const nextForecastCells = new Set(
         nextRows
           .filter((row) => row.forecastSelected && row.forecastEligible)
-          .map((row) => createCellKey(row.building, row.unit)),
+          .map((row) =>
+            createProgressCellKey(
+              row.sourceProcessType,
+              row.building,
+              row.unit,
+            ),
+          ),
       );
 
       setStructureRows(nextRows);
@@ -313,44 +338,117 @@ export default function LaborPeriodStructureDialog({
   const structureByCell = useMemo(
     () =>
       structureRows.reduce((result, row) => {
-        result.set(createCellKey(row.building, row.unit), row);
+        result.set(
+          createProgressCellKey(
+            row.sourceProcessType,
+            row.building,
+            row.unit,
+          ),
+          row,
+        );
         return result;
       }, new Map()),
     [structureRows],
   );
 
+  const sourceProcessTypes = useMemo(() => {
+    const loadedSources = Array.from(
+      new Set(
+        structureRows
+          .map((row) => String(row.sourceProcessType || '').trim())
+          .filter(Boolean),
+      ),
+    );
+
+    if (loadedSources.length > 0) {
+      const preferredSourceOrder =
+        progressMappings?.[processType]?.length > 0
+          ? progressMappings[processType]
+          : progressProcessOptions;
+      const optionOrder = new Map(
+        (preferredSourceOrder || []).map((option, index) => [
+          option,
+          index,
+        ]),
+      );
+      return loadedSources.sort((first, second) => {
+        const firstOrder = optionOrder.has(first)
+          ? optionOrder.get(first)
+          : Number.MAX_SAFE_INTEGER;
+        const secondOrder = optionOrder.has(second)
+          ? optionOrder.get(second)
+          : Number.MAX_SAFE_INTEGER;
+        if (firstOrder !== secondOrder) return firstOrder - secondOrder;
+        return first.localeCompare(second, 'ko', { numeric: true });
+      });
+    }
+
+    const explicitMappings = progressMappings?.[processType] || [];
+    if (explicitMappings.length > 0) return explicitMappings;
+
+    return progressProcessOptions.includes(processType)
+      ? [processType]
+      : processType
+        ? [processType]
+        : [];
+  }, [
+    processType,
+    progressMappings,
+    progressProcessOptions,
+    structureRows,
+  ]);
+
   const visualRows = useMemo(() => {
     const knownKeys = new Set();
-    const rows = (validUnits || []).map((unitRow) => {
-      const cellKey = createCellKey(unitRow.building, unitRow.unit);
-      const structureRow = structureByCell.get(cellKey);
-      knownKeys.add(cellKey);
+    const rows = [];
 
-      return {
-        cellKey,
-        building: String(unitRow.building || ''),
-        unit: String(unitRow.unit || ''),
-        floor: toNumber(unitRow.floor) || resolveFloor(unitRow.unit),
-        unitType: String(unitRow.unitType || '미지정'),
-        sourceProcessType: structureRow?.sourceProcessType || '',
-        actualCompletionDate: structureRow?.actualCompletionDate || '',
-        actualState: structureRow?.actualState || 'unworked',
-        forecastEligible: structureRow?.forecastEligible !== false,
-        quantity: structureRow?.quantity || 0,
-        confirmationRound: structureRow?.confirmationRound || 0,
-        unitName: structureRow?.unitName || '',
-        appliedUnitPrice: structureRow?.appliedUnitPrice || 0,
-        amount: structureRow?.amount || 0,
-        calculationMissing: structureRow?.calculationMissing === true,
-      };
+    sourceProcessTypes.forEach((sourceProcessType) => {
+      (validUnits || []).forEach((unitRow) => {
+        const cellKey = createProgressCellKey(
+          sourceProcessType,
+          unitRow.building,
+          unitRow.unit,
+        );
+        const structureRow = structureByCell.get(cellKey);
+        knownKeys.add(cellKey);
+
+        rows.push({
+          cellKey,
+          physicalCellKey: createPhysicalCellKey(
+            unitRow.building,
+            unitRow.unit,
+          ),
+          building: String(unitRow.building || ''),
+          unit: String(unitRow.unit || ''),
+          floor: toNumber(unitRow.floor) || resolveFloor(unitRow.unit),
+          unitType: String(unitRow.unitType || '미지정'),
+          sourceProcessType,
+          actualCompletionDate: structureRow?.actualCompletionDate || '',
+          actualState: structureRow?.actualState || 'unworked',
+          forecastEligible: structureRow?.forecastEligible !== false,
+          quantity: structureRow?.quantity || 0,
+          confirmationRound: structureRow?.confirmationRound || 0,
+          unitName: structureRow?.unitName || '',
+          appliedUnitPrice: structureRow?.appliedUnitPrice || 0,
+          amount: structureRow?.amount || 0,
+          calculationMissing: structureRow
+            ? structureRow.calculationMissing === true
+            : true,
+        });
+      });
     });
 
     structureRows.forEach((row) => {
-      const cellKey = createCellKey(row.building, row.unit);
+      const cellKey = createProgressCellKey(
+        row.sourceProcessType,
+        row.building,
+        row.unit,
+      );
       if (knownKeys.has(cellKey)) return;
 
       rows.push({
         cellKey,
+        physicalCellKey: createPhysicalCellKey(row.building, row.unit),
         building: row.building,
         unit: row.unit,
         floor: resolveFloor(row.unit),
@@ -369,6 +467,9 @@ export default function LaborPeriodStructureDialog({
     });
 
     return rows.sort((first, second) => {
+      const sourceCompare = sourceProcessTypes.indexOf(first.sourceProcessType) -
+        sourceProcessTypes.indexOf(second.sourceProcessType);
+      if (sourceCompare !== 0) return sourceCompare;
       const buildingCompare = first.building.localeCompare(
         second.building,
         'ko',
@@ -377,7 +478,7 @@ export default function LaborPeriodStructureDialog({
       if (buildingCompare !== 0) return buildingCompare;
       return Number(first.unit) - Number(second.unit);
     });
-  }, [structureByCell, structureRows, validUnits]);
+  }, [sourceProcessTypes, structureByCell, structureRows, validUnits]);
 
   const sharedFloorFrame = useMemo(() => {
     const configuredFloorCounts = Object.values(buildingConfigs || {})
@@ -509,7 +610,7 @@ export default function LaborPeriodStructureDialog({
       const floors = sharedFloorFrame.floors;
 
       const rowByFloorLine = rows.reduce((result, row) => {
-        result.set(`${row.floor}-${resolveLine(row.unit)}`, row);
+        result.set(`${row.floor}-${resolveLine(row.unit)}-${row.sourceProcessType}`, row);
         return result;
       }, new Map());
 
@@ -535,6 +636,9 @@ export default function LaborPeriodStructureDialog({
       const forecastUnits = rows.filter(
         (row) => forecastCells.has(row.cellKey),
       ).length;
+      const physicalUnitCount = new Set(
+        rows.map((row) => row.physicalCellKey),
+      ).size;
 
       return {
         building,
@@ -544,14 +648,20 @@ export default function LaborPeriodStructureDialog({
         buildingMaximumFloor,
         rowByFloorLine,
         unitTypeByLine,
-        totalUnits: rows.length,
+        totalUnits: physicalUnitCount * Math.max(sourceProcessTypes.length, 1),
         completedUnits,
         periodCompletedUnits,
         forecastUnits,
         cardWidth: 42 + Math.max(lineKeys.length, 1) * 42 + 16,
       };
     });
-  }, [buildingConfigs, forecastCells, sharedFloorFrame.floors, visualRows]);
+  }, [
+    buildingConfigs,
+    forecastCells,
+    sharedFloorFrame.floors,
+    sourceProcessTypes,
+    visualRows,
+  ]);
 
   const summary = useMemo(() => {
     const periodCompletedRows = visualRows.filter(
@@ -636,7 +746,7 @@ export default function LaborPeriodStructureDialog({
 
     try {
       const rows = Array.from(forecastCells).map((cellKey) =>
-        splitCellKey(cellKey),
+        splitProgressCellKey(cellKey),
       );
 
       const { data, error } = await supabase.rpc(
@@ -652,7 +762,7 @@ export default function LaborPeriodStructureDialog({
       if (error) throw error;
 
       const savedCount = toNumber(data?.saved_count ?? rows.length);
-      const successText = `${endMonth} 월말 예상범주 ${savedCount.toLocaleString()}세대를 저장했습니다.`;
+      const successText = `${endMonth} 월말 예상세대 ${savedCount.toLocaleString()}건을 저장했습니다.`;
 
       setPersistedForecastCells(new Set(forecastCells));
       setEditingForecast(false);
@@ -667,9 +777,9 @@ export default function LaborPeriodStructureDialog({
       await loadStructure();
       setSuccessMessage(successText);
     } catch (error) {
-      console.error('노임 예상범주 저장 오류:', error);
+      console.error('노임 예상세대 저장 오류:', error);
       setErrorMessage(
-        `예상범주를 저장하지 못했습니다: ${
+        `예상세대를 저장하지 못했습니다: ${
           error?.message || '알 수 없는 오류'
         }`,
       );
@@ -683,7 +793,7 @@ export default function LaborPeriodStructureDialog({
 
     if (dirty) {
       setErrorMessage(
-        '저장하지 않은 예상범주 변경이 있습니다. 저장하거나 취소한 뒤 닫아주세요.',
+        '저장하지 않은 예상세대 변경이 있습니다. 저장하거나 취소한 뒤 닫아주세요.',
       );
       return;
     }
@@ -716,7 +826,10 @@ export default function LaborPeriodStructureDialog({
               예상노임조회
             </Typography>
             <Typography sx={{ mt: 0.15, fontSize: '0.66rem', color: '#64748b' }}>
-              {projectName} · {startMonth} ~ {endMonth} 작업완료와 {endMonth} 월말 예상범주
+              {projectName} · {startMonth} ~ {endMonth} 작업완료와 {endMonth} 월말 예상세대
+              {sourceProcessTypes.length > 0
+                ? ` · 연결 공정진척 ${sourceProcessTypes.join(', ')}`
+                : ''}
             </Typography>
           </Box>
 
@@ -765,7 +878,7 @@ export default function LaborPeriodStructureDialog({
                 disabled={saving}
                 sx={{ whiteSpace: 'nowrap' }}
               >
-                예상범주 초기화
+                예상세대 초기화
               </Button>
               <Button
                 variant="outlined"
@@ -779,7 +892,7 @@ export default function LaborPeriodStructureDialog({
                 onClick={saveForecast}
                 disabled={saving || !dirty}
               >
-                {saving ? '저장 중...' : '예상범주 저장'}
+                {saving ? '저장 중...' : '예상세대 저장'}
               </Button>
             </>
           )}
@@ -808,15 +921,15 @@ export default function LaborPeriodStructureDialog({
         <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
           <SummaryBox
             label={`${startMonth} ~ ${endMonth} 실제 완료`}
-            value={`${summary.actualUnits.toLocaleString()}세대 · ${formatMoney(
+            value={`${summary.actualUnits.toLocaleString()}건 · ${formatMoney(
               summary.actualAmount,
             )}원`}
-            helper="파란색 작업완료 세대의 물량 × 확정단가"
+            helper="연결 공정진척별 완료건의 물량 × 확정단가"
             color="#1d4ed8"
           />
           <SummaryBox
             label={`${endMonth} 월말 예상 추가`}
-            value={`${summary.forecastUnits.toLocaleString()}세대 · ${formatMoney(
+            value={`${summary.forecastUnits.toLocaleString()}건 · ${formatMoney(
               summary.forecastAmount,
             )}원`}
             helper={`선택 물량 ${formatQuantity(summary.forecastQuantity)}`}
@@ -825,13 +938,13 @@ export default function LaborPeriodStructureDialog({
           <SummaryBox
             label="기간 + 월말 예상 노임"
             value={`${formatMoney(summary.expectedAmount)}원`}
-            helper="실제 완료금액 + 주황색 예상범주 금액"
+            helper="실제 완료금액 + 주황색 예상세대 금액"
             color="#0f766e"
           />
           <SummaryBox
             label="계산 누락"
-            value={`${summary.missingCalculationUnits.toLocaleString()}세대`}
-            helper="물량 또는 적용 확정차수·단가가 없는 세대"
+            value={`${summary.missingCalculationUnits.toLocaleString()}건`}
+            helper="물량 또는 적용 확정차수·단가가 없는 공정·세대"
             color={summary.missingCalculationUnits > 0 ? '#b91c1c' : '#15803d'}
           />
         </Stack>
@@ -846,6 +959,21 @@ export default function LaborPeriodStructureDialog({
           }}
         >
           <Stack direction="row" spacing={1.6} useFlexGap flexWrap="wrap">
+            {sourceProcessTypes.map((sourceProcessType, index) => (
+              <Chip
+                key={sourceProcessType}
+                size="small"
+                label={`${index + 1}. ${sourceProcessType}`}
+                title={`세대박스 안에서 ${index + 1}번째 구간은 ${sourceProcessType} 공정진척입니다.`}
+                sx={{
+                  height: 22,
+                  fontSize: '0.62rem',
+                  fontWeight: 900,
+                  bgcolor: '#e0f2fe',
+                  color: '#075985',
+                }}
+              />
+            ))}
             <LegendItem
               backgroundColor="#2563eb"
               borderColor="#1d4ed8"
@@ -865,11 +993,16 @@ export default function LaborPeriodStructureDialog({
             <LegendItem
               backgroundColor="#f59e0b"
               borderColor="#d97706"
-              label={`${endMonth} 월말 예상범주`}
+              label={`${endMonth} 월말 예상세대`}
             />
+            {sourceProcessTypes.length > 1 && (
+              <Typography sx={{ fontSize: '0.66rem', color: '#475569' }}>
+                세대박스는 왼쪽부터 위 번호 순서대로 나뉘어 각 공정진척 상태를 동시에 표시합니다.
+              </Typography>
+            )}
             <Typography sx={{ fontSize: '0.66rem', color: '#64748b' }}>
               {editingForecast
-                ? '미작업 세대를 클릭해 월말 예상범주를 추가·해제합니다. 실제 공정진척 완료자료는 변경하지 않습니다.'
+                ? '미작업 세대를 클릭해 월말 예상세대를 추가·해제합니다. 실제 공정진척 완료자료는 변경하지 않습니다.'
                 : '예상세대 조정을 누르면 미작업 세대를 선택할 수 있습니다.'}
             </Typography>
           </Stack>
@@ -956,7 +1089,7 @@ export default function LaborPeriodStructureDialog({
                         {group.building}
                       </Typography>
                       <Typography
-                        title={`전체 작업완료 ${group.completedUnits}세대 · 조회기간 ${group.periodCompletedUnits}세대 · 월말 예상 ${group.forecastUnits}세대`}
+                        title={`전체 작업완료 ${group.completedUnits}건 · 조회기간 ${group.periodCompletedUnits}건 · 월말 예상 ${group.forecastUnits}건`}
                         sx={{
                           fontSize: '0.53rem',
                           fontWeight: 800,
@@ -1035,11 +1168,15 @@ export default function LaborPeriodStructureDialog({
                               return;
                             }
 
-                            const row = group.rowByFloorLine.get(
-                              `${floor}-${lineKey}`,
-                            );
+                            const sourceRows = sourceProcessTypes
+                              .map((sourceProcessType) =>
+                                group.rowByFloorLine.get(
+                                  `${floor}-${lineKey}-${sourceProcessType}`,
+                                ),
+                              )
+                              .filter(Boolean);
 
-                            if (!row) {
+                            if (sourceRows.length === 0) {
                               items.push(
                                 <Box
                                   key={`${group.building}-${floor}-${lineKey}-empty`}
@@ -1056,83 +1193,126 @@ export default function LaborPeriodStructureDialog({
                               return;
                             }
 
-                            const isForecastSelected = forecastCells.has(
-                              row.cellKey,
+                            const unitLabel = sourceRows[0]?.unit || `${floor}${lineKey}`;
+                            const allUnworked = sourceRows.every(
+                              (row) =>
+                                row.actualState === 'unworked' &&
+                                !forecastCells.has(row.cellKey),
                             );
-                            const visual = getCellVisual(
-                              row,
-                              isForecastSelected,
-                            );
-                            const isClickable =
-                              editingForecast &&
-                              row.forecastEligible &&
-                              !saving;
-                            const missingCalculation =
-                              (row.actualState === 'in_period' ||
-                                isForecastSelected) &&
-                              row.calculationMissing;
-                            const tooltip = [
-                              `${group.building} ${row.unit}호`,
-                              `상태: ${visual.label}`,
-                              row.actualCompletionDate
-                                ? `완료일: ${row.actualCompletionDate}`
-                                : '완료일: -',
-                              row.sourceProcessType
-                                ? `공정진척 공정: ${row.sourceProcessType}`
-                                : `공정진척 공정: ${processType}`,
-                              `타입: ${row.unitType || '미지정'}`,
-                              `물량: ${formatQuantity(row.quantity)} ${
-                                row.unitName || ''
-                              }`,
-                              row.confirmationRound > 0
-                                ? `적용차수: ${row.confirmationRound}차`
-                                : '적용차수: 미지정',
-                              row.appliedUnitPrice > 0
-                                ? `적용단가: ${formatMoney(
-                                    row.appliedUnitPrice,
-                                  )}원`
-                                : '적용단가: 미설정',
-                              `계산금액: ${formatMoney(row.amount)}원`,
-                            ].join('\n');
 
                             items.push(
-                              <Button
-                                key={row.cellKey}
-                                type="button"
-                                title={tooltip}
-                                onClick={() => handleCellClick(row)}
-                                disableRipple={!isClickable}
+                              <Box
+                                key={`${group.building}-${floor}-${lineKey}-multi`}
                                 sx={{
-                                  minWidth: 0,
+                                  position: 'relative',
                                   width: 40,
                                   height: sharedFloorCellHeight,
                                   minHeight: sharedFloorCellHeight,
-                                  px: 0,
-                                  py: 0,
-                                  border: `1px ${
-                                    missingCalculation ? 'dashed' : 'solid'
-                                  } ${
-                                    missingCalculation
-                                      ? '#dc2626'
-                                      : visual.borderColor
-                                  }`,
+                                  display: 'flex',
+                                  overflow: 'hidden',
+                                  border: '1px solid #cbd5e1',
                                   borderRadius: 0.3,
-                                  bgcolor: visual.backgroundColor,
-                                  color: visual.color,
-                                  fontSize: '0.48rem',
-                                  fontWeight: 900,
-                                  lineHeight: 1,
-                                  cursor: isClickable ? 'pointer' : 'default',
-                                  '&:hover': {
-                                    bgcolor: visual.backgroundColor,
-                                    filter: isClickable
-                                      ? 'brightness(0.94)'
-                                      : 'none',
-                                  },
+                                  bgcolor: '#f8fafc',
                                 }}
                               >
-                                {row.unit}
-                              </Button>,
+                                {sourceRows.map((row, sourceIndex) => {
+                                  const isForecastSelected = forecastCells.has(
+                                    row.cellKey,
+                                  );
+                                  const visual = getCellVisual(
+                                    row,
+                                    isForecastSelected,
+                                  );
+                                  const isClickable =
+                                    editingForecast &&
+                                    row.forecastEligible &&
+                                    !saving;
+                                  const missingCalculation =
+                                    (row.actualState === 'in_period' ||
+                                      isForecastSelected) &&
+                                    row.calculationMissing;
+                                  const tooltip = [
+                                    `${group.building} ${row.unit}호`,
+                                    `공정진척 공정: ${row.sourceProcessType}`,
+                                    `상태: ${visual.label}`,
+                                    row.actualCompletionDate
+                                      ? `완료일: ${row.actualCompletionDate}`
+                                      : '완료일: -',
+                                    `타입: ${row.unitType || '미지정'}`,
+                                    `물량: ${formatQuantity(row.quantity)} ${
+                                      row.unitName || ''
+                                    }`,
+                                    row.confirmationRound > 0
+                                      ? `적용차수: ${row.confirmationRound}차`
+                                      : '적용차수: 미지정',
+                                    row.appliedUnitPrice > 0
+                                      ? `적용단가: ${formatMoney(
+                                          row.appliedUnitPrice,
+                                        )}원`
+                                      : '적용단가: 미설정',
+                                    `계산금액: ${formatMoney(row.amount)}원`,
+                                  ].join('\n');
+
+                                  return (
+                                    <Button
+                                      key={row.cellKey}
+                                      type="button"
+                                      title={tooltip}
+                                      onClick={() => handleCellClick(row)}
+                                      disableRipple={!isClickable}
+                                      sx={{
+                                        minWidth: 0,
+                                        width: `${100 / Math.max(sourceRows.length, 1)}%`,
+                                        height: '100%',
+                                        minHeight: 0,
+                                        px: 0,
+                                        py: 0,
+                                        border: 0,
+                                        borderRight:
+                                          sourceIndex < sourceRows.length - 1
+                                            ? '1px solid rgba(255,255,255,0.72)'
+                                            : 0,
+                                        borderRadius: 0,
+                                        bgcolor: visual.backgroundColor,
+                                        color: visual.color,
+                                        cursor: isClickable
+                                          ? 'pointer'
+                                          : 'default',
+                                        boxShadow: missingCalculation
+                                          ? 'inset 0 0 0 1px #dc2626'
+                                          : 'none',
+                                        '&:hover': {
+                                          bgcolor: visual.backgroundColor,
+                                          filter: isClickable
+                                            ? 'brightness(0.92)'
+                                            : 'none',
+                                        },
+                                      }}
+                                    />
+                                  );
+                                })}
+
+                                <Typography
+                                  component="span"
+                                  sx={{
+                                    position: 'absolute',
+                                    inset: 0,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    pointerEvents: 'none',
+                                    color: allUnworked ? '#475569' : '#ffffff',
+                                    fontSize: '0.47rem',
+                                    fontWeight: 900,
+                                    lineHeight: 1,
+                                    textShadow: allUnworked
+                                      ? '0 0 2px rgba(255,255,255,0.95)'
+                                      : '0 1px 2px rgba(15,23,42,0.9)',
+                                  }}
+                                >
+                                  {unitLabel}
+                                </Typography>
+                              </Box>,
                             );
                           });
 
