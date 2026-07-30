@@ -1084,8 +1084,12 @@ export default function LaborPeriodStructureDialog({
               label={`${endMonth} 월말 예상세대`}
             />
             {sourceProcessTypes.length > 1 && (
-              <Typography sx={{ fontSize: '0.66rem', color: '#475569' }}>
-                세대박스는 왼쪽부터 위 번호 순서대로 나뉩니다. 첫 번째 공정은 파란색, 두 번째 공정은 빨간색으로 표시하며 두 공정이 모두 완료되면 한 박스에 두 색이 함께 표시됩니다.
+              <Typography
+                sx={{ fontSize: '0.66rem', lineHeight: 1.35, color: '#475569' }}
+              >
+                세대박스는 왼쪽부터 위 번호 순서대로 나뉩니다.
+                <br />
+                첫 번째 공정은 파란색, 두 번째 공정은 빨간색으로 표시하며 두 공정이 모두 완료되면 한 박스에 두 색이 함께 표시됩니다.
               </Typography>
             )}
             <Typography sx={{ fontSize: '0.66rem', color: '#64748b' }}>
