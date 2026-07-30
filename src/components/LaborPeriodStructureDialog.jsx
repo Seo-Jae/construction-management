@@ -2,6 +2,7 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -243,6 +244,8 @@ export default function LaborPeriodStructureDialog({
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const structureViewportRef = useRef(null);
+  const [structureViewportHeight, setStructureViewportHeight] = useState(0);
 
   useEffect(() => {
     if (!open) return;
@@ -393,13 +396,67 @@ export default function LaborPeriodStructureDialog({
     };
   }, [buildingConfigs, visualRows]);
 
+  useEffect(() => {
+    if (!open) return undefined;
+
+    const viewport = structureViewportRef.current;
+    if (!viewport) return undefined;
+
+    let animationFrame = 0;
+    const updateViewportHeight = () => {
+      cancelAnimationFrame(animationFrame);
+      animationFrame = requestAnimationFrame(() => {
+        const nextHeight = Math.max(0, viewport.clientHeight || 0);
+        setStructureViewportHeight((previous) =>
+          Math.abs(previous - nextHeight) >= 0.5 ? nextHeight : previous,
+        );
+      });
+    };
+
+    updateViewportHeight();
+
+    const resizeObserver =
+      typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(updateViewportHeight)
+        : null;
+
+    resizeObserver?.observe(viewport);
+    window.addEventListener('resize', updateViewportHeight);
+
+    return () => {
+      cancelAnimationFrame(animationFrame);
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', updateViewportHeight);
+    };
+  }, [open]);
+
   const sharedFloorCellHeight = useMemo(() => {
     const rowCount = Math.max(sharedFloorFrame.floors.length + 1, 1);
-    const viewportHeight = (92 / rowCount).toFixed(4);
-    const reservedHeight = (330 / rowCount).toFixed(4);
 
-    return `clamp(10.5px, calc(${viewportHeight}vh - ${reservedHeight}px), 18px)`;
-  }, [sharedFloorFrame.floors.length]);
+    if (structureViewportHeight <= 0) return 14;
+
+    // 골구도 패널 안에서 동 제목, 안쪽 여백, 가로 스크롤바, 행 사이 간격을
+    // 먼저 제외한 뒤 남는 높이를 전체 층 + 타입 행에 동일하게 배분한다.
+    const outerPadding = 16;
+    const buildingHeaderHeight = 31;
+    const buildingBodyPadding = 10;
+    const horizontalScrollbarSpace = 18;
+    const safetySpace = 10;
+    const rowGapTotal = Math.max(rowCount - 1, 0);
+    const usableHeight =
+      structureViewportHeight -
+      outerPadding -
+      buildingHeaderHeight -
+      buildingBodyPadding -
+      horizontalScrollbarSpace -
+      safetySpace -
+      rowGapTotal;
+
+    const calculatedHeight = usableHeight / rowCount;
+    const boundedHeight = Math.max(8.5, Math.min(18, calculatedHeight));
+
+    return Math.floor(boundedHeight * 100) / 100;
+  }, [sharedFloorFrame.floors.length, structureViewportHeight]);
 
   const buildingGroups = useMemo(() => {
     const rowsByBuilding = visualRows.reduce((result, row) => {
@@ -819,6 +876,7 @@ export default function LaborPeriodStructureDialog({
         </Paper>
 
         <Paper
+          ref={structureViewportRef}
           variant="outlined"
           sx={{
             minHeight: 0,
@@ -928,6 +986,9 @@ export default function LaborPeriodStructureDialog({
                           )}, 40px)`,
                           gap: '1px',
                           alignItems: 'stretch',
+                          '& > *': {
+                            boxSizing: 'border-box',
+                          },
                         }}
                       >
                         {group.floors.flatMap((floor) => {
