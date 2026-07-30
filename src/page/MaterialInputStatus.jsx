@@ -149,6 +149,110 @@ const normalizeSearch = (
     .replace(/\s+/g, '')
     .toLowerCase();
 
+const filterSupplierOptions = (
+  options,
+  state,
+) => {
+  const normalizedInput =
+    normalizeSearch(
+      state.inputValue,
+    );
+
+  if (!normalizedInput) {
+    return options;
+  }
+
+  return options.filter(
+    (option) =>
+      normalizeSearch(
+        option,
+      ).includes(
+        normalizedInput,
+      ),
+  );
+};
+
+const SupplierSearchAutocomplete =
+  React.memo(
+    function SupplierSearchAutocomplete({
+      options,
+      value,
+      onChange,
+      label,
+      placeholder,
+      width,
+    }) {
+      const [
+        inputValue,
+        setInputValue,
+      ] = useState(
+        value || '',
+      );
+
+      useEffect(() => {
+        setInputValue(
+          value || '',
+        );
+      }, [value]);
+
+      return (
+        <Autocomplete
+          options={options}
+          value={
+            value || null
+          }
+          inputValue={
+            inputValue
+          }
+          onInputChange={(
+            _event,
+            nextInputValue,
+          ) =>
+            setInputValue(
+              nextInputValue,
+            )
+          }
+          onChange={(
+            _event,
+            nextValue,
+          ) => {
+            const normalizedValue =
+              nextValue || '';
+
+            setInputValue(
+              normalizedValue,
+            );
+            onChange(
+              normalizedValue,
+            );
+          }}
+          filterOptions={
+            filterSupplierOptions
+          }
+          autoHighlight
+          openOnFocus
+          clearOnBlur={false}
+          noOptionsText="일치하는 업체가 없습니다."
+          sx={{
+            width,
+          }}
+          renderInput={(
+            params,
+          ) => (
+            <TextField
+              {...params}
+              label={label}
+              placeholder={
+                placeholder
+              }
+              size="small"
+            />
+          )}
+        />
+      );
+    },
+  );
+
 const getCellRawValue = (
   cell,
 ) => {
@@ -4794,43 +4898,20 @@ export default function MaterialInputStatus({
                 }}
               />
 
-              <Autocomplete
-                freeSolo
+              <SupplierSearchAutocomplete
+                key="supplier-search-tab-1"
                 options={
                   allSupplierOptions
                 }
-                inputValue={
+                value={
                   selectedSupplier
                 }
-                onInputChange={(
-                  _event,
-                  value,
-                ) =>
-                  setSelectedSupplier(
-                    value,
-                  )
+                onChange={
+                  setSelectedSupplier
                 }
-                onChange={(
-                  _event,
-                  value,
-                ) =>
-                  setSelectedSupplier(
-                    value || '',
-                  )
-                }
-                sx={{
-                  width: 220,
-                }}
-                renderInput={(
-                  params,
-                ) => (
-                  <TextField
-                    {...params}
-                    label="업체 검색"
-                    placeholder="전체 업체"
-                    size="small"
-                  />
-                )}
+                label="업체 검색"
+                placeholder="전체 업체"
+                width={220}
               />
             </>
           ) : (
@@ -4903,51 +4984,28 @@ export default function MaterialInputStatus({
                 }}
               />
 
-              <Autocomplete
-                freeSolo
+              <SupplierSearchAutocomplete
+                key={`supplier-search-tab-${tabValue}`}
                 options={
                   supplierOptions
                 }
-                inputValue={
+                value={
                   selectedSupplier
                 }
-                onInputChange={(
-                  _event,
-                  value,
-                ) =>
-                  setSelectedSupplier(
-                    value,
-                  )
+                onChange={
+                  setSelectedSupplier
                 }
-                onChange={(
-                  _event,
-                  value,
-                ) =>
-                  setSelectedSupplier(
-                    value || '',
-                  )
+                label={
+                  tabValue === 0
+                    ? '해당 기간 입고업체'
+                    : '전체 업체 검색'
                 }
-                sx={{
-                  width: 190,
-                }}
-                renderInput={(
-                  params,
-                ) => (
-                  <TextField
-                    {...params}
-                    label={
-                      tabValue === 0
-                        ? '해당 기간 입고업체'
-                        : '전체 업체 검색'
-                    }
-                    placeholder={
-                      tabValue === 0
-                        ? `${selectedPeriodLabel} 입고업체`
-                        : '전체 누계 업체'
-                    }
-                    size="small"
-                  />
-                )}
+                placeholder={
+                  tabValue === 0
+                    ? `${selectedPeriodLabel} 입고업체`
+                    : '전체 누계 업체'
+                }
+                width={190}
               />
 
               <TextField
