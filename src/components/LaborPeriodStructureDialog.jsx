@@ -393,6 +393,14 @@ export default function LaborPeriodStructureDialog({
     };
   }, [buildingConfigs, visualRows]);
 
+  const sharedFloorCellHeight = useMemo(() => {
+    const rowCount = Math.max(sharedFloorFrame.floors.length + 1, 1);
+    const viewportHeight = (92 / rowCount).toFixed(4);
+    const reservedHeight = (330 / rowCount).toFixed(4);
+
+    return `clamp(10.5px, calc(${viewportHeight}vh - ${reservedHeight}px), 18px)`;
+  }, [sharedFloorFrame.floors.length]);
+
   const buildingGroups = useMemo(() => {
     const rowsByBuilding = visualRows.reduce((result, row) => {
       if (!result.has(row.building)) result.set(row.building, []);
@@ -685,7 +693,7 @@ export default function LaborPeriodStructureDialog({
               disabled={loading || saving || !processType}
               sx={{ whiteSpace: 'nowrap' }}
             >
-              예상범주 조정
+              예상세대 조정
             </Button>
           ) : (
             <>
@@ -731,6 +739,7 @@ export default function LaborPeriodStructureDialog({
           gap: 1,
           minHeight: 0,
           bgcolor: '#f8fafc',
+          overflow: 'hidden',
         }}
       >
         {(errorMessage || successMessage) && (
@@ -804,7 +813,7 @@ export default function LaborPeriodStructureDialog({
             <Typography sx={{ fontSize: '0.66rem', color: '#64748b' }}>
               {editingForecast
                 ? '미작업 세대를 클릭해 월말 예상범주를 추가·해제합니다. 실제 공정진척 완료자료는 변경하지 않습니다.'
-                : '예상범주 조정을 누르면 미작업 세대를 선택할 수 있습니다.'}
+                : '예상세대 조정을 누르면 미작업 세대를 선택할 수 있습니다.'}
             </Typography>
           </Stack>
         </Paper>
@@ -814,7 +823,8 @@ export default function LaborPeriodStructureDialog({
           sx={{
             minHeight: 0,
             flex: 1,
-            overflow: 'auto',
+            overflowX: 'auto',
+            overflowY: 'hidden',
             borderColor: '#cbd5e1',
             boxShadow: 'none',
             bgcolor: '#ffffff',
@@ -928,7 +938,7 @@ export default function LaborPeriodStructureDialog({
                               key={`${group.building}-${floor}-floor`}
                               aria-hidden={isUpperSpacer}
                               sx={{
-                                height: 18,
+                                height: sharedFloorCellHeight,
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
@@ -956,7 +966,7 @@ export default function LaborPeriodStructureDialog({
                                   key={`${group.building}-${floor}-${lineKey}-spacer`}
                                   aria-hidden="true"
                                   sx={{
-                                    height: 18,
+                                    height: sharedFloorCellHeight,
                                     border: '1px solid transparent',
                                   }}
                                 />,
@@ -974,7 +984,7 @@ export default function LaborPeriodStructureDialog({
                                   key={`${group.building}-${floor}-${lineKey}-empty`}
                                   title={`${group.building} ${floor}${lineKey}호 · 세대 없음/필로티`}
                                   sx={{
-                                    height: 18,
+                                    height: sharedFloorCellHeight,
                                     border: '1px solid #e2e8f0',
                                     borderRadius: 0.3,
                                     background:
@@ -1034,8 +1044,8 @@ export default function LaborPeriodStructureDialog({
                                 sx={{
                                   minWidth: 0,
                                   width: 40,
-                                  height: 18,
-                                  minHeight: 18,
+                                  height: sharedFloorCellHeight,
+                                  minHeight: sharedFloorCellHeight,
                                   px: 0,
                                   py: 0,
                                   border: `1px ${
@@ -1070,7 +1080,7 @@ export default function LaborPeriodStructureDialog({
 
                         <Box
                           sx={{
-                            height: 19,
+                            height: sharedFloorCellHeight,
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -1091,7 +1101,7 @@ export default function LaborPeriodStructureDialog({
                               group.unitTypeByLine.get(lineKey) || '-'
                             }`}
                             sx={{
-                              height: 19,
+                              height: sharedFloorCellHeight,
                               px: 0.2,
                               display: 'flex',
                               alignItems: 'center',
