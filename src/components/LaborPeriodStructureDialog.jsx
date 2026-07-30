@@ -30,6 +30,8 @@ const quantityFormatter = new Intl.NumberFormat('ko-KR', {
   maximumFractionDigits: 4,
 });
 
+const SUPABASE_RPC_PAGE_SIZE = 1000;
+
 const toNumber = (value) => {
   if (value === '' || value === null || value === undefined) return 0;
   const number = Number(String(value).replace(/,/g, ''));
@@ -175,6 +177,47 @@ function LegendItem({ backgroundColor, borderColor, label, color = '#ffffff' }) 
   );
 }
 
+const fetchAllLaborPeriodStructureRows = async ({
+  projectName,
+  processType,
+  startMonth,
+  endMonth,
+}) => {
+  const rows = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .rpc('get_labor_period_structure', {
+        p_project_name: projectName,
+        p_process_type: processType,
+        p_start_month: `${startMonth}-01`,
+        p_end_month: `${endMonth}-01`,
+      })
+      .order('building', { ascending: true })
+      .order('unit', { ascending: true })
+      .range(from, from + SUPABASE_RPC_PAGE_SIZE - 1);
+
+    if (error) throw error;
+
+    const pageRows = data || [];
+    rows.push(...pageRows);
+
+    if (pageRows.length < SUPABASE_RPC_PAGE_SIZE) break;
+    from += SUPABASE_RPC_PAGE_SIZE;
+  }
+
+  const uniqueRows = new Map();
+  rows.forEach((row) => {
+    const building = String(row?.building || '').trim();
+    const unit = String(row?.unit || '').trim();
+    if (!building || !unit) return;
+    uniqueRows.set(createCellKey(building, unit), row);
+  });
+
+  return Array.from(uniqueRows.values());
+};
+
 export default function LaborPeriodStructureDialog({
   open,
   onClose,
@@ -229,19 +272,14 @@ export default function LaborPeriodStructureDialog({
     setSuccessMessage('');
 
     try {
-      const { data, error } = await supabase.rpc(
-        'get_labor_period_structure',
-        {
-          p_project_name: projectName,
-          p_process_type: processType,
-          p_start_month: `${startMonth}-01`,
-          p_end_month: `${endMonth}-01`,
-        },
-      );
+      const data = await fetchAllLaborPeriodStructureRows({
+        projectName,
+        processType,
+        startMonth,
+        endMonth,
+      });
 
-      if (error) throw error;
-
-      const nextRows = (data || []).map(normalizeStructureRow);
+      const nextRows = data.map(normalizeStructureRow);
       const nextForecastCells = new Set(
         nextRows
           .filter((row) => row.forecastSelected && row.forecastEligible)
@@ -338,6 +376,23 @@ export default function LaborPeriodStructureDialog({
     });
   }, [structureByCell, structureRows, validUnits]);
 
+  const sharedFloorFrame = useMemo(() => {
+    const configuredFloorCounts = Object.values(buildingConfigs || {})
+      .map((config) => Math.max(0, Math.round(toNumber(config?.floors))))
+      .filter((floorCount) => floorCount > 0);
+    const rowFloors = visualRows
+      .map((row) => Math.max(0, Math.round(toNumber(row?.floor))))
+      .filter((floor) => floor > 0);
+    const maximumFloor = Math.max(1, ...configuredFloorCounts, ...rowFloors);
+
+    return {
+      floors: Array.from(
+        { length: maximumFloor },
+        (_unused, index) => maximumFloor - index,
+      ),
+    };
+  }, [buildingConfigs, visualRows]);
+
   const buildingGroups = useMemo(() => {
     const rowsByBuilding = visualRows.reduce((result, row) => {
       if (!result.has(row.building)) result.set(row.building, []);
@@ -380,15 +435,13 @@ export default function LaborPeriodStructureDialog({
               }),
             );
 
-      const floors =
-        configuredFloorCount > 0
-          ? Array.from(
-              { length: configuredFloorCount },
-              (_, index) => configuredFloorCount - index,
-            )
-          : Array.from(new Set(rows.map((row) => row.floor))).sort(
-              (first, second) => second - first,
-            );
+      const rowMaximumFloor = Math.max(
+        0,
+        ...rows.map((row) => Math.max(0, Math.round(toNumber(row.floor)))),
+      );
+      const buildingMaximumFloor =
+        configuredFloorCount > 0 ? configuredFloorCount : rowMaximumFloor;
+      const floors = sharedFloorFrame.floors;
 
       const rowByFloorLine = rows.reduce((result, row) => {
         result.set(`${row.floor}-${resolveLine(row.unit)}`, row);
@@ -423,6 +476,7 @@ export default function LaborPeriodStructureDialog({
         rows,
         lineKeys,
         floors,
+        buildingMaximumFloor,
         rowByFloorLine,
         unitTypeByLine,
         totalUnits: rows.length,
@@ -432,7 +486,7 @@ export default function LaborPeriodStructureDialog({
         cardWidth: 42 + Math.max(lineKeys.length, 1) * 42 + 16,
       };
     });
-  }, [buildingConfigs, forecastCells, visualRows]);
+  }, [buildingConfigs, forecastCells, sharedFloorFrame.floors, visualRows]);
 
   const summary = useMemo(() => {
     const periodCompletedRows = visualRows.filter(
@@ -789,9 +843,9 @@ export default function LaborPeriodStructureDialog({
               <Box
                 sx={{
                   display: 'flex',
-                  flexWrap: 'wrap',
+                  flexWrap: 'nowrap',
                   gap: 1,
-                  alignItems: 'flex-start',
+                  alignItems: 'flex-end',
                 }}
               >
                 {buildingGroups.map((group) => (
@@ -801,6 +855,9 @@ export default function LaborPeriodStructureDialog({
                     sx={{
                       width: group.cardWidth,
                       flex: '0 0 auto',
+                      alignSelf: 'stretch',
+                      display: 'flex',
+                      flexDirection: 'column',
                       overflow: 'hidden',
                       borderColor: '#94a3b8',
                       boxShadow: 'none',
@@ -846,7 +903,12 @@ export default function LaborPeriodStructureDialog({
                       </Typography>
                     </Stack>
 
-                    <Box sx={{ p: 0.55 }}>
+                    <Box
+                      sx={{
+                        p: 0.55,
+                        mt: 'auto',
+                      }}
+                    >
                       <Box
                         sx={{
                           display: 'grid',
@@ -859,28 +921,49 @@ export default function LaborPeriodStructureDialog({
                         }}
                       >
                         {group.floors.flatMap((floor) => {
+                          const isUpperSpacer =
+                            floor > group.buildingMaximumFloor;
                           const items = [
                             <Box
                               key={`${group.building}-${floor}-floor`}
+                              aria-hidden={isUpperSpacer}
                               sx={{
                                 height: 18,
                                 display: 'flex',
                                 alignItems: 'center',
                                 justifyContent: 'center',
-                                border: '1px solid #cbd5e1',
+                                border: isUpperSpacer
+                                  ? '1px solid transparent'
+                                  : '1px solid #cbd5e1',
                                 borderRadius: 0.3,
-                                bgcolor: '#e2e8f0',
+                                bgcolor: isUpperSpacer
+                                  ? 'transparent'
+                                  : '#e2e8f0',
                                 color: '#334155',
                                 fontSize: '0.5rem',
                                 fontWeight: 900,
                                 lineHeight: 1,
                               }}
                             >
-                              {floor}층
+                              {isUpperSpacer ? '' : `${floor}층`}
                             </Box>,
                           ];
 
                           group.lineKeys.forEach((lineKey) => {
+                            if (isUpperSpacer) {
+                              items.push(
+                                <Box
+                                  key={`${group.building}-${floor}-${lineKey}-spacer`}
+                                  aria-hidden="true"
+                                  sx={{
+                                    height: 18,
+                                    border: '1px solid transparent',
+                                  }}
+                                />,
+                              );
+                              return;
+                            }
+
                             const row = group.rowByFloorLine.get(
                               `${floor}-${lineKey}`,
                             );
