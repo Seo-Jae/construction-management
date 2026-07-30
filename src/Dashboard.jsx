@@ -55,6 +55,7 @@ import ContractItemProcessMapping from './page/ContractItemProcessMapping.jsx';
 import AdminDashboard from './page/AdminDashboard.jsx';
 import UserManagement from './page/UserManagement.jsx';
 import OrganizationChart from './page/OrganizationChart.jsx';
+import DrawingQuantityAnalysis from './page/DrawingQuantityAnalysis.jsx';
 
 const drawerWidth = 240;
 const SUPABASE_PAGE_SIZE = 1000;
@@ -303,6 +304,7 @@ const viewTitles = {
   'progress-monthly': '월별 완료 집계',
   'material-order': '자재발주작성',
   'material-input-status': '자재투입현황',
+  'drawing-quantity': '타입별 도면분석',
   'payment-claim': '기성내역서작성',
   'payment-contract-mapping': '계약품목 공정연결',
   'payment-sales-status': '매입매출현황',
@@ -3246,6 +3248,12 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             />
           )}
 
+          {currentView === 'drawing-quantity' && activeProjectName && (
+            <DrawingQuantityAnalysis
+              projectName={activeProjectName}
+              userProfile={activeUserProfile}
+            />
+          )}
 
           {currentView ===
             'material-order' &&

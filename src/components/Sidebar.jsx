@@ -941,6 +941,39 @@ export default function Sidebar({
       </Collapse>
 
       <Tooltip
+        title={drawerOpen ? '' : '타입별 도면분석'}
+        placement="right"
+        arrow
+      >
+        <ListItemButton
+          selected={currentView === 'drawing-quantity'}
+          onClick={() => handleViewChange('drawing-quantity')}
+          sx={topMenuSx(currentView === 'drawing-quantity')}
+        >
+          <ListItemIcon
+            sx={{
+              minWidth: 34,
+              color: 'inherit',
+              justifyContent: 'center',
+            }}
+          >
+            <EngineeringIcon fontSize="small" />
+          </ListItemIcon>
+
+          <ListItemText
+            primary="타입별 도면분석"
+            primaryTypographyProps={{
+              noWrap: true,
+              fontSize: '0.8rem',
+              fontWeight:
+                currentView === 'drawing-quantity' ? 700 : 500,
+            }}
+            sx={{ opacity: drawerOpen ? 1 : 0 }}
+          />
+        </ListItemButton>
+      </Tooltip>
+
+      <Tooltip
         title={
           drawerOpen
             ? ''
