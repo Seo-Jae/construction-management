@@ -1583,7 +1583,8 @@ const parseHeadOfficeWorkbook =
 
 const aggregateItemRows = ({
   records,
-  monthKey,
+  startMonth,
+  endMonth,
 }) => {
   const map = new Map();
 
@@ -1596,7 +1597,7 @@ const aggregateItemRows = ({
 
       if (
         !recordMonth ||
-        recordMonth > monthKey
+        recordMonth > endMonth
       ) {
         return;
       }
@@ -1707,7 +1708,10 @@ const aggregateItemRows = ({
           record.arrival_date;
       }
 
-      if (recordMonth === monthKey) {
+      if (
+        recordMonth >= startMonth &&
+        recordMonth <= endMonth
+      ) {
         target.monthlyQuantity +=
           quantity;
 
@@ -1955,6 +1959,13 @@ export default function MaterialInputStatus({
     useRef(null);
 
   const [
+    selectedStartMonth,
+    setSelectedStartMonth,
+  ] = useState(
+    getKoreaMonthKey(),
+  );
+
+  const [
     selectedMonth,
     setSelectedMonth,
   ] = useState(
@@ -2095,14 +2106,17 @@ export default function MaterialInputStatus({
     setImportHistory,
   ] = useState([]);
 
-  const monthRange =
-    useMemo(
-      () =>
-        getMonthRange(
+  const selectedPeriodLabel =
+    selectedStartMonth ===
+      selectedMonth
+      ? formatMonthLabel(
           selectedMonth,
-        ),
-      [selectedMonth],
-    );
+        )
+      : `${formatMonthLabel(
+          selectedStartMonth,
+        )} ~ ${formatMonthLabel(
+          selectedMonth,
+        )}`;
 
   const loadActiveSnapshot =
     useCallback(async () => {
@@ -2327,18 +2341,27 @@ export default function MaterialInputStatus({
       [records],
     );
 
-  const monthlySupplierOptions =
+  const periodSupplierOptions =
     useMemo(
       () =>
         Array.from(
           new Set(
             records
               .filter(
-                (record) =>
-                  isRecordInMonth(
-                    record,
-                    selectedMonth,
-                  ),
+                (record) => {
+                  const monthKey =
+                    getRecordMonthKey(
+                      record,
+                    );
+
+                  return (
+                    monthKey &&
+                    monthKey >=
+                      selectedStartMonth &&
+                    monthKey <=
+                      selectedMonth
+                  );
+                },
               )
               .map(
                 (record) =>
@@ -2359,12 +2382,13 @@ export default function MaterialInputStatus({
       [
         records,
         selectedMonth,
+        selectedStartMonth,
       ],
     );
 
   const supplierOptions =
     tabValue === 0
-      ? monthlySupplierOptions
+      ? periodSupplierOptions
       : allSupplierOptions;
 
   useEffect(() => {
@@ -2386,12 +2410,15 @@ export default function MaterialInputStatus({
       () =>
         aggregateItemRows({
           records,
-          monthKey:
+          startMonth:
+            selectedStartMonth,
+          endMonth:
             selectedMonth,
         }),
       [
         records,
         selectedMonth,
+        selectedStartMonth,
       ],
     );
 
@@ -2445,11 +2472,17 @@ export default function MaterialInputStatus({
       () =>
         records.filter(
           (record) => {
-            const inMonth =
-              isRecordInMonth(
+            const monthKey =
+              getRecordMonthKey(
                 record,
-                selectedMonth,
               );
+
+            const inSelectedPeriod =
+              monthKey &&
+              monthKey >=
+                selectedStartMonth &&
+              monthKey <=
+                selectedMonth;
 
             const supplierMatched =
               !selectedSupplier ||
@@ -2473,7 +2506,7 @@ export default function MaterialInputStatus({
               );
 
             return (
-              inMonth &&
+              inSelectedPeriod &&
               supplierMatched &&
               searchMatched
             );
@@ -2483,6 +2516,7 @@ export default function MaterialInputStatus({
         normalizedSearch,
         records,
         selectedMonth,
+        selectedStartMonth,
         selectedSupplier,
       ],
     );
@@ -2687,14 +2721,20 @@ export default function MaterialInputStatus({
             result,
             record,
           ) => {
-            const inMonth =
-              isRecordInMonth(
+            const monthKey =
+              getRecordMonthKey(
                 record,
-                selectedMonth,
               );
 
+            const inSelectedPeriod =
+              monthKey &&
+              monthKey >=
+                selectedStartMonth &&
+              monthKey <=
+                selectedMonth;
+
             if (
-              !inMonth ||
+              !inSelectedPeriod ||
               record.supplier !==
                 selectedSupplier
             ) {
@@ -2746,6 +2786,7 @@ export default function MaterialInputStatus({
       [
         records,
         selectedMonth,
+        selectedStartMonth,
         selectedSupplier,
       ],
     );
@@ -2758,11 +2799,17 @@ export default function MaterialInputStatus({
             result,
             record,
           ) => {
-            if (
-              !isRecordInMonth(
+            const monthKey =
+              getRecordMonthKey(
                 record,
-                selectedMonth,
-              )
+              );
+
+            if (
+              !monthKey ||
+              monthKey <
+                selectedStartMonth ||
+              monthKey >
+                selectedMonth
             ) {
               return result;
             }
@@ -2860,6 +2907,7 @@ export default function MaterialInputStatus({
       [
         records,
         selectedMonth,
+        selectedStartMonth,
       ],
     );
 
@@ -4077,8 +4125,8 @@ export default function MaterialInputStatus({
           '규격',
           '단위',
           '업체',
-          `${monthRange.label} 수량`,
-          `${monthRange.label} 금액`,
+          `${selectedPeriodLabel} 수량`,
+          `${selectedPeriodLabel} 금액`,
           '누계수량',
           '누계금액',
           '최근입고일',
@@ -4134,7 +4182,7 @@ export default function MaterialInputStatus({
           '#,##0';
 
         downloadSuffix =
-          `품목별월누계_${selectedMonth}`;
+          `품목별월누계_${selectedStartMonth}_${selectedMonth}`;
       }
 
       worksheet.getRow(
@@ -4788,7 +4836,41 @@ export default function MaterialInputStatus({
           ) : (
             <>
               <TextField
-                label="조회 월"
+                label="시작 월"
+                type="month"
+                size="small"
+                value={
+                  selectedStartMonth
+                }
+                onChange={(
+                  event,
+                ) => {
+                  const value =
+                    event.target.value;
+
+                  setSelectedStartMonth(
+                    value,
+                  );
+
+                  if (
+                    value >
+                    selectedMonth
+                  ) {
+                    setSelectedMonth(
+                      value,
+                    );
+                  }
+                }}
+                InputLabelProps={{
+                  shrink: true,
+                }}
+                sx={{
+                  width: 150,
+                }}
+              />
+
+              <TextField
+                label="종료 월"
                 type="month"
                 size="small"
                 value={
@@ -4796,11 +4878,23 @@ export default function MaterialInputStatus({
                 }
                 onChange={(
                   event,
-                ) =>
+                ) => {
+                  const value =
+                    event.target.value;
+
                   setSelectedMonth(
-                    event.target.value,
-                  )
-                }
+                    value,
+                  );
+
+                  if (
+                    value <
+                    selectedStartMonth
+                  ) {
+                    setSelectedStartMonth(
+                      value,
+                    );
+                  }
+                }}
                 InputLabelProps={{
                   shrink: true,
                 }}
@@ -4843,12 +4937,12 @@ export default function MaterialInputStatus({
                     {...params}
                     label={
                       tabValue === 0
-                        ? '해당 월 입고업체'
+                        ? '해당 기간 입고업체'
                         : '전체 업체 검색'
                     }
                     placeholder={
                       tabValue === 0
-                        ? `${monthRange.label} 입고업체`
+                        ? `${selectedPeriodLabel} 입고업체`
                         : '전체 누계 업체'
                     }
                     size="small"
@@ -4891,8 +4985,11 @@ export default function MaterialInputStatus({
             tabValue === 1
               ? supplierMonthlyRows.length ===
                 0
-              : filteredItemRows.length ===
-                0
+              : tabValue === 0
+                ? filteredDetailRows.length ===
+                  0
+                : filteredItemRows.length ===
+                  0
           }
         >
           {tabValue === 1
@@ -4943,7 +5040,7 @@ export default function MaterialInputStatus({
             ]
           : [
               [
-                `${monthRange.label} 지출합계`,
+                `${selectedPeriodLabel} 지출합계`,
                 formatMoney(
                   monthSummary.totalAmount,
                 ),
@@ -5376,8 +5473,8 @@ export default function MaterialInputStatus({
                       '규격',
                       '단위',
                       '업체',
-                      `${monthRange.label} 수량`,
-                      `${monthRange.label} 금액`,
+                      `${selectedPeriodLabel} 수량`,
+                      `${selectedPeriodLabel} 금액`,
                       '누계수량',
                       '누계금액',
                       '최근입고일',
@@ -5662,7 +5759,7 @@ export default function MaterialInputStatus({
                         }}
                       >
                         {selectedSupplier}{' '}
-                        {monthRange.label}{' '}
+                        {selectedPeriodLabel}{' '}
                         금액 합계
                       </TableCell>
 
