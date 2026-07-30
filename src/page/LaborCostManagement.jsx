@@ -1416,7 +1416,7 @@ export default function LaborCostManagement({
           normalizedMappings.length > 0
             ? `${detailProcess} 노임을 ${normalizedMappings.join(
                 ', ',
-              )} 공정진척과 연결했습니다.`
+              )} 공정진척과 연결했습니다. 첫 번째 공정진척만 금액 계산에 적용됩니다.`
             : `${detailProcess}의 별도 연결을 초기화했습니다. 동일명 공정이 있으면 자동으로 연결됩니다.`,
       });
       await loadMonthly();
@@ -3876,7 +3876,7 @@ export default function LaborCostManagement({
             예상노임조회
           </Button>
           <Typography sx={{ fontSize: '0.68rem', color: '#64748b' }}>
-            선택한 공정진척의 `작업완료` 완료일을 기준으로 집계하며, 예상노임조회에서 종료월 월말 예상세대를 별도로 조정할 수 있습니다.
+            첫 번째 연결 공정진척의 `작업완료` 완료일만 노임금액에 반영하며, 추가 연결 공정은 예상노임조회에서 진척 참고용으로 함께 표시합니다.
           </Typography>
         </Stack>
       </Paper>
@@ -3892,7 +3892,7 @@ export default function LaborCostManagement({
         <SummaryCard
           label={`${monthlyRangeLabel} 노임 예상`}
           value={`${formatMoney(monthlyTotals.current_amount)}원`}
-          helper="연결 공정진척 완료건의 물량 × 적용 확정단가"
+          helper="첫 번째 연결 공정진척 완료건의 물량 × 적용 확정단가"
           color="#0f766e"
         />
         <SummaryCard
@@ -3967,7 +3967,14 @@ export default function LaborCostManagement({
                 </TableCell>
                 <TableCell sx={bodyCellSx} align="center">
                   {getEffectiveProgressProcesses(row.process_type).length > 0
-                    ? getEffectiveProgressProcesses(row.process_type).join(', ')
+                    ? getEffectiveProgressProcesses(row.process_type)
+                        .map(
+                          (processType, index) =>
+                            `${index + 1}. ${processType}${
+                              index === 0 ? ' (금액기준)' : ' (진척참고)'
+                            }`,
+                        )
+                        .join(' · ')
                     : '미연결'}
                 </TableCell>
                 <TableCell sx={numberCellSx}>
@@ -4084,8 +4091,16 @@ export default function LaborCostManagement({
                   {...getTagProps({ index })}
                   key={option}
                   size="small"
-                  label={option}
-                  sx={{ height: 22, fontSize: '0.64rem', fontWeight: 800 }}
+                  label={`${index + 1}. ${option}${
+                    index === 0 ? ' (금액기준)' : ' (진척참고)'
+                  }`}
+                  sx={{
+                    height: 22,
+                    fontSize: '0.64rem',
+                    fontWeight: 800,
+                    bgcolor: index === 0 ? '#dbeafe' : '#fee2e2',
+                    color: index === 0 ? '#1d4ed8' : '#b91c1c',
+                  }}
                 />
               ))
             }
@@ -4128,10 +4143,11 @@ export default function LaborCostManagement({
               color: '#64748b',
             }}
           >
-            선택한 공정진척의 작업완료 건을 각각 계산합니다. 복수선택 시
-            같은 세대가 공정별로 각각 집계되며, 물량·확정차수·단가는{' '}
+            첫 번째로 선택한 공정진척만 완료건·물량·노임금액 계산에
+            적용합니다. 두 번째 이후 공정진척은 예상노임조회에서 진척상태만
+            함께 표시하며 단가와 금액은 중복 적용하지 않습니다. 물량·확정차수·단가는{' '}
             <strong>{detailProcess || '선택한 노임 공정'}</strong>에 입력한 값을
-            그대로 적용합니다.
+            사용합니다.
           </Typography>
         </Stack>
       </Paper>

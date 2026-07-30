@@ -34,6 +34,38 @@ const quantityFormatter = new Intl.NumberFormat('ko-KR', {
 
 const SUPABASE_RPC_PAGE_SIZE = 1000;
 
+const SOURCE_PROGRESS_COLORS = [
+  {
+    backgroundColor: '#2563eb',
+    borderColor: '#1d4ed8',
+    chipBackgroundColor: '#dbeafe',
+    chipColor: '#1d4ed8',
+  },
+  {
+    backgroundColor: '#dc2626',
+    borderColor: '#b91c1c',
+    chipBackgroundColor: '#fee2e2',
+    chipColor: '#b91c1c',
+  },
+  {
+    backgroundColor: '#7c3aed',
+    borderColor: '#6d28d9',
+    chipBackgroundColor: '#ede9fe',
+    chipColor: '#6d28d9',
+  },
+  {
+    backgroundColor: '#059669',
+    borderColor: '#047857',
+    chipBackgroundColor: '#d1fae5',
+    chipColor: '#047857',
+  },
+];
+
+const getSourceProgressColor = (sourceIndex) =>
+  SOURCE_PROGRESS_COLORS[
+    Math.max(0, sourceIndex) % SOURCE_PROGRESS_COLORS.length
+  ];
+
 const toNumber = (value) => {
   if (value === '' || value === null || value === undefined) return 0;
   const number = Number(String(value).replace(/,/g, ''));
@@ -84,6 +116,9 @@ const normalizeStructureRow = (row) => ({
   building: String(row?.building || ''),
   unit: String(row?.unit || ''),
   sourceProcessType: String(row?.source_process_type || ''),
+  sourceSortOrder: toNumber(row?.source_sort_order),
+  isCostBasis:
+    row?.is_cost_basis === true || toNumber(row?.source_sort_order) === 1,
   actualCompletionDate: row?.actual_completion_date
     ? String(row.actual_completion_date).slice(0, 10)
     : '',
@@ -98,7 +133,7 @@ const normalizeStructureRow = (row) => ({
   calculationMissing: row?.calculation_missing === true,
 });
 
-const getCellVisual = (row, isForecastSelected) => {
+const getCellVisual = (row, isForecastSelected, sourceIndex) => {
   if (isForecastSelected && row.forecastEligible) {
     return {
       backgroundColor: '#f59e0b',
@@ -109,11 +144,12 @@ const getCellVisual = (row, isForecastSelected) => {
   }
 
   if (row.actualState === 'in_period') {
+    const sourceColor = getSourceProgressColor(sourceIndex);
     return {
-      backgroundColor: '#2563eb',
+      backgroundColor: sourceColor.backgroundColor,
       color: '#ffffff',
-      borderColor: '#1d4ed8',
-      label: '조회기간 작업완료',
+      borderColor: sourceColor.borderColor,
+      label: `조회기간 작업완료 · ${row.sourceProcessType}`,
     };
   }
 
@@ -179,6 +215,34 @@ function LegendItem({ backgroundColor, borderColor, label, color = '#ffffff' }) 
           bgcolor: backgroundColor,
           border: `1px solid ${borderColor}`,
           color,
+        }}
+      />
+      <Typography sx={{ fontSize: '0.68rem', color: '#475569' }}>
+        {label}
+      </Typography>
+    </Stack>
+  );
+}
+
+function MultiColorLegendItem({ colors, label }) {
+  const safeColors = colors.length > 0 ? colors : ['#2563eb'];
+  const segmentSize = 100 / safeColors.length;
+  const gradientStops = safeColors
+    .flatMap((color, index) => [
+      `${color} ${index * segmentSize}%`,
+      `${color} ${(index + 1) * segmentSize}%`,
+    ])
+    .join(', ');
+
+  return (
+    <Stack direction="row" spacing={0.55} alignItems="center">
+      <Box
+        sx={{
+          width: 18,
+          height: 18,
+          borderRadius: 0.7,
+          background: `linear-gradient(90deg, ${gradientStops})`,
+          border: '1px solid #94a3b8',
         }}
       />
       <Typography sx={{ fontSize: '0.68rem', color: '#475569' }}>
@@ -423,6 +487,13 @@ export default function LaborPeriodStructureDialog({
           floor: toNumber(unitRow.floor) || resolveFloor(unitRow.unit),
           unitType: String(unitRow.unitType || '미지정'),
           sourceProcessType,
+          sourceSortOrder:
+            structureRow?.sourceSortOrder ||
+            sourceProcessTypes.indexOf(sourceProcessType) + 1,
+          isCostBasis:
+            structureRow?.sourceSortOrder > 0
+              ? structureRow.isCostBasis
+              : sourceProcessTypes.indexOf(sourceProcessType) === 0,
           actualCompletionDate: structureRow?.actualCompletionDate || '',
           actualState: structureRow?.actualState || 'unworked',
           forecastEligible: structureRow?.forecastEligible !== false,
@@ -454,6 +525,8 @@ export default function LaborPeriodStructureDialog({
         floor: resolveFloor(row.unit),
         unitType: '미지정',
         sourceProcessType: row.sourceProcessType,
+        sourceSortOrder: row.sourceSortOrder,
+        isCostBasis: row.isCostBasis,
         actualCompletionDate: row.actualCompletionDate,
         actualState: row.actualState,
         forecastEligible: row.forecastEligible,
@@ -665,11 +738,13 @@ export default function LaborPeriodStructureDialog({
 
   const summary = useMemo(() => {
     const periodCompletedRows = visualRows.filter(
-      (row) => row.actualState === 'in_period',
+      (row) => row.isCostBasis && row.actualState === 'in_period',
     );
     const selectedForecastRows = visualRows.filter(
       (row) =>
-        row.forecastEligible && forecastCells.has(row.cellKey),
+        row.isCostBasis &&
+        row.forecastEligible &&
+        forecastCells.has(row.cellKey),
     );
 
     const actualAmount = periodCompletedRows.reduce(
@@ -924,7 +999,7 @@ export default function LaborPeriodStructureDialog({
             value={`${summary.actualUnits.toLocaleString()}건 · ${formatMoney(
               summary.actualAmount,
             )}원`}
-            helper="연결 공정진척별 완료건의 물량 × 확정단가"
+            helper="첫 번째 연결 공정진척 완료건만 금액 반영"
             color="#1d4ed8"
           />
           <SummaryBox
@@ -932,19 +1007,21 @@ export default function LaborPeriodStructureDialog({
             value={`${summary.forecastUnits.toLocaleString()}건 · ${formatMoney(
               summary.forecastAmount,
             )}원`}
-            helper={`선택 물량 ${formatQuantity(summary.forecastQuantity)}`}
+            helper={`첫 번째 공정 선택 물량 ${formatQuantity(
+              summary.forecastQuantity,
+            )}`}
             color="#b45309"
           />
           <SummaryBox
             label="기간 + 월말 예상 노임"
             value={`${formatMoney(summary.expectedAmount)}원`}
-            helper="실제 완료금액 + 주황색 예상세대 금액"
+            helper="첫 번째 공정 실제 완료금액 + 예상세대 금액"
             color="#0f766e"
           />
           <SummaryBox
             label="계산 누락"
             value={`${summary.missingCalculationUnits.toLocaleString()}건`}
-            helper="물량 또는 적용 확정차수·단가가 없는 공정·세대"
+            helper="첫 번째 금액기준 공정의 물량 또는 단가 누락"
             color={summary.missingCalculationUnits > 0 ? '#b91c1c' : '#15803d'}
           />
         </Stack>
@@ -959,25 +1036,36 @@ export default function LaborPeriodStructureDialog({
           }}
         >
           <Stack direction="row" spacing={1.6} useFlexGap flexWrap="wrap">
-            {sourceProcessTypes.map((sourceProcessType, index) => (
-              <Chip
-                key={sourceProcessType}
-                size="small"
-                label={`${index + 1}. ${sourceProcessType}`}
-                title={`세대박스 안에서 ${index + 1}번째 구간은 ${sourceProcessType} 공정진척입니다.`}
-                sx={{
-                  height: 22,
-                  fontSize: '0.62rem',
-                  fontWeight: 900,
-                  bgcolor: '#e0f2fe',
-                  color: '#075985',
-                }}
-              />
-            ))}
-            <LegendItem
-              backgroundColor="#2563eb"
-              borderColor="#1d4ed8"
-              label="해당기간 작업완료"
+            {sourceProcessTypes.map((sourceProcessType, index) => {
+              const sourceColor = getSourceProgressColor(index);
+              return (
+                <Chip
+                  key={sourceProcessType}
+                  size="small"
+                  label={`${index + 1}. ${sourceProcessType}${
+                    index === 0 ? ' · 금액기준' : ' · 진척참고'
+                  }`}
+                  title={`세대박스 안에서 ${index + 1}번째 구간은 ${sourceProcessType} 공정진척입니다. ${
+                    index === 0
+                      ? '이 공정만 노임금액 계산에 적용됩니다.'
+                      : '이 공정은 진척 확인용이며 노임금액에는 적용되지 않습니다.'
+                  }`}
+                  sx={{
+                    height: 22,
+                    fontSize: '0.62rem',
+                    fontWeight: 900,
+                    bgcolor: sourceColor.chipBackgroundColor,
+                    color: sourceColor.chipColor,
+                  }}
+                />
+              );
+            })}
+            <MultiColorLegendItem
+              colors={sourceProcessTypes.map(
+                (_sourceProcessType, index) =>
+                  getSourceProgressColor(index).backgroundColor,
+              )}
+              label="해당기간 작업완료 · 공정별 색상"
             />
             <LegendItem
               backgroundColor="#64748b"
@@ -997,7 +1085,7 @@ export default function LaborPeriodStructureDialog({
             />
             {sourceProcessTypes.length > 1 && (
               <Typography sx={{ fontSize: '0.66rem', color: '#475569' }}>
-                세대박스는 왼쪽부터 위 번호 순서대로 나뉘어 각 공정진척 상태를 동시에 표시합니다.
+                세대박스는 왼쪽부터 위 번호 순서대로 나뉩니다. 첫 번째 공정은 파란색, 두 번째 공정은 빨간색으로 표시하며 두 공정이 모두 완료되면 한 박스에 두 색이 함께 표시됩니다.
               </Typography>
             )}
             <Typography sx={{ fontSize: '0.66rem', color: '#64748b' }}>
@@ -1216,12 +1304,19 @@ export default function LaborPeriodStructureDialog({
                                 }}
                               >
                                 {sourceRows.map((row, sourceIndex) => {
+                                  const globalSourceIndex = Math.max(
+                                    0,
+                                    sourceProcessTypes.indexOf(
+                                      row.sourceProcessType,
+                                    ),
+                                  );
                                   const isForecastSelected = forecastCells.has(
                                     row.cellKey,
                                   );
                                   const visual = getCellVisual(
                                     row,
                                     isForecastSelected,
+                                    globalSourceIndex,
                                   );
                                   const isClickable =
                                     editingForecast &&
@@ -1234,6 +1329,11 @@ export default function LaborPeriodStructureDialog({
                                   const tooltip = [
                                     `${group.building} ${row.unit}호`,
                                     `공정진척 공정: ${row.sourceProcessType}`,
+                                    `적용구분: ${
+                                      row.isCostBasis
+                                        ? '1번 금액기준 공정'
+                                        : '진척참고 공정 · 금액 미적용'
+                                    }`,
                                     `상태: ${visual.label}`,
                                     row.actualCompletionDate
                                       ? `완료일: ${row.actualCompletionDate}`
@@ -1245,12 +1345,16 @@ export default function LaborPeriodStructureDialog({
                                     row.confirmationRound > 0
                                       ? `적용차수: ${row.confirmationRound}차`
                                       : '적용차수: 미지정',
-                                    row.appliedUnitPrice > 0
-                                      ? `적용단가: ${formatMoney(
-                                          row.appliedUnitPrice,
-                                        )}원`
-                                      : '적용단가: 미설정',
-                                    `계산금액: ${formatMoney(row.amount)}원`,
+                                    row.isCostBasis
+                                      ? row.appliedUnitPrice > 0
+                                        ? `적용단가: ${formatMoney(
+                                            row.appliedUnitPrice,
+                                          )}원`
+                                        : '적용단가: 미설정'
+                                      : '적용단가: 금액 계산 제외',
+                                    row.isCostBasis
+                                      ? `계산금액: ${formatMoney(row.amount)}원`
+                                      : '계산금액: 진척 참고용으로 미적용',
                                   ].join('\n');
 
                                   return (
