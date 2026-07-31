@@ -4,12 +4,15 @@ import {
   Box,
   Button,
   Chip,
+  Checkbox,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
   Divider,
+  FormControlLabel,
+  MenuItem,
   Paper,
   Snackbar,
   Table,
@@ -33,9 +36,36 @@ const HEIGHT_SETTING_TABLE = 'drawing_quantity_height_settings';
 const DRAWING_TABLE = 'drawing_quantity_drawings';
 const ROOM_TABLE = 'drawing_quantity_rooms';
 const ROOM_DEDUCTION_TABLE = 'drawing_quantity_room_deductions';
+const OPENING_TABLE = 'drawing_quantity_openings';
 const STORAGE_BUCKET = 'drawing-quantity-files';
-const ANALYZER_VERSION = 'v51.53';
+const ANALYZER_VERSION = 'v51.67';
 const MAX_DXF_FILE_SIZE = 25 * 1024 * 1024;
+
+const MULTI_PROCESS_HIGHLIGHT_COLORS = [
+  '#dc2626',
+  '#2563eb',
+  '#16a34a',
+  '#d97706',
+  '#7c3aed',
+  '#0891b2',
+  '#db2777',
+  '#65a30d',
+  '#9333ea',
+];
+
+const buildProcessHighlightColors = (layers = []) => {
+  const normalized = (Array.isArray(layers) ? layers : [])
+    .map((layer) => String(layer || '').trim())
+    .filter((layer, index, values) => layer && values.indexOf(layer) === index);
+
+  if (!normalized.length) return {};
+  if (normalized.length === 1) return { [normalized[0]]: '#dc2626' };
+
+  return normalized.reduce((result, layer, index) => {
+    result[layer] = MULTI_PROCESS_HIGHLIGHT_COLORS[index % MULTI_PROCESS_HIGHLIGHT_COLORS.length];
+    return result;
+  }, {});
+};
 
 const numberFormatter = new Intl.NumberFormat('ko-KR', {
   maximumFractionDigits: 2,
@@ -194,7 +224,20 @@ const viewBoxString = (viewBox) =>
 
 const layerDisplayName = (layer) => String(layer || '').replace(/^WL-\s*/i, '').trim();
 
+const analysisLayerDisplayName = (layer) => {
+  const displayName = layerDisplayName(layer);
+
+  if (displayName === '합지석고') return '합지';
+
+  return displayName;
+};
+
 const normalizeLayerToken = (layer) => String(layer || '').replace(/\s+/g, '').toUpperCase();
+const isRoomAreaLayer = (layer) => {
+  const token = normalizeLayerToken(layer);
+  return token === 'WL-실면적' || token.startsWith('WL-실면적-');
+};
+
 const isCeilingAreaLayer = (layer) => {
   const token = normalizeLayerToken(layer);
   return token.startsWith('WL-') && (token.includes('천정면적') || token.includes('천장면적'));
@@ -204,6 +247,108 @@ const safeDeductionValue = (value) => {
   const number = Number(String(value ?? '').replace(/,/g, ''));
   return Number.isFinite(number) && number >= 0 ? number : 0;
 };
+
+// 수동 입력은 0.9처럼 M 단위로도, 900처럼 mm 단위로도 받을 수 있다.
+// 20 이하의 양수는 M로 보고 mm로 변환한다.
+const parseDimensionInputMm = (value) => {
+  const number = safeDeductionValue(value);
+  if (number <= 0) return 0;
+  return number <= 20 ? number * 1000 : number;
+};
+
+const openingTypeLabel = () => '공제항목';
+const isScheduleDeductionItem = (opening) => String(opening?.openingKey || '').startsWith('schedule-');
+const calculateOpeningAreaM2 = (widthMm, heightMm, quantity = 1) =>
+  (safeDeductionValue(widthMm) * safeDeductionValue(heightMm) * Math.max(1, Number(quantity || 1))) /
+  1_000_000;
+
+const getOpeningRoomKeys = (opening) =>
+  [
+    ...(Array.isArray(opening?.roomKeys) ? opening.roomKeys : []),
+    opening?.roomKey,
+  ]
+    .map((value) => String(value || '').trim())
+    .filter((value, index, values) => value && values.indexOf(value) === index);
+
+const openingBelongsToRoom = (opening, roomKey) =>
+  getOpeningRoomKeys(opening).includes(String(roomKey || '').trim());
+
+const isFiniteGeometryPoint = (point) =>
+  Number.isFinite(Number(point?.x)) && Number.isFinite(Number(point?.y));
+
+const hasUsableOpeningSegment = (start, end) =>
+  isFiniteGeometryPoint(start) &&
+  isFiniteGeometryPoint(end) &&
+  distanceBetweenPoints(start, end) > 0.001;
+
+const buildFallbackOpeningSegment = ({ opening, candidate, widthMm, room }) => {
+  if (hasUsableOpeningSegment(opening?.start, opening?.end)) {
+    return {
+      start: opening.start,
+      end: opening.end,
+      center: isFiniteGeometryPoint(opening?.center)
+        ? opening.center
+        : {
+            x: (Number(opening.start.x) + Number(opening.end.x)) / 2,
+            y: (Number(opening.start.y) + Number(opening.end.y)) / 2,
+          },
+    };
+  }
+
+  if (hasUsableOpeningSegment(candidate?.start, candidate?.end)) {
+    return {
+      start: candidate.start,
+      end: candidate.end,
+      center: isFiniteGeometryPoint(candidate?.center)
+        ? candidate.center
+        : {
+            x: (Number(candidate.start.x) + Number(candidate.end.x)) / 2,
+            y: (Number(candidate.start.y) + Number(candidate.end.y)) / 2,
+          },
+    };
+  }
+
+  const center = isFiniteGeometryPoint(candidate?.center)
+    ? candidate.center
+    : isFiniteGeometryPoint(opening?.center)
+      ? opening.center
+      : isFiniteGeometryPoint(room?.center)
+        ? room.center
+        : { x: 0, y: 0 };
+  const halfWidth = Math.max(1, safeDeductionValue(widthMm)) / 2;
+  return {
+    start: { x: center.x - halfWidth, y: center.y },
+    end: { x: center.x + halfWidth, y: center.y },
+    center,
+  };
+};
+
+const getOpeningDeductionQuantity = (opening, layerName) => {
+  const mode = classifyQuantityLayer(layerName).mode;
+  const count = Math.max(1, Number(opening?.quantity || 1));
+  if (['length', 'reference'].includes(mode)) {
+    return (safeDeductionValue(opening?.widthMm) / 1000) * count;
+  }
+  return safeDeductionValue(
+    opening?.areaM2 || calculateOpeningAreaM2(opening?.widthMm, opening?.heightMm, count),
+  );
+};
+
+const normalizeOpeningRow = (row) => ({
+  openingId: row.id || null,
+  openingKey: row.opening_key,
+  roomKey: row.room_key,
+  openingType: row.opening_type,
+  openingName: row.opening_name || '',
+  widthMm: Number(row.width_mm || 0),
+  heightMm: Number(row.height_mm || 0),
+  quantity: Number(row.quantity || 1),
+  areaM2: Number(row.area_m2 || 0),
+  start: { x: Number(row.start_x || 0), y: Number(row.start_y || 0) },
+  end: { x: Number(row.end_x || 0), y: Number(row.end_y || 0) },
+  center: { x: Number(row.center_x || 0), y: Number(row.center_y || 0) },
+  appliedLayers: Array.isArray(row.applied_layers) ? row.applied_layers : [],
+});
 
 const simpleHash = (value) => {
   let hash = 2166136261;
@@ -245,7 +390,8 @@ const extractDrawingRooms = (analysis) => {
   const rooms = analysis.entities
     .filter(
       (entity) =>
-        isCeilingAreaLayer(entity.layer) &&
+        !entity.renderOnly &&
+        isRoomAreaLayer(entity.layer) &&
         ['LWPOLYLINE', 'POLYLINE'].includes(entity.type) &&
         entity.closed &&
         (entity.geometry?.vertices || []).length >= 3 &&
@@ -271,6 +417,626 @@ const extractDrawingRooms = (analysis) => {
     });
 
   return rooms.map((room, index) => ({ ...room, sortOrder: index + 1 }));
+};
+
+
+const polygonBoundaryDistance = (point, polygon = []) => {
+  if (!point || polygon.length < 2) return Number.POSITIVE_INFINITY;
+  let minimum = Number.POSITIVE_INFINITY;
+  for (let index = 0; index < polygon.length; index += 1) {
+    minimum = Math.min(
+      minimum,
+      pointToSegmentDistance(point, polygon[index], polygon[(index + 1) % polygon.length]),
+    );
+  }
+  return minimum;
+};
+
+const findNearestRoomForPoint = (point, rooms = [], maxDistance = Number.POSITIVE_INFINITY) => {
+  if (!point || !rooms.length) return null;
+  const containing = rooms.filter(
+    (room) => isPointInsidePolygon(point, room.points || []) || polygonBoundaryDistance(point, room.points || []) <= 1,
+  );
+  const candidates = containing.length ? containing : rooms;
+  const ranked = candidates
+    .map((room) => ({
+      room,
+      distance: containing.length
+        ? distanceBetweenPoints(point, room.center)
+        : polygonBoundaryDistance(point, room.points || []),
+    }))
+    .sort((left, right) => left.distance - right.distance);
+  if (!ranked.length || ranked[0].distance > maxDistance) return null;
+  return ranked[0].room;
+};
+
+// 창호·도어 주기가 실과 실 사이에 있으면 양쪽 실에 공제되도록 연결한다.
+// 외벽 창호는 한 실만, 내부 도어는 최대 두 실까지 자동 연결한다.
+const findAdjacentRoomKeysForOpening = ({
+  point,
+  widthMm = 0,
+  rooms = [],
+  primaryRoomKey = '',
+}) => {
+  if (!point || !rooms.length) return primaryRoomKey ? [primaryRoomKey] : [];
+
+  const width = Math.max(1, safeDeductionValue(widthMm));
+  const boundaryLimit = Math.max(100, Math.min(460, width * 0.45));
+  const probeRadius = Math.max(90, Math.min(360, width * 0.32));
+  const probePoints = [point];
+  [0.35, 0.7, 1].forEach((ratio) => {
+    for (let index = 0; index < 8; index += 1) {
+      const angle = (Math.PI * 2 * index) / 8;
+      probePoints.push({
+        x: Number(point.x) + Math.cos(angle) * probeRadius * ratio,
+        y: Number(point.y) + Math.sin(angle) * probeRadius * ratio,
+      });
+    }
+  });
+
+  const rows = rooms
+    .map((room) => {
+      const points = room.points || [];
+      const inside = isPointInsidePolygon(point, points);
+      const boundaryDistance = polygonBoundaryDistance(point, points);
+      const probeHits = probePoints.reduce(
+        (count, probe) => count + (isPointInsidePolygon(probe, points) ? 1 : 0),
+        0,
+      );
+      return { room, inside, boundaryDistance, probeHits };
+    })
+    .filter(
+      (row) =>
+        row.room.roomKey === primaryRoomKey ||
+        row.inside ||
+        row.probeHits > 0 ||
+        row.boundaryDistance <= boundaryLimit,
+    )
+    .sort((left, right) => {
+      const leftPrimary = left.room.roomKey === primaryRoomKey ? 1 : 0;
+      const rightPrimary = right.room.roomKey === primaryRoomKey ? 1 : 0;
+      if (leftPrimary !== rightPrimary) return rightPrimary - leftPrimary;
+      if (left.probeHits !== right.probeHits) return right.probeHits - left.probeHits;
+      if (left.inside !== right.inside) return Number(right.inside) - Number(left.inside);
+      return left.boundaryDistance - right.boundaryDistance;
+    });
+
+  const result = [];
+  const pushRoom = (roomKey) => {
+    const key = String(roomKey || '').trim();
+    if (key && !result.includes(key)) result.push(key);
+  };
+  pushRoom(primaryRoomKey);
+
+  rows.forEach((row) => {
+    if (result.length >= 2) return;
+    if (row.room.roomKey === primaryRoomKey) return;
+    const sharedBoundary = row.boundaryDistance <= Math.min(140, boundaryLimit * 0.4);
+    const probedAcrossOpening = row.probeHits >= 2;
+    if (sharedBoundary || probedAcrossOpening || row.inside) pushRoom(row.room.roomKey);
+  });
+
+  if (!result.length && rows[0]) pushRoom(rows[0].room.roomKey);
+  return result.slice(0, 2);
+};
+
+// 실별 물량은 화면 표시용 OFFSET/확장 사각형과 완전히 분리한다.
+// WL-실면적의 실제 폐합 PL을 기준으로 하되, 마감선이 실 경계의 벽체 두께 영역에 놓인 경우에는
+// 해당 선과 가장 가까운 실제 WL-실면적 경계의 방향·실 안쪽 방향을 함께 확인해 배분한다.
+// 다른 실 내부에 이미 들어간 선은 그 실을 최우선으로 확정하므로 표시용 OFFSET처럼 인접 실 물량이 섞이지 않는다.
+const closestPointOnSegment = (point, start, end) => {
+  const dx = Number(end?.x || 0) - Number(start?.x || 0);
+  const dy = Number(end?.y || 0) - Number(start?.y || 0);
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared <= 1e-9) {
+    return { x: Number(start?.x || 0), y: Number(start?.y || 0), ratio: 0 };
+  }
+  const ratio = Math.max(
+    0,
+    Math.min(
+      1,
+      ((Number(point?.x || 0) - Number(start?.x || 0)) * dx +
+        (Number(point?.y || 0) - Number(start?.y || 0)) * dy) /
+        lengthSquared,
+    ),
+  );
+  return {
+    x: Number(start?.x || 0) + dx * ratio,
+    y: Number(start?.y || 0) + dy * ratio,
+    ratio,
+  };
+};
+
+const nearestPolygonBoundaryInfo = (point, polygon = []) => {
+  if (!point || polygon.length < 2) return null;
+  let nearest = null;
+  for (let index = 0; index < polygon.length; index += 1) {
+    const start = polygon[index];
+    const end = polygon[(index + 1) % polygon.length];
+    const closest = closestPointOnSegment(point, start, end);
+    const distance = distanceBetweenPoints(point, closest);
+    if (!nearest || distance < nearest.distance) {
+      nearest = { start, end, closest, distance };
+    }
+  }
+  return nearest;
+};
+
+const findRoomForLinearSample = ({
+  point,
+  segmentStart,
+  segmentEnd,
+  rooms = [],
+  boundaryTolerance = 1.5,
+  associationTolerance = 220,
+}) => {
+  if (!point || !rooms.length) return null;
+
+  const tolerance = Math.max(0.1, Number(boundaryTolerance || 0));
+  const processDx = Number(segmentEnd?.x || 0) - Number(segmentStart?.x || 0);
+  const processDy = Number(segmentEnd?.y || 0) - Number(segmentStart?.y || 0);
+  const processLength = Math.hypot(processDx, processDy) || 1;
+  const processTangent = { x: processDx / processLength, y: processDy / processLength };
+
+  const rows = rooms.map((room) => {
+    const points = room.points || [];
+    const inside = isPointInsidePolygon(point, points);
+    const boundaryInfo = nearestPolygonBoundaryInfo(point, points);
+    return {
+      room,
+      inside,
+      boundaryInfo,
+      boundaryDistance: boundaryInfo?.distance ?? Number.POSITIVE_INFINITY,
+      probeScore: 0,
+    };
+  });
+
+  // 선의 표본점이 실제 WL-실면적 내부라면 그 실을 즉시 확정한다.
+  // 이 규칙 때문에 인접 실 내부의 몰딩·걸레받이가 선택 실로 넘어오지 않는다.
+  const insideRows = rows.filter((row) => row.inside);
+  if (insideRows.length) {
+    insideRows.sort((left, right) => {
+      if (left.boundaryDistance !== right.boundaryDistance) {
+        return right.boundaryDistance - left.boundaryDistance;
+      }
+      return distanceBetweenPoints(point, left.room.center) - distanceBetweenPoints(point, right.room.center);
+    });
+    return insideRows[0].room;
+  }
+
+  // 실제 경계 위에 놓인 선은 선의 양쪽을 짧게 확인해 어느 실 안쪽에 접하는지 판정한다.
+  const exactBoundaryRows = rows.filter((row) => row.boundaryDistance <= tolerance);
+  if (exactBoundaryRows.length) {
+    const normal = { x: -processTangent.y, y: processTangent.x };
+    const probeDistances = [Math.max(tolerance * 2, 1), 4, 12, 28];
+    exactBoundaryRows.forEach((row) => {
+      probeDistances.forEach((probeDistance) => {
+        const firstProbe = {
+          x: Number(point.x) + normal.x * probeDistance,
+          y: Number(point.y) + normal.y * probeDistance,
+        };
+        const secondProbe = {
+          x: Number(point.x) - normal.x * probeDistance,
+          y: Number(point.y) - normal.y * probeDistance,
+        };
+        if (isPointInsidePolygon(firstProbe, row.room.points || [])) row.probeScore += 1;
+        if (isPointInsidePolygon(secondProbe, row.room.points || [])) row.probeScore += 1;
+      });
+    });
+    exactBoundaryRows.sort((left, right) => {
+      if (left.probeScore !== right.probeScore) return right.probeScore - left.probeScore;
+      if (left.boundaryDistance !== right.boundaryDistance) return left.boundaryDistance - right.boundaryDistance;
+      return distanceBetweenPoints(point, left.room.center) - distanceBetweenPoints(point, right.room.center);
+    });
+    return exactBoundaryRows[0].room;
+  }
+
+  // 단열·석고·몰딩처럼 실제 선이 벽체 두께만큼 WL-실면적 경계 밖에 있는 경우를 처리한다.
+  // 단순한 사각형 확장이 아니라 가장 가까운 실제 경계선과의 평행도 및 실 안쪽 진입 여부를 확인한다.
+  const nearbyRows = rows
+    .filter((row) => row.boundaryInfo && row.boundaryDistance <= Math.max(20, associationTolerance))
+    .map((row) => {
+      const boundaryDx = Number(row.boundaryInfo.end?.x || 0) - Number(row.boundaryInfo.start?.x || 0);
+      const boundaryDy = Number(row.boundaryInfo.end?.y || 0) - Number(row.boundaryInfo.start?.y || 0);
+      const boundaryLength = Math.hypot(boundaryDx, boundaryDy) || 1;
+      const boundaryTangent = { x: boundaryDx / boundaryLength, y: boundaryDy / boundaryLength };
+      const parallelScore = Math.abs(
+        processTangent.x * boundaryTangent.x + processTangent.y * boundaryTangent.y,
+      );
+      if (parallelScore < 0.5) return null;
+
+      const normalA = { x: -boundaryTangent.y, y: boundaryTangent.x };
+      const normalB = { x: boundaryTangent.y, y: -boundaryTangent.x };
+      const inwardTestDistances = [2, 8, 20, 45];
+      const scoreNormal = (normal) =>
+        inwardTestDistances.reduce((score, distance) => {
+          const probe = {
+            x: Number(row.boundaryInfo.closest.x) + normal.x * distance,
+            y: Number(row.boundaryInfo.closest.y) + normal.y * distance,
+          };
+          return score + (isPointInsidePolygon(probe, row.room.points || []) ? 1 : 0);
+        }, 0);
+      const scoreA = scoreNormal(normalA);
+      const scoreB = scoreNormal(normalB);
+      const inwardNormal = scoreA >= scoreB ? normalA : normalB;
+      const inwardScore = Math.max(scoreA, scoreB);
+      if (!inwardScore) return null;
+
+      const enterDistances = [
+        row.boundaryDistance + 2,
+        row.boundaryDistance + 10,
+        row.boundaryDistance + 30,
+        row.boundaryDistance + 70,
+      ];
+      const enterScore = enterDistances.reduce((score, distance) => {
+        const probe = {
+          x: Number(point.x) + inwardNormal.x * distance,
+          y: Number(point.y) + inwardNormal.y * distance,
+        };
+        return score + (isPointInsidePolygon(probe, row.room.points || []) ? 1 : 0);
+      }, 0);
+      if (!enterScore) return null;
+
+      return {
+        ...row,
+        parallelScore,
+        enterScore,
+        score:
+          row.boundaryDistance +
+          (1 - parallelScore) * 140 -
+          inwardScore * 5 -
+          enterScore * 10,
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.score - right.score);
+
+  return nearbyRows[0]?.room || null;
+};
+
+const splitLinearSegmentByRoom = ({
+  start,
+  end,
+  rooms = [],
+  boundaryTolerance = 1.5,
+  associationTolerance = 220,
+  maxPartLength = 120,
+}) => {
+  const segmentLength = distanceBetweenPoints(start, end);
+  if (!Number.isFinite(segmentLength) || segmentLength <= 0.001) return [];
+  const sampleCount = Math.max(1, Math.ceil(segmentLength / Math.max(20, maxPartLength)));
+  const runs = [];
+
+  for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
+    const startRatio = sampleIndex / sampleCount;
+    const endRatio = (sampleIndex + 1) / sampleCount;
+    const partStart = {
+      x: Number(start.x) + (Number(end.x) - Number(start.x)) * startRatio,
+      y: Number(start.y) + (Number(end.y) - Number(start.y)) * startRatio,
+    };
+    const partEnd = {
+      x: Number(start.x) + (Number(end.x) - Number(start.x)) * endRatio,
+      y: Number(start.y) + (Number(end.y) - Number(start.y)) * endRatio,
+    };
+    const samplePoint = {
+      x: (partStart.x + partEnd.x) / 2,
+      y: (partStart.y + partEnd.y) / 2,
+    };
+    const room = findRoomForLinearSample({
+      point: samplePoint,
+      segmentStart: start,
+      segmentEnd: end,
+      rooms,
+      boundaryTolerance,
+      associationTolerance,
+    });
+    const roomKey = room?.roomKey || '';
+    const partLength = distanceBetweenPoints(partStart, partEnd);
+    const previous = runs[runs.length - 1];
+    if (previous && previous.roomKey === roomKey) {
+      previous.end = partEnd;
+      previous.lengthMm += partLength;
+    } else {
+      runs.push({ roomKey, room, start: partStart, end: partEnd, lengthMm: partLength });
+    }
+  }
+
+  return runs;
+};
+
+const parseScheduleDimension = (text) => {
+  const match = String(text || '')
+    .trim()
+    .match(/^(\d+(?:\.\d+)?)\s*[xX×]\s*(\d+(?:\.\d+)?)$/);
+  if (!match) return null;
+  const widthM = Number(match[1]);
+  const heightM = Number(match[2]);
+  if (!Number.isFinite(widthM) || !Number.isFinite(heightM) || widthM <= 0 || heightM <= 0) return null;
+  return { widthMm: widthM * 1000, heightMm: heightM * 1000 };
+};
+
+const extractScheduleDeductionCandidates = (analysis, rooms = []) => {
+  if (!analysis?.entities?.length || !rooms.length) return [];
+  const markers = analysis.entities
+    .filter(
+      (entity) =>
+        entity.type === 'INSERT' &&
+        String(entity.geometry?.blockName || '').replace(/\s+/g, '').includes('창호기호'),
+    )
+    .map((entity) => ({ entity, point: entity.geometry?.point }))
+    .filter((item) => item.point)
+    .sort((left, right) => {
+      if (Math.abs(left.point.y - right.point.y) > 1) return right.point.y - left.point.y;
+      return left.point.x - right.point.x;
+    });
+
+  const annotationTexts = analysis.entities
+    .filter(
+      (entity) =>
+        ['TEXT', 'MTEXT'].includes(entity.type) &&
+        String(entity.layer || '').replace(/\s+/g, '').includes('창호기호') &&
+        String(entity.geometry?.text || '').trim(),
+    )
+    .map((entity) => ({
+      entity,
+      point: entity.geometry?.point,
+      text: String(entity.geometry?.text || '').trim(),
+      dimension: parseScheduleDimension(entity.geometry?.text),
+    }))
+    .filter((item) => item.point);
+
+  const dimensions = annotationTexts.filter((item) => item.dimension);
+  const labels = annotationTexts.filter((item) => !item.dimension);
+  if (!markers.length || !dimensions.length || !labels.length) return [];
+
+  const usedDimensions = new Set();
+  const usedLabels = new Set();
+  const labelCounts = {};
+  const result = [];
+  const matchLimit = Math.max(380, Math.min(650, Math.max(analysis.bounds?.width || 0, analysis.bounds?.height || 0) * 0.055));
+
+  const nearestUnused = (items, used, point) =>
+    items
+      .map((item, index) => ({ item, index, distance: distanceBetweenPoints(point, item.point) }))
+      .filter((entry) => !used.has(entry.index) && entry.distance <= matchLimit)
+      .sort((left, right) => left.distance - right.distance)[0] || null;
+
+  markers.forEach(({ entity, point }) => {
+    const dimensionMatch = nearestUnused(dimensions, usedDimensions, point);
+    const labelMatch = nearestUnused(labels, usedLabels, point);
+    if (!dimensionMatch || !labelMatch) return;
+    usedDimensions.add(dimensionMatch.index);
+    usedLabels.add(labelMatch.index);
+
+    const room = findNearestRoomForPoint(point, rooms);
+    if (!room) return;
+    const code = labelMatch.item.text.replace(/\s+/g, '') || '공제';
+    labelCounts[code] = (labelCounts[code] || 0) + 1;
+    const ordinal = labelCounts[code];
+    const widthMm = dimensionMatch.item.dimension.widthMm;
+    const heightMm = dimensionMatch.item.dimension.heightMm;
+    const halfWidth = widthMm / 2;
+    const openingKey = `schedule-${simpleHash(`${entity.geometry?.blockName}|${roundedCoordinate(point.x)}|${roundedCoordinate(point.y)}|${code}|${widthMm}|${heightMm}`)}`;
+    const roomKeys = findAdjacentRoomKeysForOpening({
+      point,
+      widthMm,
+      rooms,
+      primaryRoomKey: room.roomKey,
+    });
+
+    result.push({
+      openingId: null,
+      openingKey,
+      roomKey: room.roomKey,
+      roomKeys,
+      openingType: 'window',
+      openingName: `${code}-${ordinal}`,
+      widthMm,
+      heightMm,
+      quantity: 1,
+      areaM2: calculateOpeningAreaM2(widthMm, heightMm, 1),
+      start: { x: point.x - halfWidth, y: point.y },
+      end: { x: point.x + halfWidth, y: point.y },
+      center: { x: point.x, y: point.y },
+      appliedLayers: [],
+    });
+  });
+
+  return result;
+};
+
+const buildRoomLayerLengths = (analysis, rooms = []) => {
+  const totals = Object.fromEntries(rooms.map((room) => [room.roomKey, {}]));
+  if (!analysis?.entities?.length || !rooms.length) return totals;
+  const drawingSpan = Math.max(analysis.bounds?.width || 0, analysis.bounds?.height || 0);
+  const boundaryTolerance = Math.max(0.5, Math.min(2.5, drawingSpan * 0.00005));
+  const associationTolerance = Math.max(220, Math.min(300, drawingSpan * 0.008));
+
+  analysis.entities
+    .filter((entity) => !entity.renderOnly && String(entity.layer || '').trim().startsWith('WL-'))
+    .forEach((entity) => {
+      const mode = classifyQuantityLayer(entity.layer).mode;
+      if (mode === 'closed_area' || mode === 'room_boundary') return;
+      getEntityLineGroups(entity).forEach((points) => {
+        for (let index = 1; index < points.length; index += 1) {
+          const runs = splitLinearSegmentByRoom({
+            start: points[index - 1],
+            end: points[index],
+            rooms,
+            boundaryTolerance,
+            associationTolerance,
+          });
+          runs.forEach((run) => {
+            if (!run.roomKey || !totals[run.roomKey]) return;
+            totals[run.roomKey][entity.layer] =
+              (totals[run.roomKey][entity.layer] || 0) + run.lengthMm;
+          });
+        }
+      });
+    });
+  return totals;
+};
+
+const buildRoomProcessHighlightEntities = ({
+  analysis,
+  rooms = [],
+  selectedRoomKey = '',
+  layerNames = [],
+}) => {
+  if (!analysis?.entities?.length || !selectedRoomKey || !rooms.length || !layerNames.length) return [];
+  const layerSet = new Set(layerNames.map((value) => String(value || '').trim()).filter(Boolean));
+  const drawingSpan = Math.max(analysis.bounds?.width || 0, analysis.bounds?.height || 0);
+  const boundaryTolerance = Math.max(0.5, Math.min(2.5, drawingSpan * 0.00005));
+  const associationTolerance = Math.max(220, Math.min(300, drawingSpan * 0.008));
+  const result = [];
+
+  analysis.entities.forEach((entity, entityIndex) => {
+    const layer = String(entity.layer || '').trim();
+    if (entity.renderOnly || !layerSet.has(layer)) return;
+    const mode = classifyQuantityLayer(layer).mode;
+    if (mode === 'room_boundary') return;
+
+    if (mode === 'closed_area') {
+      const center = getClosedEntityCenter(entity);
+      if (!center) return;
+      const room = rooms.find(
+        (candidate) =>
+          isPointInsidePolygon(center, candidate.points || []) ||
+          polygonBoundaryDistance(center, candidate.points || []) <= 2.5,
+      );
+      if (room?.roomKey === selectedRoomKey) result.push(entity);
+      return;
+    }
+
+    getEntityLineGroups(entity).forEach((points, groupIndex) => {
+      for (let index = 1; index < points.length; index += 1) {
+        const runs = splitLinearSegmentByRoom({
+          start: points[index - 1],
+          end: points[index],
+          rooms,
+          boundaryTolerance,
+          associationTolerance,
+        });
+        runs.forEach((run, runIndex) => {
+          if (run.roomKey !== selectedRoomKey || run.lengthMm <= 0.001) return;
+          result.push({
+            ...entity,
+            type: 'LINE',
+            closed: false,
+            lengthMm: run.lengthMm,
+            areaMm2: 0,
+            geometry: { start: run.start, end: run.end },
+            __roomHighlightKey: `${entityIndex}-${groupIndex}-${index}-${runIndex}`,
+          });
+        });
+      }
+    });
+  });
+
+  return result;
+};
+
+const getClosedEntityCenter = (entity) => {
+  const vertices = entity?.geometry?.vertices || entity?.geometry?.paths?.[0]?.vertices || [];
+  if (vertices.length >= 3) return polygonCentroid(vertices);
+  if (entity?.geometry?.center) return entity.geometry.center;
+  if (entity?.geometry?.point) return entity.geometry.point;
+  return null;
+};
+
+const buildRoomClosedAreas = (analysis, rooms = []) => {
+  const totals = Object.fromEntries(rooms.map((room) => [room.roomKey, {}]));
+  if (!analysis?.entities?.length || !rooms.length) return totals;
+  const maxAssignDistance = Math.max(300, Math.min(900, Math.max(analysis.bounds?.width || 0, analysis.bounds?.height || 0) * 0.05));
+
+  analysis.entities
+    .filter((entity) => {
+      if (entity.renderOnly || Number(entity.areaMm2 || 0) <= 0) return false;
+      if (isRoomAreaLayer(entity.layer)) return false;
+      return classifyQuantityLayer(entity.layer).mode === 'closed_area';
+    })
+    .forEach((entity) => {
+      const center = getClosedEntityCenter(entity);
+      if (!center) return;
+      const room = findNearestRoomForPoint(center, rooms, maxAssignDistance);
+      if (!room) return;
+      totals[room.roomKey][entity.layer] =
+        (totals[room.roomKey][entity.layer] || 0) + formatSquareMeters(entity.areaMm2 || 0);
+    });
+
+  return totals;
+};
+
+const buildRoomQuantityRows = ({
+  analysis,
+  rooms = [],
+  roomSettings = {},
+  openings = [],
+  heightSettings = {},
+}) => {
+  if (!analysis || !rooms.length) return {};
+  const roomLayerLengths = buildRoomLayerLengths(analysis, rooms);
+  const roomClosedAreas = buildRoomClosedAreas(analysis, rooms);
+  const layers = sortLayersByDefaultOrder(
+    (analysis.activeLayers || []).filter(
+      (layer) => classifyQuantityLayer(layer.layer).mode !== 'room_boundary',
+    ),
+  );
+  const rowsByRoom = {};
+
+  rooms.forEach((room) => {
+    rowsByRoom[room.roomKey] = layers.map((layer) => {
+      const rule = classifyQuantityLayer(layer.layer);
+      const lengthM = formatMeters(roomLayerLengths[room.roomKey]?.[layer.layer] || 0);
+      let grossQuantity = null;
+      let unit = '-';
+      let status = '';
+
+      if (rule.mode === 'length_to_area') {
+        const heightMm = safeHeightValue(heightSettings[layer.layer]);
+        unit = '㎡';
+        grossQuantity = heightMm > 0 ? lengthM * (heightMm / 1000) : null;
+        status = heightMm > 0 ? '' : '높이 입력 필요';
+      } else if (rule.mode === 'closed_area') {
+        unit = '㎡';
+        grossQuantity = roomClosedAreas[room.roomKey]?.[layer.layer] || 0;
+      } else if (['length', 'reference'].includes(rule.mode)) {
+        unit = 'M';
+        grossQuantity = lengthM;
+      } else if (rule.mode === 'pending') {
+        status = '산출규칙 미설정';
+      }
+
+      const directDeductionM2 = unit === '㎡'
+        ? safeDeductionValue(roomSettings[room.roomKey]?.deductions?.[layer.layer])
+        : 0;
+      const drawingDeductionM2 = openings
+        .filter(
+          (opening) =>
+            openingBelongsToRoom(opening, room.roomKey) &&
+            (opening.appliedLayers || []).includes(layer.layer),
+        )
+        .reduce((sum, opening) => sum + getOpeningDeductionQuantity(opening, layer.layer), 0);
+      const deductionM2 = directDeductionM2 + drawingDeductionM2;
+      const quantity = ['㎡', 'M'].includes(unit) && grossQuantity !== null
+        ? Math.max(0, grossQuantity - deductionM2)
+        : grossQuantity;
+
+      return {
+        layer: layer.layer,
+        rule,
+        grossQuantity,
+        unit,
+        status,
+        directDeductionM2,
+        drawingDeductionM2,
+        deductionM2,
+        quantity,
+      };
+    });
+  });
+
+  return rowsByRoom;
 };
 
 
@@ -367,11 +1133,16 @@ const entityGeometryKey = (entity) => {
   return `${layer}|${entity.type}|${entity.handle || ''}|${geometryPointKey(geometry.point)}`;
 };
 
-const dedupeSelectedLayerEntities = (entities = [], selectedLayer = '') => {
-  if (!selectedLayer) return entities;
+const dedupeSelectedLayerEntities = (entities = [], selectedLayer = '', highlightedLayers = []) => {
+  const targetLayers = new Set(
+    [selectedLayer, ...(Array.isArray(highlightedLayers) ? highlightedLayers : [])]
+      .map((value) => String(value || '').trim())
+      .filter(Boolean),
+  );
+  if (!targetLayers.size) return entities;
   const seen = new Set();
   return entities.filter((entity) => {
-    if (String(entity.layer || '').trim() !== selectedLayer) return true;
+    if (!targetLayers.has(String(entity.layer || '').trim())) return true;
     const key = entityGeometryKey(entity);
     if (seen.has(key)) return false;
     seen.add(key);
@@ -434,6 +1205,87 @@ const projectPointToSegment = (point, start, end) => {
 const pointToSegmentDistance = (point, start, end) =>
   projectPointToSegment(point, start, end).distance;
 
+const buildOpeningLayerCandidates = (analysis, processLayers = [], capturePoints = []) => {
+  if (!analysis?.entities?.length || capturePoints.length < 2 || !processLayers.length) return [];
+  const start = capturePoints[0];
+  const end = capturePoints[1];
+  const openingLength = distanceBetweenPoints(start, end);
+  if (!Number.isFinite(openingLength) || openingLength <= 0.001) return [];
+
+  const tolerance = Math.max(180, Math.min(320, openingLength * 0.08));
+  const centerTolerance = Math.max(140, Math.min(300, openingLength * 0.24));
+  const centerPoint = {
+    x: (Number(start.x) + Number(end.x)) / 2,
+    y: (Number(start.y) + Number(end.y)) / 2,
+  };
+  const sampleCount = Math.max(9, Math.min(31, Math.ceil(openingLength / 220) + 1));
+  const samples = Array.from({ length: sampleCount }, (_unused, index) => {
+    const ratio = sampleCount <= 1 ? 0 : index / (sampleCount - 1);
+    return {
+      x: Number(start.x) + (Number(end.x) - Number(start.x)) * ratio,
+      y: Number(start.y) + (Number(end.y) - Number(start.y)) * ratio,
+    };
+  });
+
+  const entitiesByLayer = new Map(processLayers.map((layer) => [layer.layer, []]));
+  (analysis.entities || []).forEach((entity) => {
+    const layerName = String(entity.layer || '').trim();
+    if (!entitiesByLayer.has(layerName)) return;
+    const groups = getEntityLineGroups(entity).filter((points) => points.length > 1);
+    if (groups.length) entitiesByLayer.get(layerName).push(...groups);
+  });
+
+  return processLayers
+    .map((layer) => {
+      const lineGroups = entitiesByLayer.get(layer.layer) || [];
+      if (!lineGroups.length) return null;
+      const sampleDistances = samples.map((sample) => {
+        let minimum = Number.POSITIVE_INFINITY;
+        lineGroups.forEach((points) => {
+          for (let index = 1; index < points.length; index += 1) {
+            minimum = Math.min(minimum, pointToSegmentDistance(sample, points[index - 1], points[index]));
+          }
+        });
+        return minimum;
+      });
+      const coveredCount = sampleDistances.filter((distance) => distance <= tolerance).length;
+      const coverage = coveredCount / sampleDistances.length;
+      const minimumDistance = Math.min(...sampleDistances);
+      let centerDistance = Number.POSITIVE_INFINITY;
+      lineGroups.forEach((points) => {
+        for (let index = 1; index < points.length; index += 1) {
+          centerDistance = Math.min(
+            centerDistance,
+            pointToSegmentDistance(centerPoint, points[index - 1], points[index]),
+          );
+        }
+      });
+      const minimumIndex = sampleDistances.indexOf(minimumDistance);
+      const endpointHits = [sampleDistances[0], sampleDistances[sampleDistances.length - 1]].filter(
+        (distance) => distance <= tolerance,
+      ).length;
+      const endpointBand = Math.max(1, Math.ceil(sampleDistances.length * 0.2));
+      const closestPointIsNearEnd =
+        minimumIndex <= endpointBand || minimumIndex >= sampleDistances.length - 1 - endpointBand;
+      const detected =
+        coverage >= 0.28 ||
+        (coverage >= 0.18 && minimumDistance <= tolerance * 0.35) ||
+        (coverage >= 0.08 && closestPointIsNearEnd && minimumDistance <= tolerance * 0.35) ||
+        (endpointHits === 2 && minimumDistance <= tolerance) ||
+        centerDistance <= centerTolerance;
+      if (!detected) return null;
+      return {
+        layer: layer.layer,
+        displayName: layerDisplayName(layer.layer),
+        coverage,
+        minimumDistance,
+        centerDistance,
+        tolerance,
+      };
+    })
+    .filter(Boolean);
+};
+
 const isPointInsidePolygon = (point, points = []) => {
   let inside = false;
   for (let index = 0, previous = points.length - 1; index < points.length; previous = index++) {
@@ -448,6 +1300,30 @@ const isPointInsidePolygon = (point, points = []) => {
     if (intersects) inside = !inside;
   }
   return inside;
+};
+
+
+
+// 선택 실 표시는 실제 굴곡선을 그대로 따라가지 않고, 실 전체를 감싸는 사각형으로 단순화한다.
+// 복잡한 L자·다각형 실에서도 공정선과 경계선이 겹치지 않도록 CAD의 바깥 OFFSET처럼 여유를 둔다.
+const expandedRoomRectangle = (points = [], distance = 0) => {
+  const source = points.filter(
+    (point) => Number.isFinite(Number(point?.x)) && Number.isFinite(Number(point?.y)),
+  );
+  if (!source.length) return source;
+  const xs = source.map((point) => Number(point.x));
+  const ys = source.map((point) => Number(point.y));
+  const margin = Number.isFinite(Number(distance)) ? Math.max(0, Number(distance)) : 0;
+  const minX = Math.min(...xs) - margin;
+  const maxX = Math.max(...xs) + margin;
+  const minY = Math.min(...ys) - margin;
+  const maxY = Math.max(...ys) + margin;
+  return [
+    { x: minX, y: minY },
+    { x: maxX, y: minY },
+    { x: maxX, y: maxY },
+    { x: minX, y: maxY },
+  ];
 };
 
 const distanceToEntity = (point, entity) => {
@@ -582,13 +1458,30 @@ const buildEntityTooltip = (entity, heightSettings) => {
   };
 };
 
-const getEntityStyle = (entity, selectedLayer, patternId, displayMode = 'view') => {
+const getEntityStyle = (entity, selectedLayer, patternId, displayMode = 'view', highlightedLayers = [], highlightedLayerColors = {}) => {
   const layer = String(entity.layer || '').trim();
   const compact = layer.replace(/\s+/g, '').toUpperCase();
   const active = layer.startsWith('WL-');
-  const hasSelectedLayer = Boolean(selectedLayer);
-  const selected = hasSelectedLayer && selectedLayer === layer;
+  const highlightSet = new Set(
+    (Array.isArray(highlightedLayers) ? highlightedLayers : [])
+      .map((value) => String(value || '').trim())
+      .filter(Boolean),
+  );
+  const hasSelectedLayer = Boolean(selectedLayer) || highlightSet.size > 0;
+  const directlySelected = Boolean(selectedLayer) && selectedLayer === layer;
+  const highlighted = highlightSet.has(layer);
+  const selected = directlySelected || highlighted;
   const patternName = String(entity.geometry?.patternName || '').replace(/\s+/g, '').toUpperCase();
+
+  if (isRoomAreaLayer(layer)) {
+    return {
+      stroke: 'none',
+      fill: 'none',
+      opacity: 0,
+      strokeScale: 0,
+      pointerEnabled: false,
+    };
+  }
 
   if (active) {
     if (displayMode === 'preview') {
@@ -603,12 +1496,13 @@ const getEntityStyle = (entity, selectedLayer, patternId, displayMode = 'view') 
 
     if (selected) {
       return {
-        stroke: '#dc2626',
+        stroke: directlySelected
+          ? '#dc2626'
+          : String(highlightedLayerColors?.[layer] || '#dc2626'),
         fill: 'none',
         opacity: 1,
-        strokeScale: 1.25,
+        strokeScale: 1.45,
         pointerEnabled: true,
-        selectedRange: true,
       };
     }
 
@@ -685,12 +1579,14 @@ const DxfEntityShape = React.memo(function DxfEntityShape({
   entity,
   index,
   selectedLayer,
+  highlightedLayers = [],
+  highlightedLayerColors = {},
   baseStrokeWidth,
   patternId,
   displayMode,
 }) {
   const geometry = entity.geometry || {};
-  const style = getEntityStyle(entity, selectedLayer, patternId, displayMode);
+  const style = getEntityStyle(entity, selectedLayer, patternId, displayMode, highlightedLayers, highlightedLayerColors);
   const shapeProps = {
     fill: style.fill,
     stroke: style.stroke,
@@ -756,22 +1652,8 @@ const DxfEntityShape = React.memo(function DxfEntityShape({
 
   if (!shape) return null;
 
-  const isClosedRange = Boolean(entity.closed || entity.type === 'HATCH');
-  const selectedRangeShape = style.selectedRange
-    ? React.cloneElement(shape, {
-        stroke: '#bfdbfe',
-        fill: isClosedRange ? '#dbeafe' : 'none',
-        strokeWidth: isClosedRange
-          ? Math.max(1.2, baseStrokeWidth * 1.4)
-          : Math.max(20, baseStrokeWidth * 10),
-        opacity: 0.82,
-        pointerEvents: 'none',
-      })
-    : null;
-
   return (
     <g key={`${entity.type}-${entity.layer}-${index}`} opacity={style.opacity} pointerEvents="none">
-      {selectedRangeShape}
       {shape}
     </g>
   );
@@ -1021,24 +1903,64 @@ function MeasurementOverlay({
 const DrawingEntityScene = React.memo(function DrawingEntityScene({
   entities,
   selectedLayer,
+  highlightedLayers = [],
+  highlightedLayerColors = {},
   baseStrokeWidth,
   patternId,
   displayMode,
+  selectedRoomPoints = [],
+  roomClipId = '',
+  roomSelectedEntities = [],
 }) {
+  const selectionLayers = [
+    ...(selectedLayer ? [selectedLayer] : []),
+    ...(Array.isArray(highlightedLayers) ? highlightedLayers : []),
+  ]
+    .map((value) => String(value || '').trim())
+    .filter((value, index, values) => value && values.indexOf(value) === index);
+  const selectionSet = new Set(selectionLayers);
+  const roomProcessMode = Boolean(selectionLayers.length && selectedRoomPoints.length >= 3 && roomClipId);
+  const baseSelectionLayer = roomProcessMode ? '__ROOM_PROCESS_SELECTION__' : selectedLayer;
+  const baseHighlightedLayers = roomProcessMode ? [] : highlightedLayers;
+  const selectedLayerEntities = roomProcessMode
+    ? roomSelectedEntities
+    : [];
+
   return (
-    <g transform="scale(1,-1)">
-      {entities.map((entity, index) => (
-        <DxfEntityShape
-          key={`${entity.type}-${entity.layer}-${index}`}
-          entity={entity}
-          index={index}
-          selectedLayer={selectedLayer}
-          baseStrokeWidth={baseStrokeWidth}
-          patternId={patternId}
-          displayMode={displayMode}
-        />
-      ))}
-    </g>
+    <>
+      <g transform="scale(1,-1)">
+        {entities.map((entity, index) => (
+          <DxfEntityShape
+            key={`base-${entity.type}-${entity.layer}-${index}`}
+            entity={entity}
+            index={index}
+            selectedLayer={baseSelectionLayer}
+            highlightedLayers={baseHighlightedLayers}
+            highlightedLayerColors={highlightedLayerColors}
+            baseStrokeWidth={baseStrokeWidth}
+            patternId={patternId}
+            displayMode={displayMode}
+          />
+        ))}
+      </g>
+      {roomProcessMode && (
+        <g transform="scale(1,-1)">
+          {selectedLayerEntities.map((entity, index) => (
+            <DxfEntityShape
+              key={`room-${entity.__roomHighlightKey || `${entity.type}-${entity.layer}-${index}`}`}
+              entity={entity}
+              index={index}
+              selectedLayer=""
+              highlightedLayers={selectionLayers}
+              highlightedLayerColors={highlightedLayerColors}
+              baseStrokeWidth={baseStrokeWidth}
+              patternId={patternId}
+              displayMode={displayMode}
+            />
+          ))}
+        </g>
+      )}
+    </>
   );
 });
 
@@ -1047,26 +1969,50 @@ function RoomOverlay({
   rooms = [],
   roomSettings = {},
   selectedRoomKey = '',
-  onRoomSelect,
+  onRoomSelect = null,
   editable = false,
   showLabels = false,
   baseStrokeWidth = 1,
+  selectedOffsetDistance = 0,
 }) {
   if (!rooms.length) return null;
+  const hasSelectedRoom = rooms.some((room) => room.roomKey === selectedRoomKey);
   return (
     <g transform="scale(1,-1)">
       {rooms.map((room) => {
         const selected = selectedRoomKey === room.roomKey;
+        const dimmed = hasSelectedRoom && !selected;
         const roomName = String(roomSettings[room.roomKey]?.roomName || '').trim();
         const label = roomName ? `${room.sortOrder}. ${roomName}` : `${room.sortOrder}`;
+        const selectedOutlinePoints =
+          selected && selectedOffsetDistance > 0
+            ? expandedRoomRectangle(room.points, selectedOffsetDistance)
+            : room.points;
         return (
           <g key={room.roomKey}>
             <polygon
               points={pointList(room.points)}
-              fill={selected ? 'rgba(37,99,235,0.20)' : editable ? 'rgba(59,130,246,0.055)' : 'transparent'}
-              stroke={selected ? '#2563eb' : editable ? '#60a5fa' : 'transparent'}
-              strokeWidth={selected ? Math.max(baseStrokeWidth * 2.2, 1.8) : Math.max(baseStrokeWidth, 0.9)}
-              strokeDasharray={selected ? undefined : editable ? '7 5' : undefined}
+              fill={
+                selected
+                  ? 'rgba(37,99,235,0.075)'
+                  : dimmed
+                    ? 'rgba(100,116,139,0.17)'
+                    : editable
+                      ? 'rgba(59,130,246,0.055)'
+                      : 'transparent'
+              }
+              stroke={
+                selected
+                  ? 'transparent'
+                  : dimmed
+                    ? '#94a3b8'
+                    : editable
+                      ? '#60a5fa'
+                      : 'transparent'
+              }
+              strokeWidth={Math.max(baseStrokeWidth * (dimmed ? 0.72 : 1), dimmed ? 0.65 : 0.9)}
+              strokeDasharray={dimmed ? '6 6' : editable && !selected ? '7 5' : undefined}
+              opacity={dimmed ? 0.92 : 1}
               vectorEffect="non-scaling-stroke"
               pointerEvents={editable ? 'all' : 'none'}
               onClick={(event) => {
@@ -1077,9 +2023,21 @@ function RoomOverlay({
               }}
               style={{ cursor: editable ? 'pointer' : 'default' }}
             />
+            {selected && (
+              <polygon
+                points={pointList(selectedOutlinePoints)}
+                fill="none"
+                stroke="#2563eb"
+                strokeWidth={Math.max(baseStrokeWidth * 1.05, 0.95)}
+                strokeDasharray="7 6"
+                vectorEffect="non-scaling-stroke"
+                pointerEvents="none"
+              />
+            )}
             {(showLabels || editable) && (
               <g
                 pointerEvents="none"
+                opacity={dimmed ? 0.78 : 1}
                 transform={`translate(${room.center.x} ${room.center.y}) scale(1,-1) translate(${-room.center.x} ${-room.center.y})`}
               >
                 <rect
@@ -1088,8 +2046,8 @@ function RoomOverlay({
                   width={Math.max(360, label.length * 116)}
                   height={210}
                   rx={45}
-                  fill={selected ? '#2563eb' : 'rgba(255,255,255,0.90)'}
-                  stroke={selected ? '#1d4ed8' : '#94a3b8'}
+                  fill={selected ? '#2563eb' : dimmed ? 'rgba(226,232,240,0.94)' : 'rgba(255,255,255,0.90)'}
+                  stroke={selected ? '#1d4ed8' : dimmed ? '#94a3b8' : '#94a3b8'}
                   strokeWidth="1.2"
                   vectorEffect="non-scaling-stroke"
                 />
@@ -1098,7 +2056,7 @@ function RoomOverlay({
                   y={room.center.y + 4}
                   textAnchor="middle"
                   dominantBaseline="middle"
-                  fill={selected ? '#ffffff' : '#0f172a'}
+                  fill={selected ? '#ffffff' : dimmed ? '#475569' : '#0f172a'}
                   fontSize="132"
                   fontWeight="800"
                   vectorEffect="non-scaling-stroke"
@@ -1114,12 +2072,92 @@ function RoomOverlay({
   );
 }
 
+
+function OpeningOverlay({
+  openings = [],
+  selectedOpeningKey = '',
+  emphasizedOpeningKeys = null,
+  dimUnemphasized = false,
+  onOpeningSelect = null,
+  editable = false,
+  baseStrokeWidth = 1,
+}) {
+  if (!openings.length) return null;
+  const markerSize = Math.max(110, baseStrokeWidth * 95);
+  const emphasizedOpeningKeySet = Array.isArray(emphasizedOpeningKeys)
+    ? new Set(emphasizedOpeningKeys)
+    : null;
+  return (
+    <g transform="scale(1,-1)">
+      {openings.map((opening) => {
+        const selected = selectedOpeningKey === opening.openingKey;
+        const emphasized = selected || !dimUnemphasized || !emphasizedOpeningKeySet
+          || emphasizedOpeningKeySet.has(opening.openingKey);
+        const center = opening.center || {
+          x: (Number(opening.start?.x || 0) + Number(opening.end?.x || 0)) / 2,
+          y: (Number(opening.start?.y || 0) + Number(opening.end?.y || 0)) / 2,
+        };
+        const label = opening.openingName || '공제';
+        const hitWidth = Math.max(markerSize * 2.2, label.length * markerSize * 0.62);
+        const hitHeight = markerSize * 1.15;
+
+        return (
+          <g
+            key={opening.openingKey}
+            onClick={(event) => {
+              if (!editable || !onOpeningSelect) return;
+              event.preventDefault();
+              event.stopPropagation();
+              onOpeningSelect(opening.openingKey);
+            }}
+            style={{ cursor: editable ? 'pointer' : 'default' }}
+          >
+            {editable && (
+              <rect
+                x={center.x - hitWidth / 2}
+                y={center.y - hitHeight / 2}
+                width={hitWidth}
+                height={hitHeight}
+                fill="transparent"
+                pointerEvents="all"
+              />
+            )}
+            <g
+              pointerEvents="none"
+              transform={`translate(${center.x} ${center.y}) scale(1,-1) translate(${-center.x} ${-center.y})`}
+            >
+              <text
+                x={center.x}
+                y={center.y + markerSize * 0.12}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                fill={selected ? '#b91c1c' : emphasized ? '#dc2626' : '#94a3b8'}
+                stroke="#ffffff"
+                strokeWidth={selected ? '4' : emphasized ? '3' : '2.4'}
+                opacity={emphasized ? 1 : 0.82}
+                paintOrder="stroke"
+                vectorEffect="non-scaling-stroke"
+                fontSize={markerSize * 0.62}
+                fontWeight={emphasized ? '900' : '800'}
+              >
+                {label}
+              </text>
+            </g>
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
 function MeasurementMagnifier({
   centerPoint,
   snapPointValue,
   currentPoints,
   entities,
   selectedLayer,
+  highlightedLayers = [],
+  highlightedLayerColors = {},
   baseStrokeWidth,
   displayMode,
   currentViewBox,
@@ -1190,6 +2228,8 @@ function MeasurementMagnifier({
         <DrawingEntityScene
           entities={entities}
           selectedLayer={selectedLayer}
+          highlightedLayers={highlightedLayers}
+          highlightedLayerColors={highlightedLayerColors}
           baseStrokeWidth={baseStrokeWidth}
           patternId={patternId}
           displayMode={displayMode}
@@ -1259,22 +2299,34 @@ function DrawingCanvas({
   analysis,
   heightSettings,
   selectedLayer = '',
+  highlightedLayers = [],
+  highlightedLayerColors = {},
   interactive = false,
   displayMode = 'view',
   tooltipEnabled = false,
   rooms = [],
   roomSettings = {},
   selectedRoomKey = '',
-  onRoomSelect,
+  onRoomSelect = null,
   roomEditable = false,
   showRoomLabels = false,
+  openings = [],
+  selectedOpeningKey = '',
+  emphasizedOpeningKeys = null,
+  dimUnemphasizedOpenings = false,
+  onOpeningSelect = null,
+  openingEditable = false,
+  captureMode = false,
+  captureKind = '창호',
+  capturePoints = [],
+  onCapturePointsChange = null,
 }) {
   const svgRef = useRef(null);
   const dragRef = useRef(null);
   const fittedViewBox = useMemo(() => getFittedViewBox(analysis.bounds), [analysis.bounds]);
   const [currentViewBox, setCurrentViewBox] = useState(fittedViewBox);
   const [tooltip, setTooltip] = useState(null);
-  const [toolMode, setToolMode] = useState('pan');
+  const [toolMode, setToolMode] = useState(captureMode ? 'capture' : 'pan');
   const [measurements, setMeasurements] = useState([]);
   const [currentMeasurementPoints, setCurrentMeasurementPoints] = useState([]);
   const [hoverMeasurePoint, setHoverMeasurePoint] = useState(null);
@@ -1288,8 +2340,17 @@ function DrawingCanvas({
   );
 
   const renderedEntities = useMemo(
-    () => dedupeSelectedLayerEntities(analysis.entities || [], selectedLayer),
-    [analysis.entities, selectedLayer],
+    () => dedupeSelectedLayerEntities(analysis.entities || [], selectedLayer, highlightedLayers),
+    [analysis.entities, highlightedLayers, selectedLayer],
+  );
+
+  const selectedRoom = useMemo(
+    () => rooms.find((room) => room.roomKey === selectedRoomKey) || null,
+    [rooms, selectedRoomKey],
+  );
+  const roomClipId = useMemo(
+    () => `room-process-clip-${Math.random().toString(36).slice(2)}`,
+    [],
   );
 
   const selectedEntities = useMemo(
@@ -1298,6 +2359,17 @@ function DrawingCanvas({
         ? renderedEntities.filter((entity) => String(entity.layer || '').trim() === selectedLayer)
         : [],
     [renderedEntities, selectedLayer],
+  );
+
+  const roomSelectedEntities = useMemo(
+    () =>
+      buildRoomProcessHighlightEntities({
+        analysis,
+        rooms,
+        selectedRoomKey: selectedRoom?.roomKey || '',
+        layerNames: [selectedLayer, ...(Array.isArray(highlightedLayers) ? highlightedLayers : [])],
+      }),
+    [analysis, highlightedLayers, rooms, selectedLayer, selectedRoom?.roomKey],
   );
 
   const snapPoints = useMemo(
@@ -1313,13 +2385,13 @@ function DrawingCanvas({
   useEffect(() => {
     setCurrentViewBox(fittedViewBox);
     setTooltip(null);
-    setToolMode('pan');
+    setToolMode(captureMode ? 'capture' : 'pan');
     setMeasurements([]);
     setCurrentMeasurementPoints([]);
     setHoverMeasurePoint(null);
     setHoverRawPoint(null);
     setIsDragging(false);
-  }, [fittedViewBox]);
+  }, [captureMode, fittedViewBox]);
 
   useEffect(() => {
     setTooltip(null);
@@ -1351,13 +2423,26 @@ function DrawingCanvas({
   useEffect(() => {
     if (!interactive) return undefined;
     const handleKeyDown = (event) => {
+      const target = event.target;
+      const tagName = String(target?.tagName || '').toUpperCase();
+      const isFormEditing =
+        ['INPUT', 'TEXTAREA', 'SELECT'].includes(tagName) ||
+        Boolean(target?.isContentEditable) ||
+        Boolean(target?.closest?.('[contenteditable="true"]'));
+      if (isFormEditing) return;
+
       if (event.key === 'Escape' && toolMode !== 'pan') {
         event.preventDefault();
         event.stopPropagation();
         event.stopImmediatePropagation?.();
-        setCurrentMeasurementPoints([]);
+        if (captureMode) onCapturePointsChange?.([]);
+        else setCurrentMeasurementPoints([]);
         setHoverMeasurePoint(null);
         setHoverRawPoint(null);
+      } else if (event.key === 'Backspace' && captureMode) {
+        event.preventDefault();
+        event.stopPropagation();
+        onCapturePointsChange?.(capturePoints.slice(0, -1));
       } else if (event.key === 'Backspace' && toolMode === 'continuous') {
         event.preventDefault();
         event.stopPropagation();
@@ -1378,7 +2463,7 @@ function DrawingCanvas({
     };
     window.addEventListener('keydown', handleKeyDown, true);
     return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [interactive, toolMode]);
+  }, [captureMode, capturePoints, interactive, onCapturePointsChange, toolMode]);
 
   const baseStrokeWidth = Math.max(
     0.7,
@@ -1429,6 +2514,8 @@ function DrawingCanvas({
     [currentViewBox],
   );
 
+  const activeMeasurementPoints = captureMode ? capturePoints : currentMeasurementPoints;
+
   const snapPoint = useCallback(
     (rawPoint) => {
       if (!rawPoint) return null;
@@ -1449,7 +2536,7 @@ function DrawingCanvas({
         }
       });
 
-      const previousPoint = currentMeasurementPoints[currentMeasurementPoints.length - 1];
+      const previousPoint = activeMeasurementPoints[activeMeasurementPoints.length - 1];
       if (previousPoint) {
         snapSegments.forEach((segment) => {
           const projected = projectPointToSegment(previousPoint, segment.start, segment.end);
@@ -1485,8 +2572,8 @@ function DrawingCanvas({
       });
 
       // 연속 측정의 세 번째 점 이후에는 첫 점으로 정확히 닫을 수 있게 한다.
-      if (toolMode === 'continuous' && currentMeasurementPoints.length >= 3) {
-        const firstPoint = currentMeasurementPoints[0];
+      if (toolMode === 'continuous' && activeMeasurementPoints.length >= 3) {
+        const firstPoint = activeMeasurementPoints[0];
         const closingDistance = distanceBetweenPoints(rawPoint, firstPoint);
         if (closingDistance <= tolerance * 1.15) {
           candidates.push({
@@ -1516,7 +2603,7 @@ function DrawingCanvas({
           }
         : { ...rawPoint, snapped: false };
     },
-    [currentMeasurementPoints, modelToleranceFromPixels, snapPoints, snapSegments, toolMode],
+    [activeMeasurementPoints, modelToleranceFromPixels, snapPoints, snapSegments, toolMode],
   );
 
   const showNearestEntityTooltip = useCallback(
@@ -1528,6 +2615,14 @@ function DrawingCanvas({
       const point = screenToDxfPoint(event);
       if (!point) return;
       const tolerance = modelToleranceFromPixels(14);
+      if (
+        selectedRoom &&
+        !isPointInsidePolygon(point, selectedRoom.points || []) &&
+        polygonBoundaryDistance(point, selectedRoom.points || []) > tolerance
+      ) {
+        setTooltip(null);
+        return;
+      }
       let nearestEntity = null;
       let nearestDistance = tolerance;
       selectedEntities.forEach((entity) => {
@@ -1550,6 +2645,7 @@ function DrawingCanvas({
       screenToDxfPoint,
       selectedEntities,
       selectedLayer,
+      selectedRoom,
       toolMode,
       tooltipEnabled,
     ],
@@ -1578,6 +2674,14 @@ function DrawingCanvas({
 
   const addMeasurementPoint = (point) => {
     if (!point) return;
+    if (captureMode) {
+      const previous = Array.isArray(capturePoints) ? capturePoints : [];
+      const next = previous.length >= 2 ? [point] : removeConsecutiveDuplicatePoints([...previous, point]);
+      onCapturePointsChange?.(next.slice(0, 2));
+      setHoverMeasurePoint(null);
+      setHoverRawPoint(null);
+      return;
+    }
     if (toolMode === 'distance') {
       setCurrentMeasurementPoints((previous) => {
         if (!previous.length) return [point];
@@ -1672,7 +2776,7 @@ function DrawingCanvas({
     event.currentTarget.releasePointerCapture?.(event.pointerId);
 
     // 측정 모드에서도 좌클릭을 누른 채 움직이면 이동, 짧게 클릭하면 측정점 지정이다.
-    if (toolMode !== 'pan' && drag.button === 0 && !drag.moved) {
+    if ((toolMode !== 'pan' || captureMode) && drag.button === 0 && !drag.moved) {
       event.preventDefault();
       const rawPoint = screenToDxfPoint(event);
       const measuredPoint = snapPoint(rawPoint);
@@ -1739,39 +2843,58 @@ function DrawingCanvas({
             maxWidth: toolMode === 'pan' ? 'calc(100% - 20px)' : 'calc(100% - 240px)',
           }}
         >
-          <Button
-            size="small"
-            variant={toolMode === 'pan' ? 'contained' : 'outlined'}
-            onClick={() => changeToolMode('pan')}
-          >
-            이동
-          </Button>
-          <Button
-            size="small"
-            variant={toolMode === 'distance' ? 'contained' : 'outlined'}
-            onClick={() => changeToolMode('distance')}
-          >
-            거리 측정
-          </Button>
-          <Button
-            size="small"
-            variant={toolMode === 'continuous' ? 'contained' : 'outlined'}
-            onClick={() => changeToolMode('continuous')}
-          >
-            연속, 면적측정
-          </Button>
-          <Button
-            size="small"
-            variant="outlined"
-            onClick={() => {
-              setMeasurements([]);
-              setCurrentMeasurementPoints([]);
-              setHoverMeasurePoint(null);
-              setHoverRawPoint(null);
-            }}
-          >
-            측정 초기화
-          </Button>
+          {captureMode ? (
+            <>
+              <Button size="small" variant="contained">{captureKind} 위치 두 점 지정</Button>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => {
+                  onCapturePointsChange?.([]);
+                  setHoverMeasurePoint(null);
+                  setHoverRawPoint(null);
+                }}
+              >
+                다시 지정
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                size="small"
+                variant={toolMode === 'pan' ? 'contained' : 'outlined'}
+                onClick={() => changeToolMode('pan')}
+              >
+                이동
+              </Button>
+              <Button
+                size="small"
+                variant={toolMode === 'distance' ? 'contained' : 'outlined'}
+                onClick={() => changeToolMode('distance')}
+              >
+                거리 측정
+              </Button>
+              <Button
+                size="small"
+                variant={toolMode === 'continuous' ? 'contained' : 'outlined'}
+                onClick={() => changeToolMode('continuous')}
+              >
+                연속, 면적측정
+              </Button>
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => {
+                  setMeasurements([]);
+                  setCurrentMeasurementPoints([]);
+                  setHoverMeasurePoint(null);
+                  setHoverRawPoint(null);
+                }}
+              >
+                측정 초기화
+              </Button>
+            </>
+          )}
           <Divider orientation="vertical" flexItem sx={{ mx: 0.25 }} />
           <Button size="small" variant="outlined" onClick={() => zoomAtCenter(0.8)}>확대</Button>
           <Button size="small" variant="outlined" onClick={() => zoomAtCenter(1.25)}>축소</Button>
@@ -1793,7 +2916,9 @@ function DrawingCanvas({
           }}
         >
           <Typography variant="caption" sx={{ fontWeight: 700 }}>
-            끝점·근처점·직각 스냅 · {toolMode === 'continuous' ? '첫 점으로 닫으면 면적 표시 · Enter/더블클릭 완료 · Backspace 마지막점 취소 · ' : ''}ESC 현재 측정만 취소
+            {captureMode
+              ? `${captureKind}의 좌우 끝점을 순서대로 선택 · 끝점·근처점·직각 스냅 · ESC/Backspace 다시 지정`
+              : `끝점·근처점·직각 스냅 · ${toolMode === 'continuous' ? '첫 점으로 닫으면 면적 표시 · Enter/더블클릭 완료 · Backspace 마지막점 취소 · ' : ''}ESC 현재 측정만 취소`}
           </Typography>
         </Paper>
       )}
@@ -1802,9 +2927,11 @@ function DrawingCanvas({
         <MeasurementMagnifier
           centerPoint={hoverRawPoint}
           snapPointValue={hoverMeasurePoint}
-          currentPoints={currentMeasurementPoints}
+          currentPoints={activeMeasurementPoints}
           entities={renderedEntities}
           selectedLayer={selectedLayer}
+          highlightedLayers={highlightedLayers}
+          highlightedLayerColors={highlightedLayerColors}
           baseStrokeWidth={baseStrokeWidth}
           displayMode={displayMode}
           currentViewBox={currentViewBox}
@@ -1839,6 +2966,18 @@ function DrawingCanvas({
         style={{ cursor, touchAction: 'none' }}
       >
         <defs>
+          {selectedRoom && (selectedLayer || highlightedLayers.length > 0) && (
+            <clipPath id={roomClipId} clipPathUnits="userSpaceOnUse">
+              <polygon
+                points={pointList(
+                  (selectedRoom.points || []).map((point) => ({
+                    x: point.x,
+                    y: -point.y,
+                  })),
+                )}
+              />
+            </clipPath>
+          )}
           <pattern
             id={patternId}
             width="16"
@@ -1854,9 +2993,14 @@ function DrawingCanvas({
         <DrawingEntityScene
           entities={renderedEntities}
           selectedLayer={selectedLayer}
+          highlightedLayers={highlightedLayers}
+          highlightedLayerColors={highlightedLayerColors}
           baseStrokeWidth={baseStrokeWidth}
           patternId={patternId}
           displayMode={displayMode}
+          selectedRoomPoints={selectedRoom?.points || []}
+          roomClipId={roomClipId}
+          roomSelectedEntities={roomSelectedEntities}
         />
         <RoomOverlay
           rooms={rooms}
@@ -1866,12 +3010,22 @@ function DrawingCanvas({
           editable={roomEditable}
           showLabels={showRoomLabels}
           baseStrokeWidth={baseStrokeWidth}
+          selectedOffsetDistance={modelUnitsPerPixel * 14}
+        />
+        <OpeningOverlay
+          openings={openings}
+          selectedOpeningKey={selectedOpeningKey}
+          emphasizedOpeningKeys={emphasizedOpeningKeys}
+          dimUnemphasized={dimUnemphasizedOpenings}
+          onOpeningSelect={onOpeningSelect}
+          editable={openingEditable}
+          baseStrokeWidth={baseStrokeWidth}
         />
         {interactive && (
           <g transform="scale(1,-1)">
             <MeasurementOverlay
-              measurements={measurements}
-              currentPoints={currentMeasurementPoints}
+              measurements={captureMode && capturePoints.length >= 2 ? [{ points: capturePoints }] : measurements}
+              currentPoints={captureMode && capturePoints.length < 2 ? capturePoints : currentMeasurementPoints}
               hoverPoint={hoverMeasurePoint}
               baseStrokeWidth={baseStrokeWidth}
               bounds={analysis.bounds}
@@ -1908,7 +3062,14 @@ function DrawingCanvas({
   );
 }
 
-function DxfPreview({ analysis, heightSettings, onOpenView }) {
+function DxfPreview({
+  analysis,
+  heightSettings,
+  onOpenView,
+  rooms = [],
+  roomSettings = {},
+  openings = [],
+}) {
   return (
     <Paper
       variant="outlined"
@@ -1929,17 +3090,17 @@ function DxfPreview({ analysis, heightSettings, onOpenView }) {
         }}
       >
         <Box>
-          <Typography variant="subtitle2" sx={{ fontWeight: 800 }}>
-            도면 미리보기
+          <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>
+            도면 VIEW
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            골조·조적은 일반 검정계열 선과 해치로 표시됩니다. 미리보기에서는 공정 산출정보를 표시하지 않습니다.
+            미리보기에서는 설정할 수 없습니다. 도면을 클릭해 실 설정·공제면적 설정·실별 공정 물량확인을 진행합니다.
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 0.75, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <Chip size="small" label={`전체 ${formatInteger(analysis.totalObjectCount)}개`} />
           <Button size="small" variant="contained" onClick={onOpenView}>
-            도면 VIEW
+            도면 VIEW 열기
           </Button>
         </Box>
       </Box>
@@ -1952,8 +3113,8 @@ function DxfPreview({ analysis, heightSettings, onOpenView }) {
           if (event.key === 'Enter' || event.key === ' ') onOpenView();
         }}
         sx={{
-          height: { xs: 380, lg: 540 },
-          minHeight: 300,
+          height: { xs: 430, lg: 580 },
+          minHeight: 320,
           border: '1px solid #cbd5e1',
           borderRadius: 1,
           bgcolor: '#ffffff',
@@ -1980,6 +3141,10 @@ function DxfPreview({ analysis, heightSettings, onOpenView }) {
           heightSettings={heightSettings}
           displayMode="preview"
           tooltipEnabled={false}
+          rooms={rooms}
+          roomSettings={roomSettings}
+          showRoomLabels
+          openings={openings}
         />
         <Paper
           className="drawing-preview-open-hint"
@@ -1998,7 +3163,7 @@ function DxfPreview({ analysis, heightSettings, onOpenView }) {
           }}
         >
           <Typography variant="body2" sx={{ fontWeight: 900, whiteSpace: 'nowrap' }}>
-            클릭시 도면 VIEW
+            클릭해 통합 도면 VIEW 열기
           </Typography>
         </Paper>
       </Box>
@@ -2006,6 +3171,404 @@ function DxfPreview({ analysis, heightSettings, onOpenView }) {
   );
 }
 
+
+function OpeningEditorDialog({
+  open,
+  onClose,
+  analysis,
+  heightSettings,
+  rooms = [],
+  roomSettings = {},
+  initialRoomKey = '',
+  processLayers = [],
+  existingOpenings = [],
+  opening,
+  onConfirm,
+}) {
+  const [roomKey, setRoomKey] = useState(initialRoomKey);
+  const [openingName, setOpeningName] = useState('');
+  const [widthInput, setWidthInput] = useState('');
+  const [heightInput, setHeightInput] = useState('');
+  const [quantity, setQuantity] = useState('1');
+  const [appliedLayers, setAppliedLayers] = useState([]);
+  const [layerToAdd, setLayerToAdd] = useState('');
+  const [schedulePickerOpen, setSchedulePickerOpen] = useState(false);
+  const [selectedScheduleKey, setSelectedScheduleKey] = useState('');
+  const autoCandidateKeyRef = useRef('');
+
+  const scheduleCandidates = useMemo(
+    () => extractScheduleDeductionCandidates(analysis, rooms),
+    [analysis, rooms],
+  );
+  const matchedScheduleCandidate = useMemo(() => {
+    if (!opening || !isScheduleDeductionItem(opening)) return null;
+    const byKey = scheduleCandidates.find((candidate) => candidate.openingKey === opening.openingKey);
+    if (byKey) return byKey;
+    return scheduleCandidates.find(
+      (candidate) =>
+        candidate.openingName === opening.openingName &&
+        Math.abs(Number(candidate.widthMm || 0) - Number(opening.widthMm || 0)) < 1 &&
+        Math.abs(Number(candidate.heightMm || 0) - Number(opening.heightMm || 0)) < 1,
+    ) || null;
+  }, [opening, scheduleCandidates]);
+  const selectedScheduleCandidate = useMemo(
+    () => scheduleCandidates.find((candidate) => candidate.openingKey === selectedScheduleKey) || null,
+    [scheduleCandidates, selectedScheduleKey],
+  );
+  const selectedRegisteredOpening = useMemo(
+    () => existingOpenings.find((item) => item.openingKey === selectedScheduleKey) || null,
+    [existingOpenings, selectedScheduleKey],
+  );
+  const effectiveOpening = opening || selectedRegisteredOpening;
+  const activeScheduleCandidate = selectedScheduleCandidate || matchedScheduleCandidate;
+  const scheduleItem = Boolean(activeScheduleCandidate || (opening && isScheduleDeductionItem(opening)));
+  const existingOpeningKeys = useMemo(
+    () => new Set(existingOpenings.map((item) => item.openingKey)),
+    [existingOpenings],
+  );
+
+  useEffect(() => {
+    if (!open) return;
+    const nextRoomKey = opening?.roomKey || initialRoomKey || rooms[0]?.roomKey || '';
+    setRoomKey(nextRoomKey);
+    setOpeningName(opening?.openingName || `공제${existingOpenings.length + 1}`);
+    setWidthInput(opening?.widthMm ? String(opening.widthMm) : '');
+    setHeightInput(opening?.heightMm ? String(opening.heightMm) : '');
+    setQuantity(opening?.quantity ? String(opening.quantity) : '1');
+    setAppliedLayers(opening?.appliedLayers || []);
+    setLayerToAdd('');
+    setSelectedScheduleKey(matchedScheduleCandidate?.openingKey || '');
+    setSchedulePickerOpen(false);
+    autoCandidateKeyRef.current = '';
+  }, [existingOpenings.length, initialRoomKey, matchedScheduleCandidate, open, opening, rooms]);
+
+  const selectedRoom = rooms.find((room) => room.roomKey === roomKey) || rooms[0];
+  const selectedRoomName = String(roomSettings[selectedRoom?.roomKey]?.roomName || '').trim();
+  const widthMm = parseDimensionInputMm(widthInput);
+  const heightMm = parseDimensionInputMm(heightInput);
+  const resolvedSegment = buildFallbackOpeningSegment({
+    opening: effectiveOpening,
+    candidate: activeScheduleCandidate,
+    widthMm,
+    room: selectedRoom,
+  });
+  const canDetectLayers = Boolean(
+    activeScheduleCandidate || hasUsableOpeningSegment(effectiveOpening?.start, effectiveOpening?.end),
+  );
+  const detectionPoints = canDetectLayers ? [resolvedSegment.start, resolvedSegment.end] : [];
+  const linkedRoomKeys = findAdjacentRoomKeysForOpening({
+    point: resolvedSegment.center,
+    widthMm,
+    rooms,
+    primaryRoomKey: selectedRoom?.roomKey || '',
+  });
+  const linkedRooms = linkedRoomKeys
+    .map((key) => rooms.find((room) => room.roomKey === key))
+    .filter(Boolean);
+  const linkedRoomLabels = linkedRooms.map((room) => {
+    const roomName = String(roomSettings[room.roomKey]?.roomName || '').trim() || '미입력';
+    return `${room.sortOrder}. ${roomName}`;
+  });
+
+  const overlapCandidates = useMemo(
+    () => buildOpeningLayerCandidates(analysis, processLayers, detectionPoints),
+    [analysis, detectionPoints, processLayers],
+  );
+  const detectedLayerNames = useMemo(
+    () => overlapCandidates.map((candidate) => candidate.layer),
+    [overlapCandidates],
+  );
+  const detectedLayerSet = useMemo(() => new Set(detectedLayerNames), [detectedLayerNames]);
+
+  useEffect(() => {
+    if (!open || !detectedLayerNames.length) return;
+    const automaticKey =
+      activeScheduleCandidate?.openingKey ||
+      effectiveOpening?.openingKey ||
+      `manual-${selectedRoom?.roomKey || ''}-${openingName}`;
+    if (autoCandidateKeyRef.current === automaticKey) return;
+    autoCandidateKeyRef.current = automaticKey;
+    if (!(effectiveOpening?.appliedLayers || []).length) setAppliedLayers(detectedLayerNames);
+  }, [activeScheduleCandidate, detectedLayerNames, effectiveOpening, open, openingName, selectedRoom]);
+
+  if (!analysis || !rooms.length) return null;
+
+  const areaM2 = calculateOpeningAreaM2(widthMm, heightMm, quantity);
+  const processLayerMap = new Map(processLayers.map((layer) => [layer.layer, layer]));
+  const orderedAppliedLayers = processLayers
+    .map((layer) => layer.layer)
+    .filter((layerName) => appliedLayers.includes(layerName));
+  const unknownAppliedLayers = appliedLayers.filter((layerName) => !processLayerMap.has(layerName));
+  const visibleAppliedLayers = [...orderedAppliedLayers, ...unknownAppliedLayers];
+  const appliedLayerColors = buildProcessHighlightColors(visibleAppliedLayers);
+  const availableLayers = processLayers.filter((layer) => !appliedLayers.includes(layer.layer));
+
+  const removeLayer = (layerName) => {
+    setAppliedLayers((previous) => previous.filter((value) => value !== layerName));
+  };
+
+  const addLayer = () => {
+    if (!layerToAdd) return;
+    setAppliedLayers((previous) => (previous.includes(layerToAdd) ? previous : [...previous, layerToAdd]));
+    setLayerToAdd('');
+  };
+
+  const applyDetectedLayers = () => {
+    setAppliedLayers(detectedLayerNames);
+    setLayerToAdd('');
+  };
+
+  const selectScheduleCandidate = (candidate) => {
+    const registered = existingOpenings.find((item) => item.openingKey === candidate.openingKey) || null;
+    const source = registered || candidate;
+    setSelectedScheduleKey(candidate.openingKey);
+    setOpeningName(source.openingName || candidate.openingName);
+    setWidthInput(String(source.widthMm || candidate.widthMm));
+    setHeightInput(String(source.heightMm || candidate.heightMm));
+    setQuantity(String(source.quantity || candidate.quantity || 1));
+    setRoomKey(source.roomKey || candidate.roomKey || rooms[0]?.roomKey || '');
+    setAppliedLayers(Array.isArray(source.appliedLayers) ? source.appliedLayers : []);
+    setLayerToAdd('');
+    autoCandidateKeyRef.current = '';
+    setSchedulePickerOpen(false);
+  };
+
+  const submit = () => {
+    const count = Math.max(1, Math.floor(Number(quantity || 1)));
+    if (!selectedRoom) return window.alert('공제항목을 연결할 기준 실을 선택해주세요.');
+    if (!openingName.trim()) return window.alert('공제항목 명칭을 입력해주세요.');
+    if (widthMm <= 0 || heightMm <= 0) {
+      return window.alert('폭과 높이를 0보다 크게 입력해주세요. 0.9처럼 M 단위 또는 900처럼 mm 단위로 입력할 수 있습니다.');
+    }
+
+    const finalSegment = buildFallbackOpeningSegment({
+      opening: effectiveOpening,
+      candidate: activeScheduleCandidate,
+      widthMm,
+      room: selectedRoom,
+    });
+    const finalRoomKeys = findAdjacentRoomKeysForOpening({
+      point: finalSegment.center,
+      widthMm,
+      rooms,
+      primaryRoomKey: selectedRoom.roomKey,
+    });
+
+    onConfirm({
+      openingId: effectiveOpening?.openingId || null,
+      openingKey: effectiveOpening?.openingKey || activeScheduleCandidate?.openingKey || createUuid(),
+      roomKey: selectedRoom.roomKey,
+      roomKeys: finalRoomKeys.length ? finalRoomKeys : [selectedRoom.roomKey],
+      openingType: effectiveOpening?.openingType || 'window',
+      openingName: openingName.trim(),
+      widthMm,
+      heightMm,
+      quantity: count,
+      areaM2: calculateOpeningAreaM2(widthMm, heightMm, count),
+      start: finalSegment.start,
+      end: finalSegment.end,
+      center: finalSegment.center,
+      appliedLayers: visibleAppliedLayers,
+    });
+    onClose();
+  };
+
+  return (
+    <>
+      <Dialog open={open} onClose={onClose} fullScreen>
+        <DialogTitle sx={{ borderBottom: '1px solid #e2e8f0', py: 1.25 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 2 }}>
+            <Box>
+              <Typography variant="h6" sx={{ fontWeight: 900 }}>
+                {effectiveOpening ? '도면 공제항목 수정' : '도면 공제항목 추가'} · {selectedRoomName || `실 ${selectedRoom?.sortOrder || ''}`}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                위치 두 점을 다시 지정하지 않습니다. 주기표 항목은 도면 위치를 그대로 사용하고, 수동 항목은 실·규격·공정만 입력합니다.
+              </Typography>
+            </Box>
+            <Button variant="outlined" onClick={onClose}>닫기</Button>
+          </Box>
+        </DialogTitle>
+        <DialogContent sx={{ p: 0, overflow: 'hidden' }}>
+          <Box sx={{ height: '100%', display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(0,1fr) 390px' } }}>
+            <Box sx={{ p: 1, minHeight: 0, bgcolor: '#f8fafc' }}>
+              <Paper variant="outlined" sx={{ height: '100%', overflow: 'hidden' }}>
+                <DrawingCanvas
+                  analysis={analysis}
+                  heightSettings={heightSettings}
+                  highlightedLayers={visibleAppliedLayers}
+                  highlightedLayerColors={appliedLayerColors}
+                  interactive
+                  displayMode="view"
+                  rooms={linkedRooms.length ? linkedRooms : [selectedRoom]}
+                  roomSettings={Object.fromEntries(
+                    (linkedRooms.length ? linkedRooms : [selectedRoom]).map((room) => [
+                      room.roomKey,
+                      roomSettings[room.roomKey] || { roomName: '' },
+                    ]),
+                  )}
+                  selectedRoomKey={selectedRoom?.roomKey || ''}
+                  showRoomLabels
+                  openings={existingOpenings}
+                  selectedOpeningKey={effectiveOpening?.openingKey || activeScheduleCandidate?.openingKey || ''}
+                  emphasizedOpeningKeys={effectiveOpening?.openingKey ? [effectiveOpening.openingKey] : []}
+                  dimUnemphasizedOpenings
+                  captureMode={false}
+                />
+              </Paper>
+            </Box>
+            <Paper square elevation={0} sx={{ borderLeft: '1px solid #cbd5e1', p: 1.5, overflow: 'auto' }}>
+              <TextField select fullWidth required size="small" label="기준 실" value={selectedRoom?.roomKey || ''} onChange={(event) => setRoomKey(event.target.value)} sx={{ mb: 1.2 }}>
+                {rooms.map((room) => (
+                  <MenuItem key={room.roomKey} value={room.roomKey}>
+                    {room.sortOrder}. {String(roomSettings[room.roomKey]?.roomName || '').trim() || '미입력'}
+                  </MenuItem>
+                ))}
+              </TextField>
+
+              {linkedRoomLabels.length > 1 && (
+                <Alert severity="info" sx={{ mb: 1.2 }}>
+                  실 사이 공제항목으로 판단되어 <strong>{linkedRoomLabels.join(' + ')}</strong> 양쪽 실에 함께 반영됩니다.
+                </Alert>
+              )}
+
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 0.75, mb: 1.2 }}>
+                <TextField
+                  required
+                  size="small"
+                  label="명칭"
+                  value={openingName}
+                  onChange={(event) => setOpeningName(event.target.value)}
+                  placeholder="예: PW-1, WD-1"
+                />
+                <Button variant="outlined" onClick={() => setSchedulePickerOpen(true)}>
+                  창호목록 불러오기
+                </Button>
+              </Box>
+
+              <TextField
+                fullWidth
+                required
+                size="small"
+                type="number"
+                label="폭"
+                value={widthInput}
+                onChange={(event) => setWidthInput(event.target.value)}
+                inputProps={{ min: 0.001, step: 0.01 }}
+                helperText={scheduleItem ? '도면 주기표에서 자동으로 가져온 규격입니다.' : '0.9(M) 또는 900(mm)처럼 입력할 수 있습니다.'}
+                sx={{ mb: 1.2 }}
+              />
+              <TextField
+                fullWidth
+                required
+                size="small"
+                type="number"
+                label="높이"
+                value={heightInput}
+                onChange={(event) => setHeightInput(event.target.value)}
+                inputProps={{ min: 0.001, step: 0.01 }}
+                helperText="2.3(M) 또는 2300(mm)처럼 입력할 수 있습니다."
+                sx={{ mb: 1.2 }}
+              />
+              <TextField fullWidth required size="small" type="number" label="개수" value={quantity} onChange={(event) => setQuantity(event.target.value)} inputProps={{ min: 1, step: 1 }} InputProps={{ endAdornment: <Typography variant="caption">EA</Typography> }} sx={{ mb: 1.2 }} />
+
+              {scheduleItem && (
+                <Alert severity="info" sx={{ mb: 1.2 }}>
+                  주기표의 명칭·규격·위치를 사용합니다. 별도의 두 점 지정 없이 실 연결과 공제 공정만 확인하면 됩니다.
+                </Alert>
+              )}
+              <Alert severity={areaM2 > 0 ? 'success' : 'info'} sx={{ mb: 1.4 }}>
+                공제면적: <strong>{formatNumber(areaM2)}㎡</strong> = 폭 {formatNumber(widthMm / 1000)}M × 높이 {formatNumber(heightMm / 1000)}M × {Math.max(1, Number(quantity || 1))}개
+              </Alert>
+
+              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>공제 적용 공정</Typography>
+                <Button size="small" variant="outlined" onClick={applyDetectedLayers} disabled={!detectedLayerNames.length}>
+                  주기 위치 공정 자동선택
+                </Button>
+              </Box>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.85 }}>
+                주기표 또는 기존 저장 위치 주변의 WL 공정을 후보로 표시합니다. 자동 감지가 없으면 필요한 공정을 아래에서 직접 추가하세요.
+              </Typography>
+
+              {visibleAppliedLayers.length ? (
+                <Box sx={{ display: 'grid', gap: 0.65, mb: 1.1 }}>
+                  {visibleAppliedLayers.map((layerName) => (
+                    <Paper key={layerName} variant="outlined" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, px: 1, py: 0.7 }}>
+                      <Box sx={{ minWidth: 0 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                          <Box aria-label={`${layerDisplayName(layerName)} 표시색`} sx={{ width: 12, height: 12, borderRadius: '3px', bgcolor: appliedLayerColors[layerName] || '#dc2626', border: '1px solid rgba(15,23,42,0.22)', flex: '0 0 auto' }} />
+                          <Typography variant="body2" sx={{ fontWeight: 800 }}>{layerDisplayName(layerName)}</Typography>
+                        </Box>
+                        <Chip size="small" label={detectedLayerSet.has(layerName) ? '겹침 감지' : '수동 추가'} color={detectedLayerSet.has(layerName) ? 'primary' : 'default'} variant={detectedLayerSet.has(layerName) ? 'filled' : 'outlined'} sx={{ mt: 0.35, height: 20, fontSize: 11 }} />
+                      </Box>
+                      <Button size="small" color="error" onClick={() => removeLayer(layerName)}>삭제</Button>
+                    </Paper>
+                  ))}
+                </Box>
+              ) : (
+                <Alert severity="warning" sx={{ mb: 1.1 }}>
+                  자동 감지된 WL 공정이 없습니다. 필요한 공정은 아래에서 직접 추가해주세요.
+                </Alert>
+              )}
+
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) auto', gap: 0.75, mb: 1.5 }}>
+                <TextField select size="small" label="공정 추가" value={layerToAdd} onChange={(event) => setLayerToAdd(event.target.value)} disabled={!availableLayers.length}>
+                  {availableLayers.map((layer) => (
+                    <MenuItem key={layer.layer} value={layer.layer}>
+                      {layerDisplayName(layer.layer)}{detectedLayerSet.has(layer.layer) ? ' · 겹침 감지' : ''}
+                    </MenuItem>
+                  ))}
+                </TextField>
+                <Button variant="outlined" onClick={addLayer} disabled={!layerToAdd}>추가</Button>
+              </Box>
+
+              <Button fullWidth variant="contained" onClick={submit}>적용</Button>
+            </Paper>
+          </Box>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={schedulePickerOpen} onClose={() => setSchedulePickerOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle>창호목록 불러오기</DialogTitle>
+        <DialogContent dividers>
+          {scheduleCandidates.length ? (
+            <Box sx={{ display: 'grid', gap: 0.75 }}>
+              {scheduleCandidates.map((candidate) => {
+                const alreadyRegistered = existingOpeningKeys.has(candidate.openingKey) && candidate.openingKey !== opening?.openingKey;
+                const candidateRooms = getOpeningRoomKeys(candidate)
+                  .map((key) => rooms.find((room) => room.roomKey === key))
+                  .filter(Boolean)
+                  .map((room) => `${room.sortOrder}. ${String(roomSettings[room.roomKey]?.roomName || '').trim() || '미입력'}`);
+                return (
+                  <Button
+                    key={candidate.openingKey}
+                    variant={selectedScheduleKey === candidate.openingKey ? 'contained' : 'outlined'}
+                    onClick={() => selectScheduleCandidate(candidate)}
+                    sx={{ justifyContent: 'space-between', textAlign: 'left', py: 1, px: 1.25 }}
+                  >
+                    <Box>
+                      <Typography variant="body2" sx={{ fontWeight: 900 }}>{candidate.openingName}</Typography>
+                      <Typography variant="caption" color="text.secondary">
+                        {formatNumber(candidate.widthMm / 1000)}M × {formatNumber(candidate.heightMm / 1000)}M · {candidateRooms.join(' + ') || '실 자동판단'}
+                      </Typography>
+                    </Box>
+                    <Chip size="small" label={alreadyRegistered ? '등록값 불러오기' : '선택'} color="primary" variant="outlined" />
+                  </Button>
+                );
+              })}
+            </Box>
+          ) : (
+            <Alert severity="info">도면에서 불러올 수 있는 창호·도어 주기표를 찾지 못했습니다.</Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setSchedulePickerOpen(false)}>닫기</Button>
+        </DialogActions>
+      </Dialog>
+    </>
+  );
+}
 
 function RoomSettingsPanel({
   analysis,
@@ -2019,9 +3582,21 @@ function RoomSettingsPanel({
   loading,
   saving,
   onSave,
+  openings = [],
+  openingSaving = false,
+  onAddOpening,
+  onEditOpening,
+  onDeleteOpening,
+  onSaveOpenings,
+  onImportSchedule,
 }) {
   const selectedRoom = rooms.find((room) => room.roomKey === selectedRoomKey) || rooms[0] || null;
   const selectedSetting = selectedRoom ? roomSettings[selectedRoom.roomKey] || {} : {};
+  const [selectedOpeningKey, setSelectedOpeningKey] = useState('');
+  const [deductionExpanded, setDeductionExpanded] = useState(false);
+  const selectedRoomOpenings = selectedRoom
+    ? openings.filter((opening) => openingBelongsToRoom(opening, selectedRoom.roomKey))
+    : [];
 
   useEffect(() => {
     if (!rooms.length) return;
@@ -2029,6 +3604,10 @@ function RoomSettingsPanel({
       setSelectedRoomKey(rooms[0].roomKey);
     }
   }, [rooms, selectedRoomKey, setSelectedRoomKey]);
+
+  useEffect(() => {
+    setSelectedOpeningKey('');
+  }, [selectedRoomKey]);
 
   const updateRoomName = (value) => {
     if (!selectedRoom) return;
@@ -2061,10 +3640,10 @@ function RoomSettingsPanel({
     return (
       <Paper variant="outlined" sx={{ p: 1.5, mb: 1.5 }}>
         <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
-          실명·공정별 공제면적 설정
+          실명·공제면적 설정
         </Typography>
         <Alert severity="warning" sx={{ mt: 1 }}>
-          폐합된 WL-천정면적 폴리라인이 없어 실을 구분할 수 없습니다. 각 실의 천정면적 경계를 닫힌 PL로 작성해주세요.
+          폐합된 WL-실면적 폴리라인이 없어 실을 구분할 수 없습니다. 각 실의 전체 경계를 공제 없이 닫힌 PL로 작성해주세요.
         </Alert>
       </Paper>
     );
@@ -2084,15 +3663,20 @@ function RoomSettingsPanel({
       >
         <Box>
           <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>
-            실명·공정별 공제면적 설정
+            실명·공제면적 설정
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            왼쪽 도면의 번호 영역을 선택해 실명을 입력하고, 해당 실에서 공정별로 제외할 면적을 ㎡ 단위로 저장합니다.
+            이 화면에서는 실명과 직접 공제·도면 공제항목만 설정합니다. 실별 공정 물량은 도면 VIEW에서 확인합니다.
           </Typography>
         </Box>
-        <Button variant="contained" onClick={onSave} disabled={loading || saving}>
-          {saving ? '저장 중' : '실명·공제면적 저장'}
-        </Button>
+        <Box sx={{ display: 'flex', gap: 0.75, flexWrap: 'wrap' }}>
+          <Button variant="outlined" onClick={onSaveOpenings} disabled={loading || openingSaving}>
+            {openingSaving ? '저장 중' : '도면 공제항목 저장'}
+          </Button>
+          <Button variant="contained" onClick={onSave} disabled={loading || saving}>
+            {saving ? '저장 중' : '실명·직접공제 저장'}
+          </Button>
+        </Box>
       </Box>
 
       <Box
@@ -2115,10 +3699,16 @@ function RoomSettingsPanel({
             onRoomSelect={setSelectedRoomKey}
             roomEditable
             showRoomLabels
+            openings={openings}
+            selectedOpeningKey={selectedOpeningKey}
+            emphasizedOpeningKeys={selectedRoomOpenings.map((opening) => opening.openingKey)}
+            dimUnemphasizedOpenings={Boolean(selectedRoom)}
+            onOpeningSelect={setSelectedOpeningKey}
+            openingEditable
           />
         </Paper>
 
-        <Paper variant="outlined" sx={{ p: 1.25, minWidth: 0 }}>
+        <Paper variant="outlined" sx={{ p: 1.25, minWidth: 0, height: { xs: 'auto', xl: 560 }, overflow: 'auto' }}>
           <Box sx={{ display: 'flex', gap: 0.65, flexWrap: 'wrap', mb: 1.25 }}>
             {rooms.map((room) => {
               const name = String(roomSettings[room.roomKey]?.roomName || '').trim();
@@ -2150,63 +3740,126 @@ function RoomSettingsPanel({
                 error={!String(selectedSetting.roomName || '').trim()}
                 helperText={
                   String(selectedSetting.roomName || '').trim()
-                    ? `도면면적 ${formatNumber(selectedRoom.sourceAreaM2)}㎡`
+                    ? `실면적 ${formatNumber(selectedRoom.sourceAreaM2)}㎡`
                     : '필수입력'
                 }
                 sx={{ mb: 1.25 }}
               />
 
-              <Typography variant="subtitle2" sx={{ fontWeight: 900, mb: 0.65 }}>
-                공정별 공제면적
-              </Typography>
-              <TableContainer sx={{ maxHeight: 390, border: '1px solid #e2e8f0', borderRadius: 1 }}>
-                <Table stickyHeader size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell sx={{ fontWeight: 800 }}>공정</TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 800 }}>공제면적</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {processLayers.map((layer) => {
-                      const rule = classifyQuantityLayer(layer.layer);
-                      const value = selectedSetting.deductions?.[layer.layer] ?? '';
-                      return (
-                        <TableRow key={layer.layer} hover>
-                          <TableCell>
-                            <Typography variant="body2" sx={{ fontWeight: 800 }}>
-                              {layerDisplayName(layer.layer)}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              {rule.mode === 'pending' ? '현재 산출규칙 보류 · 공제값만 저장' : rule.label}
-                            </Typography>
-                          </TableCell>
-                          <TableCell align="right" sx={{ width: 165 }}>
-                            <TextField
-                              value={value}
-                              onChange={(event) => updateDeduction(layer.layer, event.target.value)}
-                              type="number"
-                              size="small"
-                              inputProps={{ min: 0, step: 0.01 }}
-                              InputProps={{ endAdornment: <Typography variant="caption">㎡</Typography> }}
-                              sx={{ width: 145 }}
-                            />
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                    {processLayers.length === 0 && (
-                      <TableRow>
-                        <TableCell colSpan={2}>
-                          <Typography variant="caption" color="text.secondary">
-                            공제면적을 설정할 ㎡ 공정 레이어가 없습니다.
-                          </Typography>
-                        </TableCell>
-                      </TableRow>
+              <Paper variant="outlined" sx={{ overflow: 'hidden' }}>
+                <Button
+                  fullWidth
+                  onClick={() => setDeductionExpanded((previous) => !previous)}
+                  sx={{ px: 1.25, py: 1, justifyContent: 'space-between', textTransform: 'none', color: 'text.primary' }}
+                >
+                  <Box sx={{ textAlign: 'left' }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>공제면적 설정</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      직접 공제 + 도면 주기표 공제항목 {selectedRoomOpenings.length}개
+                    </Typography>
+                  </Box>
+                  <Typography sx={{ fontWeight: 900 }}>{deductionExpanded ? '▲ 접기' : '▼ 펼치기'}</Typography>
+                </Button>
+
+                {deductionExpanded && (
+                  <Box sx={{ p: 1.1, borderTop: '1px solid #e2e8f0' }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 900, mb: 0.25 }}>공정별 직접 공제면적</Typography>
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.65 }}>
+                      도면 공제항목 외에 추가로 차감할 면적만 입력합니다.
+                    </Typography>
+                    <TableContainer sx={{ maxHeight: 290, border: '1px solid #e2e8f0', borderRadius: 1 }}>
+                      <Table stickyHeader size="small">
+                        <TableHead>
+                          <TableRow>
+                            <TableCell sx={{ fontWeight: 800 }}>공정</TableCell>
+                            <TableCell align="right" sx={{ fontWeight: 800 }}>직접 공제</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {processLayers.map((layer) => {
+                            const rule = classifyQuantityLayer(layer.layer);
+                            const value = selectedSetting.deductions?.[layer.layer] ?? '';
+                            return (
+                              <TableRow key={layer.layer} hover>
+                                <TableCell>
+                                  <Typography variant="body2" sx={{ fontWeight: 800 }}>{layerDisplayName(layer.layer)}</Typography>
+                                  <Typography variant="caption" color="text.secondary">
+                                    {rule.mode === 'pending' ? '현재 산출규칙 보류 · 공제값만 저장' : rule.label}
+                                  </Typography>
+                                </TableCell>
+                                <TableCell align="right" sx={{ width: 165 }}>
+                                  <TextField
+                                    value={value}
+                                    onChange={(event) => updateDeduction(layer.layer, event.target.value)}
+                                    type="number"
+                                    size="small"
+                                    inputProps={{ min: 0, step: 0.01 }}
+                                    InputProps={{ endAdornment: <Typography variant="caption">㎡</Typography> }}
+                                    sx={{ width: 145 }}
+                                  />
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+
+                    <Divider sx={{ my: 1.15 }} />
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, alignItems: 'center', mb: 0.75 }}>
+                      <Box>
+                        <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>도면 공제항목</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          창호·도어 구분 없이 폭×높이를 각 공정의 공제면적으로 적용합니다.
+                        </Typography>
+                      </Box>
+                      <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        <Button size="small" variant="outlined" onClick={onImportSchedule}>주기표 자동 불러오기</Button>
+                        <Button size="small" variant="outlined" onClick={onAddOpening}>공제항목 추가</Button>
+                      </Box>
+                    </Box>
+
+                    {selectedRoomOpenings.length > 0 ? (
+                      <Box sx={{ display: 'grid', gap: 0.65 }}>
+                        {selectedRoomOpenings.map((opening) => (
+                          <Paper
+                            key={opening.openingKey}
+                            variant="outlined"
+                            onClick={() => setSelectedOpeningKey(opening.openingKey)}
+                            sx={{
+                              p: 0.85,
+                              cursor: 'pointer',
+                              borderColor: selectedOpeningKey === opening.openingKey ? '#7c3aed' : '#e2e8f0',
+                              bgcolor: selectedOpeningKey === opening.openingKey ? 'rgba(124,58,237,0.045)' : '#ffffff',
+                            }}
+                          >
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 1, alignItems: 'center' }}>
+                              <Box sx={{ minWidth: 0 }}>
+                                <Typography variant="body2" sx={{ fontWeight: 900 }}>
+                                  {opening.openingName}
+                                  {isScheduleDeductionItem(opening) && <Chip size="small" label="주기표" sx={{ ml: 0.7, height: 20 }} />}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                  폭 {formatNumber(opening.widthMm / 1000)}M × 높이 {formatNumber(opening.heightMm / 1000)}M × {opening.quantity}개 = {formatNumber(opening.areaM2)}㎡
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                  공제: {opening.appliedLayers.length ? opening.appliedLayers.map(layerDisplayName).join(', ') : '공정 미선택'}
+                                </Typography>
+                              </Box>
+                              <Box sx={{ display: 'flex', gap: 0.4, flexShrink: 0 }}>
+                                <Button size="small" onClick={(event) => { event.stopPropagation(); onEditOpening?.(opening); }}>수정</Button>
+                                <Button size="small" color="error" onClick={(event) => { event.stopPropagation(); onDeleteOpening?.(opening); }}>삭제</Button>
+                              </Box>
+                            </Box>
+                          </Paper>
+                        ))}
+                      </Box>
+                    ) : (
+                      <Alert severity="info">선택한 실에 등록된 도면 공제항목이 없습니다.</Alert>
                     )}
-                  </TableBody>
-                </Table>
-              </TableContainer>
+                  </Box>
+                )}
+              </Paper>
             </>
           )}
         </Paper>
@@ -2223,27 +3876,105 @@ function FullDrawingDialog({
   typeName,
   rooms = [],
   roomSettings = {},
+  setRoomSettings,
+  selectedRoomKey = '',
+  setSelectedRoomKey,
+  processLayers = [],
+  roomSettingsLoading = false,
+  roomSettingsSaving = false,
+  onSaveRoomSettings,
+  openings = [],
+  openingSaving = false,
+  onAddOpening,
+  onEditOpening,
+  onDeleteOpening,
+  onSaveOpenings,
+  onImportSchedule,
   deductionTotalsByLayer = {},
+  roomQuantityRowsByKey = {},
 }) {
+  const [panelMode, setPanelMode] = useState('room');
   const [selectedLayer, setSelectedLayer] = useState('');
   const [layerOrder, setLayerOrder] = useState([]);
+  const [selectedViewRoomKey, setSelectedViewRoomKey] = useState('');
+  const [selectedOpeningKey, setSelectedOpeningKey] = useState('');
+  const [directDeductionCollapsed, setDirectDeductionCollapsed] = useState(true);
 
   useEffect(() => {
     if (!open || !analysis) return;
-    const sorted = sortLayersByDefaultOrder(analysis.activeLayers || []);
+    const sorted = sortLayersByDefaultOrder(
+      (analysis.activeLayers || []).filter(
+        (layer) => classifyQuantityLayer(layer.layer).mode !== 'room_boundary',
+      ),
+    );
+    const initialRoomKey = rooms.some((room) => room.roomKey === selectedRoomKey)
+      ? selectedRoomKey
+      : rooms[0]?.roomKey || '';
+    setPanelMode('room');
     setSelectedLayer('');
     setLayerOrder(sorted.map((layer) => layer.layer));
-  }, [open, analysis]);
+    setSelectedViewRoomKey(initialRoomKey);
+    setSelectedOpeningKey('');
+    setDirectDeductionCollapsed(true);
+  }, [open, analysis, rooms]);
+
+  useEffect(() => {
+    if (panelMode === 'quantity') return;
+    if (!selectedViewRoomKey && rooms[0]) {
+      setSelectedViewRoomKey(rooms[0].roomKey);
+    }
+  }, [panelMode, rooms, selectedViewRoomKey]);
+
+  useEffect(() => {
+    if (selectedViewRoomKey) setSelectedRoomKey?.(selectedViewRoomKey);
+    setSelectedOpeningKey('');
+  }, [selectedViewRoomKey, setSelectedRoomKey]);
+
+  useEffect(() => {
+    if (!open || panelMode === 'quantity') return;
+    if (
+      selectedRoomKey &&
+      selectedRoomKey !== selectedViewRoomKey &&
+      rooms.some((room) => room.roomKey === selectedRoomKey)
+    ) {
+      setSelectedViewRoomKey(selectedRoomKey);
+    }
+  }, [open, panelMode, rooms, selectedRoomKey, selectedViewRoomKey]);
 
   const orderedLayers = useMemo(() => {
     if (!analysis) return [];
-    const layerMap = new Map((analysis.activeLayers || []).map((layer) => [layer.layer, layer]));
+    const processLayerList = (analysis.activeLayers || []).filter(
+      (layer) => classifyQuantityLayer(layer.layer).mode !== 'room_boundary',
+    );
+    const layerMap = new Map(processLayerList.map((layer) => [layer.layer, layer]));
     const ordered = layerOrder.map((layerName) => layerMap.get(layerName)).filter(Boolean);
     const missing = sortLayersByDefaultOrder(
-      (analysis.activeLayers || []).filter((layer) => !layerOrder.includes(layer.layer)),
+      processLayerList.filter((layer) => !layerOrder.includes(layer.layer)),
     );
     return [...ordered, ...missing];
   }, [analysis, layerOrder]);
+
+  const selectedRoom = rooms.find((room) => room.roomKey === selectedViewRoomKey) || null;
+  const selectedSetting = selectedRoom ? roomSettings[selectedRoom.roomKey] || {} : {};
+  const selectedRoomName = selectedRoom
+    ? String(roomSettings[selectedRoom.roomKey]?.roomName || '').trim()
+    : '';
+  const selectedRoomRows = selectedRoom
+    ? roomQuantityRowsByKey[selectedRoom.roomKey] || []
+    : [];
+  const selectedRoomRowMap = useMemo(
+    () => new Map(selectedRoomRows.map((row) => [row.layer, row])),
+    [selectedRoomRows],
+  );
+  const selectedRoomLabel = selectedRoom
+    ? `${selectedRoom.sortOrder}. ${selectedRoomName || '미입력'}`
+    : '0. 전체';
+  const selectedRoomOpenings = selectedRoom
+    ? openings.filter((opening) => openingBelongsToRoom(opening, selectedRoom.roomKey))
+    : [];
+  const directDeductionCount = processLayers.filter(
+    (layer) => Number(selectedSetting.deductions?.[layer.layer] || 0) > 0,
+  ).length;
 
   const selectedIndex = layerOrder.indexOf(selectedLayer);
 
@@ -2259,21 +3990,92 @@ function FullDrawingDialog({
     });
   };
 
+  const updateRoomName = (value) => {
+    if (!selectedRoom) return;
+    setRoomSettings?.((previous) => ({
+      ...previous,
+      [selectedRoom.roomKey]: {
+        ...previous[selectedRoom.roomKey],
+        roomName: value,
+        deductions: previous[selectedRoom.roomKey]?.deductions || {},
+      },
+    }));
+  };
+
+  const updateDeduction = (layerName, value) => {
+    if (!selectedRoom) return;
+    setRoomSettings?.((previous) => ({
+      ...previous,
+      [selectedRoom.roomKey]: {
+        ...previous[selectedRoom.roomKey],
+        roomName: previous[selectedRoom.roomKey]?.roomName || '',
+        deductions: {
+          ...(previous[selectedRoom.roomKey]?.deductions || {}),
+          [layerName]: value,
+        },
+      },
+    }));
+  };
+
+  const selectRoom = (roomKey) => {
+    setSelectedViewRoomKey(roomKey);
+    if (roomKey) setSelectedRoomKey?.(roomKey);
+  };
+
+  const renderRoomButtons = (includeAll = false) => (
+    <Box sx={{ display: 'flex', gap: 0.55, flexWrap: 'wrap', mb: 1.15 }}>
+      {includeAll && (
+        <Button
+          size="small"
+          variant={!selectedViewRoomKey ? 'contained' : 'outlined'}
+          onClick={() => setSelectedViewRoomKey('')}
+          sx={{ textTransform: 'none' }}
+        >
+          0. 전체
+        </Button>
+      )}
+      {rooms.map((room) => {
+        const roomName = String(roomSettings[room.roomKey]?.roomName || '').trim();
+        return (
+          <Button
+            key={room.roomKey}
+            size="small"
+            variant={selectedViewRoomKey === room.roomKey ? 'contained' : 'outlined'}
+            onClick={() => selectRoom(room.roomKey)}
+            sx={{ textTransform: 'none' }}
+          >
+            {room.sortOrder}. {roomName || '미입력'}
+          </Button>
+        );
+      })}
+    </Box>
+  );
+
+  const modeDescription = {
+    room: '도면의 실 번호를 선택하고 실명을 입력합니다.',
+    deduction: '실별 직접 공제와 도면 주기표 공제항목을 설정합니다.',
+    quantity: '실과 공정을 선택해 해당 범위의 물량과 공정선을 확인합니다.',
+  }[panelMode];
+
   if (!analysis) return null;
+
+  const canvasSelectedLayer = panelMode === 'quantity' ? selectedLayer : '';
+  const canvasRoomEditable = panelMode === 'room' || panelMode === 'deduction';
+  const canvasOpeningEditable = panelMode === 'deduction';
 
   return (
     <Dialog open={open} onClose={onClose} fullScreen>
-      <DialogTitle sx={{ px: 2, py: 1.25, borderBottom: '1px solid #e2e8f0' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
-          <Box>
+      <DialogTitle sx={{ px: 2, py: 1.05, borderBottom: '1px solid #e2e8f0' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25, minWidth: 0 }}>
+          <Box sx={{ minWidth: 0 }}>
             <Typography variant="h6" component="div" sx={{ fontWeight: 900 }}>
-              {typeName || '-'} 도면 VIEW
+              {typeName || '-'} 통합 도면 VIEW
             </Typography>
             <Typography variant="caption" color="text.secondary">
-              마우스 휠 확대·축소, 이동 모드에서 드래그 · 측정 모드에서는 우측 상단 확대창과 끝점·근처점·직각 스냅을 사용합니다.
+              실 설정·공제면적 설정·실별 공정 물량확인을 오른쪽 고정 패널에서 전환합니다.
             </Typography>
           </Box>
-          <Button variant="outlined" onClick={onClose}>닫기</Button>
+          <Button variant="outlined" onClick={onClose} sx={{ ml: 'auto', flexShrink: 0 }}>닫기</Button>
         </Box>
       </DialogTitle>
 
@@ -2284,13 +4086,24 @@ function FullDrawingDialog({
               <DrawingCanvas
                 analysis={analysis}
                 heightSettings={heightSettings}
-                selectedLayer={selectedLayer}
+                selectedLayer={canvasSelectedLayer}
                 interactive
                 displayMode="view"
-                tooltipEnabled={Boolean(selectedLayer)}
+                tooltipEnabled={panelMode === 'quantity' && Boolean(selectedLayer)}
                 rooms={rooms}
                 roomSettings={roomSettings}
+                selectedRoomKey={selectedViewRoomKey}
+                onRoomSelect={selectRoom}
+                roomEditable={canvasRoomEditable}
                 showRoomLabels
+                openings={openings}
+                selectedOpeningKey={selectedOpeningKey}
+                emphasizedOpeningKeys={panelMode === 'deduction' && selectedRoom
+                  ? selectedRoomOpenings.map((opening) => opening.openingKey)
+                  : null}
+                dimUnemphasizedOpenings={panelMode === 'deduction' && Boolean(selectedRoom)}
+                onOpeningSelect={setSelectedOpeningKey}
+                openingEditable={canvasOpeningEditable}
               />
             </Paper>
           </Box>
@@ -2299,122 +4112,355 @@ function FullDrawingDialog({
             square
             elevation={0}
             sx={{
-              width: { xs: 230, md: 310 },
+              width: { xs: 300, md: 400, xl: 440 },
               flexShrink: 0,
               borderLeft: '1px solid #cbd5e1',
-              p: 1.25,
               overflow: 'auto',
+              bgcolor: '#ffffff',
             }}
           >
-            <Typography variant="subtitle1" sx={{ fontWeight: 900, mb: 0.75 }}>
-              공정 레이어
-            </Typography>
-
-            <Box sx={{ display: 'flex', gap: 0.75, mb: 1.25 }}>
-              <Button
-                variant="outlined"
-                size="small"
-                fullWidth
-                disabled={!selectedLayer || selectedIndex <= 0}
-                onClick={() => moveSelectedLayer(-1)}
-                aria-label="선택 공정 위로 이동"
-                sx={{ fontSize: 20, lineHeight: 1, minHeight: 34 }}
-              >
-                ↑
-              </Button>
-              <Button
-                variant="outlined"
-                size="small"
-                fullWidth
-                disabled={!selectedLayer || selectedIndex < 0 || selectedIndex >= layerOrder.length - 1}
-                onClick={() => moveSelectedLayer(1)}
-                aria-label="선택 공정 아래로 이동"
-                sx={{ fontSize: 20, lineHeight: 1, minHeight: 34 }}
-              >
-                ↓
-              </Button>
-            </Box>
-
-            {orderedLayers.map((layer) => {
-              const result = getLayerResult(layer, heightSettings);
-              const deductionM2 = safeDeductionValue(deductionTotalsByLayer[layer.layer]);
-              const displayedQuantity =
-                result.unit === '㎡' && result.quantity !== null && result.quantity !== undefined
-                  ? Math.max(0, Number(result.quantity) - deductionM2)
-                  : result.quantity;
-              const selected = selectedLayer === layer.layer;
-              return (
-                <Button
-                  key={layer.layer}
-                  fullWidth
-                  variant={selected ? 'contained' : 'outlined'}
-                  color={selected ? 'error' : 'primary'}
-                  onClick={() => setSelectedLayer(layer.layer)}
-                  sx={{
-                    mb: 0.75,
-                    py: 0.8,
-                    px: 1,
-                    justifyContent: 'space-between',
-                    textAlign: 'left',
-                    textTransform: 'none',
-                  }}
-                >
-                  <Box component="span" sx={{ minWidth: 0 }}>
-                    <Typography component="span" variant="body2" sx={{ display: 'block', fontWeight: 800 }}>
-                      {layerDisplayName(layer.layer)}
-                    </Typography>
-                    <Typography component="span" variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
-                      {displayedQuantity === null || displayedQuantity === undefined
-                        ? result.status
-                        : `${formatNumber(displayedQuantity)}${result.unit}${deductionM2 > 0 ? ` (공제 ${formatNumber(deductionM2)}㎡)` : ''}`}
-                    </Typography>
-                  </Box>
-                  <Typography component="span" variant="caption" sx={{ ml: 1, whiteSpace: 'nowrap' }}>
-                    {formatInteger(layer.objectCount)}개
-                  </Typography>
-                </Button>
-              );
-            })}
-
-            <Button
-              fullWidth
-              variant={!selectedLayer ? 'contained' : 'outlined'}
-              color="primary"
-              onClick={() => setSelectedLayer('')}
+            <Box
               sx={{
-                mt: 0.25,
-                py: 0.9,
-                px: 1,
-                justifyContent: 'flex-start',
-                textAlign: 'left',
-                textTransform: 'none',
+                position: 'sticky',
+                top: 0,
+                zIndex: 5,
+                bgcolor: '#ffffff',
+                p: 1.1,
+                borderBottom: '1px solid #e2e8f0',
               }}
             >
-              <Box component="span">
-                <Typography component="span" variant="body2" sx={{ display: 'block', fontWeight: 900 }}>
-                  기본도면
-                </Typography>
-                <Typography component="span" variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
-                  공정 강조 없이 보기
-                </Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 0.55 }}>
+                <Button
+                  size="small"
+                  variant={panelMode === 'room' ? 'contained' : 'outlined'}
+                  onClick={() => setPanelMode('room')}
+                  sx={{ textTransform: 'none', px: 0.5, minWidth: 0 }}
+                >
+                  ① 실 설정
+                </Button>
+                <Button
+                  size="small"
+                  variant={panelMode === 'deduction' ? 'contained' : 'outlined'}
+                  onClick={() => setPanelMode('deduction')}
+                  sx={{ textTransform: 'none', px: 0.5, minWidth: 0 }}
+                >
+                  ② 공제면적 설정
+                </Button>
+                <Button
+                  size="small"
+                  variant={panelMode === 'quantity' ? 'contained' : 'outlined'}
+                  onClick={() => setPanelMode('quantity')}
+                  sx={{ textTransform: 'none', px: 0.5, minWidth: 0, fontSize: 12 }}
+                >
+                  ③ 실별·공정 물량확인
+                </Button>
               </Box>
-            </Button>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.7 }}>
+                {modeDescription}
+              </Typography>
+            </Box>
+
+            <Box sx={{ p: 1.25 }}>
+              {panelMode === 'room' && (
+                <>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 900, mb: 0.75 }}>실 설정</Typography>
+                  {rooms.length ? renderRoomButtons(false) : (
+                    <Alert severity="warning">폐합된 WL-실면적이 없어 실을 설정할 수 없습니다.</Alert>
+                  )}
+                  {selectedRoom && (
+                    <>
+                      <TextField
+                        fullWidth
+                        required
+                        size="small"
+                        label={`실 ${selectedRoom.sortOrder} 실명`}
+                        value={selectedSetting.roomName || ''}
+                        onChange={(event) => updateRoomName(event.target.value)}
+                        placeholder="예: 거실, 안방, 침실1"
+                        error={!String(selectedSetting.roomName || '').trim()}
+                        helperText={
+                          String(selectedSetting.roomName || '').trim()
+                            ? `실면적 ${formatNumber(selectedRoom.sourceAreaM2)}㎡`
+                            : '필수입력'
+                        }
+                        sx={{ mb: 1.15 }}
+                      />
+                      <Alert severity="info" sx={{ mb: 1.15 }}>
+                        도면의 번호 영역을 클릭해 실을 바꿀 수 있습니다. 선택 실은 실제 굴곡보다 바깥쪽의 얇은 사각형 경계로 표시됩니다.
+                      </Alert>
+                      <Button
+                        fullWidth
+                        variant="contained"
+                        onClick={onSaveRoomSettings}
+                        disabled={roomSettingsLoading || roomSettingsSaving}
+                      >
+                        {roomSettingsSaving ? '저장 중' : '실명 저장'}
+                      </Button>
+                    </>
+                  )}
+                </>
+              )}
+
+              {panelMode === 'deduction' && (
+                <>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 900, mb: 0.75 }}>공제면적 설정</Typography>
+                  {rooms.length ? renderRoomButtons(false) : (
+                    <Alert severity="warning">공제면적을 연결할 실이 없습니다.</Alert>
+                  )}
+                  {selectedRoom && (
+                    <>
+                      <Paper variant="outlined" sx={{ p: 1, mb: 1.15 }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 0.75, alignItems: 'center' }}>
+                          <Box sx={{ minWidth: 0 }}>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>
+                              {selectedRoom.sortOrder}. {selectedRoomName || '미입력'} · 공정별 직접 공제
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              {directDeductionCount > 0
+                                ? `입력된 직접 공제 ${directDeductionCount}개`
+                                : '입력된 직접 공제 없음'}
+                            </Typography>
+                          </Box>
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={() => setDirectDeductionCollapsed((previous) => !previous)}
+                            sx={{ flexShrink: 0, minWidth: 68 }}
+                          >
+                            {directDeductionCollapsed ? '펼치기' : '접기'}
+                          </Button>
+                        </Box>
+
+                        {!directDeductionCollapsed && (
+                          <>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.65, mb: 0.7 }}>
+                              도면 공제항목 외에 추가로 차감할 면적만 입력합니다.
+                            </Typography>
+                            <TableContainer sx={{ maxHeight: 300, border: '1px solid #e2e8f0', borderRadius: 1 }}>
+                              <Table stickyHeader size="small">
+                                <TableHead>
+                                  <TableRow>
+                                    <TableCell sx={{ fontWeight: 800 }}>공정</TableCell>
+                                    <TableCell align="right" sx={{ fontWeight: 800 }}>직접 공제</TableCell>
+                                  </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                  {processLayers.map((layer) => {
+                                    const value = selectedSetting.deductions?.[layer.layer] ?? '';
+                                    return (
+                                      <TableRow key={layer.layer} hover>
+                                        <TableCell sx={{ fontWeight: 800 }}>{layerDisplayName(layer.layer)}</TableCell>
+                                        <TableCell align="right" sx={{ width: 150 }}>
+                                          <TextField
+                                            value={value}
+                                            onChange={(event) => updateDeduction(layer.layer, event.target.value)}
+                                            type="number"
+                                            size="small"
+                                            inputProps={{ min: 0, step: 0.01 }}
+                                            InputProps={{ endAdornment: <Typography variant="caption">㎡</Typography> }}
+                                            sx={{ width: 130 }}
+                                          />
+                                        </TableCell>
+                                      </TableRow>
+                                    );
+                                  })}
+                                </TableBody>
+                              </Table>
+                            </TableContainer>
+                          </>
+                        )}
+                      </Paper>
+
+                      <Paper variant="outlined" sx={{ p: 1, mb: 1.15 }}>
+                        <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 0.75, alignItems: 'center', mb: 0.75 }}>
+                          <Box>
+                            <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>도면 공제항목</Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              폭×높이를 선택한 공정의 공제면적으로 반영합니다.
+                            </Typography>
+                          </Box>
+                          <Chip size="small" label={`${selectedRoomOpenings.length}개`} />
+                        </Box>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.55, mb: 0.85 }}>
+                          <Button size="small" variant="outlined" onClick={onImportSchedule}>주기표 자동 불러오기</Button>
+                          <Button size="small" variant="outlined" onClick={() => onAddOpening?.(selectedRoom.roomKey)}>공제항목 추가</Button>
+                        </Box>
+
+                        {selectedRoomOpenings.length > 0 ? (
+                          <Box sx={{ display: 'grid', gap: 0.65 }}>
+                            {selectedRoomOpenings.map((opening) => (
+                              <Paper
+                                key={opening.openingKey}
+                                variant="outlined"
+                                onClick={() => setSelectedOpeningKey(opening.openingKey)}
+                                sx={{
+                                  p: 0.8,
+                                  cursor: 'pointer',
+                                  borderColor: selectedOpeningKey === opening.openingKey ? '#2563eb' : '#e2e8f0',
+                                  bgcolor: selectedOpeningKey === opening.openingKey ? 'rgba(37,99,235,0.045)' : '#ffffff',
+                                }}
+                              >
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', gap: 0.75 }}>
+                                  <Box sx={{ minWidth: 0 }}>
+                                    <Typography variant="body2" sx={{ fontWeight: 900 }}>
+                                      {opening.openingName || '공제항목'}
+                                      {isScheduleDeductionItem(opening) && <Chip size="small" label="주기표" sx={{ ml: 0.6, height: 20 }} />}
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                      {formatNumber(opening.widthMm / 1000)}M × {formatNumber(opening.heightMm / 1000)}M × {opening.quantity}개 = {formatNumber(opening.areaM2)}㎡
+                                    </Typography>
+                                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block' }}>
+                                      공제: {opening.appliedLayers.length ? opening.appliedLayers.map(layerDisplayName).join(', ') : '공정 미선택'}
+                                    </Typography>
+                                  </Box>
+                                  <Box sx={{ display: 'flex', gap: 0.35, flexShrink: 0 }}>
+                                    <Button size="small" onClick={(event) => { event.stopPropagation(); onEditOpening?.(opening); }}>수정</Button>
+                                    <Button size="small" color="error" onClick={(event) => { event.stopPropagation(); onDeleteOpening?.(opening); }}>삭제</Button>
+                                  </Box>
+                                </Box>
+                              </Paper>
+                            ))}
+                          </Box>
+                        ) : (
+                          <Alert severity="info">선택한 실에 등록된 도면 공제항목이 없습니다.</Alert>
+                        )}
+                      </Paper>
+
+                      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.75 }}>
+                        <Button
+                          variant="outlined"
+                          onClick={onSaveOpenings}
+                          disabled={openingSaving}
+                        >
+                          {openingSaving ? '저장 중' : '도면 공제 저장'}
+                        </Button>
+                        <Button
+                          variant="contained"
+                          onClick={onSaveRoomSettings}
+                          disabled={roomSettingsLoading || roomSettingsSaving}
+                        >
+                          {roomSettingsSaving ? '저장 중' : '직접 공제 저장'}
+                        </Button>
+                      </Box>
+                    </>
+                  )}
+                </>
+              )}
+
+              {panelMode === 'quantity' && (
+                <>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 900, mb: 0.35 }}>실별·공정 물량확인</Typography>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.75 }}>
+                    실 선택: {selectedRoomLabel}
+                  </Typography>
+                  {renderRoomButtons(true)}
+
+                  <Typography variant="subtitle2" sx={{ fontWeight: 900, mb: 0.55 }}>공정 선택</Typography>
+                  <Box sx={{ display: 'flex', gap: 0.75, mb: 1.05 }}>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      fullWidth
+                      disabled={!selectedLayer || selectedIndex <= 0}
+                      onClick={() => moveSelectedLayer(-1)}
+                      aria-label="선택 공정 위로 이동"
+                      sx={{ fontSize: 20, lineHeight: 1, minHeight: 34 }}
+                    >
+                      ↑
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      size="small"
+                      fullWidth
+                      disabled={!selectedLayer || selectedIndex < 0 || selectedIndex >= layerOrder.length - 1}
+                      onClick={() => moveSelectedLayer(1)}
+                      aria-label="선택 공정 아래로 이동"
+                      sx={{ fontSize: 20, lineHeight: 1, minHeight: 34 }}
+                    >
+                      ↓
+                    </Button>
+                  </Box>
+
+                  {orderedLayers.map((layer) => {
+                    const totalResult = getLayerResult(layer, heightSettings);
+                    const totalDeductionM2 = safeDeductionValue(deductionTotalsByLayer[layer.layer]);
+                    const totalQuantity =
+                      ['㎡', 'M'].includes(totalResult.unit) && totalResult.quantity !== null && totalResult.quantity !== undefined
+                        ? Math.max(0, Number(totalResult.quantity) - totalDeductionM2)
+                        : totalResult.quantity;
+                    const roomRow = selectedRoomRowMap.get(layer.layer);
+                    const displayedQuantity = selectedRoom ? roomRow?.quantity : totalQuantity;
+                    const displayedUnit = selectedRoom ? roomRow?.unit || totalResult.unit : totalResult.unit;
+                    const displayedStatus = selectedRoom ? roomRow?.status : totalResult.status;
+                    const displayedDeduction = selectedRoom ? safeDeductionValue(roomRow?.deductionM2) : totalDeductionM2;
+                    const displayedGross = selectedRoom ? roomRow?.grossQuantity : totalResult.quantity;
+                    const selected = selectedLayer === layer.layer;
+                    return (
+                      <Button
+                        key={layer.layer}
+                        fullWidth
+                        variant={selected ? 'contained' : 'outlined'}
+                        color={selected ? 'error' : 'primary'}
+                        onClick={() => setSelectedLayer(layer.layer)}
+                        sx={{
+                          mb: 0.65,
+                          py: 0.75,
+                          px: 1,
+                          justifyContent: 'space-between',
+                          textAlign: 'left',
+                          textTransform: 'none',
+                        }}
+                      >
+                        <Box component="span" sx={{ minWidth: 0 }}>
+                          <Typography component="span" variant="body2" sx={{ display: 'block', fontWeight: 800 }}>
+                            {layerDisplayName(layer.layer)}
+                          </Typography>
+                          <Typography component="span" variant="caption" sx={{ display: 'block', opacity: 0.88 }}>
+                            {displayedQuantity === null || displayedQuantity === undefined
+                              ? displayedStatus || '산출값 없음'
+                              : `${formatNumber(displayedQuantity)}${displayedUnit}${displayedDeduction > 0 && ['㎡', 'M'].includes(displayedUnit)
+                                ? ` (총 ${formatNumber(displayedGross)}${displayedUnit} · 공제 ${formatNumber(displayedDeduction)}${displayedUnit})`
+                                : ''}`}
+                          </Typography>
+                        </Box>
+                        {!selectedRoom && (
+                          <Typography component="span" variant="caption" sx={{ ml: 1, whiteSpace: 'nowrap' }}>
+                            {formatInteger(layer.objectCount)}개
+                          </Typography>
+                        )}
+                      </Button>
+                    );
+                  })}
+
+                  <Button
+                    fullWidth
+                    variant={!selectedLayer ? 'contained' : 'outlined'}
+                    color="primary"
+                    onClick={() => setSelectedLayer('')}
+                    sx={{ mt: 0.2, py: 0.85, px: 1, justifyContent: 'flex-start', textAlign: 'left', textTransform: 'none' }}
+                  >
+                    <Box component="span">
+                      <Typography component="span" variant="body2" sx={{ display: 'block', fontWeight: 900 }}>
+                        기본도면
+                      </Typography>
+                      <Typography component="span" variant="caption" sx={{ display: 'block', opacity: 0.85 }}>
+                        공정 강조 없이 보기
+                      </Typography>
+                    </Box>
+                  </Button>
+                </>
+              )}
+            </Box>
           </Paper>
         </Box>
       </DialogContent>
-
-      <DialogActions sx={{ py: 0.75, borderTop: '1px solid #e2e8f0' }}>
-        <Typography variant="caption" color="text.secondary" sx={{ mr: 'auto', pl: 1 }}>
-          겹치는 동일 객체는 한 번만 표시하며, 커서 정보는 가장 가까운 객체 한 건만 보여줍니다.
-        </Typography>
-        <Button onClick={onClose}>닫기</Button>
-      </DialogActions>
     </Dialog>
   );
 }
 
 export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
   const fileInputRef = useRef(null);
+  const roomKeyMigrationRef = useRef(new Map());
   const [typeName, setTypeName] = useState('');
   const [selectedFileName, setSelectedFileName] = useState('');
   const [analysis, setAnalysis] = useState(null);
@@ -2432,6 +4478,10 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
   const [selectedRoomKey, setSelectedRoomKey] = useState('');
   const [roomSettingsLoading, setRoomSettingsLoading] = useState(false);
   const [roomSettingsSaving, setRoomSettingsSaving] = useState(false);
+  const [openings, setOpenings] = useState([]);
+  const [openingSettingsLoading, setOpeningSettingsLoading] = useState(false);
+  const [openingSettingsSaving, setOpeningSettingsSaving] = useState(false);
+  const [openingEditor, setOpeningEditor] = useState(null);
   const [toast, setToast] = useState(null);
 
   const drawingRooms = useMemo(() => extractDrawingRooms(analysis), [analysis]);
@@ -2446,7 +4496,16 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
     );
   }, [analysis]);
 
-  const deductionTotalsByLayer = useMemo(() => {
+  const openingProcessLayers = useMemo(() => {
+    if (!analysis) return [];
+    return sortLayersByDefaultOrder(
+      (analysis.activeLayers || []).filter(
+        (layer) => classifyQuantityLayer(layer.layer).mode !== 'room_boundary',
+      ),
+    );
+  }, [analysis]);
+
+  const manualDeductionTotalsByLayer = useMemo(() => {
     const totals = {};
     Object.values(roomSettings || {}).forEach((setting) => {
       Object.entries(setting?.deductions || {}).forEach(([layerName, value]) => {
@@ -2456,22 +4515,58 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
     return totals;
   }, [roomSettings]);
 
+  const openingDeductionTotalsByLayer = useMemo(() => {
+    const totals = {};
+    openings.forEach((opening) => {
+      const roomMultiplier = Math.max(1, getOpeningRoomKeys(opening).length);
+      (opening.appliedLayers || []).forEach((layerName) => {
+        totals[layerName] =
+          (totals[layerName] || 0) + getOpeningDeductionQuantity(opening, layerName) * roomMultiplier;
+      });
+    });
+    return totals;
+  }, [openings]);
+
+  const deductionTotalsByLayer = useMemo(() => {
+    const totals = { ...manualDeductionTotalsByLayer };
+    Object.entries(openingDeductionTotalsByLayer).forEach(([layerName, value]) => {
+      totals[layerName] = (totals[layerName] || 0) + value;
+    });
+    return totals;
+  }, [manualDeductionTotalsByLayer, openingDeductionTotalsByLayer]);
+
+  const roomQuantityRowsByKey = useMemo(
+    () =>
+      buildRoomQuantityRows({
+        analysis,
+        rooms: drawingRooms,
+        roomSettings,
+        openings,
+        heightSettings,
+      }),
+    [analysis, drawingRooms, heightSettings, openings, roomSettings],
+  );
+
   const activeRows = useMemo(() => {
     if (!analysis) return [];
-    return (analysis.activeLayers || []).map((layer) => {
+    return (analysis.activeLayers || [])
+      .filter((layer) => classifyQuantityLayer(layer.layer).mode !== 'room_boundary')
+      .map((layer) => {
       const result = getLayerResult(layer, heightSettings);
       const deductionM2 = safeDeductionValue(deductionTotalsByLayer[layer.layer]);
       const grossQuantity = result.quantity;
-      const canDeduct = result.unit === '㎡' && grossQuantity !== null && grossQuantity !== undefined;
+      const canDeduct = ['㎡', 'M'].includes(result.unit) && grossQuantity !== null && grossQuantity !== undefined;
       return {
         ...layer,
         ...result,
         grossQuantity,
+        manualDeductionM2: safeDeductionValue(manualDeductionTotalsByLayer[layer.layer]),
+        openingDeductionM2: safeDeductionValue(openingDeductionTotalsByLayer[layer.layer]),
         deductionM2,
         quantity: canDeduct ? Math.max(0, Number(grossQuantity) - deductionM2) : grossQuantity,
       };
     });
-  }, [analysis, deductionTotalsByLayer, heightSettings]);
+  }, [analysis, deductionTotalsByLayer, heightSettings, manualDeductionTotalsByLayer, openingDeductionTotalsByLayer]);
 
   const heightRequiredLayers = useMemo(
     () => activeRows.filter((row) => row.rule.requiresHeight),
@@ -2498,7 +4593,12 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
       let nextAnalysis = data.analysis_json;
       if (typeof nextAnalysis === 'string') nextAnalysis = JSON.parse(nextAnalysis);
 
-      if (!nextAnalysis?.entities?.length) {
+      const requiresAnalyzerRefresh =
+        !nextAnalysis?.entities?.length ||
+        data.analyzer_version !== ANALYZER_VERSION ||
+        nextAnalysis?.analyzerVersion !== ANALYZER_VERSION;
+
+      if (requiresAnalyzerRefresh) {
         const { data: fileBlob, error: downloadError } = await supabase.storage
           .from(data.storage_bucket || STORAGE_BUCKET)
           .download(data.storage_path);
@@ -2557,8 +4657,11 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
 
   const loadRoomSettings = useCallback(async (drawingId, rooms = []) => {
     if (!drawingId) {
+      roomKeyMigrationRef.current = new Map();
       setRoomSettings({});
       setSelectedRoomKey('');
+      setOpenings([]);
+      setOpeningEditor(null);
       return;
     }
 
@@ -2566,7 +4669,7 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
     try {
       const { data: roomRows, error: roomError } = await supabase
         .from(ROOM_TABLE)
-        .select('id, room_key, room_name, source_area_m2, sort_order')
+        .select('id, room_key, room_name, source_area_m2, sort_order, center_x, center_y')
         .eq('drawing_id', drawingId)
         .order('sort_order', { ascending: true });
       if (roomError) throw roomError;
@@ -2588,24 +4691,58 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
         deductionsByRoomId[row.room_id][row.layer_name] = String(Number(row.deduction_area_m2 || 0));
       });
 
-      const savedByKey = new Map(
-        (roomRows || []).map((row) => [
-          row.room_key,
-          {
-            roomId: row.id,
-            roomName: row.room_name || '',
-            deductions: deductionsByRoomId[row.id] || {},
-          },
-        ]),
-      );
+      const savedRows = (roomRows || []).map((row) => ({
+        roomKey: row.room_key,
+        roomId: row.id,
+        roomName: row.room_name || '',
+        deductions: deductionsByRoomId[row.id] || {},
+        sortOrder: Number(row.sort_order || 0),
+        center: {
+          x: Number(row.center_x || 0),
+          y: Number(row.center_y || 0),
+        },
+      }));
+      const savedByKey = new Map(savedRows.map((row) => [row.roomKey, row]));
+      const usedRoomIds = new Set();
 
       const next = {};
+      const roomKeyMigration = new Map();
       rooms.forEach((room) => {
-        next[room.roomKey] = savedByKey.get(room.roomKey) || {
-          roomName: '',
-          deductions: {},
-        };
+        let matched = savedByKey.get(room.roomKey) || null;
+        if (!matched) {
+          const candidates = savedRows
+            .filter((row) => !usedRoomIds.has(row.roomId))
+            .map((row) => ({
+              row,
+              inside:
+                isPointInsidePolygon(row.center, room.points || []) ||
+                polygonBoundaryDistance(row.center, room.points || []) <= 1,
+              sameOrder: row.sortOrder === room.sortOrder,
+              distance: distanceBetweenPoints(row.center, room.center),
+            }))
+            .sort((left, right) => {
+              if (left.inside !== right.inside) return left.inside ? -1 : 1;
+              if (left.sameOrder !== right.sameOrder) return left.sameOrder ? -1 : 1;
+              return left.distance - right.distance;
+            });
+          matched = candidates[0]?.row || null;
+        }
+        if (matched) {
+          usedRoomIds.add(matched.roomId);
+          roomKeyMigration.set(matched.roomKey, room.roomKey);
+        }
+        next[room.roomKey] = matched
+          ? {
+              roomId: matched.roomId,
+              roomName: matched.roomName,
+              deductions: matched.deductions,
+            }
+          : {
+              roomName: '',
+              deductions: {},
+            };
       });
+      roomKeyMigrationRef.current = roomKeyMigration;
       setRoomSettings(next);
       setSelectedRoomKey((previous) =>
         rooms.some((room) => room.roomKey === previous) ? previous : rooms[0]?.roomKey || '',
@@ -2626,6 +4763,54 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
     }
   }, []);
 
+
+  const loadOpeningSettings = useCallback(async (drawingId, rooms = []) => {
+    if (!drawingId) {
+      setOpenings([]);
+      return;
+    }
+    setOpeningSettingsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from(OPENING_TABLE)
+        .select('id, opening_key, room_key, opening_type, opening_name, width_mm, height_mm, quantity, area_m2, start_x, start_y, end_x, end_y, center_x, center_y, applied_layers')
+        .eq('drawing_id', drawingId)
+        .order('opening_name', { ascending: true });
+      if (error) throw error;
+      const normalized = (data || []).map(normalizeOpeningRow);
+      const validRoomKeys = new Set(rooms.map((room) => room.roomKey));
+      setOpenings(
+        normalized.map((opening) => {
+          let nextOpening = opening;
+          if (rooms.length && !validRoomKeys.has(nextOpening.roomKey)) {
+            const migratedRoomKey = roomKeyMigrationRef.current.get(nextOpening.roomKey);
+            if (migratedRoomKey && validRoomKeys.has(migratedRoomKey)) {
+              nextOpening = { ...nextOpening, roomKey: migratedRoomKey };
+            } else {
+              const matchedRoom = findNearestRoomForPoint(nextOpening.center, rooms);
+              if (matchedRoom) nextOpening = { ...nextOpening, roomKey: matchedRoom.roomKey };
+            }
+          }
+          const roomKeys = findAdjacentRoomKeysForOpening({
+            point: nextOpening.center,
+            widthMm: nextOpening.widthMm,
+            rooms,
+            primaryRoomKey: nextOpening.roomKey,
+          });
+          return {
+            ...nextOpening,
+            roomKeys: roomKeys.length ? roomKeys : [nextOpening.roomKey].filter(Boolean),
+          };
+        }),
+      );
+    } catch (error) {
+      console.error('도면 공제항목 설정 조회 오류:', error);
+      setOpenings([]);
+      setToast({ severity: 'error', text: `도면 공제항목을 불러오지 못했습니다. v51.54 SQL 실행 여부를 확인해주세요. (${error.message})` });
+    } finally {
+      setOpeningSettingsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -2684,10 +4869,12 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
     if (!currentDrawing?.id || !analysis) {
       setRoomSettings({});
       setSelectedRoomKey('');
+      setOpenings([]);
       return;
     }
     loadRoomSettings(currentDrawing.id, drawingRooms);
-  }, [analysis, currentDrawing?.id, drawingRooms, loadRoomSettings]);
+    loadOpeningSettings(currentDrawing.id, drawingRooms);
+  }, [analysis, currentDrawing?.id, drawingRooms, loadOpeningSettings, loadRoomSettings]);
 
   const saveDrawing = async (file, result, effectiveTypeName) => {
     const existing = savedDrawings.find(
@@ -2930,23 +5117,30 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
           });
           return;
         }
-        if (isCeilingAreaLayer(layer.layer) && value > room.sourceAreaM2 + 0.0001) {
-          setSelectedRoomKey(room.roomKey);
-          setToast({
-            severity: 'warning',
-            text: `${roomSettings[room.roomKey]?.roomName}의 천정면적 공제는 해당 실 도면면적 ${formatNumber(room.sourceAreaM2)}㎡를 초과할 수 없습니다.`,
-          });
-          return;
+        if (isCeilingAreaLayer(layer.layer)) {
+          const ceilingRow = (roomQuantityRowsByKey[room.roomKey] || []).find(
+            (row) => row.layer === layer.layer,
+          );
+          const roomCeilingArea = Number(ceilingRow?.grossQuantity || 0);
+          if (value > roomCeilingArea + 0.0001) {
+            setSelectedRoomKey(room.roomKey);
+            setToast({
+              severity: 'warning',
+              text: `${roomSettings[room.roomKey]?.roomName}의 천정면적 공제는 해당 실 천정 산출면적 ${formatNumber(roomCeilingArea)}㎡를 초과할 수 없습니다.`,
+            });
+            return;
+          }
         }
       }
     }
 
     for (const layer of deductionProcessLayers) {
       const grossResult = getLayerResult(layer, heightSettings);
-      const totalDeduction = drawingRooms.reduce(
-        (sum, room) => sum + safeDeductionValue(roomSettings[room.roomKey]?.deductions?.[layer.layer]),
-        0,
-      );
+      const totalDeduction =
+        drawingRooms.reduce(
+          (sum, room) => sum + safeDeductionValue(roomSettings[room.roomKey]?.deductions?.[layer.layer]),
+          0,
+        ) + safeDeductionValue(openingDeductionTotalsByLayer[layer.layer]);
       if (
         grossResult.unit === '㎡' &&
         grossResult.quantity !== null &&
@@ -2997,6 +5191,129 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
     } finally {
       setRoomSettingsSaving(false);
     }
+  };
+
+  const handleSaveOpenings = async () => {
+    if (!currentDrawing?.id) {
+      setToast({ severity: 'warning', text: '저장된 타입 도면을 먼저 선택해주세요.' });
+      return;
+    }
+    for (const opening of openings) {
+      if (!opening.roomKey || !drawingRooms.some((room) => room.roomKey === opening.roomKey)) {
+        setToast({ severity: 'warning', text: `${opening.openingName || '공제항목'}의 실 연결이 올바르지 않습니다.` });
+        return;
+      }
+      if (!opening.openingName || opening.widthMm <= 0 || opening.heightMm <= 0 || opening.quantity <= 0) {
+        setToast({ severity: 'warning', text: '도면 공제항목의 명칭·폭·높이·개수를 확인해주세요.' });
+        return;
+      }
+    }
+
+    for (const layer of openingProcessLayers) {
+      const grossResult = getLayerResult(layer, heightSettings);
+      const combinedDeduction =
+        safeDeductionValue(manualDeductionTotalsByLayer[layer.layer]) +
+        safeDeductionValue(openingDeductionTotalsByLayer[layer.layer]);
+      if (
+        ['㎡', 'M'].includes(grossResult.unit) &&
+        grossResult.quantity !== null &&
+        grossResult.quantity !== undefined &&
+        combinedDeduction > Number(grossResult.quantity) + 0.0001
+      ) {
+        setToast({
+          severity: 'warning',
+          text: `${layerDisplayName(layer.layer)} 공제합계 ${formatNumber(combinedDeduction)}${grossResult.unit}가 산출수량 ${formatNumber(grossResult.quantity)}${grossResult.unit}를 초과합니다.`,
+        });
+        return;
+      }
+    }
+
+    const payload = openings.map((opening) => ({
+      opening_key: opening.openingKey,
+      room_key: opening.roomKey,
+      opening_type: opening.openingType || 'window',
+      opening_name: opening.openingName,
+      width_mm: Number(opening.widthMm),
+      height_mm: Number(opening.heightMm),
+      quantity: Number(opening.quantity),
+      start_x: Number(opening.start.x),
+      start_y: Number(opening.start.y),
+      end_x: Number(opening.end.x),
+      end_y: Number(opening.end.y),
+      applied_layers: opening.appliedLayers || [],
+    }));
+
+    setOpeningSettingsSaving(true);
+    try {
+      const { error } = await supabase.rpc('save_drawing_openings', {
+        p_drawing_id: currentDrawing.id,
+        p_openings: payload,
+      });
+      if (error) throw error;
+      await loadOpeningSettings(currentDrawing.id, drawingRooms);
+      setToast({ severity: 'success', text: `${typeName || currentDrawing.drawing_type} 도면 공제항목 ${formatInteger(payload.length)}개를 저장했습니다.` });
+    } catch (error) {
+      console.error('도면 공제항목 저장 오류:', error);
+      setToast({ severity: 'error', text: `도면 공제항목 저장 실패: ${error.message}` });
+    } finally {
+      setOpeningSettingsSaving(false);
+    }
+  };
+
+  const handleImportScheduleDeductions = () => {
+    if (!analysis) {
+      setToast({ severity: 'warning', text: '분석된 도면이 없습니다.' });
+      return;
+    }
+    if (!drawingRooms.length) {
+      setToast({ severity: 'warning', text: '공제항목을 연결할 실 영역이 없습니다.' });
+      return;
+    }
+    const candidates = extractScheduleDeductionCandidates(analysis, drawingRooms);
+    if (!candidates.length) {
+      setToast({
+        severity: 'info',
+        text: '도면에서 창호기호 블록과 폭X높이 주기표 문자를 함께 찾지 못했습니다. 공제항목 추가에서 창호목록을 불러오거나 직접 입력해주세요.',
+      });
+      return;
+    }
+    const existingKeys = new Set(openings.map((opening) => opening.openingKey));
+    const additions = candidates.filter((candidate) => !existingKeys.has(candidate.openingKey));
+    if (!additions.length) {
+      setToast({ severity: 'info', text: `주기표 공제항목 ${formatInteger(candidates.length)}개가 이미 불러와져 있습니다.` });
+      return;
+    }
+    setOpenings((previous) => [...previous, ...additions]);
+    setSelectedRoomKey(additions[0].roomKey);
+    setToast({
+      severity: 'success',
+      text: `주기표에서 공제항목 ${formatInteger(candidates.length)}개를 인식해 신규 ${formatInteger(additions.length)}개를 추가했습니다. 실 연결과 공제 적용 공정을 확인한 뒤 저장해주세요.`,
+    });
+  };
+
+  const openOpeningEditor = (opening = null, roomKeyOverride = '') => {
+    const targetRoomKey = roomKeyOverride || opening?.roomKey || selectedRoomKey;
+    const room = drawingRooms.find((item) => item.roomKey === targetRoomKey) || drawingRooms[0];
+    if (!room) {
+      setToast({ severity: 'warning', text: '공제항목을 연결할 실을 먼저 선택해주세요.' });
+      return;
+    }
+    setSelectedRoomKey(room.roomKey);
+    setOpeningEditor({ opening, roomKey: room.roomKey });
+  };
+
+  const applyOpening = (opening) => {
+    setOpenings((previous) => {
+      const exists = previous.some((item) => item.openingKey === opening.openingKey);
+      return exists
+        ? previous.map((item) => (item.openingKey === opening.openingKey ? opening : item))
+        : [...previous, opening];
+    });
+  };
+
+  const deleteOpening = (opening) => {
+    if (!window.confirm(`${opening.openingName}을(를) 삭제할까요? 저장 버튼을 눌러야 DB에 반영됩니다.`)) return;
+    setOpenings((previous) => previous.filter((item) => item.openingKey !== opening.openingKey));
   };
 
   return (
@@ -3174,20 +5491,6 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
             )}
           </Paper>
 
-          <RoomSettingsPanel
-            analysis={analysis}
-            rooms={drawingRooms}
-            roomSettings={roomSettings}
-            setRoomSettings={setRoomSettings}
-            selectedRoomKey={selectedRoomKey}
-            setSelectedRoomKey={setSelectedRoomKey}
-            processLayers={deductionProcessLayers}
-            heightSettings={heightSettings}
-            loading={roomSettingsLoading}
-            saving={roomSettingsSaving}
-            onSave={handleSaveRoomSettings}
-          />
-
           <Box
             sx={{
               display: 'grid',
@@ -3210,19 +5513,28 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
                 <Chip
                   size="small"
                   color="primary"
-                  label={`${formatInteger(analysis.activeLayers.length)}개 레이어 · ${formatInteger(analysis.activeObjectCount)}개 객체`}
+                  label={`${formatInteger(activeRows.length)}개 공정 레이어`}
                 />
               </Box>
 
               <TableContainer sx={{ maxHeight: 580 }}>
-                <Table stickyHeader size="small">
+                <Table
+                  stickyHeader
+                  size="small"
+                  sx={{
+                    minWidth: 760,
+                    '& th, & td': {
+                      whiteSpace: 'nowrap',
+                      fontSize: '0.76rem',
+                    },
+                  }}
+                >
                   <TableHead>
                     <TableRow>
-                      <TableCell sx={{ fontWeight: 800 }}>레이어</TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 800 }}>객체</TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 800 }}>원본 길이</TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 800 }}>적용 높이</TableCell>
-                      <TableCell align="right" sx={{ fontWeight: 800 }}>공제면적</TableCell>
+                      <TableCell sx={{ fontWeight: 800 }}>Layer</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 800 }}>길이</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 800 }}>높이</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 800 }}>공제</TableCell>
                       <TableCell align="right" sx={{ fontWeight: 800 }}>최종 수량</TableCell>
                       <TableCell sx={{ fontWeight: 800 }}>산출기준</TableCell>
                       <TableCell sx={{ fontWeight: 800 }}>상태</TableCell>
@@ -3231,16 +5543,27 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
                   <TableBody>
                     {activeRows.map((row) => (
                       <TableRow key={row.layer} hover>
-                        <TableCell sx={{ fontWeight: 700, whiteSpace: 'nowrap' }}>{row.layer}</TableCell>
-                        <TableCell align="right">{formatInteger(row.objectCount)}</TableCell>
-                        <TableCell align="right">{row.lengthM > 0 ? `${formatNumber(row.lengthM)}M` : '-'}</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>
+                          {analysisLayerDisplayName(row.layer)}
+                        </TableCell>
+                        <TableCell align="right">
+                          {row.lengthM > 0 ? `${formatNumber(row.lengthM)}M` : '-'}
+                        </TableCell>
                         <TableCell align="right">
                           {row.heightMm ? `${formatNumber(row.heightMm / 1000)}M` : '-'}
                         </TableCell>
-                        <TableCell align="right">
-                          {row.unit === '㎡' && row.deductionM2 > 0
-                            ? `-${formatNumber(row.deductionM2)}㎡`
-                            : '-'}
+                        <TableCell
+                          align="right"
+                          sx={{ whiteSpace: 'normal !important' }}
+                        >
+                          {['㎡', 'M'].includes(row.unit) && row.deductionM2 > 0 ? (
+                            <Box>
+                              <Typography variant="body2" sx={{ fontWeight: 800 }}>-{formatNumber(row.deductionM2)}{row.unit}</Typography>
+                              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', whiteSpace: 'nowrap' }}>
+                                {row.unit === '㎡' ? `직접 ${formatNumber(row.manualDeductionM2)} + ` : ''}도면 {formatNumber(row.openingDeductionM2)}
+                              </Typography>
+                            </Box>
+                          ) : '-'}
                         </TableCell>
                         <TableCell align="right" sx={{ fontWeight: 800 }}>
                           {row.quantity === null || row.quantity === undefined
@@ -3254,6 +5577,7 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
                             label={row.status}
                             color={row.severity === 'default' ? 'default' : row.severity}
                             variant={row.severity === 'success' ? 'filled' : 'outlined'}
+                            sx={{ whiteSpace: 'nowrap' }}
                           />
                         </TableCell>
                       </TableRow>
@@ -3262,7 +5586,7 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
                 </Table>
               </TableContainer>
 
-              {analysis.activeLayers.length === 0 && (
+              {activeRows.length === 0 && (
                 <Alert severity="warning" sx={{ m: 1.25 }}>
                   WL-로 시작하는 활성 레이어가 없습니다.
                 </Alert>
@@ -3272,6 +5596,9 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
             <DxfPreview
               analysis={analysis}
               heightSettings={heightSettings}
+              rooms={drawingRooms}
+              roomSettings={roomSettings}
+              openings={openings}
               onOpenView={() => setViewOpen(true)}
             />
           </Box>
@@ -3301,6 +5628,20 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
         </Paper>
       )}
 
+      <OpeningEditorDialog
+        open={Boolean(openingEditor)}
+        onClose={() => setOpeningEditor(null)}
+        analysis={analysis}
+        heightSettings={heightSettings}
+        rooms={drawingRooms}
+        roomSettings={roomSettings}
+        initialRoomKey={openingEditor?.roomKey || ''}
+        processLayers={openingProcessLayers}
+        existingOpenings={openings}
+        opening={openingEditor?.opening || null}
+        onConfirm={applyOpening}
+      />
+
       <FullDrawingDialog
         open={viewOpen}
         onClose={() => setViewOpen(false)}
@@ -3309,7 +5650,22 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
         typeName={typeName}
         rooms={drawingRooms}
         roomSettings={roomSettings}
+        setRoomSettings={setRoomSettings}
+        selectedRoomKey={selectedRoomKey}
+        setSelectedRoomKey={setSelectedRoomKey}
+        processLayers={deductionProcessLayers}
+        roomSettingsLoading={roomSettingsLoading}
+        roomSettingsSaving={roomSettingsSaving}
+        onSaveRoomSettings={handleSaveRoomSettings}
+        openings={openings}
+        openingSaving={openingSettingsLoading || openingSettingsSaving}
+        onAddOpening={(roomKey) => openOpeningEditor(null, roomKey)}
+        onEditOpening={(opening) => openOpeningEditor(opening)}
+        onDeleteOpening={deleteOpening}
+        onSaveOpenings={handleSaveOpenings}
+        onImportSchedule={handleImportScheduleDeductions}
         deductionTotalsByLayer={deductionTotalsByLayer}
+        roomQuantityRowsByKey={roomQuantityRowsByKey}
       />
 
       <Snackbar

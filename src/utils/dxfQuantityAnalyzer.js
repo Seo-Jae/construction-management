@@ -165,6 +165,65 @@ const stitchSegments = (segments) => {
   return points;
 };
 
+
+const identityMatrix = () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
+
+// first(second(point)) 순서로 적용되는 2D affine matrix 결합
+const multiplyMatrices = (first, second) => ({
+  a: first.a * second.a + first.c * second.b,
+  b: first.b * second.a + first.d * second.b,
+  c: first.a * second.c + first.c * second.d,
+  d: first.b * second.c + first.d * second.d,
+  e: first.a * second.e + first.c * second.f + first.e,
+  f: first.b * second.e + first.d * second.f + first.f,
+});
+
+const translationMatrix = (x, y) => ({ a: 1, b: 0, c: 0, d: 1, e: x, f: y });
+const scaleMatrix = (x, y) => ({ a: x, b: 0, c: 0, d: y, e: 0, f: 0 });
+const rotationMatrix = (degrees) => {
+  const radians = toFiniteNumber(degrees) * DEG_TO_RAD;
+  const cosine = Math.cos(radians);
+  const sine = Math.sin(radians);
+  return { a: cosine, b: sine, c: -sine, d: cosine, e: 0, f: 0 };
+};
+
+const transformPoint = (matrix, point) => ({
+  x: matrix.a * point.x + matrix.c * point.y + matrix.e,
+  y: matrix.b * point.x + matrix.d * point.y + matrix.f,
+});
+
+const createInsertMatrix = (geometry = {}, basePoint = { x: 0, y: 0 }) => {
+  const point = geometry.point || { x: 0, y: 0 };
+  const scaleX = toFiniteNumber(geometry.scaleX, 1);
+  const scaleY = toFiniteNumber(geometry.scaleY, 1);
+  return multiplyMatrices(
+    translationMatrix(point.x, point.y),
+    multiplyMatrices(
+      rotationMatrix(geometry.rotation || 0),
+      multiplyMatrices(
+        scaleMatrix(scaleX, scaleY),
+        translationMatrix(-toFiniteNumber(basePoint.x), -toFiniteNumber(basePoint.y)),
+      ),
+    ),
+  );
+};
+
+const matrixRotationDegrees = (matrix) => (Math.atan2(matrix.b, matrix.a) / DEG_TO_RAD);
+const matrixAverageScale = (matrix) => {
+  const xScale = Math.hypot(matrix.a, matrix.b);
+  const yScale = Math.hypot(matrix.c, matrix.d);
+  return Math.max(0.000001, (xScale + yScale) / 2);
+};
+
+const sampleCircle = (center, radius, count = 64) =>
+  Array.from({ length: count }, (_unused, index) => {
+    const angle = (index / count) * Math.PI * 2;
+    return {
+      x: center.x + radius * Math.cos(angle),
+      y: center.y + radius * Math.sin(angle),
+    };
+  });
+
 const parseHatchPaths = (record) => {
   const loopCountIndex = record.findIndex((pair) => pair.code === 91);
   if (loopCountIndex < 0) return [];
@@ -406,8 +465,8 @@ const parseSimpleEntity = (type, record) => {
       geometry: {
         point,
         blockName: String(getFirst(record, 2, '')).trim(),
-        scaleX: toFiniteNumber(getFirst(record, 41), 1),
-        scaleY: toFiniteNumber(getFirst(record, 42), 1),
+        scaleX: toFiniteNumber(getFirst(record, 41, '1'), 1),
+        scaleY: toFiniteNumber(getFirst(record, 42, '1'), 1),
         rotation: toFiniteNumber(getFirst(record, 50)),
       },
       colorIndex,
@@ -532,6 +591,239 @@ const parseEntities = (pairs) => {
   return entities;
 };
 
+
+const parseBlocks = (pairs) => {
+  const blocks = new Map();
+  let index = 0;
+
+  while (index < pairs.length) {
+    if (pairs[index].code !== 0 || String(pairs[index].value || '').trim().toUpperCase() !== 'BLOCK') {
+      index += 1;
+      continue;
+    }
+
+    const header = [];
+    index += 1;
+    while (index < pairs.length && pairs[index].code !== 0) {
+      header.push(pairs[index]);
+      index += 1;
+    }
+
+    const entityPairs = [];
+    while (
+      index < pairs.length &&
+      !(
+        pairs[index].code === 0 &&
+        String(pairs[index].value || '').trim().toUpperCase() === 'ENDBLK'
+      )
+    ) {
+      entityPairs.push(pairs[index]);
+      index += 1;
+    }
+
+    if (index < pairs.length) {
+      index += 1;
+      while (index < pairs.length && pairs[index].code !== 0) index += 1;
+    }
+
+    const name = String(getFirst(header, 2, '')).trim();
+    if (!name) continue;
+    blocks.set(name, {
+      name,
+      basePoint: {
+        x: toFiniteNumber(getFirst(header, 10)),
+        y: toFiniteNumber(getFirst(header, 20)),
+      },
+      entities: parseEntities(entityPairs),
+    });
+  }
+
+  return blocks;
+};
+
+const transformRenderEntity = (entity, matrix, inheritedLayer, sourceBlockName) => {
+  const geometry = entity.geometry || {};
+  const layer = normalizeLayerName(entity.layer) === '0'
+    ? normalizeLayerName(inheritedLayer || '0')
+    : normalizeLayerName(entity.layer);
+  const common = {
+    layer,
+    colorIndex: entity.colorIndex,
+    renderOnly: true,
+    sourceBlockName,
+  };
+
+  if (entity.type === 'LINE' && geometry.start && geometry.end) {
+    const start = transformPoint(matrix, geometry.start);
+    const end = transformPoint(matrix, geometry.end);
+    return { ...makeEntity({ type: 'LINE', layer, geometry: { start, end }, lengthMm: distance(start, end), colorIndex: entity.colorIndex }), ...common };
+  }
+
+  if (['LWPOLYLINE', 'POLYLINE'].includes(entity.type)) {
+    const vertices = (geometry.vertices || []).map((point) => ({ ...transformPoint(matrix, point), bulge: 0 }));
+    return {
+      ...makeEntity({
+        type: entity.type,
+        layer,
+        geometry: { vertices },
+        lengthMm: calculatePolylineLength(vertices, entity.closed),
+        areaMm2: calculatePolylineArea(vertices, entity.closed),
+        closed: entity.closed,
+        colorIndex: entity.colorIndex,
+      }),
+      ...common,
+    };
+  }
+
+  if (entity.type === 'CIRCLE' && geometry.center && geometry.radius) {
+    const vertices = sampleCircle(geometry.center, geometry.radius).map((point) => transformPoint(matrix, point));
+    return {
+      ...makeEntity({
+        type: 'POLYLINE',
+        layer,
+        geometry: { vertices },
+        lengthMm: calculatePolylineLength(vertices, true),
+        areaMm2: calculatePolylineArea(vertices, true),
+        closed: true,
+        colorIndex: entity.colorIndex,
+      }),
+      ...common,
+      sourceEntityType: 'CIRCLE',
+    };
+  }
+
+  if (entity.type === 'ARC') {
+    const vertices = sampleArc({
+      center: geometry.center,
+      radius: geometry.radius,
+      startAngle: geometry.startAngle,
+      endAngle: geometry.endAngle,
+      counterClockwise: true,
+    }).map((point) => transformPoint(matrix, point));
+    return {
+      ...makeEntity({
+        type: 'POLYLINE',
+        layer,
+        geometry: { vertices },
+        lengthMm: calculatePolylineLength(vertices, false),
+        closed: false,
+        colorIndex: entity.colorIndex,
+      }),
+      ...common,
+      sourceEntityType: 'ARC',
+    };
+  }
+
+  if (entity.type === 'HATCH') {
+    const paths = (geometry.paths || []).map((path) => ({
+      ...path,
+      vertices: (path.vertices || []).map((point) => transformPoint(matrix, point)),
+    }));
+    return {
+      ...makeEntity({
+        type: 'HATCH',
+        layer,
+        geometry: { ...geometry, paths, vertices: paths.flatMap((path) => path.vertices || []) },
+        lengthMm: paths.reduce((sum, path) => sum + calculatePolylineLength(path.vertices || [], path.closed !== false), 0),
+        areaMm2: paths.reduce((sum, path) => sum + calculatePolylineArea(path.vertices || [], path.closed !== false), 0),
+        closed: true,
+        colorIndex: entity.colorIndex,
+      }),
+      ...common,
+    };
+  }
+
+  if (['TEXT', 'MTEXT'].includes(entity.type) && geometry.point) {
+    return {
+      ...makeEntity({
+        type: entity.type,
+        layer,
+        geometry: {
+          ...geometry,
+          point: transformPoint(matrix, geometry.point),
+          height: Math.abs(toFiniteNumber(geometry.height, 120) * matrixAverageScale(matrix)),
+          rotation: toFiniteNumber(geometry.rotation) + matrixRotationDegrees(matrix),
+        },
+        colorIndex: entity.colorIndex,
+      }),
+      ...common,
+    };
+  }
+
+  if (entity.type === 'SPLINE') {
+    const points = (geometry.points || []).map((point) => transformPoint(matrix, point));
+    let lengthMm = 0;
+    for (let pointIndex = 0; pointIndex < points.length - 1; pointIndex += 1) {
+      lengthMm += distance(points[pointIndex], points[pointIndex + 1]);
+    }
+    return {
+      ...makeEntity({ type: 'SPLINE', layer, geometry: { points }, lengthMm, colorIndex: entity.colorIndex }),
+      ...common,
+    };
+  }
+
+  return null;
+};
+
+const expandInsertEntity = ({
+  insert,
+  blocks,
+  parentMatrix = identityMatrix(),
+  inheritedLayer = '0',
+  depth = 0,
+  ancestry = [],
+}) => {
+  if (!insert || depth > 8) return [];
+  const blockName = String(insert.geometry?.blockName || '').trim();
+  const block = blocks.get(blockName);
+  if (!block || ancestry.includes(blockName)) return [];
+
+  const insertLayer = normalizeLayerName(insert.layer) === '0'
+    ? normalizeLayerName(inheritedLayer || '0')
+    : normalizeLayerName(insert.layer);
+  const matrix = multiplyMatrices(parentMatrix, createInsertMatrix(insert.geometry, block.basePoint));
+  const nextAncestry = [...ancestry, blockName];
+  const expanded = [];
+
+  block.entities.forEach((child) => {
+    const childLayer = normalizeLayerName(child.layer) === '0' ? insertLayer : child.layer;
+    if (child.type === 'INSERT') {
+      expanded.push(
+        ...expandInsertEntity({
+          insert: { ...child, layer: childLayer },
+          blocks,
+          parentMatrix: matrix,
+          inheritedLayer: insertLayer,
+          depth: depth + 1,
+          ancestry: nextAncestry,
+        }),
+      );
+      return;
+    }
+
+    const transformed = transformRenderEntity(child, matrix, childLayer, blockName);
+    if (transformed) expanded.push(transformed);
+  });
+
+  return expanded;
+};
+
+const entityHasPointNearBounds = (entity, bounds, margin) => {
+  const minX = bounds.minX - margin;
+  const maxX = bounds.maxX + margin;
+  const minY = bounds.minY - margin;
+  const maxY = bounds.maxY + margin;
+  const geometry = entity.geometry || {};
+  const points = [];
+  if (geometry.start) points.push(geometry.start);
+  if (geometry.end) points.push(geometry.end);
+  if (geometry.point) points.push(geometry.point);
+  (geometry.vertices || []).forEach((point) => points.push(point));
+  (geometry.points || []).forEach((point) => points.push(point));
+  (geometry.paths || []).forEach((path) => (path.vertices || []).forEach((point) => points.push(point)));
+  return points.some((point) => point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY);
+};
+
 const updateBoundsWithPoint = (bounds, point) => {
   if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
   bounds.minX = Math.min(bounds.minX, point.x);
@@ -584,6 +876,7 @@ const summarizeLayers = (entities) => {
   const map = new Map();
 
   entities.forEach((entity) => {
+    if (entity.renderOnly) return;
     const layer = normalizeLayerName(entity.layer || '0');
     const previous = map.get(layer) || {
       layer,
@@ -615,6 +908,9 @@ const summarizeLayers = (entities) => {
 export const classifyQuantityLayer = (layerName) => {
   const normalized = normalizeLayerName(layerName).replace(/\s+/g, '');
   if (!normalized.startsWith('WL-')) return { mode: 'background', label: '배경 도면', requiresHeight: false };
+  if (normalized === 'WL-실면적' || normalized.startsWith('WL-실면적-')) {
+    return { mode: 'room_boundary', label: '실 경계', requiresHeight: false };
+  }
   if (normalized.includes('그라스울')) return { mode: 'pending', label: '규칙 미설정', requiresHeight: false };
   if (normalized.includes('경량석고') || normalized.includes('합지석고') || normalized.startsWith('WL-단열')) {
     return { mode: 'length_to_area', label: '길이×높이', requiresHeight: true };
@@ -632,25 +928,45 @@ export const analyzeDxfArrayBuffer = (arrayBuffer) => {
   const text = decodeUtf8OrKorean(arrayBuffer);
   const pairs = parsePairs(text);
   const entityPairs = extractSection(pairs, 'ENTITIES');
+  const blockPairs = extractSection(pairs, 'BLOCKS');
 
   if (entityPairs.length === 0) {
     throw new Error('DXF의 ENTITIES 구간을 찾지 못했습니다. ASCII DXF 파일인지 확인해주세요.');
   }
 
-  const entities = parseEntities(entityPairs);
+  const sourceEntities = parseEntities(entityPairs);
+  if (sourceEntities.length === 0) throw new Error('분석 가능한 DXF 객체가 없습니다.');
+
+  const blocks = parseBlocks(blockPairs);
+  const sourceBounds = calculateBounds(sourceEntities);
+  const expandedEntities = sourceEntities
+    .filter(
+      (entity) =>
+        entity.type === 'INSERT' &&
+        !normalizeLayerName(entity.layer).startsWith('WL-'),
+    )
+    .flatMap((insert) => expandInsertEntity({ insert, blocks, inheritedLayer: insert.layer || '0' }));
+
+  // 잘못된 기준점의 외부 블록 하나가 전체 화면 맞춤을 망가뜨리지 않도록
+  // 본 도면 범위 부근의 확장 형상만 표시·스냅 대상으로 포함한다.
+  const proximityMargin = Math.max(sourceBounds.width, sourceBounds.height) * 0.55;
+  const visibleExpandedEntities =
+    sourceBounds.width <= 1 && sourceBounds.height <= 1
+      ? expandedEntities
+      : expandedEntities.filter((entity) => entityHasPointNearBounds(entity, sourceBounds, proximityMargin));
+  const entities = [...sourceEntities, ...visibleExpandedEntities];
   const layers = summarizeLayers(entities);
   const activeLayers = layers.filter((layer) => layer.active);
-
-  if (entities.length === 0) throw new Error('분석 가능한 DXF 객체가 없습니다.');
 
   return {
     entities,
     layers,
     activeLayers,
     bounds: calculateBounds(entities),
-    totalObjectCount: entities.length,
+    totalObjectCount: sourceEntities.length,
+    renderedBlockObjectCount: visibleExpandedEntities.length,
     activeObjectCount: activeLayers.reduce((sum, layer) => sum + layer.objectCount, 0),
-    analyzerVersion: 'v51.45',
+    analyzerVersion: 'v51.67',
   };
 };
 

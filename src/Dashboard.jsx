@@ -53,7 +53,7 @@ import LaborCostManagement from './page/LaborCostManagement.jsx';
 import ProgressClaimManagement from './page/ProgressClaimManagement.jsx';
 import ContractItemProcessMapping from './page/ContractItemProcessMapping.jsx';
 import AdminDashboard from './page/AdminDashboard.jsx';
-import UserManagement from './page/UserManagement.jsx';
+import UserManagementWithAccessHistory from './page/UserManagementWithAccessHistory.jsx';
 import OrganizationChart from './page/OrganizationChart.jsx';
 import DrawingQuantityAnalysis from './page/DrawingQuantityAnalysis.jsx';
 
@@ -3084,7 +3084,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           )}
 
           {currentView === 'user-management' && isSuperAdmin && (
-            <UserManagement currentUserId={user?.id || ''} />
+            <UserManagementWithAccessHistory currentUserId={user?.id || ''} />
           )}
 
           {currentView === 'organization-chart' && (

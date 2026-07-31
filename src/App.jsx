@@ -25,6 +25,11 @@ const LAST_ACTIVITY_STORAGE_KEY =
   'wooklim-construction-last-activity';
 const AUTO_LOGOUT_MESSAGE =
   '30분 동안 사용 기록이 없어 보안을 위해 자동 로그아웃되었습니다.';
+const ACCESS_SESSION_KEY_STORAGE_KEY =
+  'wooklim-construction-access-session-key';
+const ACCESS_SESSION_ID_STORAGE_KEY =
+  'wooklim-construction-access-session-id';
+const ACCESS_HEARTBEAT_INTERVAL_MS = 15 * 1000;
 
 const STATUS_CONTENT = {
   pending: {
@@ -127,6 +132,11 @@ export default function App() {
   const [profileError, setProfileError] = useState('');
   const [loginNotice, setLoginNotice] = useState('');
   const logoutInProgressRef = useRef(false);
+  const accessSessionIdRef = useRef('');
+
+  const accountStatus = String(
+    userProfile?.account_status || (userProfile ? 'active' : ''),
+  ).toLowerCase();
 
   const fetchProfile = useCallback(async (user, options = {}) => {
     const silent = options.silent === true;
@@ -172,11 +182,39 @@ export default function App() {
 
   const resetLocalSessionState = useCallback(() => {
     window.sessionStorage.removeItem(LAST_ACTIVITY_STORAGE_KEY);
+    window.sessionStorage.removeItem(ACCESS_SESSION_KEY_STORAGE_KEY);
+    window.sessionStorage.removeItem(ACCESS_SESSION_ID_STORAGE_KEY);
     window.sessionStorage.removeItem(SUPABASE_AUTH_STORAGE_KEY);
+    accessSessionIdRef.current = '';
     setSession(null);
     setUserProfile(null);
     setProfileError('');
     setProfileLoading(false);
+  }, []);
+
+  const endCurrentAccessSession = useCallback(async (reason = 'logout') => {
+    const storedSessionId =
+      accessSessionIdRef.current ||
+      window.sessionStorage.getItem(
+        ACCESS_SESSION_ID_STORAGE_KEY,
+      ) ||
+      '';
+
+    if (!storedSessionId) return;
+
+    try {
+      const { error } = await supabase.rpc(
+        'end_user_access_session',
+        {
+          p_session_id: storedSessionId,
+          p_end_reason: reason,
+        },
+      );
+
+      if (error) throw error;
+    } catch (error) {
+      console.warn('접속종료 기록 실패:', error);
+    }
   }, []);
 
   const performLogout = useCallback(async ({ automatic = false } = {}) => {
@@ -186,6 +224,10 @@ export default function App() {
     setLoginNotice(automatic ? AUTO_LOGOUT_MESSAGE : '');
 
     try {
+      await endCurrentAccessSession(
+        automatic ? 'automatic_logout' : 'logout',
+      );
+
       const { error } = automatic
         ? await supabase.auth.signOut({ scope: 'local' })
         : await supabase.auth.signOut();
@@ -197,7 +239,7 @@ export default function App() {
       resetLocalSessionState();
       logoutInProgressRef.current = false;
     }
-  }, [resetLocalSessionState]);
+  }, [endCurrentAccessSession, resetLocalSessionState]);
 
   const handleLogout = useCallback(() => {
     performLogout();
@@ -237,6 +279,113 @@ export default function App() {
       subscription.unsubscribe();
     };
   }, [fetchProfile]);
+
+  useEffect(() => {
+    if (!session?.user?.id || accountStatus !== 'active') {
+      return undefined;
+    }
+
+    let active = true;
+    let heartbeatTimer = null;
+
+    const ensureSessionKey = () => {
+      const storedKey = window.sessionStorage.getItem(
+        ACCESS_SESSION_KEY_STORAGE_KEY,
+      );
+
+      if (storedKey) return storedKey;
+
+      const nextKey =
+        typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `${session.user.id}-${Date.now()}-${Math.random()
+              .toString(36)
+              .slice(2)}`;
+
+      window.sessionStorage.setItem(
+        ACCESS_SESSION_KEY_STORAGE_KEY,
+        nextKey,
+      );
+
+      return nextKey;
+    };
+
+    const touchAccessSession = async () => {
+      const sessionId =
+        accessSessionIdRef.current ||
+        window.sessionStorage.getItem(
+          ACCESS_SESSION_ID_STORAGE_KEY,
+        ) ||
+        '';
+
+      if (!sessionId) return;
+
+      const { error } = await supabase.rpc(
+        'touch_user_access_session',
+        { p_session_id: sessionId },
+      );
+
+      if (error) {
+        console.warn('접속상태 갱신 실패:', error);
+      }
+    };
+
+    const startAccessSession = async () => {
+      const { data, error } = await supabase.rpc(
+        'start_user_access_session',
+        {
+          p_session_key: ensureSessionKey(),
+          p_user_agent: navigator.userAgent || '',
+        },
+      );
+
+      if (!active) return;
+
+      if (error) {
+        console.warn('접속기록 시작 실패:', error);
+        return;
+      }
+
+      const sessionId = String(data || '');
+      accessSessionIdRef.current = sessionId;
+      window.sessionStorage.setItem(
+        ACCESS_SESSION_ID_STORAGE_KEY,
+        sessionId,
+      );
+
+      heartbeatTimer = window.setInterval(
+        touchAccessSession,
+        ACCESS_HEARTBEAT_INTERVAL_MS,
+      );
+    };
+
+    const handlePageHide = () => {
+      const sessionId =
+        accessSessionIdRef.current ||
+        window.sessionStorage.getItem(
+          ACCESS_SESSION_ID_STORAGE_KEY,
+        ) ||
+        '';
+
+      if (!sessionId) return;
+
+      // 브라우저 종료·탭 닫기 상황의 최선 노력 기록입니다.
+      // 전송이 중단되더라도 최근 heartbeat가 종료시각 대체값으로 사용됩니다.
+      void supabase.rpc('end_user_access_session', {
+        p_session_id: sessionId,
+        p_end_reason: 'browser_close',
+      });
+    };
+
+    startAccessSession();
+    window.addEventListener('pagehide', handlePageHide);
+
+    return () => {
+      active = false;
+      if (heartbeatTimer) window.clearInterval(heartbeatTimer);
+      window.removeEventListener('pagehide', handlePageHide);
+    };
+  }, [accountStatus, session?.user?.id]);
 
   useEffect(() => {
     if (!session?.user) return undefined;
@@ -391,10 +540,6 @@ export default function App() {
       />
     );
   }
-
-  const accountStatus = String(
-    userProfile.account_status || 'active',
-  ).toLowerCase();
 
   if (accountStatus !== 'active') {
     return (
