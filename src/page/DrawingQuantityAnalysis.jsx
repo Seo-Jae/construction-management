@@ -37,8 +37,9 @@ const DRAWING_TABLE = 'drawing_quantity_drawings';
 const ROOM_TABLE = 'drawing_quantity_rooms';
 const ROOM_DEDUCTION_TABLE = 'drawing_quantity_room_deductions';
 const OPENING_TABLE = 'drawing_quantity_openings';
+const LIGHTWEIGHT_WALL_ZONE_TABLE = 'drawing_quantity_lightweight_wall_zones';
 const STORAGE_BUCKET = 'drawing-quantity-files';
-const ANALYZER_VERSION = 'v51.67';
+const ANALYZER_VERSION = 'v51.78';
 const MAX_DXF_FILE_SIZE = 25 * 1024 * 1024;
 
 const MULTI_PROCESS_HIGHLIGHT_COLORS = [
@@ -103,18 +104,125 @@ const safeHeightValue = (value) => {
   return Number.isFinite(number) && number > 0 ? number : 0;
 };
 
-const getLayerResult = (layer, heightSettings) => {
-  const rule = classifyQuantityLayer(layer.layer);
-  const lengthM = formatMeters(layer.totalLengthMm);
-  const directAreaM2 = formatSquareMeters(layer.closedAreaMm2);
-  const heightMm = safeHeightValue(heightSettings[layer.layer]);
+const isGlassWoolLayerName = (layerName) => {
+  const normalized = String(layerName || '').replace(/\s+/g, '').toUpperCase();
+  return normalized.startsWith('WL-') && normalized.includes('그라스울');
+};
 
-  if (rule.mode === 'length_to_area') {
+const isStudLayerName = (layerName) => {
+  const normalized = String(layerName || '').replace(/\s+/g, '').toUpperCase();
+  return normalized.startsWith('WL-') && normalized.includes('스터드');
+};
+
+const isLightweightGypsumLayerName = (layerName) => {
+  const normalized = String(layerName || '').replace(/\s+/g, '').toUpperCase();
+  return normalized.startsWith('WL-') && normalized.includes('경량석고');
+};
+
+const getGlassWoolLayerSummary = (analysis, layerName) =>
+  analysis?.glassWoolAnalysis?.byLayer?.[layerName] || null;
+
+const getStudLayerSummary = (analysis, layerName) =>
+  analysis?.studAnalysis?.byLayer?.[layerName] || null;
+
+const STUD_UNRESOLVED_FILTER = '__UNRESOLVED__';
+
+const getStudSpecificationEntityIndexes = (analysis, layerName, specificationKey) => {
+  if (!specificationKey) return [];
+  const summary = getStudLayerSummary(analysis, layerName);
+  return (summary?.items || [])
+    .filter((item) =>
+      specificationKey === STUD_UNRESOLVED_FILTER
+        ? !item.recognized
+        : item.recognized && String(item.standardWidthMm) === String(specificationKey),
+    )
+    .map((item) => Number(item.entityIndex))
+    .filter((value) => Number.isInteger(value) && value >= 0);
+};
+
+const getLightweightGypsumHeight = (heightSettings = {}) => {
+  const matched = Object.entries(heightSettings).find(([layerName, value]) => {
+    const normalized = String(layerName || '').replace(/\s+/g, '').toUpperCase();
+    return normalized.startsWith('WL-') && normalized.includes('경량석고') && safeHeightValue(value) > 0;
+  });
+  return matched ? safeHeightValue(matched[1]) : 0;
+};
+
+const getEffectiveLayerHeight = (layerName, heightSettings = {}) => {
+  const direct = safeHeightValue(heightSettings[layerName]);
+  if (direct > 0) return direct;
+  return isGlassWoolLayerName(layerName) ? getLightweightGypsumHeight(heightSettings) : 0;
+};
+
+const formatQuantityValue = (value, unit) =>
+  unit === 'EA' ? formatInteger(value) : formatNumber(value);
+
+const getLayerResult = (layer, heightSettings, analysis = null) => {
+  const rule = classifyQuantityLayer(layer.layer);
+  const rawLengthM = formatMeters(layer.totalLengthMm);
+  const directAreaM2 = formatSquareMeters(layer.closedAreaMm2);
+  const heightMm = getEffectiveLayerHeight(layer.layer, heightSettings);
+
+  if (rule.mode === 'glass_wool_area') {
+    const summary = getGlassWoolLayerSummary(analysis, layer.layer);
+    const lengthM = formatMeters(summary?.totalAppliedLengthMm || 0);
+    const unresolvedCount = Number(summary?.unresolvedMarkerCount || 0);
+    const markerCount = Number(summary?.markerCount || layer.objectCount || 0);
+    const hasMappedLength = lengthM > 0;
     return {
       rule,
       lengthM,
       heightMm,
-      quantity: heightMm > 0 ? lengthM * (heightMm / 1000) : null,
+      quantity: hasMappedLength && heightMm > 0 ? lengthM * (heightMm / 1000) : null,
+      unit: '㎡',
+      status:
+        heightMm <= 0
+          ? '높이 입력 필요'
+          : !hasMappedLength
+            ? '표시구간 분석 필요'
+            : unresolvedCount > 0
+              ? `미분석 ${formatInteger(unresolvedCount)}구간 확인`
+              : '정상',
+      severity:
+        heightMm > 0 && hasMappedLength && unresolvedCount === 0 ? 'success' : 'warning',
+      detailText: `도면 표시 ${formatInteger(markerCount)}구간`,
+      markerCount,
+      unresolvedCount,
+    };
+  }
+
+  if (rule.mode === 'stud_count') {
+    const summary = getStudLayerSummary(analysis, layer.layer);
+    const totalCount = Number(summary?.totalCount ?? layer.objectCount ?? 0);
+    const recognizedCount = Number(summary?.recognizedCount || 0);
+    const unresolvedCount = Number(summary?.unresolvedCount || 0);
+    const specificationText = (summary?.specifications || [])
+      .map((item) => `${item.standardName} ${formatInteger(item.count)}EA`)
+      .join(' · ');
+    return {
+      rule,
+      lengthM: 0,
+      heightMm: null,
+      quantity: totalCount,
+      unit: 'EA',
+      status:
+        totalCount <= 0
+          ? '스터드 객체 없음'
+          : unresolvedCount > 0
+            ? `규격확정 ${formatInteger(recognizedCount)} · 확인 ${formatInteger(unresolvedCount)}`
+            : '정상',
+      severity: totalCount > 0 && unresolvedCount === 0 ? 'success' : 'warning',
+      detailText: specificationText || '규격 확인 필요',
+      studSummary: summary,
+    };
+  }
+
+  if (rule.mode === 'length_to_area') {
+    return {
+      rule,
+      lengthM: rawLengthM,
+      heightMm,
+      quantity: heightMm > 0 ? rawLengthM * (heightMm / 1000) : null,
       unit: '㎡',
       status: heightMm > 0 ? '정상' : '높이 입력 필요',
       severity: heightMm > 0 ? 'success' : 'warning',
@@ -124,7 +232,7 @@ const getLayerResult = (layer, heightSettings) => {
   if (rule.mode === 'closed_area') {
     return {
       rule,
-      lengthM,
+      lengthM: rawLengthM,
       heightMm: null,
       quantity: directAreaM2,
       unit: '㎡',
@@ -139,9 +247,9 @@ const getLayerResult = (layer, heightSettings) => {
   if (rule.mode === 'length') {
     return {
       rule,
-      lengthM,
+      lengthM: rawLengthM,
       heightMm: null,
-      quantity: lengthM,
+      quantity: rawLengthM,
       unit: 'M',
       status: '정상',
       severity: 'success',
@@ -151,7 +259,7 @@ const getLayerResult = (layer, heightSettings) => {
   if (rule.mode === 'pending') {
     return {
       rule,
-      lengthM,
+      lengthM: rawLengthM,
       heightMm: null,
       quantity: null,
       unit: '-',
@@ -162,9 +270,9 @@ const getLayerResult = (layer, heightSettings) => {
 
   return {
     rule,
-    lengthM,
+    lengthM: rawLengthM,
     heightMm: null,
-    quantity: lengthM,
+    quantity: rawLengthM,
     unit: 'M',
     status: '길이 참고값',
     severity: 'info',
@@ -325,6 +433,7 @@ const buildFallbackOpeningSegment = ({ opening, candidate, widthMm, room }) => {
 
 const getOpeningDeductionQuantity = (opening, layerName) => {
   const mode = classifyQuantityLayer(layerName).mode;
+  if (['glass_wool_area', 'stud_count'].includes(mode)) return 0;
   const count = Math.max(1, Number(opening?.quantity || 1));
   if (['length', 'reference'].includes(mode)) {
     return (safeDeductionValue(opening?.widthMm) / 1000) * count;
@@ -856,7 +965,7 @@ const buildRoomLayerLengths = (analysis, rooms = []) => {
     .filter((entity) => !entity.renderOnly && String(entity.layer || '').trim().startsWith('WL-'))
     .forEach((entity) => {
       const mode = classifyQuantityLayer(entity.layer).mode;
-      if (mode === 'closed_area' || mode === 'room_boundary') return;
+      if (['closed_area', 'room_boundary', 'glass_wool_area', 'stud_count'].includes(mode)) return;
       getEntityLineGroups(entity).forEach((points) => {
         for (let index = 1; index < points.length; index += 1) {
           const runs = splitLinearSegmentByRoom({
@@ -874,6 +983,24 @@ const buildRoomLayerLengths = (analysis, rooms = []) => {
         }
       });
     });
+
+  Object.values(analysis?.glassWoolAnalysis?.byLayer || {}).forEach((summary) => {
+    (summary.segments || []).forEach((segment) => {
+      const runs = splitLinearSegmentByRoom({
+        start: segment.start,
+        end: segment.end,
+        rooms,
+        boundaryTolerance,
+        associationTolerance,
+      });
+      runs.forEach((run) => {
+        if (!run.roomKey || !totals[run.roomKey]) return;
+        totals[run.roomKey][summary.layer] =
+          (totals[run.roomKey][summary.layer] || 0) + run.lengthMm;
+      });
+    });
+  });
+
   return totals;
 };
 
@@ -889,11 +1016,41 @@ const buildRoomProcessHighlightEntities = ({
   const boundaryTolerance = Math.max(0.5, Math.min(2.5, drawingSpan * 0.00005));
   const associationTolerance = Math.max(220, Math.min(300, drawingSpan * 0.008));
   const result = [];
+  const selectedGlassMarkerKeys = new Set();
+
+  Object.values(analysis?.glassWoolAnalysis?.byLayer || {}).forEach((summary) => {
+    if (!layerSet.has(summary.layer)) return;
+    (summary.segments || []).forEach((segment) => {
+      const runs = splitLinearSegmentByRoom({
+        start: segment.start,
+        end: segment.end,
+        rooms,
+        boundaryTolerance,
+        associationTolerance,
+      });
+      if (runs.some((run) => run.roomKey === selectedRoomKey && run.lengthMm > 0.001)) {
+        selectedGlassMarkerKeys.add(segment.sourceInsertKey);
+      }
+    });
+  });
 
   analysis.entities.forEach((entity, entityIndex) => {
     const layer = String(entity.layer || '').trim();
-    if (entity.renderOnly || !layerSet.has(layer)) return;
+    if (!layerSet.has(layer)) return;
     const mode = classifyQuantityLayer(layer).mode;
+    if (entity.renderOnly) {
+      if (
+        mode === 'glass_wool_area' &&
+        entity.sourceInsertKey &&
+        selectedGlassMarkerKeys.has(entity.sourceInsertKey)
+      ) {
+        result.push({
+          ...entity,
+          __roomHighlightKey: `glass-${entity.sourceInsertKey}-${entityIndex}`,
+        });
+      }
+      return;
+    }
     if (mode === 'room_boundary') return;
 
     if (mode === 'closed_area') {
@@ -992,8 +1149,8 @@ const buildRoomQuantityRows = ({
       let unit = '-';
       let status = '';
 
-      if (rule.mode === 'length_to_area') {
-        const heightMm = safeHeightValue(heightSettings[layer.layer]);
+      if (['length_to_area', 'glass_wool_area'].includes(rule.mode)) {
+        const heightMm = getEffectiveLayerHeight(layer.layer, heightSettings);
         unit = '㎡';
         grossQuantity = heightMm > 0 ? lengthM * (heightMm / 1000) : null;
         status = heightMm > 0 ? '' : '높이 입력 필요';
@@ -1003,22 +1160,29 @@ const buildRoomQuantityRows = ({
       } else if (['length', 'reference'].includes(rule.mode)) {
         unit = 'M';
         grossQuantity = lengthM;
+      } else if (rule.mode === 'stud_count') {
+        unit = 'EA';
+        grossQuantity = null;
+        status = '스터드는 타입 전체 규격별 수량으로 확인';
       } else if (rule.mode === 'pending') {
         status = '산출규칙 미설정';
       }
 
-      const directDeductionM2 = unit === '㎡'
+      const deductionAllowed = ['length_to_area', 'closed_area', 'length', 'reference'].includes(rule.mode);
+      const directDeductionM2 = deductionAllowed && unit === '㎡'
         ? safeDeductionValue(roomSettings[room.roomKey]?.deductions?.[layer.layer])
         : 0;
-      const drawingDeductionM2 = openings
-        .filter(
-          (opening) =>
-            openingBelongsToRoom(opening, room.roomKey) &&
-            (opening.appliedLayers || []).includes(layer.layer),
-        )
-        .reduce((sum, opening) => sum + getOpeningDeductionQuantity(opening, layer.layer), 0);
+      const drawingDeductionM2 = deductionAllowed
+        ? openings
+            .filter(
+              (opening) =>
+                openingBelongsToRoom(opening, room.roomKey) &&
+                (opening.appliedLayers || []).includes(layer.layer),
+            )
+            .reduce((sum, opening) => sum + getOpeningDeductionQuantity(opening, layer.layer), 0)
+        : 0;
       const deductionM2 = directDeductionM2 + drawingDeductionM2;
-      const quantity = ['㎡', 'M'].includes(unit) && grossQuantity !== null
+      const quantity = deductionAllowed && ['㎡', 'M'].includes(unit) && grossQuantity !== null
         ? Math.max(0, grossQuantity - deductionM2)
         : grossQuantity;
 
@@ -1171,6 +1335,370 @@ const getEntityLineGroups = (entity) => {
       .filter((points) => points.length > 1);
   }
   return [];
+};
+
+
+const LIGHTWEIGHT_WALL_STUD_OPTIONS = [
+  30, 50, 60, 65, 70, 75, 80, 90, 100, 110, 120, 125, 130, 140, 150, 160, 170, 180, 200, 210,
+];
+
+const LIGHTWEIGHT_WALL_GYPSUM_OPTIONS = ['9.5', '12.5', '15', '18', '25'];
+
+const normalizeWallZonePoint = (point = {}) => ({
+  x: Number(point.x || 0),
+  y: Number(point.y || 0),
+});
+
+const wallZoneRangeLengthMm = (range = {}) =>
+  distanceBetweenPoints(normalizeWallZonePoint(range.start), normalizeWallZonePoint(range.end));
+
+const buildWallZonePolygon = (range = {}, visualOffsetMm = null) => {
+  const start = normalizeWallZonePoint(range.start);
+  const end = normalizeWallZonePoint(range.end);
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.hypot(dx, dy) || 1;
+  const offset = Math.max(80, Number(visualOffsetMm ?? range.offsetMm ?? 180));
+  const nx = (-dy / length) * offset;
+  const ny = (dx / length) * offset;
+  return [
+    { x: start.x + nx, y: start.y + ny },
+    { x: end.x + nx, y: end.y + ny },
+    { x: end.x - nx, y: end.y - ny },
+    { x: start.x - nx, y: start.y - ny },
+  ];
+};
+
+const wallZoneRangeCenter = (range = {}) => ({
+  x: (Number(range.start?.x || 0) + Number(range.end?.x || 0)) / 2,
+  y: (Number(range.start?.y || 0) + Number(range.end?.y || 0)) / 2,
+});
+
+const describeWallZoneRange = (range = {}) => {
+  const start = normalizeWallZonePoint(range.start);
+  const end = normalizeWallZonePoint(range.end);
+  let angle = Math.atan2(end.y - start.y, end.x - start.x);
+  if (angle < 0) angle += Math.PI;
+  if (angle >= Math.PI) angle -= Math.PI;
+  const ux = Math.cos(angle);
+  const uy = Math.sin(angle);
+  const nx = -uy;
+  const ny = ux;
+  const startProjection = start.x * ux + start.y * uy;
+  const endProjection = end.x * ux + end.y * uy;
+  const center = wallZoneRangeCenter({ start, end });
+  return {
+    range,
+    start,
+    end,
+    angle,
+    ux,
+    uy,
+    nx,
+    ny,
+    minProjection: Math.min(startProjection, endProjection),
+    maxProjection: Math.max(startProjection, endProjection),
+    perpendicular: center.x * nx + center.y * ny,
+    offsetMm: Math.max(80, Number(range.offsetMm || 180)),
+  };
+};
+
+const mergeTwoWallZoneRangesForDisplay = (leftRange, rightRange) => {
+  const left = describeWallZoneRange(leftRange);
+  const right = describeWallZoneRange(rightRange);
+  if (angleDifferenceModuloPi(left.angle, right.angle) > (6 * Math.PI) / 180) return null;
+
+  const rightStartProjection = right.start.x * left.ux + right.start.y * left.uy;
+  const rightEndProjection = right.end.x * left.ux + right.end.y * left.uy;
+  const rightMinProjection = Math.min(rightStartProjection, rightEndProjection);
+  const rightMaxProjection = Math.max(rightStartProjection, rightEndProjection);
+  const rightPerpendicular = wallZoneRangeCenter(rightRange).x * left.nx
+    + wallZoneRangeCenter(rightRange).y * left.ny;
+  const perpendicularDistance = Math.abs(rightPerpendicular - left.perpendicular);
+  const allowablePerpendicularDistance = Math.max(left.offsetMm, right.offsetMm) * 0.9 + 70;
+  if (perpendicularDistance > allowablePerpendicularDistance) return null;
+
+  const gap = intervalGap(
+    left.minProjection,
+    left.maxProjection,
+    rightMinProjection,
+    rightMaxProjection,
+  );
+  const allowableGap = Math.max(left.offsetMm, right.offsetMm) * 1.7 + 140;
+  if (gap > allowableGap) return null;
+
+  const minProjection = Math.min(left.minProjection, rightMinProjection);
+  const maxProjection = Math.max(left.maxProjection, rightMaxProjection);
+  const centerPerpendicular = (left.perpendicular + rightPerpendicular) / 2;
+  const start = {
+    x: left.ux * minProjection + left.nx * centerPerpendicular,
+    y: left.uy * minProjection + left.ny * centerPerpendicular,
+  };
+  const end = {
+    x: left.ux * maxProjection + left.nx * centerPerpendicular,
+    y: left.uy * maxProjection + left.ny * centerPerpendicular,
+  };
+  return {
+    rangeKey: `display-merged-${simpleHash(`${leftRange.rangeKey || ''}|${rightRange.rangeKey || ''}`)}`,
+    start,
+    end,
+    offsetMm: Math.max(
+      left.offsetMm + Math.abs(left.perpendicular - centerPerpendicular),
+      right.offsetMm + Math.abs(rightPerpendicular - centerPerpendicular),
+    ),
+  };
+};
+
+const mergeWallZoneRangesForDisplay = (ranges = []) => {
+  const merged = (Array.isArray(ranges) ? ranges : [])
+    .map((range, index) => ({
+      ...range,
+      rangeKey: String(range.rangeKey || `display-range-${index + 1}`),
+    }));
+  let changed = true;
+  while (changed) {
+    changed = false;
+    outer: for (let leftIndex = 0; leftIndex < merged.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < merged.length; rightIndex += 1) {
+        const next = mergeTwoWallZoneRangesForDisplay(merged[leftIndex], merged[rightIndex]);
+        if (!next) continue;
+        merged.splice(rightIndex, 1);
+        merged.splice(leftIndex, 1, next);
+        changed = true;
+        break outer;
+      }
+    }
+  }
+  return merged;
+};
+
+const buildWallZoneRenderData = (zones = []) => {
+  const occupied = [];
+  return (Array.isArray(zones) ? zones : []).map((zone, zoneIndex) => {
+    const displayRanges = mergeWallZoneRangesForDisplay(zone.ranges || []);
+    const labelEntries = displayRanges.map((range, rangeIndex) => {
+      const targetCenter = wallZoneRangeCenter(range);
+      const candidateOffsets = [
+        [0, 0], [0, 190], [0, -190], [390, 0], [-390, 0],
+        [390, 190], [-390, 190], [390, -190], [-390, -190],
+        [0, 380], [0, -380],
+      ];
+      let labelCenter = targetCenter;
+      for (const [offsetX, offsetY] of candidateOffsets) {
+        const candidate = { x: targetCenter.x + offsetX, y: targetCenter.y + offsetY };
+        const collides = occupied.some(
+          (stored) => Math.abs(stored.x - candidate.x) < 360 && Math.abs(stored.y - candidate.y) < 170,
+        );
+        if (!collides) {
+          labelCenter = candidate;
+          break;
+        }
+      }
+      occupied.push(labelCenter);
+      return {
+        targetCenter,
+        labelCenter,
+        labelKey: `${zone.zoneKey || 'zone'}-label-${rangeIndex}`,
+      };
+    });
+    return {
+      zone,
+      labelEntries,
+      displayRanges,
+      renderKey: `${zone.zoneKey || 'zone'}-${zoneIndex}`,
+    };
+  });
+};
+
+
+const normalizeGypsumLayers = (layers = []) =>
+  (Array.isArray(layers) ? layers : [])
+    .map((layer, index) => ({
+      layerKey: String(layer.layerKey || `gypsum-${index + 1}`),
+      side: ['A', 'B'].includes(String(layer.side || '').toUpperCase())
+        ? String(layer.side).toUpperCase()
+        : 'A',
+      thicknessMm: String(layer.thicknessMm || '12.5'),
+      count: Math.max(1, Number(layer.count || 1)),
+    }))
+    .filter((layer) => Number(layer.count) > 0);
+
+const normalizeLightweightWallZone = (zone = {}, index = 0) => ({
+  zoneId: zone.zoneId || zone.id || null,
+  zoneKey: String(zone.zoneKey || zone.zone_key || `dw-${simpleHash(`${index}-${Date.now()}`)}`),
+  zoneCode: String(zone.zoneCode || zone.zone_code || `DW-${String(index + 1).padStart(2, '0')}`),
+  sortOrder: Number(zone.sortOrder ?? zone.sort_order ?? index + 1),
+  ranges: (Array.isArray(zone.ranges) ? zone.ranges : [])
+    .map((range, rangeIndex) => ({
+      rangeKey: String(range.rangeKey || range.range_key || `range-${rangeIndex + 1}`),
+      start: normalizeWallZonePoint(range.start),
+      end: normalizeWallZonePoint(range.end),
+      offsetMm: Math.max(80, Number(range.offsetMm ?? range.offset_mm ?? 180)),
+    }))
+    .filter((range) => wallZoneRangeLengthMm(range) > 1),
+  studSpecification: String(zone.studSpecification || zone.stud_specification || ''),
+  gypsumLayers: normalizeGypsumLayers(zone.gypsumLayers || zone.gypsum_layers || []),
+  glassWool: Boolean(zone.glassWool ?? zone.glass_wool ?? false),
+  isAutoGenerated: Boolean(zone.isAutoGenerated ?? zone.is_auto_generated ?? false),
+});
+
+const angleDifferenceModuloPi = (left, right) => {
+  let difference = Math.abs(left - right) % Math.PI;
+  if (difference > Math.PI / 2) difference = Math.PI - difference;
+  return Math.abs(difference);
+};
+
+const intervalGap = (aMin, aMax, bMin, bMax) => {
+  if (aMax < bMin) return bMin - aMax;
+  if (bMax < aMin) return aMin - bMax;
+  return 0;
+};
+
+const buildAutomaticLightweightWallZones = (analysis) => {
+  if (!analysis?.entities?.length) return [];
+  const segments = [];
+  analysis.entities.forEach((entity, entityIndex) => {
+    if (entity.renderOnly || !isLightweightGypsumLayerName(entity.layer)) return;
+    getEntityLineGroups(entity).forEach((points, groupIndex) => {
+      for (let index = 1; index < points.length; index += 1) {
+        const start = normalizeWallZonePoint(points[index - 1]);
+        const end = normalizeWallZonePoint(points[index]);
+        const length = distanceBetweenPoints(start, end);
+        if (!Number.isFinite(length) || length < 280) continue;
+        let angle = Math.atan2(end.y - start.y, end.x - start.x);
+        if (angle < 0) angle += Math.PI;
+        if (angle >= Math.PI) angle -= Math.PI;
+        const ux = Math.cos(angle);
+        const uy = Math.sin(angle);
+        const nx = -uy;
+        const ny = ux;
+        const startProjection = start.x * ux + start.y * uy;
+        const endProjection = end.x * ux + end.y * uy;
+        const perpendicular = ((start.x + end.x) / 2) * nx + ((start.y + end.y) / 2) * ny;
+        segments.push({
+          start,
+          end,
+          length,
+          angle,
+          ux,
+          uy,
+          nx,
+          ny,
+          minProjection: Math.min(startProjection, endProjection),
+          maxProjection: Math.max(startProjection, endProjection),
+          perpendicular,
+          entityIndex,
+          groupIndex,
+          segmentIndex: index,
+        });
+      }
+    });
+  });
+  if (!segments.length) return [];
+
+  const parent = segments.map((_segment, index) => index);
+  const find = (index) => {
+    let cursor = index;
+    while (parent[cursor] !== cursor) {
+      parent[cursor] = parent[parent[cursor]];
+      cursor = parent[cursor];
+    }
+    return cursor;
+  };
+  const union = (left, right) => {
+    const leftRoot = find(left);
+    const rightRoot = find(right);
+    if (leftRoot !== rightRoot) parent[rightRoot] = leftRoot;
+  };
+
+  for (let leftIndex = 0; leftIndex < segments.length; leftIndex += 1) {
+    const left = segments[leftIndex];
+    for (let rightIndex = leftIndex + 1; rightIndex < segments.length; rightIndex += 1) {
+      const right = segments[rightIndex];
+      if (angleDifferenceModuloPi(left.angle, right.angle) > (7 * Math.PI) / 180) continue;
+      const perpendicularDistance = Math.abs(right.perpendicular - left.perpendicular);
+      if (perpendicularDistance > 190) continue;
+      const rightStartOnLeft = right.start.x * left.ux + right.start.y * left.uy;
+      const rightEndOnLeft = right.end.x * left.ux + right.end.y * left.uy;
+      const gap = intervalGap(
+        left.minProjection,
+        left.maxProjection,
+        Math.min(rightStartOnLeft, rightEndOnLeft),
+        Math.max(rightStartOnLeft, rightEndOnLeft),
+      );
+      if (gap <= 260) union(leftIndex, rightIndex);
+    }
+  }
+
+  const grouped = new Map();
+  segments.forEach((segment, index) => {
+    const root = find(index);
+    if (!grouped.has(root)) grouped.set(root, []);
+    grouped.get(root).push(segment);
+  });
+
+  const rawZones = [...grouped.values()]
+    .map((group) => {
+      const axis = [...group].sort((left, right) => right.length - left.length)[0];
+      const points = group.flatMap((segment) => [segment.start, segment.end]);
+      const projections = points.map((point) => point.x * axis.ux + point.y * axis.uy);
+      const perpendiculars = points.map((point) => point.x * axis.nx + point.y * axis.ny);
+      const minProjection = Math.min(...projections);
+      const maxProjection = Math.max(...projections);
+      const minPerpendicular = Math.min(...perpendiculars);
+      const maxPerpendicular = Math.max(...perpendiculars);
+      const centerPerpendicular = (minPerpendicular + maxPerpendicular) / 2;
+      const start = {
+        x: axis.ux * minProjection + axis.nx * centerPerpendicular,
+        y: axis.uy * minProjection + axis.ny * centerPerpendicular,
+      };
+      const end = {
+        x: axis.ux * maxProjection + axis.nx * centerPerpendicular,
+        y: axis.uy * maxProjection + axis.ny * centerPerpendicular,
+      };
+      const lengthMm = distanceBetweenPoints(start, end);
+      if (lengthMm < 420) return null;
+      const offsetMm = Math.max(160, Math.min(320, (maxPerpendicular - minPerpendicular) / 2 + 95));
+      return { start, end, lengthMm, offsetMm, center: wallZoneRangeCenter({ start, end }) };
+    })
+    .filter(Boolean)
+    .sort((left, right) => {
+      const yDifference = right.center.y - left.center.y;
+      return Math.abs(yDifference) > 250 ? yDifference : left.center.x - right.center.x;
+    });
+
+  return rawZones.map((range, index) => {
+    const zoneKey = `auto-dw-${simpleHash(`${roundedCoordinate(range.start.x)}|${roundedCoordinate(range.start.y)}|${roundedCoordinate(range.end.x)}|${roundedCoordinate(range.end.y)}`)}`;
+    return normalizeLightweightWallZone({
+      zoneKey,
+      zoneCode: `DW-${String(index + 1).padStart(2, '0')}`,
+      sortOrder: index + 1,
+      ranges: [{
+        rangeKey: `${zoneKey}-range-1`,
+        start: range.start,
+        end: range.end,
+        offsetMm: range.offsetMm,
+      }],
+      studSpecification: '',
+      gypsumLayers: [],
+      glassWool: false,
+      isAutoGenerated: true,
+    }, index);
+  });
+};
+
+const wallZoneConfigurationSummary = (zone) => {
+  if (!zone) return '구성 미설정';
+  const parts = [];
+  if (zone.studSpecification) parts.push(`스터드 ${zone.studSpecification}형`);
+  if (zone.gypsumLayers?.length) {
+    const gypsum = zone.gypsumLayers
+      .map((layer) => `${layer.side}면 ${layer.thicknessMm}T×${formatInteger(layer.count)}겹`)
+      .join(' · ');
+    parts.push(gypsum);
+  }
+  parts.push(zone.glassWool ? '그라스울 적용' : '그라스울 없음');
+  return parts.join(' / ');
 };
 
 const projectPointToSegment = (point, start, end) => {
@@ -1447,7 +1975,7 @@ const buildEntityTooltip = (entity, heightSettings) => {
   if (entity.lengthMm > 0) lines.push(`길이 ${formatNumber(formatMeters(entity.lengthMm))}M`);
   if (row.heightMm) lines.push(`높이 ${formatNumber(row.heightMm / 1000)}M`);
   if (row.quantity !== null && row.quantity !== undefined) {
-    lines.push(`${row.unit === '㎡' ? '면적' : '수량'} ${formatNumber(row.quantity)}${row.unit}`);
+    lines.push(`${row.unit === '㎡' ? '면적' : '수량'} ${formatQuantityValue(row.quantity, row.unit)}${row.unit}`);
   } else {
     lines.push(row.status);
   }
@@ -1458,7 +1986,16 @@ const buildEntityTooltip = (entity, heightSettings) => {
   };
 };
 
-const getEntityStyle = (entity, selectedLayer, patternId, displayMode = 'view', highlightedLayers = [], highlightedLayerColors = {}) => {
+const getEntityStyle = (
+  entity,
+  selectedLayer,
+  patternId,
+  displayMode = 'view',
+  highlightedLayers = [],
+  highlightedLayerColors = {},
+  entitySelectionActive = false,
+  entitySelected = false,
+) => {
   const layer = String(entity.layer || '').trim();
   const compact = layer.replace(/\s+/g, '').toUpperCase();
   const active = layer.startsWith('WL-');
@@ -1467,9 +2004,11 @@ const getEntityStyle = (entity, selectedLayer, patternId, displayMode = 'view', 
       .map((value) => String(value || '').trim())
       .filter(Boolean),
   );
-  const hasSelectedLayer = Boolean(selectedLayer) || highlightSet.size > 0;
-  const directlySelected = Boolean(selectedLayer) && selectedLayer === layer;
-  const highlighted = highlightSet.has(layer);
+  const hasSelectedLayer = entitySelectionActive || Boolean(selectedLayer) || highlightSet.size > 0;
+  const directlySelected = entitySelectionActive
+    ? Boolean(entitySelected)
+    : Boolean(selectedLayer) && selectedLayer === layer;
+  const highlighted = !entitySelectionActive && highlightSet.has(layer);
   const selected = directlySelected || highlighted;
   const patternName = String(entity.geometry?.patternName || '').replace(/\s+/g, '').toUpperCase();
 
@@ -1584,9 +2123,20 @@ const DxfEntityShape = React.memo(function DxfEntityShape({
   baseStrokeWidth,
   patternId,
   displayMode,
+  entitySelectionActive = false,
+  entitySelected = false,
 }) {
   const geometry = entity.geometry || {};
-  const style = getEntityStyle(entity, selectedLayer, patternId, displayMode, highlightedLayers, highlightedLayerColors);
+  const style = getEntityStyle(
+    entity,
+    selectedLayer,
+    patternId,
+    displayMode,
+    highlightedLayers,
+    highlightedLayerColors,
+    entitySelectionActive,
+    entitySelected,
+  );
   const shapeProps = {
     fill: style.fill,
     stroke: style.stroke,
@@ -1911,6 +2461,7 @@ const DrawingEntityScene = React.memo(function DrawingEntityScene({
   selectedRoomPoints = [],
   roomClipId = '',
   roomSelectedEntities = [],
+  selectedEntityIndexes = [],
 }) {
   const selectionLayers = [
     ...(selectedLayer ? [selectedLayer] : []),
@@ -1919,12 +2470,20 @@ const DrawingEntityScene = React.memo(function DrawingEntityScene({
     .map((value) => String(value || '').trim())
     .filter((value, index, values) => value && values.indexOf(value) === index);
   const selectionSet = new Set(selectionLayers);
-  const roomProcessMode = Boolean(selectionLayers.length && selectedRoomPoints.length >= 3 && roomClipId);
-  const baseSelectionLayer = roomProcessMode ? '__ROOM_PROCESS_SELECTION__' : selectedLayer;
-  const baseHighlightedLayers = roomProcessMode ? [] : highlightedLayers;
-  const selectedLayerEntities = roomProcessMode
-    ? roomSelectedEntities
-    : [];
+  const selectedEntityIndexSet = new Set(
+    (Array.isArray(selectedEntityIndexes) ? selectedEntityIndexes : [])
+      .map((value) => Number(value))
+      .filter((value) => Number.isInteger(value) && value >= 0),
+  );
+  const entitySelectionMode = selectedEntityIndexSet.size > 0;
+  const roomProcessMode = Boolean(
+    !entitySelectionMode && selectionLayers.length && selectedRoomPoints.length >= 3 && roomClipId,
+  );
+  const baseSelectionLayer = roomProcessMode || entitySelectionMode
+    ? '__ENTITY_OR_ROOM_PROCESS_SELECTION__'
+    : selectedLayer;
+  const baseHighlightedLayers = roomProcessMode || entitySelectionMode ? [] : highlightedLayers;
+  const selectedLayerEntities = roomProcessMode ? roomSelectedEntities : [];
 
   return (
     <>
@@ -1940,6 +2499,8 @@ const DrawingEntityScene = React.memo(function DrawingEntityScene({
             baseStrokeWidth={baseStrokeWidth}
             patternId={patternId}
             displayMode={displayMode}
+            entitySelectionActive={entitySelectionMode}
+            entitySelected={selectedEntityIndexSet.has(Number(entity.__analysisEntityIndex))}
           />
         ))}
       </g>
@@ -2150,6 +2711,159 @@ function OpeningOverlay({
   );
 }
 
+
+function LightweightWallZoneOverlay({
+  zones = [],
+  selectedZoneKey = '',
+  onZoneSelect = null,
+  editable = false,
+  baseStrokeWidth = 1,
+  visualOffsetMm = 0,
+}) {
+  const renderData = useMemo(() => buildWallZoneRenderData(zones), [zones]);
+  if (!renderData.length) return null;
+  return (
+    <g transform="scale(1,-1)">
+      {renderData.map(({ zone, displayRanges, labelEntries, renderKey }) => {
+        const selected = zone.zoneKey === selectedZoneKey;
+        const polygonPoints = displayRanges.map((range) =>
+          pointList(buildWallZonePolygon(range, Math.max(Number(range.offsetMm || 0), visualOffsetMm))));
+        return (
+          <g
+            key={renderKey}
+            data-wall-zone-clickable={editable ? 'true' : undefined}
+            data-wall-zone-key={editable ? zone.zoneKey : undefined}
+            onClick={(event) => {
+              if (!editable || !onZoneSelect) return;
+              event.preventDefault();
+              event.stopPropagation();
+              onZoneSelect(zone.zoneKey);
+            }}
+            style={{ cursor: editable ? 'pointer' : 'default' }}
+          >
+            <g opacity={selected ? 0.18 : 0.055} pointerEvents={editable ? 'all' : 'none'}>
+              {polygonPoints.map((points, index) => (
+                <polygon
+                  key={`${renderKey}-fill-${index}`}
+                  points={points}
+                  fill={selected ? '#2563eb' : '#3b82f6'}
+                  stroke="none"
+                />
+              ))}
+            </g>
+            {polygonPoints.map((points, index) => (
+              <polygon
+                key={`${renderKey}-outline-${index}`}
+                points={points}
+                fill="transparent"
+                stroke={selected ? '#1d4ed8' : '#64748b'}
+                strokeWidth={Math.max(baseStrokeWidth * (selected ? 1.35 : 0.95), selected ? 1.25 : 0.9)}
+                strokeDasharray={selected ? undefined : '8 6'}
+                strokeLinejoin="round"
+                vectorEffect="non-scaling-stroke"
+                pointerEvents="none"
+              />
+            ))}
+            {labelEntries.map(({ targetCenter, labelCenter, labelKey }) => {
+              const labelMoved = distanceBetweenPoints(targetCenter, labelCenter) > 1;
+              return (
+                <React.Fragment key={labelKey}>
+                  {labelMoved && (
+                    <line
+                      x1={targetCenter.x}
+                      y1={targetCenter.y}
+                      x2={labelCenter.x}
+                      y2={labelCenter.y}
+                      stroke={selected ? '#1d4ed8' : '#64748b'}
+                      strokeWidth={Math.max(baseStrokeWidth, 0.9)}
+                      strokeDasharray="5 4"
+                      vectorEffect="non-scaling-stroke"
+                      pointerEvents="none"
+                    />
+                  )}
+                  <g
+                    pointerEvents={editable ? 'all' : 'none'}
+                    transform={`translate(${labelCenter.x} ${labelCenter.y}) scale(1,-1) translate(${-labelCenter.x} ${-labelCenter.y})`}
+                  >
+                    <rect
+                      x={labelCenter.x - 170}
+                      y={labelCenter.y - 75}
+                      width="340"
+                      height="150"
+                      rx="28"
+                      fill={selected ? '#2563eb' : 'rgba(255,255,255,0.96)'}
+                      stroke={selected ? '#1d4ed8' : '#64748b'}
+                      strokeWidth="1.1"
+                      vectorEffect="non-scaling-stroke"
+                    />
+                    <text
+                      x={labelCenter.x}
+                      y={labelCenter.y + 4}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                      fill={selected ? '#ffffff' : '#334155'}
+                      fontSize="105"
+                      fontWeight="900"
+                      vectorEffect="non-scaling-stroke"
+                    >
+                      {zone.zoneCode || 'DW'}
+                    </text>
+                  </g>
+                </React.Fragment>
+              );
+            })}
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
+function CapturePointOverlay({
+  points = [],
+  hoverPoint = null,
+  markerSize = 10,
+  baseStrokeWidth = 1,
+}) {
+  const renderedPoints = [
+    ...(Array.isArray(points) ? points : []),
+    ...(hoverPoint ? [hoverPoint] : []),
+  ];
+  return (
+    <g pointerEvents="none">
+      {renderedPoints.length > 1 && (
+        <polyline
+          points={pointList(renderedPoints)}
+          fill="none"
+          stroke="#2563eb"
+          strokeWidth={Math.max(baseStrokeWidth * 1.2, 1.1)}
+          strokeDasharray="7 5"
+          vectorEffect="non-scaling-stroke"
+        />
+      )}
+      {renderedPoints.map((point, index) => (
+        <g key={`${point.x}-${point.y}-${index}`}>
+          <circle
+            cx={point.x}
+            cy={point.y}
+            r={markerSize * 0.72}
+            fill="#ffffff"
+            stroke="#2563eb"
+            strokeWidth={Math.max(baseStrokeWidth * 1.25, 1.2)}
+            vectorEffect="non-scaling-stroke"
+          />
+          <circle
+            cx={point.x}
+            cy={point.y}
+            r={markerSize * 0.22}
+            fill="#2563eb"
+          />
+        </g>
+      ))}
+    </g>
+  );
+}
+
 function MeasurementMagnifier({
   centerPoint,
   snapPointValue,
@@ -2299,6 +3013,7 @@ function DrawingCanvas({
   analysis,
   heightSettings,
   selectedLayer = '',
+  selectedEntityIndexes = [],
   highlightedLayers = [],
   highlightedLayerColors = {},
   interactive = false,
@@ -2319,7 +3034,12 @@ function DrawingCanvas({
   captureMode = false,
   captureKind = '창호',
   capturePoints = [],
+  captureMeasurementVisible = true,
   onCapturePointsChange = null,
+  lightweightWallZones = [],
+  selectedLightweightWallZoneKey = '',
+  onLightweightWallZoneSelect = null,
+  lightweightWallZoneEditable = false,
 }) {
   const svgRef = useRef(null);
   const dragRef = useRef(null);
@@ -2340,7 +3060,15 @@ function DrawingCanvas({
   );
 
   const renderedEntities = useMemo(
-    () => dedupeSelectedLayerEntities(analysis.entities || [], selectedLayer, highlightedLayers),
+    () =>
+      dedupeSelectedLayerEntities(
+        (analysis.entities || []).map((entity, entityIndex) => ({
+          ...entity,
+          __analysisEntityIndex: entityIndex,
+        })),
+        selectedLayer,
+        highlightedLayers,
+      ),
     [analysis.entities, highlightedLayers, selectedLayer],
   );
 
@@ -2363,12 +3091,14 @@ function DrawingCanvas({
 
   const roomSelectedEntities = useMemo(
     () =>
-      buildRoomProcessHighlightEntities({
-        analysis,
-        rooms,
-        selectedRoomKey: selectedRoom?.roomKey || '',
-        layerNames: [selectedLayer, ...(Array.isArray(highlightedLayers) ? highlightedLayers : [])],
-      }),
+      isStudLayerName(selectedLayer)
+        ? []
+        : buildRoomProcessHighlightEntities({
+            analysis,
+            rooms,
+            selectedRoomKey: selectedRoom?.roomKey || '',
+            layerNames: [selectedLayer, ...(Array.isArray(highlightedLayers) ? highlightedLayers : [])],
+          }),
     [analysis, highlightedLayers, rooms, selectedLayer, selectedRoom?.roomKey],
   );
 
@@ -2708,6 +3438,18 @@ function DrawingCanvas({
   const handlePointerDown = (event) => {
     if (!interactive || ![0, 1].includes(event.button)) return;
 
+    // DW 구간명/범위를 누른 경우에는 도면 이동용 pointer capture를 시작하지 않는다.
+    // 그래야 LightweightWallZoneOverlay의 onClick이 정상 전달되어 우측 목록과 같은 설정창이 열린다.
+    const wallZoneClickTarget = event.target?.closest?.('[data-wall-zone-clickable="true"]');
+    if (
+      event.button === 0
+      && lightweightWallZoneEditable
+      && onLightweightWallZoneSelect
+      && wallZoneClickTarget
+    ) {
+      return;
+    }
+
     const rect = svgRef.current?.getBoundingClientRect();
     if (!rect) return;
 
@@ -2998,9 +3740,10 @@ function DrawingCanvas({
           baseStrokeWidth={baseStrokeWidth}
           patternId={patternId}
           displayMode={displayMode}
-          selectedRoomPoints={selectedRoom?.points || []}
+          selectedRoomPoints={isStudLayerName(selectedLayer) ? [] : selectedRoom?.points || []}
           roomClipId={roomClipId}
           roomSelectedEntities={roomSelectedEntities}
+          selectedEntityIndexes={selectedEntityIndexes}
         />
         <RoomOverlay
           rooms={rooms}
@@ -3011,6 +3754,14 @@ function DrawingCanvas({
           showLabels={showRoomLabels}
           baseStrokeWidth={baseStrokeWidth}
           selectedOffsetDistance={modelUnitsPerPixel * 14}
+        />
+        <LightweightWallZoneOverlay
+          zones={lightweightWallZones}
+          selectedZoneKey={selectedLightweightWallZoneKey}
+          onZoneSelect={onLightweightWallZoneSelect}
+          editable={lightweightWallZoneEditable}
+          baseStrokeWidth={baseStrokeWidth}
+          visualOffsetMm={modelUnitsPerPixel * 12}
         />
         <OpeningOverlay
           openings={openings}
@@ -3023,14 +3774,23 @@ function DrawingCanvas({
         />
         {interactive && (
           <g transform="scale(1,-1)">
-            <MeasurementOverlay
-              measurements={captureMode && capturePoints.length >= 2 ? [{ points: capturePoints }] : measurements}
-              currentPoints={captureMode && capturePoints.length < 2 ? capturePoints : currentMeasurementPoints}
-              hoverPoint={hoverMeasurePoint}
-              baseStrokeWidth={baseStrokeWidth}
-              bounds={analysis.bounds}
-              markerSize={snapMarkerSize}
-            />
+            {captureMode && !captureMeasurementVisible ? (
+              <CapturePointOverlay
+                points={capturePoints}
+                hoverPoint={capturePoints.length < 2 ? hoverMeasurePoint : null}
+                baseStrokeWidth={baseStrokeWidth}
+                markerSize={snapMarkerSize}
+              />
+            ) : (
+              <MeasurementOverlay
+                measurements={captureMode && capturePoints.length >= 2 ? [{ points: capturePoints }] : measurements}
+                currentPoints={captureMode && capturePoints.length < 2 ? capturePoints : currentMeasurementPoints}
+                hoverPoint={hoverMeasurePoint}
+                baseStrokeWidth={baseStrokeWidth}
+                bounds={analysis.bounds}
+                markerSize={snapMarkerSize}
+              />
+            )}
           </g>
         )}
       </svg>
@@ -3892,13 +4652,29 @@ function FullDrawingDialog({
   onImportSchedule,
   deductionTotalsByLayer = {},
   roomQuantityRowsByKey = {},
+  lightweightWallZones = [],
+  setLightweightWallZones = null,
+  lightweightWallZonesLoading = false,
+  lightweightWallZonesSaving = false,
+  onSaveLightweightWallZones = null,
+  onResetLightweightWallZones = null,
 }) {
   const [panelMode, setPanelMode] = useState('room');
   const [selectedLayer, setSelectedLayer] = useState('');
+  const [selectedStudSpecification, setSelectedStudSpecification] = useState('');
+  const [lightweightWallExpanded, setLightweightWallExpanded] = useState(false);
   const [layerOrder, setLayerOrder] = useState([]);
   const [selectedViewRoomKey, setSelectedViewRoomKey] = useState('');
   const [selectedOpeningKey, setSelectedOpeningKey] = useState('');
   const [directDeductionCollapsed, setDirectDeductionCollapsed] = useState(true);
+  const [lightweightWallZoneMode, setLightweightWallZoneMode] = useState(false);
+  const [selectedLightweightWallZoneKey, setSelectedLightweightWallZoneKey] = useState('');
+  const [selectedLightweightWallZoneKeys, setSelectedLightweightWallZoneKeys] = useState([]);
+  const [wallZoneCaptureTarget, setWallZoneCaptureTarget] = useState(null);
+  const [wallZoneCapturePoints, setWallZoneCapturePoints] = useState([]);
+  const [wallZoneEditorOpen, setWallZoneEditorOpen] = useState(false);
+  const [wallZoneEditorDraft, setWallZoneEditorDraft] = useState(null);
+  const [wallZoneEditorPendingKey, setWallZoneEditorPendingKey] = useState('');
 
   useEffect(() => {
     if (!open || !analysis) return;
@@ -3912,10 +4688,20 @@ function FullDrawingDialog({
       : rooms[0]?.roomKey || '';
     setPanelMode('room');
     setSelectedLayer('');
+    setSelectedStudSpecification('');
+    setLightweightWallExpanded(false);
     setLayerOrder(sorted.map((layer) => layer.layer));
     setSelectedViewRoomKey(initialRoomKey);
     setSelectedOpeningKey('');
     setDirectDeductionCollapsed(true);
+    setLightweightWallZoneMode(false);
+    setSelectedLightweightWallZoneKey(lightweightWallZones[0]?.zoneKey || '');
+    setSelectedLightweightWallZoneKeys([]);
+    setWallZoneCaptureTarget(null);
+    setWallZoneCapturePoints([]);
+    setWallZoneEditorOpen(false);
+    setWallZoneEditorDraft(null);
+    setWallZoneEditorPendingKey('');
   }, [open, analysis, rooms]);
 
   useEffect(() => {
@@ -3954,6 +4740,263 @@ function FullDrawingDialog({
     return [...ordered, ...missing];
   }, [analysis, layerOrder]);
 
+  const lightweightWallLayers = useMemo(() => {
+    const gypsum = orderedLayers.find((layer) => isLightweightGypsumLayerName(layer.layer)) || null;
+    const stud = orderedLayers.find((layer) => isStudLayerName(layer.layer)) || null;
+    const glassWool = orderedLayers.find((layer) => isGlassWoolLayerName(layer.layer)) || null;
+    const layerNames = [gypsum, stud, glassWool].filter(Boolean).map((layer) => layer.layer);
+    return { gypsum, stud, glassWool, layerNames };
+  }, [orderedLayers]);
+
+  const processMenuItems = useMemo(() => {
+    const groupedNames = new Set(lightweightWallLayers.layerNames);
+    const items = [];
+    let groupInserted = false;
+    orderedLayers.forEach((layer) => {
+      if (groupedNames.has(layer.layer)) {
+        if (!groupInserted) {
+          items.push({ type: 'lightweight_wall', key: '__LIGHTWEIGHT_WALL__' });
+          groupInserted = true;
+        }
+        return;
+      }
+      items.push({ type: 'layer', key: layer.layer, layer });
+    });
+    if (!groupInserted && lightweightWallLayers.layerNames.length > 0) {
+      items.push({ type: 'lightweight_wall', key: '__LIGHTWEIGHT_WALL__' });
+    }
+    return items;
+  }, [orderedLayers, lightweightWallLayers]);
+
+  const selectedStudSummary = useMemo(
+    () => (isStudLayerName(selectedLayer) ? getStudLayerSummary(analysis, selectedLayer) : null),
+    [analysis, selectedLayer],
+  );
+  const selectedStudEntityIndexes = useMemo(
+    () =>
+      getStudSpecificationEntityIndexes(
+        analysis,
+        selectedLayer,
+        selectedStudSpecification,
+      ),
+    [analysis, selectedLayer, selectedStudSpecification],
+  );
+
+  useEffect(() => {
+    if (!isStudLayerName(selectedLayer)) {
+      setSelectedStudSpecification('');
+      return;
+    }
+    if (!selectedStudSpecification) return;
+    const available = new Set([
+      ...(selectedStudSummary?.specifications || []).map((item) => String(item.standardWidthMm)),
+      ...(Number(selectedStudSummary?.unresolvedCount || 0) > 0 ? [STUD_UNRESOLVED_FILTER] : []),
+    ]);
+    if (!available.has(String(selectedStudSpecification))) setSelectedStudSpecification('');
+  }, [selectedLayer, selectedStudSpecification, selectedStudSummary]);
+
+  const selectProcessLayer = (layerName) => {
+    setSelectedLayer(layerName);
+    setSelectedStudSpecification('');
+    setLightweightWallZoneMode(false);
+    setWallZoneCaptureTarget(null);
+    setWallZoneCapturePoints([]);
+    if (lightweightWallLayers.layerNames.includes(layerName)) {
+      setLightweightWallExpanded(true);
+    }
+  };
+
+  useEffect(() => {
+    if (!lightweightWallZones.length) {
+      setSelectedLightweightWallZoneKey('');
+      setSelectedLightweightWallZoneKeys([]);
+      return;
+    }
+    if (!lightweightWallZones.some((zone) => zone.zoneKey === selectedLightweightWallZoneKey)) {
+      setSelectedLightweightWallZoneKey(lightweightWallZones[0].zoneKey);
+    }
+    setSelectedLightweightWallZoneKeys((previous) =>
+      previous.filter((zoneKey) => lightweightWallZones.some((zone) => zone.zoneKey === zoneKey)),
+    );
+  }, [lightweightWallZones, selectedLightweightWallZoneKey]);
+
+  const cloneLightweightWallZoneForEditor = (zone) => {
+    if (!zone) return null;
+    return normalizeLightweightWallZone({
+      ...zone,
+      ranges: (zone.ranges || []).map((range) => ({
+        ...range,
+        start: { ...range.start },
+        end: { ...range.end },
+      })),
+      gypsumLayers: (zone.gypsumLayers || []).map((layer) => ({ ...layer })),
+    }, Math.max(0, Number(zone.sortOrder || 1) - 1));
+  };
+
+  const openLightweightWallZoneEditor = (zoneKey) => {
+    const zone = lightweightWallZones.find((item) => item.zoneKey === zoneKey);
+    if (!zone) return;
+    setSelectedLightweightWallZoneKey(zoneKey);
+    setWallZoneEditorDraft(cloneLightweightWallZoneForEditor(zone));
+    setWallZoneEditorOpen(true);
+  };
+
+  const updateWallZoneEditorDraft = (patch) => {
+    setWallZoneEditorDraft((previous) => {
+      if (!previous) return previous;
+      return { ...previous, ...(typeof patch === 'function' ? patch(previous) : patch) };
+    });
+  };
+
+  const startWallZoneCapture = (target) => {
+    setWallZoneCaptureTarget(target);
+    setWallZoneCapturePoints([]);
+    setWallZoneEditorOpen(false);
+  };
+
+  useEffect(() => {
+    if (!wallZoneCaptureTarget || wallZoneCapturePoints.length < 2) return;
+    const start = normalizeWallZonePoint(wallZoneCapturePoints[0]);
+    const end = normalizeWallZonePoint(wallZoneCapturePoints[1]);
+    if (distanceBetweenPoints(start, end) <= 1) return;
+
+    let reopenZoneKey = wallZoneCaptureTarget.zoneKey || '';
+    if (wallZoneCaptureTarget.mode === 'new') {
+      const nextIndex = lightweightWallZones.length + 1;
+      reopenZoneKey = `manual-dw-${simpleHash(`${Date.now()}-${start.x}-${start.y}-${end.x}-${end.y}`)}`;
+      const nextZone = normalizeLightweightWallZone({
+        zoneKey: reopenZoneKey,
+        zoneCode: `DW-${String(nextIndex).padStart(2, '0')}`,
+        sortOrder: nextIndex,
+        ranges: [{
+          rangeKey: `${reopenZoneKey}-range-1`,
+          start,
+          end,
+          offsetMm: 180,
+        }],
+        studSpecification: '',
+        gypsumLayers: [],
+        glassWool: false,
+        isAutoGenerated: false,
+      }, nextIndex - 1);
+      setLightweightWallZones?.((previous) => [
+        ...(Array.isArray(previous) ? previous : []),
+        nextZone,
+      ]);
+      setSelectedLightweightWallZoneKey(reopenZoneKey);
+    } else {
+      setLightweightWallZones?.((previous) =>
+        (Array.isArray(previous) ? previous : []).map((zone) => {
+          if (zone.zoneKey !== wallZoneCaptureTarget.zoneKey) return zone;
+          if (wallZoneCaptureTarget.mode === 'add') {
+            return {
+              ...zone,
+              ranges: [
+                ...(zone.ranges || []),
+                {
+                  rangeKey: `${zone.zoneKey}-range-${Date.now()}`,
+                  start,
+                  end,
+                  offsetMm: 180,
+                },
+              ],
+            };
+          }
+          return {
+            ...zone,
+            ranges: (zone.ranges || []).map((range) =>
+              range.rangeKey === wallZoneCaptureTarget.rangeKey
+                ? { ...range, start, end }
+                : range,
+            ),
+          };
+        }),
+      );
+    }
+    setWallZoneCaptureTarget(null);
+    setWallZoneCapturePoints([]);
+    setWallZoneEditorPendingKey(reopenZoneKey);
+  }, [
+    lightweightWallZones.length,
+    setLightweightWallZones,
+    wallZoneCapturePoints,
+    wallZoneCaptureTarget,
+  ]);
+
+  useEffect(() => {
+    if (!wallZoneEditorPendingKey || wallZoneCaptureTarget) return;
+    const zone = lightweightWallZones.find((item) => item.zoneKey === wallZoneEditorPendingKey);
+    if (!zone) return;
+    setSelectedLightweightWallZoneKey(zone.zoneKey);
+    setWallZoneEditorDraft(cloneLightweightWallZoneForEditor(zone));
+    setWallZoneEditorOpen(true);
+    setWallZoneEditorPendingKey('');
+  }, [lightweightWallZones, wallZoneCaptureTarget, wallZoneEditorPendingKey]);
+
+  const applyWallZoneEditorDraft = () => {
+    if (!wallZoneEditorDraft) return;
+    const zoneCode = String(wallZoneEditorDraft.zoneCode || '').trim();
+    if (!zoneCode) return;
+    const normalizedDraft = normalizeLightweightWallZone({
+      ...wallZoneEditorDraft,
+      zoneCode,
+    }, Math.max(0, Number(wallZoneEditorDraft.sortOrder || 1) - 1));
+    setLightweightWallZones?.((previous) =>
+      (Array.isArray(previous) ? previous : []).map((zone) =>
+        zone.zoneKey === normalizedDraft.zoneKey ? normalizedDraft : zone,
+      ),
+    );
+    setSelectedLightweightWallZoneKey(normalizedDraft.zoneKey);
+    setWallZoneEditorOpen(false);
+    setWallZoneEditorDraft(null);
+  };
+
+  const deleteWallZoneFromEditor = () => {
+    if (!wallZoneEditorDraft?.zoneKey) return;
+    const deletedKey = wallZoneEditorDraft.zoneKey;
+    setLightweightWallZones?.((previous) =>
+      (Array.isArray(previous) ? previous : [])
+        .filter((zone) => zone.zoneKey !== deletedKey)
+        .map((zone, index) => ({ ...zone, sortOrder: index + 1 })),
+    );
+    setSelectedLightweightWallZoneKey('');
+    setSelectedLightweightWallZoneKeys((previous) => previous.filter((key) => key !== deletedKey));
+    setWallZoneEditorOpen(false);
+    setWallZoneEditorDraft(null);
+  };
+
+  const toggleLightweightWallZoneChecked = (zoneKey) => {
+    setSelectedLightweightWallZoneKeys((previous) =>
+      previous.includes(zoneKey)
+        ? previous.filter((value) => value !== zoneKey)
+        : [...previous, zoneKey],
+    );
+  };
+
+  const mergeSelectedLightweightWallZones = () => {
+    const keys = selectedLightweightWallZoneKeys.length >= 2
+      ? selectedLightweightWallZoneKeys
+      : [selectedLightweightWallZoneKey].filter(Boolean);
+    if (keys.length < 2) return;
+    const baseKey = keys.includes(selectedLightweightWallZoneKey)
+      ? selectedLightweightWallZoneKey
+      : keys[0];
+    setLightweightWallZones?.((previous) => {
+      const zones = Array.isArray(previous) ? previous : [];
+      const base = zones.find((zone) => zone.zoneKey === baseKey);
+      if (!base) return zones;
+      const mergedRanges = zones
+        .filter((zone) => keys.includes(zone.zoneKey))
+        .flatMap((zone) => zone.ranges || []);
+      return zones
+        .filter((zone) => !keys.includes(zone.zoneKey) || zone.zoneKey === baseKey)
+        .map((zone) => zone.zoneKey === baseKey ? { ...zone, ranges: mergedRanges } : zone)
+        .map((zone, index) => ({ ...zone, sortOrder: index + 1 }));
+    });
+    setSelectedLightweightWallZoneKey(baseKey);
+    setSelectedLightweightWallZoneKeys([]);
+  };
+
   const selectedRoom = rooms.find((room) => room.roomKey === selectedViewRoomKey) || null;
   const selectedSetting = selectedRoom ? roomSettings[selectedRoom.roomKey] || {} : {};
   const selectedRoomName = selectedRoom
@@ -3977,6 +5020,60 @@ function FullDrawingDialog({
   ).length;
 
   const selectedIndex = layerOrder.indexOf(selectedLayer);
+  const lightweightWallSelected = lightweightWallLayers.layerNames.includes(selectedLayer);
+
+  const getProcessDisplayData = (layer) => {
+    if (!layer) {
+      return {
+        totalResult: null,
+        displayedQuantity: null,
+        displayedUnit: '-',
+        displayedStatus: '산출규칙 정의 전',
+        displayedDeduction: 0,
+        displayedGross: null,
+      };
+    }
+    const totalResult = getLayerResult(layer, heightSettings, analysis);
+    const deductionAllowed = ['length_to_area', 'closed_area', 'length', 'reference'].includes(totalResult.rule.mode);
+    const totalDeduction = deductionAllowed
+      ? safeDeductionValue(deductionTotalsByLayer[layer.layer])
+      : 0;
+    const totalQuantity =
+      deductionAllowed &&
+      ['㎡', 'M'].includes(totalResult.unit) &&
+      totalResult.quantity !== null &&
+      totalResult.quantity !== undefined
+        ? Math.max(0, Number(totalResult.quantity) - totalDeduction)
+        : totalResult.quantity;
+    const roomRow = selectedRoomRowMap.get(layer.layer);
+    const useTypeTotal = totalResult.rule.mode === 'stud_count';
+    return {
+      totalResult,
+      displayedQuantity: selectedRoom && !useTypeTotal ? roomRow?.quantity : totalQuantity,
+      displayedUnit: selectedRoom && !useTypeTotal ? roomRow?.unit || totalResult.unit : totalResult.unit,
+      displayedStatus: selectedRoom && !useTypeTotal ? roomRow?.status : totalResult.status,
+      displayedDeduction: selectedRoom && !useTypeTotal
+        ? safeDeductionValue(roomRow?.deductionM2)
+        : totalDeduction,
+      displayedGross: selectedRoom && !useTypeTotal ? roomRow?.grossQuantity : totalResult.quantity,
+    };
+  };
+
+  const formatProcessQuantityText = ({
+    displayedQuantity,
+    displayedUnit,
+    displayedStatus,
+    displayedDeduction,
+    displayedGross,
+  }, alwaysShowBreakdown = false) => {
+    if (displayedQuantity === null || displayedQuantity === undefined) {
+      return displayedStatus || '산출값 없음';
+    }
+    const quantityText = `${formatQuantityValue(displayedQuantity, displayedUnit)}${displayedUnit}`;
+    const canShowBreakdown = ['㎡', 'M'].includes(displayedUnit);
+    if (!canShowBreakdown || (!alwaysShowBreakdown && displayedDeduction <= 0)) return quantityText;
+    return `${quantityText} (총 ${formatNumber(displayedGross)}${displayedUnit} - 공제 ${formatNumber(displayedDeduction)}${displayedUnit})`;
+  };
 
   const moveSelectedLayer = (direction) => {
     if (!selectedLayer) return;
@@ -4059,9 +5156,10 @@ function FullDrawingDialog({
 
   if (!analysis) return null;
 
-  const canvasSelectedLayer = panelMode === 'quantity' ? selectedLayer : '';
+  const canvasSelectedLayer = panelMode === 'quantity' && !lightweightWallZoneMode ? selectedLayer : '';
   const canvasRoomEditable = panelMode === 'room' || panelMode === 'deduction';
   const canvasOpeningEditable = panelMode === 'deduction';
+  const canvasWallZoneEditable = panelMode === 'quantity' && lightweightWallZoneMode && !wallZoneCaptureTarget;
 
   return (
     <Dialog open={open} onClose={onClose} fullScreen>
@@ -4087,6 +5185,7 @@ function FullDrawingDialog({
                 analysis={analysis}
                 heightSettings={heightSettings}
                 selectedLayer={canvasSelectedLayer}
+                selectedEntityIndexes={panelMode === 'quantity' ? selectedStudEntityIndexes : []}
                 interactive
                 displayMode="view"
                 tooltipEnabled={panelMode === 'quantity' && Boolean(selectedLayer)}
@@ -4104,6 +5203,19 @@ function FullDrawingDialog({
                 dimUnemphasizedOpenings={panelMode === 'deduction' && Boolean(selectedRoom)}
                 onOpeningSelect={setSelectedOpeningKey}
                 openingEditable={canvasOpeningEditable}
+                lightweightWallZones={panelMode === 'quantity' && lightweightWallZoneMode ? lightweightWallZones : []}
+                selectedLightweightWallZoneKey={selectedLightweightWallZoneKey}
+                onLightweightWallZoneSelect={(zoneKey) => {
+                  setLightweightWallZoneMode(true);
+                  setSelectedLayer('');
+                  openLightweightWallZoneEditor(zoneKey);
+                }}
+                lightweightWallZoneEditable={canvasWallZoneEditable}
+                captureMode={Boolean(wallZoneCaptureTarget)}
+                captureKind="경량벽체 구간"
+                capturePoints={wallZoneCapturePoints}
+                captureMeasurementVisible={false}
+                onCapturePointsChange={setWallZoneCapturePoints}
               />
             </Paper>
           </Box>
@@ -4381,27 +5493,339 @@ function FullDrawingDialog({
                     </Button>
                   </Box>
 
-                  {orderedLayers.map((layer) => {
-                    const totalResult = getLayerResult(layer, heightSettings);
-                    const totalDeductionM2 = safeDeductionValue(deductionTotalsByLayer[layer.layer]);
-                    const totalQuantity =
-                      ['㎡', 'M'].includes(totalResult.unit) && totalResult.quantity !== null && totalResult.quantity !== undefined
-                        ? Math.max(0, Number(totalResult.quantity) - totalDeductionM2)
-                        : totalResult.quantity;
-                    const roomRow = selectedRoomRowMap.get(layer.layer);
-                    const displayedQuantity = selectedRoom ? roomRow?.quantity : totalQuantity;
-                    const displayedUnit = selectedRoom ? roomRow?.unit || totalResult.unit : totalResult.unit;
-                    const displayedStatus = selectedRoom ? roomRow?.status : totalResult.status;
-                    const displayedDeduction = selectedRoom ? safeDeductionValue(roomRow?.deductionM2) : totalDeductionM2;
-                    const displayedGross = selectedRoom ? roomRow?.grossQuantity : totalResult.quantity;
+                  {processMenuItems.map((menuItem) => {
+                    if (menuItem.type === 'lightweight_wall') {
+                      const gypsumData = getProcessDisplayData(lightweightWallLayers.gypsum);
+                      const childRows = [
+                        {
+                          key: 'runner',
+                          label: '경량골조(1) 런너',
+                          layer: null,
+                          status: '산출규칙 정의 전',
+                        },
+                        {
+                          key: 'stud',
+                          label: '경량골조(2) 스터드',
+                          layer: lightweightWallLayers.stud,
+                        },
+                        {
+                          key: 'gypsum',
+                          label: '경량석고',
+                          layer: lightweightWallLayers.gypsum,
+                        },
+                        {
+                          key: 'glass-wool',
+                          label: '그라스울',
+                          layer: lightweightWallLayers.glassWool,
+                        },
+                      ];
+                      return (
+                        <React.Fragment key={menuItem.key}>
+                          <Button
+                            fullWidth
+                            variant={lightweightWallSelected || lightweightWallZoneMode ? 'contained' : 'outlined'}
+                            color={lightweightWallSelected ? 'error' : 'primary'}
+                            onClick={() => {
+                              const nextExpanded = !lightweightWallExpanded;
+                              setLightweightWallExpanded(nextExpanded);
+                              setLightweightWallZoneMode(nextExpanded);
+                              setSelectedLayer('');
+                              setSelectedStudSpecification('');
+                              setWallZoneCaptureTarget(null);
+                              setWallZoneCapturePoints([]);
+                              if (nextExpanded && !selectedLightweightWallZoneKey && lightweightWallZones[0]) {
+                                setSelectedLightweightWallZoneKey(lightweightWallZones[0].zoneKey);
+                              }
+                            }}
+                            sx={{
+                              mb: lightweightWallExpanded ? 0.45 : 0.65,
+                              py: 0.9,
+                              px: 1,
+                              justifyContent: 'space-between',
+                              textAlign: 'left',
+                              textTransform: 'none',
+                            }}
+                          >
+                            <Typography component="span" variant="body2" sx={{ fontWeight: 900 }}>
+                              {`경량벽체 ${formatProcessQuantityText(gypsumData, true)}`}
+                            </Typography>
+                            <Typography component="span" sx={{ ml: 1, fontWeight: 900, flexShrink: 0 }}>
+                              {lightweightWallExpanded ? '▲' : '▼'}
+                            </Typography>
+                          </Button>
+
+                          {lightweightWallExpanded && (
+                            <Paper
+                              variant="outlined"
+                              sx={{
+                                mb: 0.8,
+                                p: 0.65,
+                                bgcolor: '#f8fafc',
+                                borderColor: lightweightWallSelected ? '#fecaca' : '#dbeafe',
+                              }}
+
+                            >
+                              <Button
+                                fullWidth
+                                variant={lightweightWallZoneMode ? 'contained' : 'outlined'}
+                                onClick={() => {
+                                  setLightweightWallZoneMode(true);
+                                  setSelectedLayer('');
+                                  setSelectedStudSpecification('');
+                                  setWallZoneCaptureTarget(null);
+                                  setWallZoneCapturePoints([]);
+                                  if (!selectedLightweightWallZoneKey && lightweightWallZones[0]) {
+                                    setSelectedLightweightWallZoneKey(lightweightWallZones[0].zoneKey);
+                                  }
+                                }}
+                                sx={{ mb: 0.65, textTransform: 'none', justifyContent: 'space-between' }}
+                              >
+                                <Box component="span" sx={{ textAlign: 'left' }}>
+                                  <Typography component="span" variant="body2" sx={{ display: 'block', fontWeight: 900 }}>
+                                    DW 구간·구성 설정
+                                  </Typography>
+                                  <Typography component="span" variant="caption" sx={{ display: 'block', opacity: 0.84 }}>
+                                    {lightweightWallZones.length
+                                      ? `${formatInteger(lightweightWallZones.length)}개 DW · 클릭해 범위와 구성을 수정`
+                                      : '도면의 경량석고 선을 기준으로 자동 구간 생성 필요'}
+                                  </Typography>
+                                </Box>
+                              </Button>
+
+                              {lightweightWallZoneMode && (
+                                <Paper
+                                  variant="outlined"
+                                  sx={{ mb: 0.8, p: 0.8, bgcolor: '#ffffff', borderColor: '#93c5fd' }}
+                                >
+                                  <Alert severity="info" sx={{ mb: 0.8, py: 0.15 }}>
+                                    시스템이 만든 DW는 초안입니다. 현장 담당자가 범위·스터드·석고보드·그라스울을 직접 확정합니다.
+                                  </Alert>
+                                  <Box sx={{ display: 'flex', gap: 0.55, flexWrap: 'wrap', mb: 0.75 }}>
+                                    <Button
+                                      size="small"
+                                      variant="outlined"
+                                      onClick={() => startWallZoneCapture({ mode: 'new' })}
+                                    >
+                                      새 DW 구간
+                                    </Button>
+                                    <Button
+                                      size="small"
+                                      variant="outlined"
+                                      onClick={() => {
+                                        setWallZoneEditorOpen(false);
+                                        setWallZoneEditorDraft(null);
+                                        onResetLightweightWallZones?.();
+                                      }}
+                                      disabled={lightweightWallZonesLoading}
+                                    >
+                                      자동 구간 다시 생성
+                                    </Button>
+                                    <Button
+                                      size="small"
+                                      variant="outlined"
+                                      disabled={selectedLightweightWallZoneKeys.length < 2}
+                                      onClick={mergeSelectedLightweightWallZones}
+                                    >
+                                      선택 DW 묶기
+                                    </Button>
+                                    <Button
+                                      size="small"
+                                      variant="contained"
+                                      onClick={onSaveLightweightWallZones}
+                                      disabled={lightweightWallZonesSaving || lightweightWallZonesLoading}
+                                      sx={{ ml: 'auto' }}
+                                    >
+                                      {lightweightWallZonesSaving ? '저장 중' : 'DW 설정 저장'}
+                                    </Button>
+                                  </Box>
+
+                                  {lightweightWallZones.length ? (
+                                    <>
+                                      <Box
+                                        sx={{
+                                          display: 'grid',
+                                          gap: 0.45,
+                                          mb: 0.55,
+                                          maxHeight: 300,
+                                          overflowY: 'auto',
+                                          pr: 0.35,
+                                        }}
+                                      >
+                                        {lightweightWallZones.map((zone) => {
+                                          const selectedZone = zone.zoneKey === selectedLightweightWallZoneKey;
+                                          const checked = selectedLightweightWallZoneKeys.includes(zone.zoneKey);
+                                          return (
+                                            <Paper
+                                              key={zone.zoneKey}
+                                              variant="outlined"
+                                              onClick={() => openLightweightWallZoneEditor(zone.zoneKey)}
+                                              sx={{
+                                                p: 0.55,
+                                                minHeight: 56,
+                                                cursor: 'pointer',
+                                                borderColor: selectedZone ? '#2563eb' : '#cbd5e1',
+                                                bgcolor: selectedZone ? 'rgba(37,99,235,0.055)' : '#ffffff',
+                                              }}
+                                            >
+                                              <Box sx={{ display: 'flex', gap: 0.55, alignItems: 'center' }}>
+                                                <Checkbox
+                                                  size="small"
+                                                  checked={checked}
+                                                  onClick={(event) => event.stopPropagation()}
+                                                  onChange={() => toggleLightweightWallZoneChecked(zone.zoneKey)}
+                                                  sx={{ p: 0.25 }}
+                                                />
+                                                <Box sx={{ minWidth: 0 }}>
+                                                  <Typography variant="body2" sx={{ fontWeight: 900 }}>
+                                                    {zone.zoneCode} · 범위 {formatInteger(zone.ranges?.length || 0)}개
+                                                  </Typography>
+                                                  <Typography
+                                                    variant="caption"
+                                                    color="text.secondary"
+                                                    sx={{ display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                                                  >
+                                                    {wallZoneConfigurationSummary(zone)}
+                                                  </Typography>
+                                                </Box>
+                                              </Box>
+                                            </Paper>
+                                          );
+                                        })}
+                                      </Box>
+                                      <Typography variant="caption" color="text.secondary">
+                                        목록 또는 도면의 DW 명칭을 누르면 별도 설정창이 열립니다.
+                                      </Typography>
+                                    </>
+                                  ) : (
+                                    <Alert severity="warning" sx={{ mb: 0.8 }}>
+                                      자동으로 생성된 DW가 없습니다. 새 DW 구간을 눌러 벽체의 양 끝점을 지정해주세요.
+                                    </Alert>
+                                  )}
+
+                                </Paper>
+                              )}
+
+                              {childRows.map((child) => {
+                                const childData = child.layer ? getProcessDisplayData(child.layer) : null;
+                                const childSelected = Boolean(child.layer) && selectedLayer === child.layer.layer;
+                                const childDisabled = !child.layer;
+                                const totalResult = childData?.totalResult;
+                                const studSpecifications = totalResult?.rule?.mode === 'stud_count'
+                                  ? totalResult.studSummary?.specifications || []
+                                  : [];
+                                const studUnresolvedCount = Number(totalResult?.studSummary?.unresolvedCount || 0);
+                                return (
+                                  <React.Fragment key={child.key}>
+                                    <Button
+                                      fullWidth
+                                      disabled={childDisabled}
+                                      variant={childSelected ? 'contained' : 'outlined'}
+                                      color={childSelected ? 'error' : 'primary'}
+                                      onClick={() => child.layer && selectProcessLayer(child.layer.layer)}
+                                      sx={{
+                                        mb: 0.5,
+                                        py: 0.7,
+                                        px: 1,
+                                        justifyContent: 'space-between',
+                                        textAlign: 'left',
+                                        textTransform: 'none',
+                                        bgcolor: childDisabled ? '#f1f5f9' : undefined,
+                                      }}
+                                    >
+                                      <Box component="span" sx={{ minWidth: 0 }}>
+                                        <Typography component="span" variant="body2" sx={{ display: 'block', fontWeight: 850 }}>
+                                          {child.label}
+                                        </Typography>
+                                        <Typography component="span" variant="caption" sx={{ display: 'block', opacity: 0.86 }}>
+                                          {childDisabled
+                                            ? child.status
+                                            : formatProcessQuantityText(childData)}
+                                        </Typography>
+                                        {!selectedRoom && totalResult?.detailText && (
+                                          <Typography component="span" variant="caption" sx={{ display: 'block', opacity: 0.68 }}>
+                                            {totalResult.detailText}
+                                          </Typography>
+                                        )}
+                                      </Box>
+                                    </Button>
+
+                                    {childSelected && totalResult?.rule?.mode === 'stud_count' && (
+                                      <Paper
+                                        variant="outlined"
+                                        sx={{
+                                          mt: -0.15,
+                                          mb: 0.75,
+                                          p: 0.85,
+                                          borderColor: '#fecaca',
+                                          bgcolor: '#fff7f7',
+                                        }}
+                                      >
+                                        <Typography variant="caption" sx={{ display: 'block', mb: 0.65, fontWeight: 900 }}>
+                                          스터드 규격 선택
+                                        </Typography>
+                                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.55 }}>
+                                          <Button
+                                            size="small"
+                                            variant={!selectedStudSpecification ? 'contained' : 'outlined'}
+                                            color={!selectedStudSpecification ? 'error' : 'primary'}
+                                            onClick={() => setSelectedStudSpecification('')}
+                                            sx={{ minWidth: 58, textTransform: 'none' }}
+                                          >
+                                            전체
+                                          </Button>
+                                          {studSpecifications.map((specification) => {
+                                            const specificationKey = String(specification.standardWidthMm);
+                                            const specificationSelected = selectedStudSpecification === specificationKey;
+                                            return (
+                                              <Button
+                                                key={specificationKey}
+                                                size="small"
+                                                variant={specificationSelected ? 'contained' : 'outlined'}
+                                                color={specificationSelected ? 'error' : 'primary'}
+                                                onClick={() => setSelectedStudSpecification(specificationKey)}
+                                                sx={{ minWidth: 72, textTransform: 'none' }}
+                                              >
+                                                {specification.standardName} {formatInteger(specification.count)}EA
+                                              </Button>
+                                            );
+                                          })}
+                                          {studUnresolvedCount > 0 && (
+                                            <Button
+                                              size="small"
+                                              variant={selectedStudSpecification === STUD_UNRESOLVED_FILTER ? 'contained' : 'outlined'}
+                                              color={selectedStudSpecification === STUD_UNRESOLVED_FILTER ? 'error' : 'warning'}
+                                              onClick={() => setSelectedStudSpecification(STUD_UNRESOLVED_FILTER)}
+                                              sx={{ textTransform: 'none' }}
+                                            >
+                                              확인 필요 {formatInteger(studUnresolvedCount)}EA
+                                            </Button>
+                                          )}
+                                        </Box>
+                                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.6 }}>
+                                          규격을 선택하면 해당 스터드 위치만 도면에 빨간색으로 표시됩니다.
+                                        </Typography>
+                                      </Paper>
+                                    )}
+                                  </React.Fragment>
+                                );
+                              })}
+                            </Paper>
+                          )}
+                        </React.Fragment>
+                      );
+                    }
+
+                    const layer = menuItem.layer;
+                    const displayData = getProcessDisplayData(layer);
+                    const totalResult = displayData.totalResult;
                     const selected = selectedLayer === layer.layer;
                     return (
                       <Button
-                        key={layer.layer}
+                        key={menuItem.key}
                         fullWidth
                         variant={selected ? 'contained' : 'outlined'}
                         color={selected ? 'error' : 'primary'}
-                        onClick={() => setSelectedLayer(layer.layer)}
+                        onClick={() => selectProcessLayer(layer.layer)}
                         sx={{
                           mb: 0.65,
                           py: 0.75,
@@ -4416,12 +5840,13 @@ function FullDrawingDialog({
                             {layerDisplayName(layer.layer)}
                           </Typography>
                           <Typography component="span" variant="caption" sx={{ display: 'block', opacity: 0.88 }}>
-                            {displayedQuantity === null || displayedQuantity === undefined
-                              ? displayedStatus || '산출값 없음'
-                              : `${formatNumber(displayedQuantity)}${displayedUnit}${displayedDeduction > 0 && ['㎡', 'M'].includes(displayedUnit)
-                                ? ` (총 ${formatNumber(displayedGross)}${displayedUnit} · 공제 ${formatNumber(displayedDeduction)}${displayedUnit})`
-                                : ''}`}
+                            {formatProcessQuantityText(displayData)}
                           </Typography>
+                          {!selectedRoom && totalResult.detailText && (
+                            <Typography component="span" variant="caption" sx={{ display: 'block', opacity: 0.72 }}>
+                              {totalResult.detailText}
+                            </Typography>
+                          )}
                         </Box>
                         {!selectedRoom && (
                           <Typography component="span" variant="caption" sx={{ ml: 1, whiteSpace: 'nowrap' }}>
@@ -4436,7 +5861,10 @@ function FullDrawingDialog({
                     fullWidth
                     variant={!selectedLayer ? 'contained' : 'outlined'}
                     color="primary"
-                    onClick={() => setSelectedLayer('')}
+                    onClick={() => {
+                      setSelectedLayer('');
+                      setSelectedStudSpecification('');
+                    }}
                     sx={{ mt: 0.2, py: 0.85, px: 1, justifyContent: 'flex-start', textAlign: 'left', textTransform: 'none' }}
                   >
                     <Box component="span">
@@ -4454,6 +5882,222 @@ function FullDrawingDialog({
           </Paper>
         </Box>
       </DialogContent>
+
+      <Dialog
+        open={wallZoneEditorOpen}
+        onClose={() => {
+          setWallZoneEditorOpen(false);
+          setWallZoneEditorDraft(null);
+        }}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle sx={{ pb: 1 }}>
+          {wallZoneEditorDraft?.zoneCode || 'DW'} 구성 설정
+        </DialogTitle>
+        <DialogContent dividers sx={{ display: 'grid', gap: 1.15 }}>
+          {wallZoneEditorDraft && (
+            <>
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 1 }}>
+                <TextField
+                  size="small"
+                  label="DW 명칭"
+                  value={wallZoneEditorDraft.zoneCode}
+                  onChange={(event) => updateWallZoneEditorDraft({ zoneCode: event.target.value })}
+                />
+                <TextField
+                  select
+                  size="small"
+                  label="스터드 규격"
+                  value={wallZoneEditorDraft.studSpecification}
+                  onChange={(event) => updateWallZoneEditorDraft({ studSpecification: event.target.value })}
+                >
+                  <MenuItem value="">미설정</MenuItem>
+                  {LIGHTWEIGHT_WALL_STUD_OPTIONS.map((specification) => (
+                    <MenuItem key={specification} value={String(specification)}>
+                      {specification}형
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Box>
+
+              <Paper variant="outlined" sx={{ p: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.7 }}>
+                  <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>석고보드 구성</Typography>
+                  <Button
+                    size="small"
+                    sx={{ ml: 'auto' }}
+                    onClick={() => updateWallZoneEditorDraft((zone) => ({
+                      gypsumLayers: [
+                        ...(zone.gypsumLayers || []),
+                        {
+                          layerKey: `gypsum-${Date.now()}`,
+                          side: 'A',
+                          thicknessMm: '12.5',
+                          count: 1,
+                        },
+                      ],
+                    }))}
+                  >
+                    구성 추가
+                  </Button>
+                </Box>
+                {(wallZoneEditorDraft.gypsumLayers || []).map((layer) => (
+                  <Box
+                    key={layer.layerKey}
+                    sx={{
+                      display: 'grid',
+                      gridTemplateColumns: { xs: '1fr 1fr', sm: '90px 1fr 90px 58px' },
+                      gap: 0.65,
+                      mb: 0.65,
+                    }}
+                  >
+                    <TextField
+                      select
+                      size="small"
+                      label="면"
+                      value={layer.side}
+                      onChange={(event) => updateWallZoneEditorDraft((zone) => ({
+                        gypsumLayers: zone.gypsumLayers.map((item) => item.layerKey === layer.layerKey
+                          ? { ...item, side: event.target.value }
+                          : item),
+                      }))}
+                    >
+                      <MenuItem value="A">A면</MenuItem>
+                      <MenuItem value="B">B면</MenuItem>
+                    </TextField>
+                    <TextField
+                      select
+                      size="small"
+                      label="규격"
+                      value={layer.thicknessMm}
+                      onChange={(event) => updateWallZoneEditorDraft((zone) => ({
+                        gypsumLayers: zone.gypsumLayers.map((item) => item.layerKey === layer.layerKey
+                          ? { ...item, thicknessMm: event.target.value }
+                          : item),
+                      }))}
+                    >
+                      {LIGHTWEIGHT_WALL_GYPSUM_OPTIONS.map((thickness) => (
+                        <MenuItem key={thickness} value={thickness}>{thickness}T</MenuItem>
+                      ))}
+                    </TextField>
+                    <TextField
+                      size="small"
+                      type="number"
+                      label="겹"
+                      value={layer.count}
+                      inputProps={{ min: 1, max: 10 }}
+                      onChange={(event) => updateWallZoneEditorDraft((zone) => ({
+                        gypsumLayers: zone.gypsumLayers.map((item) => item.layerKey === layer.layerKey
+                          ? { ...item, count: Math.max(1, Number(event.target.value || 1)) }
+                          : item),
+                      }))}
+                    />
+                    <Button
+                      size="small"
+                      color="error"
+                      onClick={() => updateWallZoneEditorDraft((zone) => ({
+                        gypsumLayers: zone.gypsumLayers.filter((item) => item.layerKey !== layer.layerKey),
+                      }))}
+                    >
+                      삭제
+                    </Button>
+                  </Box>
+                ))}
+                {!wallZoneEditorDraft.gypsumLayers?.length && (
+                  <Typography variant="caption" color="text.secondary">
+                    석고보드 규격과 겹수를 추가해주세요.
+                  </Typography>
+                )}
+              </Paper>
+
+              <FormControlLabel
+                control={(
+                  <Checkbox
+                    checked={Boolean(wallZoneEditorDraft.glassWool)}
+                    onChange={(event) => updateWallZoneEditorDraft({ glassWool: event.target.checked })}
+                  />
+                )}
+                label="그라스울 적용"
+              />
+
+              <Paper variant="outlined" sx={{ p: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', mb: 0.7 }}>
+                  <Box>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 900 }}>DW 범위</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      범위 지정 중에는 거리 치수를 표시하지 않습니다.
+                    </Typography>
+                  </Box>
+                  <Button
+                    size="small"
+                    sx={{ ml: 'auto' }}
+                    onClick={() => {
+                      applyWallZoneEditorDraft();
+                      startWallZoneCapture({ mode: 'add', zoneKey: wallZoneEditorDraft.zoneKey });
+                    }}
+                  >
+                    범위 추가
+                  </Button>
+                </Box>
+                {(wallZoneEditorDraft.ranges || []).map((range, rangeIndex) => (
+                  <Box
+                    key={range.rangeKey}
+                    sx={{ display: 'flex', gap: 0.65, alignItems: 'center', mb: 0.55 }}
+                  >
+                    <Typography variant="body2" sx={{ flex: 1 }}>
+                      범위 {rangeIndex + 1} · {formatNumber(wallZoneRangeLengthMm(range) / 1000)}M
+                    </Typography>
+                    <Button
+                      size="small"
+                      onClick={() => {
+                        applyWallZoneEditorDraft();
+                        startWallZoneCapture({
+                          mode: 'replace',
+                          zoneKey: wallZoneEditorDraft.zoneKey,
+                          rangeKey: range.rangeKey,
+                        });
+                      }}
+                    >
+                      다시 지정
+                    </Button>
+                    <Button
+                      size="small"
+                      color="error"
+                      disabled={(wallZoneEditorDraft.ranges || []).length <= 1}
+                      onClick={() => updateWallZoneEditorDraft((zone) => ({
+                        ranges: zone.ranges.filter((item) => item.rangeKey !== range.rangeKey),
+                      }))}
+                    >
+                      삭제
+                    </Button>
+                  </Box>
+                ))}
+              </Paper>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 2, py: 1.25 }}>
+          <Button color="error" onClick={deleteWallZoneFromEditor} sx={{ mr: 'auto' }}>
+            DW 삭제
+          </Button>
+          <Button
+            onClick={() => {
+              setWallZoneEditorOpen(false);
+              setWallZoneEditorDraft(null);
+            }}
+          >
+            취소
+          </Button>
+          <Button
+            variant="contained"
+            disabled={!String(wallZoneEditorDraft?.zoneCode || '').trim()}
+            onClick={applyWallZoneEditorDraft}
+          >
+            적용
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Dialog>
   );
 }
@@ -4482,6 +6126,9 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
   const [openingSettingsLoading, setOpeningSettingsLoading] = useState(false);
   const [openingSettingsSaving, setOpeningSettingsSaving] = useState(false);
   const [openingEditor, setOpeningEditor] = useState(null);
+  const [lightweightWallZones, setLightweightWallZones] = useState([]);
+  const [lightweightWallZonesLoading, setLightweightWallZonesLoading] = useState(false);
+  const [lightweightWallZonesSaving, setLightweightWallZonesSaving] = useState(false);
   const [toast, setToast] = useState(null);
 
   const drawingRooms = useMemo(() => extractDrawingRooms(analysis), [analysis]);
@@ -4491,7 +6138,7 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
     return sortLayersByDefaultOrder(
       (analysis.activeLayers || []).filter((layer) => {
         const mode = classifyQuantityLayer(layer.layer).mode;
-        return ['length_to_area', 'closed_area', 'pending'].includes(mode);
+        return ['length_to_area', 'closed_area'].includes(mode);
       }),
     );
   }, [analysis]);
@@ -4499,9 +6146,10 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
   const openingProcessLayers = useMemo(() => {
     if (!analysis) return [];
     return sortLayersByDefaultOrder(
-      (analysis.activeLayers || []).filter(
-        (layer) => classifyQuantityLayer(layer.layer).mode !== 'room_boundary',
-      ),
+      (analysis.activeLayers || []).filter((layer) => {
+        const mode = classifyQuantityLayer(layer.layer).mode;
+        return !['room_boundary', 'glass_wool_area', 'stud_count'].includes(mode);
+      }),
     );
   }, [analysis]);
 
@@ -4552,20 +6200,31 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
     return (analysis.activeLayers || [])
       .filter((layer) => classifyQuantityLayer(layer.layer).mode !== 'room_boundary')
       .map((layer) => {
-      const result = getLayerResult(layer, heightSettings);
-      const deductionM2 = safeDeductionValue(deductionTotalsByLayer[layer.layer]);
-      const grossQuantity = result.quantity;
-      const canDeduct = ['㎡', 'M'].includes(result.unit) && grossQuantity !== null && grossQuantity !== undefined;
-      return {
-        ...layer,
-        ...result,
-        grossQuantity,
-        manualDeductionM2: safeDeductionValue(manualDeductionTotalsByLayer[layer.layer]),
-        openingDeductionM2: safeDeductionValue(openingDeductionTotalsByLayer[layer.layer]),
-        deductionM2,
-        quantity: canDeduct ? Math.max(0, Number(grossQuantity) - deductionM2) : grossQuantity,
-      };
-    });
+        const result = getLayerResult(layer, heightSettings, analysis);
+        const deductionAllowed = ['length_to_area', 'closed_area', 'length', 'reference'].includes(result.rule.mode);
+        const deductionM2 = deductionAllowed
+          ? safeDeductionValue(deductionTotalsByLayer[layer.layer])
+          : 0;
+        const grossQuantity = result.quantity;
+        const canDeduct =
+          deductionAllowed &&
+          ['㎡', 'M'].includes(result.unit) &&
+          grossQuantity !== null &&
+          grossQuantity !== undefined;
+        return {
+          ...layer,
+          ...result,
+          grossQuantity,
+          manualDeductionM2: deductionAllowed
+            ? safeDeductionValue(manualDeductionTotalsByLayer[layer.layer])
+            : 0,
+          openingDeductionM2: deductionAllowed
+            ? safeDeductionValue(openingDeductionTotalsByLayer[layer.layer])
+            : 0,
+          deductionM2,
+          quantity: canDeduct ? Math.max(0, Number(grossQuantity) - deductionM2) : grossQuantity,
+        };
+      });
   }, [analysis, deductionTotalsByLayer, heightSettings, manualDeductionTotalsByLayer, openingDeductionTotalsByLayer]);
 
   const heightRequiredLayers = useMemo(
@@ -4574,7 +6233,7 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
   );
 
   const missingHeightCount = heightRequiredLayers.filter(
-    (row) => safeHeightValue(heightSettings[row.layer]) <= 0,
+    (row) => getEffectiveLayerHeight(row.layer, heightSettings) <= 0,
   ).length;
 
   const loadDrawingRecord = useCallback(async (drawing, options = {}) => {
@@ -4764,6 +6423,33 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
   }, []);
 
 
+  const loadLightweightWallZones = useCallback(async (drawingId, sourceAnalysis = null) => {
+    if (!drawingId) {
+      setLightweightWallZones([]);
+      return;
+    }
+    setLightweightWallZonesLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from(LIGHTWEIGHT_WALL_ZONE_TABLE)
+        .select('id, zone_key, zone_code, sort_order, ranges, stud_specification, gypsum_layers, glass_wool, is_auto_generated')
+        .eq('drawing_id', drawingId)
+        .order('sort_order', { ascending: true });
+      if (error) throw error;
+      const saved = (data || []).map((row, index) => normalizeLightweightWallZone(row, index));
+      setLightweightWallZones(saved.length ? saved : buildAutomaticLightweightWallZones(sourceAnalysis));
+    } catch (error) {
+      console.error('경량벽체 DW 설정 조회 오류:', error);
+      setLightweightWallZones(buildAutomaticLightweightWallZones(sourceAnalysis));
+      setToast({
+        severity: 'error',
+        text: `DW 설정을 불러오지 못했습니다. v51.80 SQL 실행 여부를 확인해주세요. (${error.message})`,
+      });
+    } finally {
+      setLightweightWallZonesLoading(false);
+    }
+  }, []);
+
   const loadOpeningSettings = useCallback(async (drawingId, rooms = []) => {
     if (!drawingId) {
       setOpenings([]);
@@ -4824,6 +6510,7 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
       setHeightSettings({});
       setRoomSettings({});
       setSelectedRoomKey('');
+      setLightweightWallZones([]);
       if (!projectName) return;
 
       setSettingsLoading(true);
@@ -4870,11 +6557,13 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
       setRoomSettings({});
       setSelectedRoomKey('');
       setOpenings([]);
+      setLightweightWallZones([]);
       return;
     }
     loadRoomSettings(currentDrawing.id, drawingRooms);
     loadOpeningSettings(currentDrawing.id, drawingRooms);
-  }, [analysis, currentDrawing?.id, drawingRooms, loadOpeningSettings, loadRoomSettings]);
+    loadLightweightWallZones(currentDrawing.id, analysis);
+  }, [analysis, currentDrawing?.id, drawingRooms, loadLightweightWallZones, loadOpeningSettings, loadRoomSettings]);
 
   const saveDrawing = async (file, result, effectiveTypeName) => {
     const existing = savedDrawings.find(
@@ -5059,7 +6748,7 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
       const rows = heightRequiredLayers.map((row) => ({
         project_name: projectName,
         layer_name: row.layer,
-        height_mm: safeHeightValue(heightSettings[row.layer]),
+        height_mm: getEffectiveLayerHeight(row.layer, heightSettings),
         updated_by: userProfile?.auth_user_id || userProfile?.id || null,
         updated_at: new Date().toISOString(),
       }));
@@ -5135,7 +6824,7 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
     }
 
     for (const layer of deductionProcessLayers) {
-      const grossResult = getLayerResult(layer, heightSettings);
+      const grossResult = getLayerResult(layer, heightSettings, analysis);
       const totalDeduction =
         drawingRooms.reduce(
           (sum, room) => sum + safeDeductionValue(roomSettings[room.roomKey]?.deductions?.[layer.layer]),
@@ -5193,6 +6882,60 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
     }
   };
 
+  const handleSaveLightweightWallZones = async () => {
+    if (!currentDrawing?.id) {
+      setToast({ severity: 'warning', text: '저장된 타입 도면을 먼저 선택해주세요.' });
+      return;
+    }
+    const normalized = (lightweightWallZones || [])
+      .map((zone, index) => normalizeLightweightWallZone(zone, index))
+      .filter((zone) => zone.ranges.length > 0);
+    if (!normalized.length) {
+      setToast({ severity: 'warning', text: '저장할 DW 구간이 없습니다.' });
+      return;
+    }
+    if (normalized.some((zone) => !String(zone.zoneCode || '').trim())) {
+      setToast({ severity: 'warning', text: '모든 DW의 명칭을 입력해주세요.' });
+      return;
+    }
+    setLightweightWallZonesSaving(true);
+    try {
+      const payload = normalized.map((zone, index) => ({
+        zone_key: zone.zoneKey,
+        zone_code: zone.zoneCode,
+        sort_order: index + 1,
+        ranges: zone.ranges,
+        stud_specification: zone.studSpecification || null,
+        gypsum_layers: zone.gypsumLayers,
+        glass_wool: Boolean(zone.glassWool),
+        is_auto_generated: Boolean(zone.isAutoGenerated),
+      }));
+      const { error } = await supabase.rpc('save_drawing_lightweight_wall_zones', {
+        p_drawing_id: currentDrawing.id,
+        p_zones: payload,
+      });
+      if (error) throw error;
+      await loadLightweightWallZones(currentDrawing.id, analysis);
+      setToast({ severity: 'success', text: `${typeName || currentDrawing.drawing_type} DW ${formatInteger(payload.length)}개 설정을 저장했습니다.` });
+    } catch (error) {
+      console.error('경량벽체 DW 설정 저장 오류:', error);
+      setToast({ severity: 'error', text: `DW 설정 저장 실패: ${error.message}` });
+    } finally {
+      setLightweightWallZonesSaving(false);
+    }
+  };
+
+  const handleResetLightweightWallZones = () => {
+    const generated = buildAutomaticLightweightWallZones(analysis);
+    setLightweightWallZones(generated);
+    setToast({
+      severity: generated.length ? 'info' : 'warning',
+      text: generated.length
+        ? `경량석고 선을 기준으로 DW 초안 ${formatInteger(generated.length)}개를 다시 생성했습니다. 저장 전 범위를 확인해주세요.`
+        : '자동 생성할 경량석고 구간을 찾지 못했습니다. 새 DW 구간으로 직접 지정해주세요.',
+    });
+  };
+
   const handleSaveOpenings = async () => {
     if (!currentDrawing?.id) {
       setToast({ severity: 'warning', text: '저장된 타입 도면을 먼저 선택해주세요.' });
@@ -5210,7 +6953,7 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
     }
 
     for (const layer of openingProcessLayers) {
-      const grossResult = getLayerResult(layer, heightSettings);
+      const grossResult = getLayerResult(layer, heightSettings, analysis);
       const combinedDeduction =
         safeDeductionValue(manualDeductionTotalsByLayer[layer.layer]) +
         safeDeductionValue(openingDeductionTotalsByLayer[layer.layer]);
@@ -5420,7 +7163,7 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
                   현장 높이 설정
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
-                  경량석고·합지석고·단열 레이어의 길이에 현장 높이를 곱해 ㎡를 계산합니다. 그라스울은 현재 규칙을 적용하지 않습니다.
+                  경량석고·합지석고·단열은 길이×높이로 계산하고, 그라스울은 도면에 실제 표시된 구간의 진행길이×높이로 계산합니다.
                 </Typography>
               </Box>
 
@@ -5462,8 +7205,8 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
                 {heightRequiredLayers.map((row) => (
                   <TextField
                     key={row.layer}
-                    label={`${row.layer} 높이`}
-                    value={heightSettings[row.layer] ?? ''}
+                    label={`${layerDisplayName(row.layer)} 높이`}
+                    value={heightSettings[row.layer] ?? (isGlassWoolLayerName(row.layer) ? String(getLightweightGypsumHeight(heightSettings) || '') : '')}
                     onChange={(event) =>
                       setHeightSettings((previous) => ({
                         ...previous,
@@ -5473,10 +7216,10 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
                     size="small"
                     type="number"
                     required
-                    error={safeHeightValue(heightSettings[row.layer]) <= 0}
+                    error={getEffectiveLayerHeight(row.layer, heightSettings) <= 0}
                     helperText={
-                      safeHeightValue(heightSettings[row.layer]) > 0
-                        ? `적용 높이 ${formatNumber(safeHeightValue(heightSettings[row.layer]) / 1000)}M`
+                      getEffectiveLayerHeight(row.layer, heightSettings) > 0
+                        ? `적용 높이 ${formatNumber(getEffectiveLayerHeight(row.layer, heightSettings) / 1000)}M${isGlassWoolLayerName(row.layer) && !safeHeightValue(heightSettings[row.layer]) ? ' · 경량석고 높이 기본적용' : ''}`
                         : '필수입력'
                     }
                     inputProps={{ min: 1, step: 1 }}
@@ -5486,7 +7229,7 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
               </Box>
             ) : (
               <Alert severity="info" sx={{ mt: 1.25 }}>
-                현재 도면에는 높이 입력이 필요한 WL-경량석고, WL-합지석고, WL-단열 레이어가 없습니다.
+                현재 도면에는 높이 입력이 필요한 경량석고·합지석고·단열·그라스울 레이어가 없습니다.
               </Alert>
             )}
           </Paper>
@@ -5507,7 +7250,7 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
                     WL- 활성 레이어 분석결과
                   </Typography>
                   <Typography variant="caption" color="text.secondary">
-                    DXF 원본과 분석결과는 현장·타입별로 저장되며 이후 저장된 타입 버튼으로 다시 열 수 있습니다.
+                    그라스울은 도면 표시구간의 벽체 진행길이로, 스터드는 45mm 고정폭을 기준으로 규격별 EA를 산출합니다.
                   </Typography>
                 </Box>
                 <Chip
@@ -5544,7 +7287,18 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
                     {activeRows.map((row) => (
                       <TableRow key={row.layer} hover>
                         <TableCell sx={{ fontWeight: 700 }}>
-                          {analysisLayerDisplayName(row.layer)}
+                          <Typography variant="body2" sx={{ fontWeight: 800, whiteSpace: 'nowrap' }}>
+                            {analysisLayerDisplayName(row.layer)}
+                          </Typography>
+                          {row.detailText && (
+                            <Typography
+                              variant="caption"
+                              color="text.secondary"
+                              sx={{ display: 'block', whiteSpace: 'nowrap', fontSize: '0.68rem' }}
+                            >
+                              {row.detailText}
+                            </Typography>
+                          )}
                         </TableCell>
                         <TableCell align="right">
                           {row.lengthM > 0 ? `${formatNumber(row.lengthM)}M` : '-'}
@@ -5568,7 +7322,7 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
                         <TableCell align="right" sx={{ fontWeight: 800 }}>
                           {row.quantity === null || row.quantity === undefined
                             ? '-'
-                            : `${formatNumber(row.quantity)}${row.unit}`}
+                            : `${formatQuantityValue(row.quantity, row.unit)}${row.unit}`}
                         </TableCell>
                         <TableCell>{row.rule.label}</TableCell>
                         <TableCell>
@@ -5666,6 +7420,12 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
         onImportSchedule={handleImportScheduleDeductions}
         deductionTotalsByLayer={deductionTotalsByLayer}
         roomQuantityRowsByKey={roomQuantityRowsByKey}
+        lightweightWallZones={lightweightWallZones}
+        setLightweightWallZones={setLightweightWallZones}
+        lightweightWallZonesLoading={lightweightWallZonesLoading}
+        lightweightWallZonesSaving={lightweightWallZonesSaving}
+        onSaveLightweightWallZones={handleSaveLightweightWallZones}
+        onResetLightweightWallZones={handleResetLightweightWallZones}
       />
 
       <Snackbar

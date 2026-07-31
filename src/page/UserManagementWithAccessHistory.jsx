@@ -54,6 +54,56 @@ const formatKoreaDateTime = (value) => {
   return `${parts.year}-${parts.month}-${parts.day} [${parts.hour}-${parts.minute}-${parts.second}]`;
 };
 
+const getDateTimeValue = (value) => {
+  if (!value) return 0;
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) ? time : 0;
+};
+
+const keepLatestAccessRowPerUser = (sourceRows) => {
+  const latestByUser = new Map();
+
+  (Array.isArray(sourceRows) ? sourceRows : []).forEach((row, index) => {
+    const userKey = row?.auth_user_id || `unknown-user-${index}`;
+    const existing = latestByUser.get(userKey);
+
+    if (!existing) {
+      latestByUser.set(userKey, row);
+      return;
+    }
+
+    const rowIsOnline = row?.is_online === true;
+    const existingIsOnline = existing?.is_online === true;
+
+    if (rowIsOnline !== existingIsOnline) {
+      if (rowIsOnline) latestByUser.set(userKey, row);
+      return;
+    }
+
+    const rowStartedAt = getDateTimeValue(row?.access_started_at);
+    const existingStartedAt = getDateTimeValue(existing?.access_started_at);
+
+    if (rowStartedAt > existingStartedAt) {
+      latestByUser.set(userKey, row);
+    }
+  });
+
+  return Array.from(latestByUser.values()).sort((left, right) => {
+    const onlineDifference = Number(right?.is_online === true)
+      - Number(left?.is_online === true);
+    if (onlineDifference !== 0) return onlineDifference;
+
+    const startedDifference = getDateTimeValue(right?.access_started_at)
+      - getDateTimeValue(left?.access_started_at);
+    if (startedDifference !== 0) return startedDifference;
+
+    return String(left?.manager_name || '').localeCompare(
+      String(right?.manager_name || ''),
+      'ko',
+    );
+  });
+};
+
 function AccessHistoryPanel() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -78,7 +128,7 @@ function AccessHistoryPanel() {
       return;
     }
 
-    setRows(Array.isArray(data) ? data : []);
+    setRows(keepLatestAccessRowPerUser(data));
     setLoading(false);
   }, []);
 
@@ -127,7 +177,7 @@ function AccessHistoryPanel() {
             접속현황 및 기록
           </Typography>
           <Typography variant="caption" color="text.secondary">
-            가입승인이 완료된 활성 회원의 접속 시작·종료 기록입니다.
+            가입승인이 완료된 활성 회원별 가장 최근 접속 상태만 표시합니다.
           </Typography>
         </Box>
 
@@ -137,7 +187,7 @@ function AccessHistoryPanel() {
             color={onlineCount > 0 ? 'success' : 'default'}
             label={`현재 접속 ${onlineCount}명`}
           />
-          <Chip size="small" variant="outlined" label={`기록 ${rows.length}건`} />
+          <Chip size="small" variant="outlined" label={`회원 ${rows.length}명`} />
           <Button
             size="small"
             variant="outlined"
@@ -229,7 +279,7 @@ function AccessHistoryPanel() {
                   <TableRow>
                     <TableCell colSpan={5} align="center" sx={{ py: 5 }}>
                       <Typography variant="body2" color="text.secondary">
-                        표시할 회원 또는 접속기록이 없습니다.
+                        표시할 활성 회원이 없습니다.
                       </Typography>
                     </TableCell>
                   </TableRow>

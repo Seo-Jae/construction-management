@@ -1,5 +1,12 @@
 const DEG_TO_RAD = Math.PI / 180;
 
+const STUD_FIXED_WIDTH_MM = 45;
+const STUD_DIMENSION_TOLERANCE_MM = 1.25;
+const STUD_STANDARD_WIDTHS_MM = [
+  50, 60, 65, 70, 75, 80, 90, 100, 110, 120, 125, 130, 140, 150, 160, 170, 180, 200, 210,
+];
+
+
 const toFiniteNumber = (value, fallback = 0) => {
   const number = Number(value);
   return Number.isFinite(number) ? number : fallback;
@@ -824,6 +831,16 @@ const entityHasPointNearBounds = (entity, bounds, margin) => {
   return points.some((point) => point.x >= minX && point.x <= maxX && point.y >= minY && point.y <= maxY);
 };
 
+const boundsOverlap = (left, right, margin = 0) => {
+  if (!left || !right) return false;
+  return !(
+    left.maxX < right.minX - margin ||
+    left.minX > right.maxX + margin ||
+    left.maxY < right.minY - margin ||
+    left.minY > right.maxY + margin
+  );
+};
+
 const updateBoundsWithPoint = (bounds, point) => {
   if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return;
   bounds.minX = Math.min(bounds.minX, point.x);
@@ -872,11 +889,252 @@ const calculateBounds = (entities) => {
   };
 };
 
+const geometryPoints = (entity) => {
+  const geometry = entity?.geometry || {};
+  const points = [];
+  if (geometry.start) points.push(geometry.start);
+  if (geometry.end) points.push(geometry.end);
+  if (geometry.point) points.push(geometry.point);
+  (geometry.vertices || []).forEach((point) => points.push(point));
+  (geometry.points || []).forEach((point) => points.push(point));
+  (geometry.paths || []).forEach((path) =>
+    (path.vertices || []).forEach((point) => points.push(point)),
+  );
+  return points.filter(
+    (point) => Number.isFinite(Number(point?.x)) && Number.isFinite(Number(point?.y)),
+  );
+};
+
+const boundsFromPoints = (points = []) => {
+  if (!points.length) return null;
+  const xs = points.map((point) => Number(point.x));
+  const ys = points.map((point) => Number(point.y));
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  return {
+    minX,
+    minY,
+    maxX,
+    maxY,
+    width: Math.max(0, maxX - minX),
+    height: Math.max(0, maxY - minY),
+    center: { x: (minX + maxX) / 2, y: (minY + maxY) / 2 },
+  };
+};
+
+const orientedBoundsFromEntity = (entity) => {
+  const points = geometryPoints(entity);
+  if (points.length < 2) return null;
+  const geometry = entity?.geometry || {};
+  const ordered = geometry.vertices || geometry.points || [];
+  const candidateAngles = [0];
+
+  for (let index = 1; index < ordered.length; index += 1) {
+    const start = ordered[index - 1];
+    const end = ordered[index];
+    const dx = Number(end.x) - Number(start.x);
+    const dy = Number(end.y) - Number(start.y);
+    if (Math.hypot(dx, dy) <= 0.01) continue;
+    let angle = Math.atan2(dy, dx) % (Math.PI / 2);
+    if (angle < 0) angle += Math.PI / 2;
+    if (!candidateAngles.some((candidate) => Math.abs(candidate - angle) < 1e-7)) {
+      candidateAngles.push(angle);
+    }
+  }
+
+  let best = null;
+  candidateAngles.forEach((angle) => {
+    const cosine = Math.cos(angle);
+    const sine = Math.sin(angle);
+    const projected = points.map((point) => ({
+      x: Number(point.x) * cosine + Number(point.y) * sine,
+      y: -Number(point.x) * sine + Number(point.y) * cosine,
+    }));
+    const projectedBounds = boundsFromPoints(projected);
+    if (!projectedBounds) return;
+    const area = projectedBounds.width * projectedBounds.height;
+    if (!best || area < best.area) {
+      best = {
+        area,
+        width: projectedBounds.width,
+        height: projectedBounds.height,
+        rotationDegrees: (angle / Math.PI) * 180,
+      };
+    }
+  });
+
+  if (!best) return null;
+  return {
+    ...boundsFromPoints(points),
+    orientedWidth: best.width,
+    orientedHeight: best.height,
+    rotationDegrees: best.rotationDegrees,
+  };
+};
+
+const nearestStandardStudWidth = (value) =>
+  STUD_STANDARD_WIDTHS_MM.reduce(
+    (nearest, standard) =>
+      Math.abs(standard - value) < Math.abs(nearest - value) ? standard : nearest,
+    STUD_STANDARD_WIDTHS_MM[0],
+  );
+
+const buildStudAnalysis = (sourceEntities = []) => {
+  const byLayer = {};
+
+  sourceEntities.forEach((entity, entityIndex) => {
+    const layer = normalizeLayerName(entity.layer);
+    const normalized = layer.replace(/\s+/g, '');
+    if (!normalized.startsWith('WL-') || !normalized.includes('스터드')) return;
+
+    const bounds = orientedBoundsFromEntity(entity);
+    if (!bounds) return;
+    const dimensions = [bounds.orientedWidth, bounds.orientedHeight];
+    const fixedIndex =
+      Math.abs(dimensions[0] - STUD_FIXED_WIDTH_MM) <=
+      Math.abs(dimensions[1] - STUD_FIXED_WIDTH_MM)
+        ? 0
+        : 1;
+    const fixedWidthMm = dimensions[fixedIndex];
+    const measuredWidthMm = dimensions[1 - fixedIndex];
+    const standardWidthMm = nearestStandardStudWidth(measuredWidthMm);
+    const fixedWidthMatched =
+      Math.abs(fixedWidthMm - STUD_FIXED_WIDTH_MM) <= STUD_DIMENSION_TOLERANCE_MM;
+    const standardWidthMatched =
+      Math.abs(measuredWidthMm - standardWidthMm) <= STUD_DIMENSION_TOLERANCE_MM;
+    const recognized = fixedWidthMatched && standardWidthMatched;
+
+    if (!byLayer[layer]) {
+      byLayer[layer] = {
+        layer,
+        totalCount: 0,
+        recognizedCount: 0,
+        unresolvedCount: 0,
+        specifications: [],
+        items: [],
+      };
+    }
+
+    const item = {
+      entityIndex,
+      center: bounds.center,
+      bounds,
+      fixedWidthMm,
+      measuredWidthMm,
+      standardWidthMm: recognized ? standardWidthMm : null,
+      standardName: recognized ? `${standardWidthMm}형` : '규격 확인 필요',
+      recognized,
+      reason: recognized
+        ? ''
+        : !fixedWidthMatched
+          ? `고정폭 ${fixedWidthMm.toFixed(2)}mm`
+          : `규격폭 ${measuredWidthMm.toFixed(2)}mm`,
+    };
+
+    byLayer[layer].totalCount += 1;
+    if (recognized) byLayer[layer].recognizedCount += 1;
+    else byLayer[layer].unresolvedCount += 1;
+    byLayer[layer].items.push(item);
+  });
+
+  Object.values(byLayer).forEach((summary) => {
+    const counts = new Map();
+    summary.items
+      .filter((item) => item.recognized)
+      .forEach((item) => {
+        counts.set(item.standardWidthMm, (counts.get(item.standardWidthMm) || 0) + 1);
+      });
+    summary.specifications = Array.from(counts.entries())
+      .map(([standardWidthMm, count]) => ({
+        standardWidthMm,
+        standardName: `${standardWidthMm}형`,
+        count,
+      }))
+      .sort((left, right) => left.standardWidthMm - right.standardWidthMm);
+  });
+
+  return { byLayer };
+};
+
+const buildGlassWoolAnalysis = (sourceEntities = [], expandedActiveEntities = []) => {
+  const byLayer = {};
+  const expandedByInsert = new Map();
+
+  expandedActiveEntities.forEach((entity) => {
+    if (!entity.sourceInsertKey) return;
+    if (!expandedByInsert.has(entity.sourceInsertKey)) expandedByInsert.set(entity.sourceInsertKey, []);
+    expandedByInsert.get(entity.sourceInsertKey).push(entity);
+  });
+
+  sourceEntities.forEach((entity, sourceIndex) => {
+    if (entity.analysisIgnored) return;
+    const layer = normalizeLayerName(entity.layer);
+    const normalized = layer.replace(/\s+/g, '');
+    if (
+      entity.type !== 'INSERT' ||
+      !normalized.startsWith('WL-') ||
+      !normalized.includes('그라스울')
+    ) {
+      return;
+    }
+
+    if (!byLayer[layer]) {
+      byLayer[layer] = {
+        layer,
+        markerCount: 0,
+        linkedMarkerCount: 0,
+        unresolvedMarkerCount: 0,
+        totalAppliedLengthMm: 0,
+        segments: [],
+      };
+    }
+
+    const sourceInsertKey = `active-insert-${sourceIndex}`;
+    const expanded = expandedByInsert.get(sourceInsertKey) || [];
+    const bounds = boundsFromPoints(expanded.flatMap((child) => geometryPoints(child)));
+    byLayer[layer].markerCount += 1;
+
+    if (!bounds || Math.max(bounds.width, bounds.height) <= 1) {
+      byLayer[layer].unresolvedMarkerCount += 1;
+      return;
+    }
+
+    const horizontal = bounds.width >= bounds.height;
+    const start = horizontal
+      ? { x: bounds.minX, y: bounds.center.y }
+      : { x: bounds.center.x, y: bounds.minY };
+    const end = horizontal
+      ? { x: bounds.maxX, y: bounds.center.y }
+      : { x: bounds.center.x, y: bounds.maxY };
+    const lengthMm = distance(start, end);
+    if (!Number.isFinite(lengthMm) || lengthMm <= 1) {
+      byLayer[layer].unresolvedMarkerCount += 1;
+      return;
+    }
+
+    byLayer[layer].linkedMarkerCount += 1;
+    byLayer[layer].totalAppliedLengthMm += lengthMm;
+    byLayer[layer].segments.push({
+      sourceInsertKey,
+      blockName: String(entity.geometry?.blockName || ''),
+      orientation: horizontal ? 'horizontal' : 'vertical',
+      bounds,
+      start,
+      end,
+      lengthMm,
+    });
+  });
+
+  return { byLayer };
+};
+
 const summarizeLayers = (entities) => {
   const map = new Map();
 
   entities.forEach((entity) => {
-    if (entity.renderOnly) return;
+    if (entity.renderOnly || entity.analysisIgnored) return;
     const layer = normalizeLayerName(entity.layer || '0');
     const previous = map.get(layer) || {
       layer,
@@ -911,9 +1169,12 @@ export const classifyQuantityLayer = (layerName) => {
   if (normalized === 'WL-실면적' || normalized.startsWith('WL-실면적-')) {
     return { mode: 'room_boundary', label: '실 경계', requiresHeight: false };
   }
-  if (normalized.includes('그라스울')) return { mode: 'pending', label: '규칙 미설정', requiresHeight: false };
+  if (normalized.includes('그라스울')) return { mode: 'glass_wool_area', label: '표시구간 벽체길이×높이', requiresHeight: true };
   if (normalized.includes('경량석고') || normalized.includes('합지석고') || normalized.startsWith('WL-단열')) {
     return { mode: 'length_to_area', label: '길이×높이', requiresHeight: true };
+  }
+  if (normalized.includes('스터드')) {
+    return { mode: 'stud_count', label: '객체폭 규격별 수량', requiresHeight: false };
   }
   if (normalized.includes('천정면적') || normalized.includes('천장면적')) {
     return { mode: 'closed_area', label: '폐합면적', requiresHeight: false };
@@ -939,24 +1200,87 @@ export const analyzeDxfArrayBuffer = (arrayBuffer) => {
 
   const blocks = parseBlocks(blockPairs);
   const sourceBounds = calculateBounds(sourceEntities);
-  const expandedEntities = sourceEntities
+  const expandedBackgroundEntities = sourceEntities
     .filter(
       (entity) =>
         entity.type === 'INSERT' &&
         !normalizeLayerName(entity.layer).startsWith('WL-'),
     )
     .flatMap((insert) => expandInsertEntity({ insert, blocks, inheritedLayer: insert.layer || '0' }));
+  const expandedActiveEntities = sourceEntities
+    .map((insert, sourceIndex) => ({ insert, sourceIndex }))
+    .filter(({ insert }) => {
+      const normalizedLayer = normalizeLayerName(insert.layer).replace(/\s+/g, '');
+      return (
+        insert.type === 'INSERT' &&
+        normalizedLayer.startsWith('WL-') &&
+        normalizedLayer.includes('그라스울')
+      );
+    })
+    .flatMap(({ insert, sourceIndex }) =>
+      expandInsertEntity({ insert, blocks, inheritedLayer: insert.layer || '0' }).map((entity) => ({
+        ...entity,
+        layer: normalizeLayerName(insert.layer),
+        sourceInsertKey: `active-insert-${sourceIndex}`,
+      })),
+    );
 
-  // 잘못된 기준점의 외부 블록 하나가 전체 화면 맞춤을 망가뜨리지 않도록
-  // 본 도면 범위 부근의 확장 형상만 표시·스냅 대상으로 포함한다.
+  // 일반 배경 블록은 기존처럼 넓은 범위에서 표시하되,
+  // WL-그라스울 동적 블록은 본 도면 범위와 실제로 겹치는 삽입만 인정한다.
+  // CAD 화면에 보이지 않는 외부 작업용/잔여 동적 블록이 VIEW와 수량에 섞이는 것을 막는다.
   const proximityMargin = Math.max(sourceBounds.width, sourceBounds.height) * 0.55;
-  const visibleExpandedEntities =
+  const filterVisibleBackground = (expanded) =>
     sourceBounds.width <= 1 && sourceBounds.height <= 1
-      ? expandedEntities
-      : expandedEntities.filter((entity) => entityHasPointNearBounds(entity, sourceBounds, proximityMargin));
-  const entities = [...sourceEntities, ...visibleExpandedEntities];
+      ? expanded
+      : expanded.filter((entity) => entityHasPointNearBounds(entity, sourceBounds, proximityMargin));
+  const visibleBackgroundExpandedEntities = filterVisibleBackground(expandedBackgroundEntities);
+
+  const activeGroups = new Map();
+  expandedActiveEntities.forEach((entity) => {
+    const key = entity.sourceInsertKey;
+    if (!key) return;
+    if (!activeGroups.has(key)) activeGroups.set(key, []);
+    activeGroups.get(key).push(entity);
+  });
+
+  const sourceSpan = Math.max(sourceBounds.width, sourceBounds.height);
+  const activeMargin = Math.max(50, Math.min(250, sourceSpan * 0.01));
+  const validActiveInsertKeys = new Set();
+  activeGroups.forEach((group, key) => {
+    if (sourceBounds.width <= 1 && sourceBounds.height <= 1) {
+      validActiveInsertKeys.add(key);
+      return;
+    }
+    const groupBounds = boundsFromPoints(group.flatMap((entity) => geometryPoints(entity)));
+    if (boundsOverlap(groupBounds, sourceBounds, activeMargin)) validActiveInsertKeys.add(key);
+  });
+
+  const visibleActiveExpandedEntities = expandedActiveEntities.filter((entity) =>
+    validActiveInsertKeys.has(entity.sourceInsertKey),
+  );
+  const sourceEntitiesForAnalysis = sourceEntities.map((entity, sourceIndex) => {
+    const normalizedLayer = normalizeLayerName(entity.layer).replace(/\s+/g, '');
+    const isGlassWoolInsert =
+      entity.type === 'INSERT' &&
+      normalizedLayer.startsWith('WL-') &&
+      normalizedLayer.includes('그라스울');
+    if (!isGlassWoolInsert || validActiveInsertKeys.has(`active-insert-${sourceIndex}`)) return entity;
+    return {
+      ...entity,
+      analysisIgnored: true,
+      analysisIgnoredReason: 'outside-main-drawing',
+    };
+  });
+
+  const entities = [
+    ...sourceEntitiesForAnalysis,
+    ...visibleBackgroundExpandedEntities,
+    ...visibleActiveExpandedEntities,
+  ];
   const layers = summarizeLayers(entities);
   const activeLayers = layers.filter((layer) => layer.active);
+  const studAnalysis = buildStudAnalysis(sourceEntitiesForAnalysis);
+  const glassWoolAnalysis = buildGlassWoolAnalysis(sourceEntitiesForAnalysis, visibleActiveExpandedEntities);
 
   return {
     entities,
@@ -964,9 +1288,13 @@ export const analyzeDxfArrayBuffer = (arrayBuffer) => {
     activeLayers,
     bounds: calculateBounds(entities),
     totalObjectCount: sourceEntities.length,
-    renderedBlockObjectCount: visibleExpandedEntities.length,
+    renderedBlockObjectCount:
+      visibleBackgroundExpandedEntities.length + visibleActiveExpandedEntities.length,
     activeObjectCount: activeLayers.reduce((sum, layer) => sum + layer.objectCount, 0),
-    analyzerVersion: 'v51.67',
+    ignoredOffDrawingGlassWoolCount: activeGroups.size - validActiveInsertKeys.size,
+    studAnalysis,
+    glassWoolAnalysis,
+    analyzerVersion: 'v51.78',
   };
 };
 
