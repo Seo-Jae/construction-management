@@ -109,6 +109,10 @@ const reportMenus = [
     label: '주간 업무 보고',
   },
   {
+    value: 'report-expense-resolution',
+    label: '지출결의서 작성',
+  },
+  {
     value: 'report-approval',
     label: '품의 보고',
   },

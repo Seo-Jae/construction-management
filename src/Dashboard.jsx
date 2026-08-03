@@ -43,6 +43,7 @@ import CompletionSummary from './page/CompletionSummary.jsx';
 import DailyCompletionSummary from './page/DailyCompletionSummary.jsx';
 import WeeklyReport from './page/WeeklyReport.jsx';
 import ProposalReport from './page/ProposalReport.jsx';
+import ExpenseResolution from './page/ExpenseResolution.jsx';
 import ApprovalInbox from './page/ApprovalInbox.jsx';
 import WeeklyOverview from './page/WeeklyOverview.jsx';
 import WeeklyOverviewArchive from './page/WeeklyOverviewArchive.jsx';
@@ -311,6 +312,7 @@ const viewTitles = {
   'labor-contract': '근로계약서작성',
   'labor-cost': '공정별 노임작성',
   'report-weekly': '주간 업무 보고',
+  'report-expense-resolution': '지출결의서 작성',
   'report-approval': '품의 보고',
   'report-outsourcing-approval': '외주 품의 보고',
   'report-accident': '사고 경위 보고',
@@ -3317,6 +3319,10 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               userProfile={activeUserProfile}
               buildingConfigs={buildingConfigs}
             />
+          )}
+
+          {currentView === 'report-expense-resolution' && activeProjectName && (
+            <ExpenseResolution userProfile={activeUserProfile} />
           )}
 
           {currentView === 'report-approval' && activeProjectName && (
