@@ -45,6 +45,7 @@ import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
+import KoreanMonthSelect from '../components/KoreanMonthSelect.jsx';
 
 const PAGE_SIZE = 1000;
 const INSERT_CHUNK_SIZE = 400;
@@ -4830,9 +4831,8 @@ export default function MaterialInputStatus({
         >
           {tabValue === 1 ? (
             <>
-              <TextField
+              <KoreanMonthSelect
                 label="시작 월"
-                type="month"
                 size="small"
                 value={
                   supplierPeriodStart
@@ -4856,17 +4856,13 @@ export default function MaterialInputStatus({
                     );
                   }
                 }}
-                InputLabelProps={{
-                  shrink: true,
-                }}
                 sx={{
                   width: 150,
                 }}
               />
 
-              <TextField
+              <KoreanMonthSelect
                 label="종료 월"
-                type="month"
                 size="small"
                 value={
                   supplierPeriodEnd
@@ -4889,9 +4885,6 @@ export default function MaterialInputStatus({
                       value,
                     );
                   }
-                }}
-                InputLabelProps={{
-                  shrink: true,
                 }}
                 sx={{
                   width: 150,
@@ -4916,9 +4909,8 @@ export default function MaterialInputStatus({
             </>
           ) : (
             <>
-              <TextField
+              <KoreanMonthSelect
                 label="시작 월"
-                type="month"
                 size="small"
                 value={
                   selectedStartMonth
@@ -4942,17 +4934,13 @@ export default function MaterialInputStatus({
                     );
                   }
                 }}
-                InputLabelProps={{
-                  shrink: true,
-                }}
                 sx={{
                   width: 150,
                 }}
               />
 
-              <TextField
+              <KoreanMonthSelect
                 label="종료 월"
-                type="month"
                 size="small"
                 value={
                   selectedMonth
@@ -4975,9 +4963,6 @@ export default function MaterialInputStatus({
                       value,
                     );
                   }
-                }}
-                InputLabelProps={{
-                  shrink: true,
                 }}
                 sx={{
                   width: 150,

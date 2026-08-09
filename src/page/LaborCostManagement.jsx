@@ -57,6 +57,7 @@ import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded';
 import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import { supabase } from '../supabaseClient';
 import LaborPeriodStructureDialog from '../components/LaborPeriodStructureDialog.jsx';
+import KoreanMonthSelect from '../components/KoreanMonthSelect.jsx';
 import { getProjectCellKeys } from '../utils/buildingUnits.js';
 import {
   LABOR_QUANTITY_EXCEL_TEST_PROJECT,
@@ -3794,9 +3795,8 @@ export default function LaborCostManagement({
           alignItems="center"
           sx={{ flexWrap: 'wrap' }}
         >
-          <TextField
+          <KoreanMonthSelect
             size="small"
-            type="month"
             label="시작월"
             value={startMonth}
             onChange={(event) => {
@@ -3807,7 +3807,6 @@ export default function LaborCostManagement({
                 setEndMonth(nextMonth);
               }
             }}
-            InputLabelProps={{ shrink: true }}
             sx={{ width: 165 }}
           />
           <Typography
@@ -3816,9 +3815,8 @@ export default function LaborCostManagement({
           >
             ~
           </Typography>
-          <TextField
+          <KoreanMonthSelect
             size="small"
-            type="month"
             label="종료월"
             value={endMonth}
             onChange={(event) => {
@@ -3829,7 +3827,6 @@ export default function LaborCostManagement({
                 setStartMonth(nextMonth);
               }
             }}
-            InputLabelProps={{ shrink: true }}
             sx={{ width: 165 }}
           />
           <Button

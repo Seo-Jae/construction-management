@@ -9,7 +9,9 @@ import {
   Box,
   Button,
   CircularProgress,
+  Fade,
   Paper,
+  Snackbar,
   TextField,
   Typography,
 } from '@mui/material';
@@ -1487,6 +1489,18 @@ export default function AdminDashboardScheduleBoard() {
     loadScheduleBoard();
   }, [loadScheduleBoard]);
 
+  const handleToastClose = (
+    _event,
+    reason,
+  ) => {
+    if (reason === 'clickaway') {
+      return;
+    }
+
+    setErrorMessage('');
+    setSuccessMessage('');
+  };
+
   const events = useMemo(
     () =>
       buildCalendarEvents(
@@ -1712,34 +1726,59 @@ export default function AdminDashboardScheduleBoard() {
         mt: 1.5,
       }}
     >
-      {(errorMessage ||
-        successMessage) && (
-        <Box sx={{ mb: 0.9 }}>
-          {errorMessage && (
-            <Alert
-              severity="error"
-              sx={{
-                py: 0.2,
-                fontSize: '0.68rem',
-              }}
-            >
-              {errorMessage}
-            </Alert>
-          )}
-
-          {successMessage && (
-            <Alert
-              severity="success"
-              sx={{
-                py: 0.2,
-                fontSize: '0.68rem',
-              }}
-            >
-              {successMessage}
-            </Alert>
-          )}
-        </Box>
-      )}
+      <Snackbar
+        key={
+          errorMessage ||
+          successMessage ||
+          'admin-dashboard-schedule-toast'
+        }
+        open={Boolean(
+          errorMessage ||
+            successMessage,
+        )}
+        autoHideDuration={3000}
+        anchorOrigin={{
+          vertical: 'top',
+          horizontal: 'center',
+        }}
+        TransitionComponent={Fade}
+        transitionDuration={{
+          enter: 220,
+          exit: 500,
+        }}
+        onClose={handleToastClose}
+        sx={{
+          top: '72px !important',
+          zIndex: (theme) =>
+            theme.zIndex.snackbar + 10,
+          '& .MuiAlert-root': {
+            width: 'max-content',
+            minWidth: {
+              xs: 280,
+              sm: 420,
+            },
+            maxWidth:
+              'min(920px, calc(100vw - 32px))',
+            boxShadow:
+              '0 12px 30px rgba(15, 23, 42, 0.22)',
+          },
+          '& .MuiAlert-message': {
+            whiteSpace: 'normal',
+          },
+        }}
+      >
+        <Alert
+          severity={
+            errorMessage
+              ? 'error'
+              : 'success'
+          }
+          variant="filled"
+          onClose={handleToastClose}
+        >
+          {errorMessage || successMessage}
+        </Alert>
+      </Snackbar>
 
       <Box
         sx={{

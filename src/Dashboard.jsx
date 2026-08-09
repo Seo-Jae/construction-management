@@ -10,6 +10,8 @@ import {
   Fade,
   IconButton,
   InputBase,
+  Menu,
+  MenuItem,
   Modal,
   Paper,
   Snackbar,
@@ -24,8 +26,10 @@ import {
   Toolbar,
   Typography,
 } from '@mui/material';
-import MenuIcon from '@mui/icons-material/Menu';
+import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded';
+import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import CloseIcon from '@mui/icons-material/Close';
+import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
 import ExcelJS from 'exceljs';
 import { supabase } from './supabaseClient';
 import {
@@ -62,6 +66,8 @@ const drawerWidth = 240;
 const SUPABASE_PAGE_SIZE = 1000;
 const PROGRESS_WRITE_CHUNK_SIZE = 500;
 const ALL_PROJECTS_OPTION = '전체현장';
+const MANAGEMENT_AREA_CONSTRUCTION = 'construction';
+const MANAGEMENT_AREA_SAFETY = 'safety';
 
 const PROJECT_DISPLAY_ORDER = [
   '한라건설 용인금어지구',
@@ -292,7 +298,7 @@ const bodyCellStyle = { borderRight: '1px solid #cbd5e1', p: 0 };
 
 const viewTitles = {
   main: 'Main',
-  'admin-dashboard': '욱림건설 전체 현장 Dashboard',
+  'admin-dashboard': '전체 현장 Dashboard',
   'user-management': '회원관리',
   'organization-chart': '조직도',
   daily: '출력일보작성',
@@ -533,6 +539,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   );
 
   const [open, setOpen] = useState(true);
+  const [managementMenuAnchor, setManagementMenuAnchor] = useState(null);
   const [workAlertOpen, setWorkAlertOpen] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [buildingConfigs, setBuildingConfigs] = useState({});
@@ -591,6 +598,21 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       : 'main';
   });
 
+  const [managementArea, setManagementArea] = useState(() => {
+    const requestedView = new URLSearchParams(
+      window.location.search,
+    ).get('view');
+
+    if (requestedView) {
+      return MANAGEMENT_AREA_CONSTRUCTION;
+    }
+
+    return readDashboardSessionValue('managementArea') ===
+      MANAGEMENT_AREA_SAFETY
+      ? MANAGEMENT_AREA_SAFETY
+      : MANAGEMENT_AREA_CONSTRUCTION;
+  });
+
   const [savedData, setSavedData] = useState({});
   const [manualStatus, setManualStatus] = useState({});
 
@@ -638,6 +660,10 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         `${dashboardStorageBase}:lastSelectedProjectName`,
         lastSelectedProjectName || '',
       );
+      window.sessionStorage.setItem(
+        `${dashboardStorageBase}:managementArea`,
+        managementArea,
+      );
     } catch (error) {
       console.warn('화면 상태 저장 실패:', error);
     }
@@ -645,6 +671,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     currentView,
     dashboardStorageBase,
     lastSelectedProjectName,
+    managementArea,
     selectedProjectName,
   ]);
 
@@ -1191,6 +1218,19 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   };
 
   const toggleDrawer = () => setOpen(!open);
+
+  const handleOpenManagementMenu = (event) => {
+    setManagementMenuAnchor(event.currentTarget);
+  };
+
+  const handleCloseManagementMenu = () => {
+    setManagementMenuAnchor(null);
+  };
+
+  const handleSelectManagementArea = (area) => {
+    setManagementArea(area);
+    handleCloseManagementMenu();
+  };
 
   const buildWeekCards = (baseDate, db) => {
     const startOfWeek = new Date(baseDate);
@@ -2819,6 +2859,36 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
   const actionName = selectedStatusAction === '작업완료' ? '완료' : selectedStatusAction;
 
+  const globalConstructionViews = [
+    'admin-dashboard',
+    'user-management',
+    'organization-chart',
+    'approval-inbox',
+    'weekly-overview',
+    'weekly-overview-archive',
+  ];
+  const constructionLocationTitle =
+    currentView === 'daily-cumulative-workers'
+      ? cumulativeProjectScope
+      : globalConstructionViews.includes(currentView)
+        ? ''
+        : activeProjectName || '현장을 선택해주세요';
+  const constructionHeaderTitle = [
+    constructionLocationTitle,
+    viewTitles[currentView] || '현장 관리',
+  ]
+    .filter(Boolean)
+    .join(' - ');
+  const headerTitle =
+    managementArea === MANAGEMENT_AREA_SAFETY
+      ? '안전 관리'
+      : constructionHeaderTitle;
+
+  const managementAreaLabel =
+    managementArea === MANAGEMENT_AREA_SAFETY
+      ? '안전 관리'
+      : '공사 관리';
+
   return (
     <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       <Snackbar
@@ -2859,42 +2929,163 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         position="absolute"
         sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, bgcolor: '#1e293b' }}
       >
-        <Toolbar sx={{ minHeight: '56px !important' }}>
-          <IconButton
-            edge="start"
-            color="inherit"
-            onClick={toggleDrawer}
-            sx={{ marginRight: '36px' }}
+        <Toolbar
+          sx={{
+            minHeight: '56px !important',
+            px: '0 !important',
+          }}
+        >
+          <Box
+            sx={{
+              width: open ? drawerWidth : 72,
+              minWidth: open ? drawerWidth : 72,
+              height: 56,
+              px: open ? 1 : 0.5,
+              display: 'flex',
+              alignItems: 'center',
+              gap: open ? 0.5 : 0.15,
+              borderRight: '1px solid rgba(255,255,255,0.14)',
+              boxSizing: 'border-box',
+              transition: 'width 0.3s, min-width 0.3s, padding 0.3s',
+            }}
           >
-            <MenuIcon />
-          </IconButton>
+            <Box
+              component="img"
+              src="/images/wooklim-logo-transparent.png"
+              alt="욱림건설 로고"
+              sx={{
+                width: open ? 47 : 31,
+                height: open ? 34 : 27,
+                flexShrink: 0,
+                objectFit: 'contain',
+                transition: 'width 0.3s, height 0.3s',
+              }}
+            />
+
+            {open && (
+              <Button
+                id="management-area-button"
+                aria-controls={
+                  managementMenuAnchor
+                    ? 'management-area-menu'
+                    : undefined
+                }
+                aria-haspopup="true"
+                aria-expanded={
+                  managementMenuAnchor ? 'true' : undefined
+                }
+                onClick={handleOpenManagementMenu}
+                endIcon={<KeyboardArrowDownRoundedIcon />}
+                sx={{
+                  minWidth: 0,
+                  flexGrow: 1,
+                  height: 40,
+                  px: 0.75,
+                  color: '#ffffff',
+                  justifyContent: 'center',
+                  fontSize: '0.9rem',
+                  fontWeight: 900,
+                  whiteSpace: 'nowrap',
+                  '& .MuiButton-endIcon': {
+                    ml: 0.35,
+                  },
+                  '&:hover': {
+                    bgcolor: 'rgba(255,255,255,0.08)',
+                  },
+                }}
+              >
+                {managementAreaLabel}
+              </Button>
+            )}
+
+            <IconButton
+              color="inherit"
+              aria-label={open ? '메뉴 접기' : '메뉴 펼치기'}
+              onClick={toggleDrawer}
+              sx={{
+                width: 31,
+                height: 40,
+                ml: 'auto',
+                flexShrink: 0,
+                color: '#94a3b8',
+                borderRadius: 0.8,
+                '&:hover': {
+                  color: '#ffffff',
+                  bgcolor: 'rgba(255,255,255,0.08)',
+                },
+              }}
+            >
+              {open ? (
+                <ChevronLeftRoundedIcon fontSize="small" />
+              ) : (
+                <ChevronRightRoundedIcon fontSize="small" />
+              )}
+            </IconButton>
+          </Box>
+
+          <Menu
+            id="management-area-menu"
+            anchorEl={managementMenuAnchor}
+            open={Boolean(managementMenuAnchor)}
+            onClose={handleCloseManagementMenu}
+            MenuListProps={{
+              'aria-labelledby': 'management-area-button',
+              dense: true,
+            }}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+            slotProps={{
+              paper: {
+                sx: {
+                  mt: 0.5,
+                  minWidth: 132,
+                  border: '1px solid #cbd5e1',
+                  boxShadow: '0 12px 28px rgba(15,23,42,0.24)',
+                },
+              },
+            }}
+          >
+            <MenuItem
+              selected={
+                managementArea === MANAGEMENT_AREA_CONSTRUCTION
+              }
+              onClick={() =>
+                handleSelectManagementArea(
+                  MANAGEMENT_AREA_CONSTRUCTION,
+                )
+              }
+              sx={{ fontSize: '0.82rem', fontWeight: 700 }}
+            >
+              공사 관리
+            </MenuItem>
+            <MenuItem
+              selected={managementArea === MANAGEMENT_AREA_SAFETY}
+              onClick={() =>
+                handleSelectManagementArea(MANAGEMENT_AREA_SAFETY)
+              }
+              sx={{ fontSize: '0.82rem', fontWeight: 700 }}
+            >
+              안전 관리
+            </MenuItem>
+          </Menu>
 
           <Typography
             component="h1"
             variant="subtitle1"
             color="inherit"
             noWrap
-            sx={{ flexGrow: 1, fontWeight: 'bold' }}
+            sx={{
+              flexGrow: 1,
+              minWidth: 0,
+              px: 1.5,
+              fontWeight: 'bold',
+            }}
           >
-            🏗️{' '}
-            {currentView ===
-            'daily-cumulative-workers'
-              ? cumulativeProjectScope
-              : [
-                  'admin-dashboard',
-                  'user-management',
-                  'organization-chart',
-                  'approval-inbox',
-                  'weekly-overview',
-                  'weekly-overview-archive',
-                ].includes(currentView)
-                ? '욱림건설'
-                : activeProjectName ||
-                  '현장을 선택해주세요'}{' '}
-            - {viewTitles[currentView] || '현장 관리'}
+            {headerTitle}
           </Typography>
 
-          {isManagementRole &&
+          {managementArea === MANAGEMENT_AREA_CONSTRUCTION &&
+            isManagementRole &&
             ![
               'weekly-overview',
               'weekly-overview-archive',
@@ -3041,12 +3232,54 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         }}
       >
         <Toolbar sx={{ minHeight: '56px !important' }} />
-        <Sidebar
-          currentView={currentView}
-          onViewChange={handleSidebarViewChange}
-          drawerOpen={open}
-          userRole={userRole}
-        />
+        {managementArea === MANAGEMENT_AREA_CONSTRUCTION ? (
+          <Sidebar
+            currentView={currentView}
+            onViewChange={handleSidebarViewChange}
+            drawerOpen={open}
+            userRole={userRole}
+          />
+        ) : (
+          <Box
+            sx={{
+              mx: 0.75,
+              mt: 0.75,
+              px: open ? 1.5 : 0,
+              py: 1.5,
+              minHeight: 64,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: open ? 'flex-start' : 'center',
+              justifyContent: 'center',
+              gap: 0.4,
+              color: '#e2e8f0',
+              border: '1px solid #334155',
+              borderRadius: 1.2,
+              bgcolor: 'rgba(30,41,59,0.72)',
+            }}
+          >
+            <Typography
+              sx={{
+                fontSize: open ? '0.82rem' : '0.8rem',
+                fontWeight: 900,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {open ? '안전 관리' : '안'}
+            </Typography>
+            {open && (
+              <Typography
+                sx={{
+                  color: '#94a3b8',
+                  fontSize: '0.67rem',
+                  lineHeight: 1.45,
+                }}
+              >
+                안전관리 전용 메뉴 영역
+              </Typography>
+            )}
+          </Box>
+        )}
       </Drawer>
 
       <Box
@@ -3078,6 +3311,46 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                 : 'hidden',
           }}
         >
+          {managementArea === MANAGEMENT_AREA_SAFETY ? (
+            <Paper
+              variant="outlined"
+              sx={{
+                height: '100%',
+                minHeight: 320,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 1,
+                borderColor: '#cbd5e1',
+                bgcolor: '#ffffff',
+              }}
+            >
+              <Typography
+                variant="h6"
+                sx={{ color: '#0f172a', fontWeight: 900 }}
+              >
+                안전 관리
+              </Typography>
+              <Typography
+                sx={{
+                  color: '#64748b',
+                  fontSize: '0.78rem',
+                }}
+              >
+                안전관리 전용 영역이 준비되었습니다.
+              </Typography>
+              <Typography
+                sx={{
+                  color: '#94a3b8',
+                  fontSize: '0.7rem',
+                }}
+              >
+                다음 단계에서 안전관리 메뉴와 기능을 추가합니다.
+              </Typography>
+            </Paper>
+          ) : (
+            <>
           {currentView === 'admin-dashboard' && isManagementRole && (
             <AdminDashboard
               processOptions={processOptions}
@@ -3371,6 +3644,8 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                 </Typography>
               </Paper>
             )}
+            </>
+          )}
         </Box>
       </Box>
 
