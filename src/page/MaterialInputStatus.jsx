@@ -46,6 +46,7 @@ import WarningAmberOutlinedIcon from '@mui/icons-material/WarningAmberOutlined';
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
 import KoreanMonthSelect from '../components/KoreanMonthSelect.jsx';
+import KoreanDatePicker from '../components/KoreanDatePicker.jsx';
 
 const PAGE_SIZE = 1000;
 const INSERT_CHUNK_SIZE = 400;
@@ -6533,21 +6534,13 @@ export default function MaterialInputStatus({
                 )}
               </TextField>
 
-              <TextField
-                type="date"
+              <KoreanDatePicker
                 size="small"
                 label="확정 입고일"
                 value={
                   batchReviewDate
                 }
-                onChange={(event) =>
-                  setBatchReviewDate(
-                    event.target.value,
-                  )
-                }
-                InputLabelProps={{
-                  shrink: true,
-                }}
+                onChange={setBatchReviewDate}
                 sx={{
                   width: 155,
                 }}
@@ -6805,34 +6798,34 @@ export default function MaterialInputStatus({
                             minWidth: 140,
                           }}
                         >
-                          <TextField
-                            type="date"
+                          <KoreanDatePicker
                             fullWidth
                             size="small"
                             value={
                               record.arrivalDate ||
                               ''
                             }
-                            onChange={(event) =>
+                            ariaLabel="입고일"
+                            onChange={(value) =>
                               updateAnalysisRecord(
                                 record.sourceRow,
                                 {
                                   arrivalDate:
-                                    event.target.value ||
+                                    value ||
                                     null,
                                   sourceYear:
-                                    event.target.value
+                                    value
                                       ? Number(
-                                          event.target.value.slice(
+                                          value.slice(
                                             0,
                                             4,
                                           ),
                                         )
                                       : record.sourceYear,
                                   sourceMonth:
-                                    event.target.value
+                                    value
                                       ? Number(
-                                          event.target.value.slice(
+                                          value.slice(
                                             5,
                                             7,
                                           ),
@@ -6841,9 +6834,6 @@ export default function MaterialInputStatus({
                                 },
                               )
                             }
-                            InputLabelProps={{
-                              shrink: true,
-                            }}
                           />
                         </TableCell>
 
@@ -7028,26 +7018,23 @@ export default function MaterialInputStatus({
                 }
               />
 
-              <TextField
-                type="date"
+              <KoreanDatePicker
                 label="입고일"
                 value={
                   editingRecord.arrival_date ||
                   ''
                 }
-                onChange={(event) =>
+                onChange={(value) =>
                   setEditingRecord(
                     (previous) => ({
                       ...previous,
                       arrival_date:
-                        event.target.value ||
+                        value ||
                         null,
                     }),
                   )
                 }
-                InputLabelProps={{
-                  shrink: true,
-                }}
+                allowClear
               />
 
               <FormControlLabel

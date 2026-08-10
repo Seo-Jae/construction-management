@@ -3,35 +3,15 @@ import {
   Box,
   Button,
   Divider,
-  FormControl,
   IconButton,
-  MenuItem,
   Paper,
   Popover,
-  Select,
   Typography,
 } from '@mui/material';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import HistoricalDailyReportUpload from './HistoricalDailyReportUpload.jsx';
 import AdminDashboardReportPreview from './AdminDashboardReportPreview.jsx';
-
-const downwardSelectMenuProps = {
-  anchorOrigin: {
-    vertical: 'bottom',
-    horizontal: 'left',
-  },
-  transformOrigin: {
-    vertical: 'top',
-    horizontal: 'left',
-  },
-  marginThreshold: null,
-  PaperProps: {
-    sx: {
-      mt: 0.5,
-    },
-  },
-};
 
 export default function DailyReport({
   weekDays,
@@ -76,11 +56,6 @@ export default function DailyReport({
   const currentKoreaYear = todayMidnight.getFullYear();
   const firstPickerYear = currentKoreaYear - 3;
   const lastPickerYear = currentKoreaYear + 3;
-  const yearOptions = Array.from(
-    { length: 7 },
-    (_, index) => firstPickerYear + index,
-  );
-
   const handleOpenMonthPicker = (event) => {
     setPickerYear(
       Math.min(
@@ -94,14 +69,6 @@ export default function DailyReport({
 
   const handleCloseMonthPicker = () => {
     setMonthPickerAnchor(null);
-  };
-
-  const handleApplyMonthPicker = () => {
-    handleGoToMonth(
-      pickerYear,
-      pickerMonth,
-    );
-    handleCloseMonthPicker();
   };
 
   const handleOpenPreview = (
@@ -185,7 +152,7 @@ export default function DailyReport({
                   },
                 }}
               >
-                {`${viewYear}.${String(viewMonth + 1).padStart(2, '0')}`}
+                {`${viewYear}년 ${viewMonth + 1}월`}
               </Button>
 
               <IconButton size="small" onClick={handleNextMonth} sx={{ p: 0 }}>
@@ -231,66 +198,87 @@ export default function DailyReport({
             이동할 연도와 월 선택
           </Typography>
 
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-            <FormControl size="small" sx={{ minWidth: 92 }}>
-              <Select
-                value={pickerYear}
-                onChange={(event) =>
-                  setPickerYear(Number(event.target.value))
-                }
-                MenuProps={downwardSelectMenuProps}
-                inputProps={{ 'aria-label': '이동할 연도' }}
-                sx={{ fontSize: '0.78rem', fontWeight: 700 }}
-              >
-                {yearOptions.map((year) => (
-                  <MenuItem key={year} value={year}>
-                    {year}년
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            <FormControl size="small" sx={{ minWidth: 82 }}>
-              <Select
-                value={pickerMonth}
-                onChange={(event) =>
-                  setPickerMonth(Number(event.target.value))
-                }
-                MenuProps={downwardSelectMenuProps}
-                inputProps={{ 'aria-label': '이동할 월' }}
-                sx={{ fontSize: '0.78rem', fontWeight: 700 }}
-              >
-                {Array.from({ length: 12 }, (_, index) => (
-                  <MenuItem key={index} value={index}>
-                    {index + 1}월
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-
-            <Button
-              type="button"
+          <Box
+            sx={{
+              mb: 1,
+              display: 'grid',
+              gridTemplateColumns: '32px minmax(0, 1fr) 32px',
+              alignItems: 'center',
+            }}
+          >
+            <IconButton
               size="small"
-              variant="contained"
-              onClick={handleApplyMonthPicker}
+              aria-label="이전 연도"
+              disabled={pickerYear <= firstPickerYear}
+              onClick={() =>
+                setPickerYear((year) => Math.max(firstPickerYear, year - 1))
+              }
+            >
+              <ChevronLeftIcon fontSize="small" />
+            </IconButton>
+
+            <Typography
+              align="center"
               sx={{
-                height: 40,
-                px: 1.4,
-                bgcolor: '#0284c7',
-                boxShadow: 'none',
-                fontSize: '0.75rem',
-                fontWeight: 800,
+                color: '#334155',
+                fontSize: '0.8rem',
+                fontWeight: 900,
               }}
             >
-              이동
-            </Button>
+              {pickerYear}년
+            </Typography>
+
+            <IconButton
+              size="small"
+              aria-label="다음 연도"
+              disabled={pickerYear >= lastPickerYear}
+              onClick={() =>
+                setPickerYear((year) => Math.min(lastPickerYear, year + 1))
+              }
+            >
+              <ChevronRightIcon fontSize="small" />
+            </IconButton>
+          </Box>
+
+          <Box
+            sx={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(4, 1fr)',
+              gap: 0.65,
+            }}
+          >
+            {Array.from({ length: 12 }, (_, index) => (
+              <Button
+                key={index}
+                type="button"
+                size="small"
+                variant={
+                  pickerYear === viewYear && index === pickerMonth
+                    ? 'contained'
+                    : 'outlined'
+                }
+                onClick={() => {
+                  setPickerMonth(index);
+                  handleGoToMonth(pickerYear, index);
+                  handleCloseMonthPicker();
+                }}
+                sx={{
+                  minWidth: 0,
+                  py: 0.65,
+                  fontSize: '0.72rem',
+                  fontWeight: 800,
+                }}
+              >
+                {index + 1}월
+              </Button>
+            ))}
           </Box>
         </Popover>
 
         <Divider sx={{ mb: 1.5 }} />
 
         <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', mb: 0.5 }}>
-          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day, index) => (
+          {['일', '월', '화', '수', '목', '금', '토'].map((day, index) => (
             <Typography
               key={day}
               variant="caption"

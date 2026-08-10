@@ -1,19 +1,33 @@
-import { MenuItem, TextField } from '@mui/material';
-import { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Box,
+  Button,
+  IconButton,
+  InputAdornment,
+  Popover,
+  TextField,
+  Typography,
+} from '@mui/material';
+import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded';
+import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded';
+import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 
 const MONTH_VALUE_PATTERN = /^(\d{4})-(\d{2})$/;
+const pad2 = (value) => String(value).padStart(2, '0');
 
-const parseYear = (value) => {
+const parseMonth = (value) => {
   const matched = MONTH_VALUE_PATTERN.exec(String(value || ''));
-  return matched ? Number(matched[1]) : null;
+  if (!matched) return null;
+
+  const year = Number(matched[1]);
+  const month = Number(matched[2]);
+  if (!year || month < 1 || month > 12) return null;
+  return { year, month };
 };
 
 const formatKoreanMonth = (value) => {
-  const matched = MONTH_VALUE_PATTERN.exec(String(value || ''));
-
-  if (!matched) return String(value || '');
-
-  return `${matched[1]}년 ${Number(matched[2])}월`;
+  const parsed = parseMonth(value);
+  return parsed ? `${parsed.year}년 ${parsed.month}월` : '';
 };
 
 export default function KoreanMonthSelect({
@@ -23,51 +37,165 @@ export default function KoreanMonthSelect({
   size = 'small',
   sx,
   disabled = false,
+  fullWidth = false,
+  allowClear = false,
   ...textFieldProps
 }) {
-  const options = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-    const selectedYear = parseYear(value);
-    const minimumYear = Math.min(currentYear - 15, selectedYear || currentYear);
-    const maximumYear = Math.max(currentYear + 15, selectedYear || currentYear);
-    const result = [];
+  const currentYear = useMemo(() => new Date().getFullYear(), []);
+  const selected = parseMonth(value);
+  const [anchorEl, setAnchorEl] = useState(null);
+  const [viewYear, setViewYear] = useState(selected?.year || currentYear);
+  const rootRef = useRef(null);
 
-    for (let year = maximumYear; year >= minimumYear; year -= 1) {
-      for (let month = 12; month >= 1; month -= 1) {
-        const monthValue = `${year}-${String(month).padStart(2, '0')}`;
-        result.push({
-          value: monthValue,
-          label: formatKoreanMonth(monthValue),
-        });
-      }
-    }
-
-    return result;
+  useEffect(() => {
+    const next = parseMonth(value);
+    if (next) setViewYear(next.year);
   }, [value]);
 
+  const openPicker = (event) => {
+    if (disabled) return;
+    setViewYear(parseMonth(value)?.year || currentYear);
+    setAnchorEl(rootRef.current || event.currentTarget);
+  };
+
+  const emitChange = (nextValue) => {
+    if (typeof onChange === 'function') {
+      onChange({ target: { value: nextValue } });
+    }
+  };
+
   return (
-    <TextField
-      {...textFieldProps}
-      select
-      size={size}
-      label={label}
-      value={value || ''}
-      onChange={onChange}
-      disabled={disabled}
-      sx={sx}
-      SelectProps={{
-        MenuProps: {
-          PaperProps: {
-            sx: { maxHeight: 360 },
+    <>
+      <Box
+        ref={rootRef}
+        sx={{
+          minWidth: 0,
+          ...(fullWidth ? { width: '100%' } : {}),
+          ...(sx || {}),
+        }}
+      >
+        <TextField
+          {...textFieldProps}
+          size={size}
+          label={label}
+          fullWidth
+          value={formatKoreanMonth(value)}
+          placeholder="연도와 월 선택"
+          disabled={disabled}
+          onClick={openPicker}
+          InputLabelProps={{ shrink: true, ...(textFieldProps.InputLabelProps || {}) }}
+          inputProps={{
+            readOnly: true,
+            inputMode: 'none',
+            'aria-label': label || '월 선택',
+            ...(textFieldProps.inputProps || {}),
+          }}
+          InputProps={{
+            endAdornment: (
+              <InputAdornment position="end">
+                {allowClear && value && (
+                  <IconButton
+                    size="small"
+                    tabIndex={-1}
+                    aria-label="월 선택 해제"
+                    disabled={disabled}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      emitChange('');
+                    }}
+                  >
+                    ×
+                  </IconButton>
+                )}
+                <IconButton
+                  size="small"
+                  tabIndex={-1}
+                  aria-label={`${label || '월'} 달력 열기`}
+                  disabled={disabled}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    openPicker(event);
+                  }}
+                >
+                  <CalendarMonthRoundedIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+              </InputAdornment>
+            ),
+          }}
+          sx={{
+            cursor: disabled ? 'default' : 'pointer',
+            '& .MuiInputBase-input': {
+              cursor: disabled ? 'default' : 'pointer',
+              fontVariantNumeric: 'tabular-nums',
+            },
+          }}
+        />
+      </Box>
+
+      <Popover
+        open={Boolean(anchorEl)}
+        anchorEl={anchorEl}
+        onClose={() => setAnchorEl(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+        slotProps={{
+          paper: {
+            sx: {
+              mt: 0.6,
+              border: '1px solid #dbe3ee',
+              borderRadius: 1.5,
+              boxShadow: '0 12px 30px rgba(15, 23, 42, 0.16)',
+            },
           },
-        },
-      }}
-    >
-      {options.map((option) => (
-        <MenuItem key={option.value} value={option.value}>
-          {option.label}
-        </MenuItem>
-      ))}
-    </TextField>
+        }}
+      >
+        <Box sx={{ width: 292, p: 1.2 }}>
+          <Box
+            sx={{
+              mb: 1,
+              display: 'grid',
+              gridTemplateColumns: '32px minmax(0, 1fr) 32px',
+              alignItems: 'center',
+            }}
+          >
+            <IconButton size="small" aria-label="이전 연도" onClick={() => setViewYear((year) => year - 1)}>
+              <ChevronLeftRoundedIcon />
+            </IconButton>
+            <Typography align="center" sx={{ color: '#1e293b', fontSize: '0.88rem', fontWeight: 900 }}>
+              {viewYear}년
+            </Typography>
+            <IconButton size="small" aria-label="다음 연도" onClick={() => setViewYear((year) => year + 1)}>
+              <ChevronRightRoundedIcon />
+            </IconButton>
+          </Box>
+
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 0.65 }}>
+            {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => {
+              const isSelected = selected?.year === viewYear && selected?.month === month;
+              return (
+                <Button
+                  key={month}
+                  type="button"
+                  size="small"
+                  variant={isSelected ? 'contained' : 'outlined'}
+                  onClick={() => {
+                    emitChange(`${viewYear}-${pad2(month)}`);
+                    setAnchorEl(null);
+                  }}
+                  sx={{
+                    minWidth: 0,
+                    py: 0.7,
+                    fontSize: '0.74rem',
+                    fontWeight: 800,
+                  }}
+                >
+                  {month}월
+                </Button>
+              );
+            })}
+          </Box>
+        </Box>
+      </Popover>
+    </>
   );
 }

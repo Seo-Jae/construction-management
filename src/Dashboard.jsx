@@ -37,6 +37,7 @@ import {
   getProjectCellKeys,
 } from './utils/buildingUnits.js';
 import Sidebar from './components/Sidebar.jsx';
+import KoreanDatePicker from './components/KoreanDatePicker.jsx';
 import MainDashboard from './page/MainDashboard.jsx';
 import DailyReport from './page/DailyReport.jsx';
 import MonthlyWorkerStatus from './page/MonthlyWorkerStatus.jsx';
@@ -630,7 +631,14 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const [progressDate, setProgressDate] = useState(() =>
     formatYYYYMMDD(formatYYMMDD(createKoreaCalendarDate())),
   );
-  const [progressToast, setProgressToast] = useState(null);
+  const [dashboardToast, setDashboardToast] = useState(null);
+
+  const showDashboardToast = (text, severity = 'info') => {
+    setDashboardToast({
+      severity,
+      text,
+    });
+  };
   
   const [unitProgressData, setUnitProgressData] = useState({});
   const [unitProgressProjectName, setUnitProgressProjectName] = useState('');
@@ -1362,18 +1370,20 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         [dateStr]: newStatus,
       }));
 
-      alert(
+      showDashboardToast(
         currentlyClosed
           ? '마감이 취소되었습니다. 근로자 추가/수정이 가능합니다.'
           : '마감 처리되었습니다.',
+        'success',
       );
     } catch (error) {
       console.error('마감 상태 변경 오류:', error);
 
-      alert(
-        `마감 상태를 변경하지 못했습니다.\n\n${
+      showDashboardToast(
+        `마감 상태를 변경하지 못했습니다. ${
           error?.message || 'Supabase 권한 설정을 확인해주세요.'
         }`,
+        'error',
       );
     }
   };
@@ -1817,7 +1827,10 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     const workers = savedData[dateStr]?.workers || [];
 
     if (workers.length === 0) {
-      alert(`[${dateStr}] 일자에 등록된 인원이 없습니다.`);
+      showDashboardToast(
+        `[${dateStr}] 일자에 등록된 인원이 없습니다.`,
+        'warning',
+      );
       return;
     }
 
@@ -1838,8 +1851,9 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       );
     } catch (error) {
       console.error(error);
-      alert(
+      showDashboardToast(
         '양식 파일을 불러오지 못했습니다. templates 폴더를 확인해주세요.',
+        'error',
       );
     }
   };
@@ -1898,8 +1912,9 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       );
     } catch (error) {
       console.error('금월 출력일보 생성 오류:', error);
-      alert(
+      showDashboardToast(
         '금월 출력일보를 만들지 못했습니다. 양식 파일과 데이터를 확인해주세요.',
+        'error',
       );
     }
   };
@@ -1918,7 +1933,10 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
   const handleOpenModal = (day) => {
     if (isClosed(day.date)) {
-      alert('관리자에게 연락하여 주시기 바랍니다.');
+      showDashboardToast(
+        '마감된 일자입니다. 관리자에게 연락하여 주시기 바랍니다.',
+        'warning',
+      );
       return;
     }
 
@@ -1991,7 +2009,10 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     if (isClosed(currentDateKey)) return;
     const parts = currentDateKey.split('.'); const curr = new Date(2000 + parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10)); curr.setDate(curr.getDate() - 1);
     const prevDateKey = formatYYMMDD(curr); const prevData = savedData[prevDateKey];
-    if (!prevData?.todayTask && !prevData?.tomorrowTask) return alert('가져올 내용이 없습니다.');
+    if (!prevData?.todayTask && !prevData?.tomorrowTask) {
+      showDashboardToast('가져올 내용이 없습니다.', 'warning');
+      return;
+    }
     const overrides = { ...(savedData[currentDateKey] || {}), todayTask: prevData.todayTask, tomorrowTask: prevData.tomorrowTask };
     setSavedData(prev => ({ ...prev, [currentDateKey]: overrides })); await syncDataToDB(currentDateKey, overrides);
   };
@@ -2007,7 +2028,10 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     );
 
     if (!isValid) {
-      alert('구분, 성명, 공정, 주간 항목을 확인해주세요.');
+      showDashboardToast(
+        '구분, 성명, 공정, 주간 항목을 확인해주세요.',
+        'warning',
+      );
       return;
     }
 
@@ -2025,8 +2049,8 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     }));
 
     await syncDataToDB(selectedDateKey, overrides);
-    alert('안전하게 저장되었습니다!');
     handleCloseModal();
+    showDashboardToast('안전하게 저장되었습니다!', 'success');
   };
   const suppressedEnterCellRef =
     useRef('');
@@ -2415,7 +2439,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     const previousWorkers = savedData[targetKey]?.workers || [];
 
     if (previousWorkers.length === 0) {
-      alert('데이터가 없습니다.');
+      showDashboardToast('가져올 데이터가 없습니다.', 'warning');
       return;
     }
 
@@ -2494,7 +2518,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         };
       }),
     );
-  const handleFetchTasks = () => { const targetKey = formatYYMMDD(new Date(taskFetchDate)); if (savedData[targetKey]?.tasks?.length > 0) { if (taskRows.length > 0 && !window.confirm('추가하시겠습니까?')) { setTaskRows(savedData[targetKey].tasks.map(t => ({ ...t, id: Date.now() + Math.random() }))); return; } setTaskRows(prev => [...prev, ...savedData[targetKey].tasks.map(t => ({ ...t, id: Date.now() + Math.random() }))]); } else alert('데이터가 없습니다.'); };
+  const handleFetchTasks = () => { const targetKey = formatYYMMDD(new Date(taskFetchDate)); if (savedData[targetKey]?.tasks?.length > 0) { if (taskRows.length > 0 && !window.confirm('추가하시겠습니까?')) { setTaskRows(savedData[targetKey].tasks.map(t => ({ ...t, id: Date.now() + Math.random() }))); return; } setTaskRows(prev => [...prev, ...savedData[targetKey].tasks.map(t => ({ ...t, id: Date.now() + Math.random() }))]); } else showDashboardToast('가져올 데이터가 없습니다.', 'warning'); };
   const handleAddTask = () => setTaskRows([...taskRows, { id: Date.now(), taskName: '', amount: '' }]);
   const handleDeleteTasks = () => { setTaskRows(taskRows.filter(row => !selectedTasks.includes(row.id))); setSelectedTasks([]); };
   const handleSelectAllTasks = (e) => setSelectedTasks(e.target.checked ? taskRows.map(row => row.id) : []);
@@ -2606,7 +2630,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
   const handleSaveProgress = async () => {
     if (!activeProjectName) {
-      setProgressToast({
+      setDashboardToast({
         severity: 'error',
         text: '선택된 현장이 없습니다.',
       });
@@ -2614,7 +2638,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     }
 
     if (selectedCells.size === 0) {
-      setProgressToast({
+      setDashboardToast({
         severity: 'warning',
         text: '변경할 세대를 선택해주세요.',
       });
@@ -2633,7 +2657,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         progressDate,
       )
     ) {
-      setProgressToast({
+      setDashboardToast({
         severity: 'warning',
         text: '공정 완료일을 올바르게 선택해주세요.',
       });
@@ -2647,7 +2671,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       setProgressDate(
         todayProgressDate,
       );
-      setProgressToast({
+      setDashboardToast({
         severity: 'warning',
         text: '공정 완료일은 오늘 이후 날짜로 저장할 수 없습니다.',
       });
@@ -2692,7 +2716,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         new Set(),
       );
 
-      setProgressToast({
+      setDashboardToast({
         severity: 'warning',
         text:
           '선택한 세대는 모두 이미 작업완료 상태입니다. 기존 완료일은 변경되지 않습니다.',
@@ -2766,7 +2790,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             ? `\n이미 완료된 ${protectedCompletedCellKeys.length.toLocaleString()}세대는 변경하지 않았습니다.`
             : '';
 
-        setProgressToast({
+        setDashboardToast({
           severity: 'success',
           text:
             `${selectedCellKeys.length.toLocaleString()}세대를 작업전으로 되돌렸습니다.${protectedMessage}`,
@@ -2832,14 +2856,14 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           ? `\n이미 완료된 ${protectedCompletedCellKeys.length.toLocaleString()}세대는 기존 완료일을 유지했습니다.`
           : '';
 
-      setProgressToast({
+      setDashboardToast({
         severity: 'success',
         text:
           `${selectedCellKeys.length.toLocaleString()}세대가 저장되었습니다.${protectedMessage}`,
       });
     } catch (error) {
       console.error('공정 상태 저장 오류:', error);
-      setProgressToast({
+      setDashboardToast({
         severity: 'error',
         text:
           `저장 실패: ${error?.message || '알 수 없는 오류'}`,
@@ -2892,15 +2916,15 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   return (
     <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
       <Snackbar
-        key={progressToast?.text || 'progress-toast'}
-        open={Boolean(progressToast)}
+        key={dashboardToast?.text || 'dashboard-toast'}
+        open={Boolean(dashboardToast)}
         autoHideDuration={3000}
         anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
         TransitionComponent={Fade}
         transitionDuration={{ enter: 220, exit: 500 }}
         onClose={(_event, reason) => {
           if (reason === 'clickaway') return;
-          setProgressToast(null);
+          setDashboardToast(null);
         }}
         sx={{
           top: '72px !important',
@@ -2917,11 +2941,11 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         }}
       >
         <Alert
-          severity={progressToast?.severity || 'info'}
+          severity={dashboardToast?.severity || 'info'}
           variant="filled"
-          onClose={() => setProgressToast(null)}
+          onClose={() => setDashboardToast(null)}
         >
-          {progressToast?.text || ''}
+          {dashboardToast?.text || ''}
         </Alert>
       </Snackbar>
 
@@ -3724,18 +3748,15 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                     alignItems: 'center',
                   }}
                 >
-                  <TextField
+                  <KoreanDatePicker
                     size="small"
-                    type="date"
                     value={workerFetchDate}
-                    onChange={(event) =>
-                      setWorkerFetchDate(event.target.value)
-                    }
-                    sx={{
-                      '& .MuiInputBase-root': {
-                        fontSize: '0.75rem',
-                        py: 0.2,
-                      },
+                    onChange={setWorkerFetchDate}
+                    ariaLabel="불러올 근로자 날짜"
+                    sx={{ width: 138 }}
+                    inputSx={{
+                      py: 0.2,
+                      fontSize: '0.75rem',
                     }}
                   />
 

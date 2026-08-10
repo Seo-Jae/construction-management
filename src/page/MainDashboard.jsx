@@ -9,31 +9,39 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   IconButton,
   LinearProgress,
   MenuItem,
   Paper,
+  Snackbar,
   TextField,
   Tooltip,
   Typography,
 } from '@mui/material';
+import AddOutlinedIcon from '@mui/icons-material/AddOutlined';
 import CampaignOutlinedIcon from '@mui/icons-material/CampaignOutlined';
 import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
+import EventNoteOutlinedIcon from '@mui/icons-material/EventNoteOutlined';
+import PublicOutlinedIcon from '@mui/icons-material/PublicOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import TrendingUpOutlinedIcon from '@mui/icons-material/TrendingUpOutlined';
 import { supabase } from '../supabaseClient';
 import { getProjectCellKeys } from '../utils/buildingUnits.js';
 import MainWorkAlertDialog from './MainWorkAlertDialog.jsx';
+import KoreanDatePicker from '../components/KoreanDatePicker.jsx';
 
 const MAIN_PROGRESS_CACHE = new Map();
 const MAIN_LABOR_CACHE = new Map();
@@ -42,6 +50,11 @@ const MAIN_NOTICE_CACHE = new Map();
 const PROGRESS_CACHE_TTL_MS = 5 * 60 * 1000;
 const LABOR_CACHE_TTL_MS = 20 * 1000;
 const NOTICE_CACHE_TTL_MS = 5 * 60 * 1000;
+
+const EMPTY_CALENDAR_ISSUE_ACCESS = {
+  can_write: false,
+  can_share_all_projects: false,
+};
 
 const getCachedValue = (cache, key, ttlMs) => {
   const cached = cache.get(key);
@@ -144,6 +157,18 @@ const createDateKey = (year, monthIndex, day) => {
   const yy = String(year).slice(2);
   return `${yy}.${pad2(monthIndex + 1)}.${pad2(day)}`;
 };
+
+const createIsoDate = (year, monthIndex, day) =>
+  `${year}-${pad2(monthIndex + 1)}-${pad2(day)}`;
+
+const getMonthBounds = (year, monthIndex) => ({
+  firstDate: createIsoDate(year, monthIndex, 1),
+  lastDate: createIsoDate(
+    year,
+    monthIndex,
+    new Date(year, monthIndex + 1, 0).getDate(),
+  ),
+});
 
 const getKoreaDateParts = (date = new Date()) => {
   const formatter = new Intl.DateTimeFormat('en-CA', {
@@ -1120,14 +1145,307 @@ function NoticeEditDialog({
   );
 }
 
+function CalendarIssueEditDialog({
+  open,
+  draft,
+  saving,
+  canShareAllProjects,
+  minDate,
+  maxDate,
+  onChange,
+  onClose,
+  onSave,
+}) {
+  const isEdit = Boolean(draft?.id);
+
+  return (
+    <Dialog
+      open={open}
+      onClose={saving ? undefined : onClose}
+      fullWidth
+      maxWidth="sm"
+    >
+      <DialogTitle
+        sx={{
+          pb: 1,
+          fontSize: '1.05rem',
+          fontWeight: 900,
+        }}
+      >
+        {isEdit ? '주요일정 수정' : '주요일정 등록'}
+      </DialogTitle>
+
+      <DialogContent dividers>
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1.4,
+          }}
+        >
+          <KoreanDatePicker
+            size="small"
+            label="일정 일자"
+            value={draft?.issueDate || ''}
+            disabled={saving}
+            minDate={minDate}
+            maxDate={maxDate}
+            onChange={(value) => onChange('issueDate', value)}
+          />
+
+          <TextField
+            multiline
+            minRows={3}
+            label="주요일정 내용"
+            placeholder="예: 위험성평가 회의, 공정회의, 자재 반입 일정"
+            value={draft?.content || ''}
+            disabled={saving}
+            inputProps={{ maxLength: 1000 }}
+            helperText={`${String(draft?.content || '').length}/1000`}
+            onChange={(event) =>
+              onChange('content', event.target.value)
+            }
+          />
+
+          {canShareAllProjects ? (
+            <Box
+              sx={{
+                px: 1.2,
+                py: 0.8,
+                border: '1px solid #bfdbfe',
+                borderRadius: 1.2,
+                bgcolor: '#eff6ff',
+              }}
+            >
+              <FormControlLabel
+                control={(
+                  <Checkbox
+                    size="small"
+                    checked={Boolean(draft?.shareAllProjects)}
+                    disabled={saving}
+                    onChange={(event) =>
+                      onChange(
+                        'shareAllProjects',
+                        event.target.checked,
+                      )
+                    }
+                  />
+                )}
+                label="전체현장에 공유"
+                sx={{
+                  m: 0,
+                  '& .MuiFormControlLabel-label': {
+                    color: '#1e3a8a',
+                    fontSize: '0.78rem',
+                    fontWeight: 900,
+                  },
+                }}
+              />
+              <Typography
+                sx={{
+                  ml: 4,
+                  color: '#64748b',
+                  fontSize: '0.66rem',
+                }}
+              >
+                체크하면 한 현장에서 등록한 일정이 모든 현장의 Main 캘린더에 표시됩니다.
+              </Typography>
+            </Box>
+          ) : (
+            <Typography
+              sx={{
+                color: '#64748b',
+                fontSize: '0.7rem',
+              }}
+            >
+              이 일정은 현재 현장에만 등록됩니다. 전체현장 공유 권한은 회원관리에서 최고관리자가 부여할 수 있습니다.
+            </Typography>
+          )}
+        </Box>
+      </DialogContent>
+
+      <DialogActions sx={{ px: 2.5, py: 1.5 }}>
+        <Button onClick={onClose} disabled={saving}>
+          취소
+        </Button>
+        <Button
+          variant="contained"
+          onClick={onSave}
+          disabled={saving}
+        >
+          {saving ? '저장 중...' : '저장'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+function CalendarIssueDetailDialog({
+  open,
+  issueDate,
+  issues,
+  onClose,
+}) {
+  const [year, month, day] = String(issueDate || '').split('-');
+
+  return (
+    <Dialog
+      open={open}
+      onClose={onClose}
+      fullWidth
+      maxWidth="sm"
+    >
+      <DialogTitle
+        sx={{
+          pb: 1,
+          fontSize: '1.05rem',
+          fontWeight: 900,
+        }}
+      >
+        {year && month && day
+          ? `${year}년 ${Number(month)}월 ${Number(day)}일 주요일정`
+          : '주요일정'}
+      </DialogTitle>
+
+      <DialogContent dividers>
+        <Box
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1,
+          }}
+        >
+          {issues.map((issue) => (
+            <Box
+              key={issue.id}
+              sx={{
+                p: 1.4,
+                border: '1px solid #e2e8f0',
+                borderRadius: 1.4,
+                bgcolor: issue.share_all_projects
+                  ? '#f8faff'
+                  : '#ffffff',
+              }}
+            >
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: 0.6,
+                }}
+              >
+                <Chip
+                  size="small"
+                  label={
+                    issue.share_all_projects
+                      ? '전체현장'
+                      : '현장'
+                  }
+                  icon={
+                    issue.share_all_projects
+                      ? <PublicOutlinedIcon />
+                      : undefined
+                  }
+                  sx={{
+                    height: 22,
+                    color: issue.share_all_projects
+                      ? '#1d4ed8'
+                      : '#047857',
+                    bgcolor: issue.share_all_projects
+                      ? '#dbeafe'
+                      : '#d1fae5',
+                    fontSize: '0.64rem',
+                    fontWeight: 900,
+                    '& .MuiChip-icon': {
+                      color: 'inherit',
+                      fontSize: 14,
+                    },
+                  }}
+                />
+
+                <Typography
+                  sx={{
+                    color: '#64748b',
+                    fontSize: '0.66rem',
+                    fontWeight: 700,
+                  }}
+                >
+                  {issue.project_name || '현장 미상'}
+                </Typography>
+              </Box>
+
+              <Typography
+                sx={{
+                  mt: 1,
+                  color: '#1e293b',
+                  fontSize: '0.82rem',
+                  fontWeight: 800,
+                  lineHeight: 1.6,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                }}
+              >
+                {issue.content}
+              </Typography>
+
+              <Box
+                sx={{
+                  mt: 1,
+                  pt: 0.8,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  gap: 1,
+                  borderTop: '1px solid #f1f5f9',
+                }}
+              >
+                <Typography
+                  sx={{
+                    color: '#64748b',
+                    fontSize: '0.65rem',
+                    fontWeight: 700,
+                  }}
+                >
+                  작성자 · {issue.author_name || '작성자 미상'}
+                </Typography>
+
+                <Typography
+                  sx={{
+                    color: '#94a3b8',
+                    fontSize: '0.61rem',
+                  }}
+                >
+                  수정일 · {formatNoticeDate(issue.updated_at)}
+                </Typography>
+              </Box>
+            </Box>
+          ))}
+        </Box>
+      </DialogContent>
+
+      <DialogActions sx={{ px: 2.5, py: 1.5 }}>
+        <Button onClick={onClose}>닫기</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
 function CalendarPanel({
   viewYear,
   viewMonth,
   handlePrevMonth,
   handleNextMonth,
   savedData,
-  onNavigate,
+  issues,
+  issuesLoading,
+  issuesErrorMessage,
+  canWriteIssues,
+  onCreateIssue,
+  onEditIssue,
+  onDeleteIssue,
 }) {
+  const [selectedIssueDate, setSelectedIssueDate] = useState('');
   const firstDay = new Date(
     viewYear,
     viewMonth,
@@ -1142,6 +1460,22 @@ function CalendarPanel({
   const isCurrentMonth =
     today.year === viewYear &&
     today.month === viewMonth + 1;
+  const issueDateSet = useMemo(
+    () => new Set(
+      (Array.isArray(issues) ? issues : [])
+        .map((issue) => String(issue?.issue_date || '').slice(0, 10))
+        .filter(Boolean),
+    ),
+    [issues],
+  );
+  const selectedDateIssues = useMemo(
+    () => (Array.isArray(issues) ? issues : []).filter(
+      (issue) =>
+        String(issue?.issue_date || '').slice(0, 10) ===
+        selectedIssueDate,
+    ),
+    [issues, selectedIssueDate],
+  );
 
   const cells = [
     ...Array.from({ length: firstDay }, () => null),
@@ -1159,89 +1493,119 @@ function CalendarPanel({
     <Paper
       variant="outlined"
       sx={{
-        minHeight: 300,
+        minHeight: 430,
         p: 1.5,
+        display: 'flex',
+        flexDirection: 'column',
         borderColor: '#cbd5e1',
         bgcolor: '#ffffff',
         boxShadow: '0 3px 12px rgba(15, 23, 42, 0.04)',
       }}
     >
-      <Box
-        sx={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 1,
-          pb: 1,
-          borderBottom: '1px solid #e2e8f0',
-        }}
-      >
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 0.7,
-          }}
-        >
-          <CalendarMonthOutlinedIcon
-            sx={{ color: '#7c3aed', fontSize: 21 }}
-          />
-          <Typography
-            sx={{
-              color: '#0f172a',
-              fontSize: '0.88rem',
-              fontWeight: 900,
-            }}
-          >
-            캘린더
-          </Typography>
-        </Box>
-
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 0.25,
-          }}
-        >
-          <IconButton
-            size="small"
-            onClick={handlePrevMonth}
-            aria-label="이전 달"
-          >
-            <ChevronLeftIcon fontSize="small" />
-          </IconButton>
-
-          <Typography
-            sx={{
-              minWidth: 88,
-              textAlign: 'center',
-              color: '#334155',
-              fontSize: '0.73rem',
-              fontWeight: 900,
-            }}
-          >
-            {viewYear}.{pad2(viewMonth + 1)}
-          </Typography>
-
-          <IconButton
-            size="small"
-            onClick={handleNextMonth}
-            aria-label="다음 달"
-          >
-            <ChevronRightIcon fontSize="small" />
-          </IconButton>
-        </Box>
-      </Box>
+      <CalendarIssueDetailDialog
+        open={
+          Boolean(selectedIssueDate) &&
+          selectedDateIssues.length > 0
+        }
+        issueDate={selectedIssueDate}
+        issues={selectedDateIssues}
+        onClose={() => setSelectedIssueDate('')}
+      />
 
       <Box
         sx={{
-          mt: 1,
           display: 'grid',
-          gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
-          gap: 0.4,
+          gridTemplateColumns: {
+            xs: '1fr',
+            md: 'minmax(0, 2fr) minmax(240px, 1fr)',
+          },
+          gap: 1.4,
+          flex: 1,
+          minHeight: 0,
+          alignItems: 'stretch',
         }}
       >
+        <Box
+          sx={{
+            minWidth: 0,
+          }}
+        >
+          <Box
+            sx={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              gap: 1,
+              pb: 1,
+              borderBottom: '1px solid #e2e8f0',
+            }}
+          >
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.7,
+              }}
+            >
+              <CalendarMonthOutlinedIcon
+                sx={{ color: '#7c3aed', fontSize: 21 }}
+              />
+              <Typography
+                sx={{
+                  color: '#0f172a',
+                  fontSize: '0.88rem',
+                  fontWeight: 900,
+                }}
+              >
+                캘린더
+              </Typography>
+            </Box>
+
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.25,
+              }}
+            >
+              <IconButton
+                size="small"
+                onClick={handlePrevMonth}
+                aria-label="이전 달"
+              >
+                <ChevronLeftIcon fontSize="small" />
+              </IconButton>
+
+              <Typography
+                sx={{
+                  minWidth: 88,
+                  textAlign: 'center',
+                  color: '#334155',
+                  fontSize: '0.73rem',
+                  fontWeight: 900,
+                }}
+              >
+                {viewYear}년 {viewMonth + 1}월
+              </Typography>
+
+              <IconButton
+                size="small"
+                onClick={handleNextMonth}
+                aria-label="다음 달"
+              >
+                <ChevronRightIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          </Box>
+
+          <Box
+            sx={{
+              mt: 1,
+              display: 'grid',
+              gridTemplateColumns: 'repeat(7, minmax(0, 1fr))',
+              gap: 0.4,
+            }}
+          >
         {['일', '월', '화', '수', '목', '금', '토'].map(
           (label, index) => (
             <Box
@@ -1282,20 +1646,39 @@ function CalendarPanel({
           const hasReport = hasMeaningfulReport(
             savedData?.[dateKey],
           );
+          const isoDate = createIsoDate(
+            viewYear,
+            viewMonth,
+            day,
+          );
+          const hasIssue = issueDateSet.has(isoDate);
           const dayOfWeek = index % 7;
           const isToday =
             isCurrentMonth && today.day === day;
 
           return (
             <Box
-              component="button"
-              type="button"
               key={dateKey}
-              onClick={() => onNavigate?.('daily')}
+              component={hasIssue ? 'button' : 'div'}
+              type={hasIssue ? 'button' : undefined}
+              onClick={
+                hasIssue
+                  ? () => setSelectedIssueDate(isoDate)
+                  : undefined
+              }
+              aria-label={
+                hasIssue
+                  ? `${viewYear}년 ${viewMonth + 1}월 ${day}일 주요일정 보기`
+                  : undefined
+              }
               sx={{
                 position: 'relative',
-                minHeight: 34,
+                width: '100%',
+                minHeight: 38,
                 p: 0,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
                 border: isToday
                   ? '2px solid #ef4444'
                   : '1px solid #e2e8f0',
@@ -1314,76 +1697,368 @@ function CalendarPanel({
                 fontFamily: 'inherit',
                 fontSize: '0.68rem',
                 fontWeight: isToday ? 900 : 700,
-                cursor: 'pointer',
-                '&:hover': {
-                  bgcolor: '#f8fafc',
-                },
+                appearance: 'none',
+                cursor: hasIssue ? 'pointer' : 'default',
+                '&:hover': hasIssue
+                  ? {
+                      borderColor: '#e11d48',
+                      bgcolor: '#fff1f2',
+                    }
+                  : undefined,
               }}
             >
               {day}
 
-              {hasReport && (
+              {(hasReport || hasIssue) && (
                 <Box
                   sx={{
                     position: 'absolute',
                     left: '50%',
                     bottom: 3,
-                    width: 4,
-                    height: 4,
-                    borderRadius: '50%',
-                    bgcolor: '#16a34a',
+                    display: 'flex',
+                    gap: 0.35,
                     transform: 'translateX(-50%)',
                   }}
-                />
+                >
+                  {hasReport && (
+                    <Box
+                      sx={{
+                        width: 4,
+                        height: 4,
+                        borderRadius: '50%',
+                        bgcolor: '#16a34a',
+                      }}
+                    />
+                  )}
+                  {hasIssue && (
+                    <Box
+                      sx={{
+                        width: 4,
+                        height: 4,
+                        borderRadius: '50%',
+                        bgcolor: '#e11d48',
+                      }}
+                    />
+                  )}
+                </Box>
               )}
             </Box>
           );
         })}
-      </Box>
+          </Box>
 
-      <Box
-        sx={{
-          mt: 1,
-          pt: 0.8,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          borderTop: '1px solid #f1f5f9',
-        }}
-      >
+          <Box
+            sx={{
+              mt: 1,
+              pt: 0.8,
+              display: 'flex',
+              alignItems: 'center',
+              borderTop: '1px solid #f1f5f9',
+            }}
+          >
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                flexWrap: 'wrap',
+                gap: 1,
+              }}
+            >
+          {[
+            ['#16a34a', '출력일보 등록일'],
+            ['#e11d48', '주요일정 등록일 · 날짜 클릭 시 상세보기'],
+          ].map(([color, label]) => (
+            <Box
+              key={label}
+              sx={{ display: 'flex', alignItems: 'center', gap: 0.45 }}
+            >
+              <Box
+                sx={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: '50%',
+                  bgcolor: color,
+                }}
+              />
+              <Typography
+                sx={{
+                  color: '#64748b',
+                  fontSize: '0.62rem',
+                }}
+              >
+                {label}
+              </Typography>
+            </Box>
+          ))}
+            </Box>
+          </Box>
+        </Box>
+
+        <Box
+          sx={{
+            minWidth: 0,
+            alignSelf: 'stretch',
+            pl: { xs: 0, md: 1.4 },
+            pt: { xs: 1.2, md: 0 },
+            borderLeft: {
+              xs: 'none',
+              md: '1px solid #e2e8f0',
+            },
+            borderTop: {
+              xs: '1px solid #e2e8f0',
+              md: 'none',
+            },
+          }}
+        >
         <Box
           sx={{
             display: 'flex',
             alignItems: 'center',
-            gap: 0.5,
+            flexWrap: 'wrap',
+            gap: 0.7,
           }}
         >
-          <Box
-            sx={{
-              width: 6,
-              height: 6,
-              borderRadius: '50%',
-              bgcolor: '#16a34a',
-            }}
+          <EventNoteOutlinedIcon
+            sx={{ color: '#e11d48', fontSize: 20 }}
           />
           <Typography
             sx={{
-              color: '#64748b',
-              fontSize: '0.62rem',
+              color: '#0f172a',
+              fontSize: '0.82rem',
+              fontWeight: 900,
             }}
           >
-            출력일보 등록일
+            {viewYear}년 {viewMonth + 1}월 주요일정
           </Typography>
+
+          {canWriteIssues && (
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<AddOutlinedIcon sx={{ fontSize: 16 }} />}
+              onClick={onCreateIssue}
+              sx={{
+                ml: 'auto',
+                minWidth: 0,
+                px: 1,
+                py: 0.35,
+                fontSize: '0.67rem',
+                fontWeight: 900,
+              }}
+            >
+              일정 등록
+            </Button>
+          )}
         </Box>
 
-        <Typography
-          sx={{
-            color: '#94a3b8',
-            fontSize: '0.6rem',
-          }}
-        >
-          날짜 선택 시 출력일보작성으로 이동
-        </Typography>
+        {issuesErrorMessage && (
+          <Alert severity="error" sx={{ mt: 1, py: 0 }}>
+            {issuesErrorMessage}
+          </Alert>
+        )}
+
+        {issuesLoading ? (
+          <Box
+            sx={{
+              minHeight: 90,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <CircularProgress size={24} />
+          </Box>
+        ) : issues.length === 0 ? (
+          <Box
+            sx={{
+              mt: 1,
+              minHeight: 86,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: '1px dashed #cbd5e1',
+              borderRadius: 1.2,
+              bgcolor: '#f8fafc',
+            }}
+          >
+            <Typography
+              sx={{ color: '#94a3b8', fontSize: '0.7rem' }}
+            >
+              등록된 주요일정이 없습니다.
+            </Typography>
+          </Box>
+        ) : (
+          <Box
+            sx={{
+              mt: 0.8,
+              maxHeight: 260,
+              overflowY: 'auto',
+              pr: 0.35,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 0.65,
+            }}
+          >
+            {issues.map((issue) => {
+              const issueDate = String(issue.issue_date || '');
+              const [year, month, day] = issueDate.split('-');
+
+              return (
+                <Box
+                  key={issue.id}
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: '52px minmax(0, 1fr)',
+                    gap: 0.75,
+                    alignItems: 'stretch',
+                  }}
+                >
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#475569',
+                    }}
+                  >
+                    <Typography
+                      sx={{ fontSize: '0.58rem', fontWeight: 700 }}
+                    >
+                      {year}
+                    </Typography>
+                    <Typography
+                      sx={{ fontSize: '0.7rem', fontWeight: 900 }}
+                    >
+                      {month}.{day}
+                    </Typography>
+                  </Box>
+
+                  <Box
+                    sx={{
+                      px: 1,
+                      py: 0.85,
+                      border: '1px solid #e2e8f0',
+                      borderRadius: 1.2,
+                      bgcolor: issue.share_all_projects
+                        ? '#f8faff'
+                        : '#ffffff',
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 0.55,
+                      }}
+                    >
+                      <Chip
+                        size="small"
+                        label={
+                          issue.share_all_projects
+                            ? '전체현장'
+                            : '현장'
+                        }
+                        icon={
+                          issue.share_all_projects
+                            ? <PublicOutlinedIcon />
+                            : undefined
+                        }
+                        sx={{
+                          height: 20,
+                          color: issue.share_all_projects
+                            ? '#1d4ed8'
+                            : '#047857',
+                          bgcolor: issue.share_all_projects
+                            ? '#dbeafe'
+                            : '#d1fae5',
+                          fontSize: '0.6rem',
+                          fontWeight: 900,
+                          '& .MuiChip-icon': {
+                            color: 'inherit',
+                            fontSize: 14,
+                          },
+                        }}
+                      />
+
+                      {issue.share_all_projects && (
+                        <Typography
+                          noWrap
+                          sx={{
+                            minWidth: 0,
+                            color: '#64748b',
+                            fontSize: '0.6rem',
+                          }}
+                        >
+                          {issue.project_name}
+                        </Typography>
+                      )}
+
+                      {issue.can_edit && (
+                        <Box
+                          sx={{
+                            ml: 'auto',
+                            display: 'flex',
+                            gap: 0.15,
+                          }}
+                        >
+                          <Tooltip title="일정 수정">
+                            <IconButton
+                              size="small"
+                              onClick={() => onEditIssue(issue)}
+                              sx={{ width: 25, height: 25 }}
+                            >
+                              <EditOutlinedIcon sx={{ fontSize: 15 }} />
+                            </IconButton>
+                          </Tooltip>
+                          <Tooltip title="일정 삭제">
+                            <IconButton
+                              size="small"
+                              onClick={() => onDeleteIssue(issue)}
+                              sx={{
+                                width: 25,
+                                height: 25,
+                                color: '#dc2626',
+                              }}
+                            >
+                              <DeleteOutlinedIcon sx={{ fontSize: 15 }} />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
+                      )}
+                    </Box>
+
+                    <Typography
+                      sx={{
+                        mt: 0.55,
+                        color: '#1e293b',
+                        fontSize: '0.74rem',
+                        fontWeight: 800,
+                        lineHeight: 1.5,
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                      }}
+                    >
+                      {issue.content}
+                    </Typography>
+
+                    <Typography
+                      sx={{
+                        mt: 0.35,
+                        color: '#94a3b8',
+                        fontSize: '0.58rem',
+                        textAlign: 'right',
+                      }}
+                    >
+                      {issue.author_name || '작성자 미상'}
+                    </Typography>
+                  </Box>
+                </Box>
+              );
+            })}
+          </Box>
+        )}
+        </Box>
       </Box>
     </Paper>
   );
@@ -1607,10 +2282,36 @@ export default function MainDashboard({
   const [noticeSaving, setNoticeSaving] = useState(false);
   const [noticeErrorMessage, setNoticeErrorMessage] =
     useState('');
+  const [calendarIssues, setCalendarIssues] = useState([]);
+  const [calendarIssueAccess, setCalendarIssueAccess] =
+    useState(EMPTY_CALENDAR_ISSUE_ACCESS);
+  const [calendarIssuesLoading, setCalendarIssuesLoading] =
+    useState(false);
+  const [calendarIssuesErrorMessage, setCalendarIssuesErrorMessage] =
+    useState('');
+  const [calendarIssueDialogOpen, setCalendarIssueDialogOpen] =
+    useState(false);
+  const [calendarIssueDraft, setCalendarIssueDraft] = useState({
+    id: null,
+    issueDate: '',
+    content: '',
+    shareAllProjects: false,
+  });
+  const [calendarIssueSaving, setCalendarIssueSaving] =
+    useState(false);
+  const [toast, setToast] = useState({
+    open: false,
+    severity: 'success',
+    message: '',
+  });
   const progressRequestIdRef = useRef(0);
   const laborRequestIdRef = useRef(0);
 
   const isSuperAdmin = userRole === '최고관리자';
+  const calendarMonthBounds = useMemo(
+    () => getMonthBounds(viewYear, viewMonth),
+    [viewMonth, viewYear],
+  );
 
   const loadNotices = useCallback(async ({ force = false } = {}) => {
     const cachedNotices = getCachedValue(
@@ -1770,6 +2471,195 @@ export default function MainDashboard({
       });
     } finally {
       setNoticeSaving(false);
+    }
+  };
+
+  const loadCalendarIssues = useCallback(async () => {
+    if (!projectName) {
+      setCalendarIssues([]);
+      setCalendarIssueAccess(EMPTY_CALENDAR_ISSUE_ACCESS);
+      setCalendarIssuesErrorMessage('');
+      return;
+    }
+
+    setCalendarIssuesLoading(true);
+    setCalendarIssuesErrorMessage('');
+
+    try {
+      const [contextResult, issuesResult] = await Promise.all([
+        supabase.rpc('main_get_calendar_issue_context', {
+          p_project_name: projectName,
+        }),
+        supabase.rpc('main_list_calendar_issues', {
+          p_project_name: projectName,
+          p_month_start: calendarMonthBounds.firstDate,
+        }),
+      ]);
+
+      if (contextResult.error) throw contextResult.error;
+      if (issuesResult.error) throw issuesResult.error;
+
+      setCalendarIssueAccess({
+        can_write: contextResult.data?.can_write === true,
+        can_share_all_projects:
+          contextResult.data?.can_share_all_projects === true,
+      });
+      setCalendarIssues(
+        Array.isArray(issuesResult.data) ? issuesResult.data : [],
+      );
+    } catch (error) {
+      console.error('Main 캘린더 주요일정 조회 오류:', error);
+      setCalendarIssues([]);
+      setCalendarIssueAccess(EMPTY_CALENDAR_ISSUE_ACCESS);
+      setCalendarIssuesErrorMessage(
+        error?.message || '주요일정을 불러오지 못했습니다.',
+      );
+    } finally {
+      setCalendarIssuesLoading(false);
+    }
+  }, [calendarMonthBounds.firstDate, projectName]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      loadCalendarIssues();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [loadCalendarIssues]);
+
+  const handleOpenCalendarIssueCreate = () => {
+    const today = getKoreaDateParts();
+    const initialDay =
+      today.year === viewYear &&
+      today.month === viewMonth + 1
+        ? today.day
+        : 1;
+
+    setCalendarIssueDraft({
+      id: null,
+      issueDate: createIsoDate(viewYear, viewMonth, initialDay),
+      content: '',
+      shareAllProjects: false,
+    });
+    setCalendarIssueDialogOpen(true);
+  };
+
+  const handleOpenCalendarIssueEdit = (issue) => {
+    setCalendarIssueDraft({
+      id: issue.id,
+      issueDate: String(issue.issue_date || '').slice(0, 10),
+      content: String(issue.content || ''),
+      shareAllProjects: issue.share_all_projects === true,
+    });
+    setCalendarIssueDialogOpen(true);
+  };
+
+  const handleChangeCalendarIssueDraft = (field, value) => {
+    setCalendarIssueDraft((previous) => ({
+      ...previous,
+      [field]: value,
+    }));
+  };
+
+  const handleSaveCalendarIssue = async () => {
+    if (calendarIssueSaving) return;
+
+    const issueDate = String(
+      calendarIssueDraft.issueDate || '',
+    ).trim();
+    const content = String(
+      calendarIssueDraft.content || '',
+    ).trim();
+
+    if (!issueDate || !content) {
+      setToast({
+        open: true,
+        severity: 'warning',
+        message: '일정 일자와 내용을 모두 입력해주세요.',
+      });
+      return;
+    }
+
+    if (
+      issueDate < calendarMonthBounds.firstDate ||
+      issueDate > calendarMonthBounds.lastDate
+    ) {
+      setToast({
+        open: true,
+        severity: 'warning',
+        message: '현재 보고 있는 달의 날짜를 선택해주세요.',
+      });
+      return;
+    }
+
+    setCalendarIssueSaving(true);
+
+    try {
+      const { error } = await supabase.rpc(
+        'main_save_calendar_issue',
+        {
+          p_issue_id: calendarIssueDraft.id || null,
+          p_project_name: projectName,
+          p_issue_date: issueDate,
+          p_content: content,
+          p_share_all_projects:
+            calendarIssueDraft.shareAllProjects === true,
+        },
+      );
+
+      if (error) throw error;
+
+      setCalendarIssueDialogOpen(false);
+      setToast({
+        open: true,
+        severity: 'success',
+        message: calendarIssueDraft.id
+          ? '주요일정을 수정했습니다.'
+          : '주요일정을 등록했습니다.',
+      });
+      await loadCalendarIssues();
+    } catch (error) {
+      console.error('Main 캘린더 주요일정 저장 오류:', error);
+      setToast({
+        open: true,
+        severity: 'error',
+        message:
+          error?.message || '주요일정을 저장하지 못했습니다.',
+      });
+    } finally {
+      setCalendarIssueSaving(false);
+    }
+  };
+
+  const handleDeleteCalendarIssue = async (issue) => {
+    const confirmed = window.confirm(
+      `${String(issue.issue_date || '').slice(0, 10)} 주요일정을 삭제할까요?`,
+    );
+
+    if (!confirmed) return;
+
+    try {
+      const { error } = await supabase.rpc(
+        'main_delete_calendar_issue',
+        { p_issue_id: issue.id },
+      );
+
+      if (error) throw error;
+
+      setToast({
+        open: true,
+        severity: 'success',
+        message: '주요일정을 삭제했습니다.',
+      });
+      await loadCalendarIssues();
+    } catch (error) {
+      console.error('Main 캘린더 주요일정 삭제 오류:', error);
+      setToast({
+        open: true,
+        severity: 'error',
+        message:
+          error?.message || '주요일정을 삭제하지 못했습니다.',
+      });
     }
   };
 
@@ -2043,6 +2933,40 @@ export default function MainDashboard({
         onSave={handleSaveNotices}
       />
 
+      <CalendarIssueEditDialog
+        open={calendarIssueDialogOpen}
+        draft={calendarIssueDraft}
+        saving={calendarIssueSaving}
+        canShareAllProjects={
+          calendarIssueAccess.can_share_all_projects
+        }
+        minDate={calendarMonthBounds.firstDate}
+        maxDate={calendarMonthBounds.lastDate}
+        onChange={handleChangeCalendarIssueDraft}
+        onClose={() => setCalendarIssueDialogOpen(false)}
+        onSave={handleSaveCalendarIssue}
+      />
+
+      <Snackbar
+        open={toast.open}
+        autoHideDuration={3000}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        onClose={() =>
+          setToast((previous) => ({ ...previous, open: false }))
+        }
+      >
+        <Alert
+          severity={toast.severity}
+          variant="filled"
+          onClose={() =>
+            setToast((previous) => ({ ...previous, open: false }))
+          }
+          sx={{ fontWeight: 800 }}
+        >
+          {toast.message}
+        </Alert>
+      </Snackbar>
+
       <Box
         sx={{
           display: 'grid',
@@ -2074,7 +2998,7 @@ export default function MainDashboard({
           display: 'grid',
           gridTemplateColumns: {
             xs: '1fr',
-            lg: 'minmax(0, 1.25fr) minmax(330px, 0.75fr)',
+            lg: 'minmax(280px, 1fr) minmax(0, 2fr)',
           },
           gap: 1.2,
           alignItems: 'stretch',
@@ -2092,7 +3016,13 @@ export default function MainDashboard({
           handlePrevMonth={handlePrevMonth}
           handleNextMonth={handleNextMonth}
           savedData={savedData}
-          onNavigate={onNavigate}
+          issues={calendarIssues}
+          issuesLoading={calendarIssuesLoading}
+          issuesErrorMessage={calendarIssuesErrorMessage}
+          canWriteIssues={calendarIssueAccess.can_write}
+          onCreateIssue={handleOpenCalendarIssueCreate}
+          onEditIssue={handleOpenCalendarIssueEdit}
+          onDeleteIssue={handleDeleteCalendarIssue}
         />
       </Box>
 

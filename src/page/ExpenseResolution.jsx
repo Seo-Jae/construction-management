@@ -333,14 +333,17 @@ function NumericMonthField({ label, value, onChange, allowClear = false, sx }) {
   };
 
   const selected = getMonthParts(value);
+  const displayValue = selected
+    ? `${selected.year}년 ${selected.month}월`
+    : '';
 
   return (
     <>
       <TextField
         label={label}
         size="small"
-        value={value || ''}
-        placeholder="YYYY-MM"
+        value={displayValue}
+        placeholder="연도와 월 선택"
         onClick={openPicker}
         InputLabelProps={{ shrink: true }}
         inputProps={{ readOnly: true, inputMode: 'none' }}
@@ -379,7 +382,7 @@ function NumericMonthField({ label, value, onChange, allowClear = false, sx }) {
             <IconButton size="small" onClick={() => setViewYear((year) => year - 1)}>
               <ChevronLeftRoundedIcon />
             </IconButton>
-            <Typography sx={{ fontSize: '0.88rem', fontWeight: 900 }}>{viewYear}</Typography>
+            <Typography sx={{ fontSize: '0.88rem', fontWeight: 900 }}>{viewYear}년</Typography>
             <IconButton size="small" onClick={() => setViewYear((year) => year + 1)}>
               <ChevronRightRoundedIcon />
             </IconButton>
@@ -398,7 +401,7 @@ function NumericMonthField({ label, value, onChange, allowClear = false, sx }) {
                   }}
                   sx={{ minWidth: 0, py: 0.7, fontSize: '0.74rem', fontWeight: 800 }}
                 >
-                  {pad(monthNumber)}
+                  {monthNumber}월
                 </Button>
               );
             })}
@@ -442,7 +445,7 @@ function NumericDateField({ label, value, onChange, displayMode = 'full', sx }) 
   const displayValue = value
     ? displayMode === 'month-day'
       ? String(value).slice(5, 10)
-      : String(value).slice(0, 10)
+      : String(value).slice(2, 10)
     : '';
   const weekNames = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -452,7 +455,7 @@ function NumericDateField({ label, value, onChange, displayMode = 'full', sx }) 
         label={label}
         size="small"
         value={displayValue}
-        placeholder={displayMode === 'month-day' ? 'MM-DD' : 'YYYY-MM-DD'}
+        placeholder={displayMode === 'month-day' ? 'mm-dd' : 'yy-mm-dd'}
         onClick={openPicker}
         InputLabelProps={{ shrink: true }}
         inputProps={{ readOnly: true, inputMode: 'none' }}
@@ -485,7 +488,7 @@ function NumericDateField({ label, value, onChange, displayMode = 'full', sx }) 
               </IconButton>
             </Stack>
             <Typography sx={{ fontSize: '0.9rem', fontWeight: 900 }}>
-              {viewYear}-{pad(viewMonth)}
+              {viewYear}년 {viewMonth}월
             </Typography>
             <Stack direction="row" spacing={0.1}>
               <IconButton size="small" title="다음 달" onClick={() => moveMonth(1)}>
@@ -846,7 +849,7 @@ function CalendarPreview({ month, items }) {
   }, [items, month]);
 
   const [year, monthNumber] = month.split('-');
-  const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
 
   return (
     <Paper
@@ -863,7 +866,7 @@ function CalendarPreview({ month, items }) {
     >
       <Box sx={{ bgcolor: '#050505', color: '#ffffff', py: 0.8, textAlign: 'center' }}>
         <Typography sx={{ fontWeight: 900, fontSize: '1.05rem' }}>
-          ~ {year}.{monthNumber} ~
+          ~ {year}년 {Number(monthNumber)}월 ~
         </Typography>
       </Box>
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
@@ -1932,14 +1935,15 @@ function ExpenseEditor({ userProfile, editingDocument, onBack, onSaved }) {
                     >
                       <TableCell align="center" sx={{ fontSize: '0.72rem' }}>{index + 1}</TableCell>
                       <TableCell align="center">
-                        <TextField
-                          type="date"
-                          size="small"
-                          variant="standard"
-                          fullWidth
+                        <NumericDateField
+                          label=""
                           value={item.expense_date}
-                          onChange={(event) => updateItemField(item.clientId, 'expense_date', event.target.value)}
-                          inputProps={{ 'aria-label': `${index + 1}번 사용일` }}
+                          displayMode="month-day"
+                          onChange={(value) => updateItemField(item.clientId, 'expense_date', value)}
+                          sx={{
+                            width: '100%',
+                            '& .MuiInputBase-root': { fontSize: '0.72rem' },
+                          }}
                         />
                       </TableCell>
                       <TableCell>

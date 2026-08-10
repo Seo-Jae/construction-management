@@ -58,6 +58,7 @@ import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import { supabase } from '../supabaseClient';
 import LaborPeriodStructureDialog from '../components/LaborPeriodStructureDialog.jsx';
 import KoreanMonthSelect from '../components/KoreanMonthSelect.jsx';
+import KoreanDatePicker from '../components/KoreanDatePicker.jsx';
 import { getProjectCellKeys } from '../utils/buildingUnits.js';
 import {
   LABOR_QUANTITY_EXCEL_TEST_PROJECT,
@@ -2842,18 +2843,25 @@ export default function LaborCostManagement({
         />
       </TableCell>
       <TableCell sx={{ ...bodyCellSx, minWidth: 132, p: 0.45 }}>
-        <InputBase
-          type="date"
+        <KoreanDatePicker
           value={editor.effectiveFrom}
-          onChange={(event) =>
-            updateEditorField('effectiveFrom', event.target.value)
-          }
+          onChange={(value) => updateEditorField('effectiveFrom', value)}
           onFocus={() => setActiveEditorField('effectiveFrom')}
           onKeyDown={(event) =>
             handleRateEditorKeyDown(event, 'effectiveFrom')
           }
           inputRef={registerRateInput('effectiveFrom')}
-          sx={editorCellInputSx}
+          variant="standard"
+          fullWidth
+          ariaLabel="적용일"
+          sx={{
+            '& .MuiInputBase-root:before, & .MuiInputBase-root:after': { display: 'none' },
+          }}
+          inputSx={{
+            py: 0.45,
+            px: 0.6,
+            fontSize: '0.72rem',
+          }}
         />
       </TableCell>
       <TableCell sx={{ ...bodyCellSx, minWidth: 235, p: 0.45 }}>

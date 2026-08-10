@@ -27,6 +27,7 @@ import {
   Typography,
 } from '@mui/material';
 import { supabase } from '../supabaseClient';
+import KoreanDatePicker from '../components/KoreanDatePicker.jsx';
 
 const ROLE_OPTIONS = ['담당자', '관리자', '최고관리자'];
 const ALL_PROJECTS_OPTION = '전체현장';
@@ -619,6 +620,8 @@ export default function UserManagement({ currentUserId = '' }) {
   });
   const [permissionScopeByUser, setPermissionScopeByUser] = useState({});
   const [templateChangeRequest, setTemplateChangeRequest] = useState(null);
+  const [deleteRequest, setDeleteRequest] = useState(null);
+  const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
   const [projectOptions, setProjectOptions] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState('');
   const [statusFilter, setStatusFilter] = useState('pending');
@@ -792,6 +795,7 @@ export default function UserManagement({ currentUserId = '' }) {
   const selectedIsCurrentUser = Boolean(
     selectedAccount && String(selectedAccount.auth_user_id) === String(currentUserId),
   );
+  const selectedIsSuperAdmin = selectedAccount?.role === '최고관리자';
   const selectedIsProcessing = Boolean(
     selectedAccount && processingId === selectedAccount.auth_user_id,
   );
@@ -1273,6 +1277,73 @@ export default function UserManagement({ currentUserId = '' }) {
     }
   };
 
+  const openDeleteDialog = (account) => {
+    if (!account) return;
+
+    if (String(account.auth_user_id) === String(currentUserId)) {
+      setErrorMessage('현재 로그인한 본인 계정은 삭제할 수 없습니다.');
+      return;
+    }
+
+    if (account.role === '최고관리자') {
+      setErrorMessage('최고관리자 계정은 회원관리 화면에서 삭제할 수 없습니다.');
+      return;
+    }
+
+    setDeleteRequest(account);
+    setDeleteConfirmationText('');
+    setErrorMessage('');
+    setSuccessMessage('');
+  };
+
+  const closeDeleteDialog = () => {
+    if (deleteRequest && processingId === deleteRequest.auth_user_id) return;
+    setDeleteRequest(null);
+    setDeleteConfirmationText('');
+  };
+
+  const deleteAccount = async () => {
+    if (!deleteRequest) return;
+
+    const targetEmail = String(deleteRequest.email || '').trim();
+    if (
+      String(deleteConfirmationText || '').trim().toLowerCase() !==
+      targetEmail.toLowerCase()
+    ) {
+      setErrorMessage('삭제 대상의 이메일 주소를 정확히 입력해주세요.');
+      return;
+    }
+
+    const userId = deleteRequest.auth_user_id;
+    const displayName = deleteRequest.manager_name || targetEmail;
+
+    setProcessingId(userId);
+    setErrorMessage('');
+    setSuccessMessage('');
+
+    try {
+      const { error } = await supabase.rpc('admin_delete_user_account', {
+        p_user_id: userId,
+        p_confirmation_email: targetEmail,
+      });
+
+      if (error) throw error;
+
+      setDeleteRequest(null);
+      setDeleteConfirmationText('');
+      setSuccessMessage(`${displayName} 계정을 영구 삭제했습니다.`);
+      await loadAccounts();
+      window.dispatchEvent(new CustomEvent('user-account-changed'));
+    } catch (error) {
+      console.error('회원 계정 삭제 오류:', error);
+      setErrorMessage(
+        error?.message || '회원 계정을 삭제하지 못했습니다.',
+      );
+    } finally {
+      setProcessingId('');
+    }
+  };
+
   return (
     <Paper
       variant="outlined"
@@ -1743,32 +1814,30 @@ export default function UserManagement({ currentUserId = '' }) {
                           <Typography sx={{ color: '#334155', fontSize: '0.72rem', fontWeight: 800 }}>
                             {item.projectName}
                           </Typography>
-                          <TextField
+                          <KoreanDatePicker
                             size="small"
-                            type="date"
                             label="접근 시작일"
                             value={item.accessStartDate || ''}
-                            onChange={(event) => changeProjectAccessDate(
+                            onChange={(value) => changeProjectAccessDate(
                               selectedAccount.auth_user_id,
                               item.projectName,
                               'accessStartDate',
-                              event.target.value,
+                              value,
                             )}
-                            InputLabelProps={{ shrink: true }}
+                            allowClear
                             disabled={selectedIsProcessing}
                           />
-                          <TextField
+                          <KoreanDatePicker
                             size="small"
-                            type="date"
                             label="접근 종료일"
                             value={item.accessEndDate || ''}
-                            onChange={(event) => changeProjectAccessDate(
+                            onChange={(value) => changeProjectAccessDate(
                               selectedAccount.auth_user_id,
                               item.projectName,
                               'accessEndDate',
-                              event.target.value,
+                              value,
                             )}
-                            InputLabelProps={{ shrink: true }}
+                            allowClear
                             disabled={selectedIsProcessing}
                           />
                         </Box>
@@ -1920,6 +1989,19 @@ export default function UserManagement({ currentUserId = '' }) {
                       승인 거절
                     </Button>
                   )}
+                  <Button
+                    size="small"
+                    color="error"
+                    variant="outlined"
+                    onClick={() => openDeleteDialog(selectedAccount)}
+                    disabled={
+                      selectedIsProcessing ||
+                      selectedIsCurrentUser ||
+                      selectedIsSuperAdmin
+                    }
+                  >
+                    계정 영구삭제
+                  </Button>
                 </Box>
 
                 {selectedStatus === 'pending' ? (
@@ -1958,6 +2040,67 @@ export default function UserManagement({ currentUserId = '' }) {
           )}
         </Box>
       </Box>
+
+      <Dialog
+        open={Boolean(deleteRequest)}
+        onClose={closeDeleteDialog}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle sx={{ color: '#b91c1c', fontSize: '0.95rem', fontWeight: 900 }}>
+          회원 계정 영구삭제
+        </DialogTitle>
+        <DialogContent>
+          <Alert severity="error" sx={{ mb: 1.5, fontSize: '0.74rem' }}>
+            삭제한 계정은 다시 로그인할 수 없으며 복구할 수 없습니다. 기존 작성 문서와 업무 이력은 삭제하지 않습니다.
+          </Alert>
+          <Typography sx={{ color: '#334155', fontSize: '0.76rem', lineHeight: 1.7 }}>
+            삭제 대상: <strong>{deleteRequest?.manager_name || '-'}</strong>
+            <br />
+            이메일: <strong>{deleteRequest?.email || '-'}</strong>
+          </Typography>
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            margin="dense"
+            label="확인을 위해 삭제 대상 이메일 입력"
+            value={deleteConfirmationText}
+            onChange={(event) => setDeleteConfirmationText(event.target.value)}
+            disabled={Boolean(
+              deleteRequest && processingId === deleteRequest.auth_user_id,
+            )}
+            sx={{ mt: 1.5 }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 2.4, pb: 2, gap: 0.6 }}>
+          <Button
+            size="small"
+            onClick={closeDeleteDialog}
+            disabled={Boolean(
+              deleteRequest && processingId === deleteRequest.auth_user_id,
+            )}
+          >
+            취소
+          </Button>
+          <Button
+            size="small"
+            color="error"
+            variant="contained"
+            onClick={deleteAccount}
+            disabled={
+              !deleteRequest ||
+              Boolean(processingId) ||
+              String(deleteConfirmationText || '').trim().toLowerCase() !==
+                String(deleteRequest?.email || '').trim().toLowerCase()
+            }
+          >
+            {deleteRequest && processingId === deleteRequest.auth_user_id
+              ? '삭제 중...'
+              : '계정 영구삭제'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={Boolean(templateChangeRequest)}

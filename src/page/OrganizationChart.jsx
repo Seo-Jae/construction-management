@@ -27,6 +27,7 @@ import {
   Typography,
 } from '@mui/material';
 import { supabase } from '../supabaseClient';
+import { UI_FONT_FAMILY } from '../theme.js';
 
 const TABLE_NAME = 'organization_chart_nodes';
 const ROOT_KEY = '__root__';
@@ -60,8 +61,7 @@ const BASE_RENDER_SCALE = 0.7;
 const ZOOM_MIN = 0.6;
 const ZOOM_MAX = 1.4;
 const ZOOM_STEP = 0.1;
-const CHART_FONT_FAMILY =
-  '"Pretendard Variable", Pretendard, "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif';
+const CHART_FONT_FAMILY = UI_FONT_FAMILY;
 const SNAP_GRID = {
   x: 24,
   y: 24,

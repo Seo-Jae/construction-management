@@ -52,6 +52,7 @@ import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
 import { createLaborContractPrintWindow } from '../utils/laborContractPrint';
+import KoreanMonthSelect from '../components/KoreanMonthSelect.jsx';
 
 const PAGE_SIZE = 1000;
 const CONTRACT_TEMPLATE_VERSION = 'LABOR_CONTRACT_V1';
@@ -3078,8 +3079,7 @@ export default function LaborContractManagement({
               overflowX: 'visible',
             }}
           >
-            <TextField
-              type="month"
+            <KoreanMonthSelect
               size="small"
               label="계약 대상 월"
               value={selectedMonth}
@@ -3088,9 +3088,6 @@ export default function LaborContractManagement({
                   event.target.value,
                 )
               }
-              InputLabelProps={{
-                shrink: true,
-              }}
               sx={{
                 ...actionControlSx,
                 width: 126,
@@ -3824,8 +3821,6 @@ export default function LaborContractManagement({
 
                         <TableCell
                           sx={{
-                            fontFamily:
-                              'monospace',
                             fontWeight: 800,
                           }}
                         >
@@ -4973,8 +4968,6 @@ export default function LaborContractManagement({
                             </TableCell>
                             <TableCell
                               sx={{
-                                fontFamily:
-                                  'monospace',
                                 fontWeight: 800,
                               }}
                             >

@@ -43,6 +43,7 @@ import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
+import KoreanMonthSelect from '../components/KoreanMonthSelect.jsx';
 
 const DIRECT_SECTION_START = '[직접공사비]';
 const GRAND_TOTAL_LABEL = '공사비합계';
@@ -2489,9 +2490,8 @@ export default function ProgressClaimManagement({
                 sx={{ width: 84, flexShrink: 0 }}
               />
 
-              <TextField
+              <KoreanMonthSelect
                 label="기준월"
-                type="month"
                 size="small"
                 value={baseMonth}
                 onChange={(event) => {
@@ -2499,7 +2499,6 @@ export default function ProgressClaimManagement({
                   setHasUnsavedChanges(true);
                 }}
                 disabled={isClaimLocked}
-                InputLabelProps={{ shrink: true }}
                 sx={{ width: 145, flexShrink: 0 }}
               />
 

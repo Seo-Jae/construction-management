@@ -10,6 +10,7 @@ import {
 } from '@mui/material';
 import ExcelJS from 'exceljs';
 import ApprovalRequestDialog from './ApprovalRequestDialog.jsx';
+import KoreanDatePicker from '../components/KoreanDatePicker.jsx';
 import { fetchReportApprovalStatus } from '../utils/approvalQueries.js';
 import { saveReportDocumentDraft } from '../utils/reportDocuments.js';
 
@@ -1048,18 +1049,16 @@ export default function ProposalReportEditor({
             }}
           />
 
-          <TextField
+          <KoreanDatePicker
             fullWidth
             size="small"
-            type="date"
             label="작성일"
             value={reportDate}
-            onChange={(event) => setReportDate(event.target.value)}
-            InputLabelProps={{ shrink: true }}
+            onChange={setReportDate}
             sx={{
               gridColumn: '1 / -1',
-              '& .MuiInputBase-input': { fontSize: '0.78rem' },
             }}
+            inputSx={{ fontSize: '0.78rem' }}
           />
         </Box>
 

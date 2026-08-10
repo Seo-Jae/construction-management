@@ -25,6 +25,7 @@ import {
   Typography,
 } from '@mui/material';
 import { supabase } from '../supabaseClient.js';
+import { UI_FONT_FAMILY } from '../theme.js';
 import {
   analyzeDxfArrayBuffer,
   classifyQuantityLayer,
@@ -2190,7 +2191,7 @@ const DxfEntityShape = React.memo(function DxfEntityShape({
           geometry.rotation || 0,
         )})`}
         fontSize={Math.max(40, Number(geometry.height || 100))}
-        fontFamily="Arial, sans-serif"
+        fontFamily={UI_FONT_FAMILY}
         fill={style.stroke}
         stroke="none"
         opacity={style.opacity}
@@ -2229,7 +2230,7 @@ function MeasurementLabel({ x, y, text, fontSize }) {
         x="0"
         y={fontSize * 0.33}
         textAnchor="middle"
-        fontFamily="Arial, sans-serif"
+        fontFamily={UI_FONT_FAMILY}
         fontSize={fontSize}
         fontWeight="700"
         fill="#5b21b6"

@@ -24,6 +24,7 @@ import {
 } from '@mui/material';
 import BuildingGrid from '../BuildingGrid';
 import { supabase } from '../supabaseClient';
+import KoreanDatePicker from '../components/KoreanDatePicker.jsx';
 import {
   getFloorCellKeys,
   getProjectCellKeys,
@@ -3075,14 +3076,11 @@ export default function ProgressInput({
               {actionName} {selectionCount}개 선택
             </Typography>
 
-            <TextField
-              type="date"
+            <KoreanDatePicker
               size="small"
               value={progressDate}
-              onChange={(event) => {
-                const nextDate =
-                  event.target.value;
-
+              maxDate={todayDateKey}
+              onChange={(nextDate) => {
                 if (
                   !nextDate ||
                   nextDate <=
@@ -3093,18 +3091,16 @@ export default function ProgressInput({
                   );
                 }
               }}
-              inputProps={{
-                max: todayDateKey,
-              }}
               sx={{
                 width: 145,
                 bgcolor: '#ffffff',
-                '& .MuiInputBase-input': {
-                  py: 0.5,
-                  px: 1,
-                  fontSize: '0.78rem',
-                },
               }}
+              inputSx={{
+                py: 0.5,
+                px: 1,
+                fontSize: '0.78rem',
+              }}
+              ariaLabel="공정 완료일"
             />
 
             <Button
@@ -3526,27 +3522,21 @@ export default function ProgressInput({
             </Typography>
           </Box>
 
-          <TextField
+          <KoreanDatePicker
             label="목표일"
-            type="date"
             size="small"
             value={
               targetDraft
                 .target_date
             }
-            onChange={(event) =>
+            onChange={(value) =>
               setTargetDraft(
                 (previous) => ({
                   ...previous,
-                  target_date:
-                    event.target
-                      .value,
+                  target_date: value,
                 }),
               )
             }
-            InputLabelProps={{
-              shrink: true,
-            }}
           />
 
           <Alert

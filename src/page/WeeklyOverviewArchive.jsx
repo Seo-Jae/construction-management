@@ -10,13 +10,12 @@ import {
   Button,
   CircularProgress,
   Divider,
-  MenuItem,
   Paper,
-  TextField,
   Typography,
 } from '@mui/material';
 import { supabase } from '../supabaseClient';
 import WeeklyOverview from './WeeklyOverview.jsx';
+import KoreanMonthSelect from '../components/KoreanMonthSelect.jsx';
 
 const PAGE_SIZE = 1000;
 
@@ -123,7 +122,7 @@ const formatShortDate = (
       2,
       '0',
     ),
-  ].join('.');
+  ].join('-');
 };
 
 const getFirstMondayDay = (
@@ -635,36 +634,6 @@ export default function WeeklyOverviewArchive({
     loadItems();
   }, [loadItems]);
 
-  const yearOptions =
-    useMemo(() => {
-      const years =
-        new Set([
-          currentYearMonth.year,
-        ]);
-
-      items.forEach((item) => {
-        const parts =
-          parseDateKey(
-            item.week_start,
-          );
-
-        if (parts?.year) {
-          years.add(
-            parts.year,
-          );
-        }
-      });
-
-      return Array.from(years)
-        .sort(
-          (first, second) =>
-            second - first,
-        );
-    }, [
-      currentYearMonth.year,
-      items,
-    ]);
-
   const filteredItems =
     useMemo(
       () =>
@@ -839,88 +808,23 @@ export default function WeeklyOverviewArchive({
             보관 기간 선택
           </Typography>
 
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns:
-                '1fr 1fr',
-              gap: 0.55,
+          <KoreanMonthSelect
+            size="small"
+            label="보관 월"
+            value={`${selectedYear}-${String(selectedMonth).padStart(2, '0')}`}
+            onChange={(event) => {
+              const [year, month] = String(event.target.value || '').split('-');
+              setSelectedYear(Number(year));
+              setSelectedMonth(Number(month));
             }}
-          >
-            <TextField
-              select
-              size="small"
-              label="년도"
-              value={
-                selectedYear
-              }
-              onChange={(event) =>
-                setSelectedYear(
-                  Number(
-                    event.target
-                      .value,
-                  ),
-                )
-              }
-              sx={{
-                '& .MuiInputBase-input':
-                  {
-                    fontSize:
-                      '0.68rem',
-                    fontWeight: 800,
-                  },
-              }}
-            >
-              {yearOptions.map(
-                (year) => (
-                  <MenuItem
-                    key={year}
-                    value={year}
-                  >
-                    {year}년
-                  </MenuItem>
-                ),
-              )}
-            </TextField>
-
-            <TextField
-              select
-              size="small"
-              label="월"
-              value={
-                selectedMonth
-              }
-              onChange={(event) =>
-                setSelectedMonth(
-                  Number(
-                    event.target
-                      .value,
-                  ),
-                )
-              }
-              sx={{
-                '& .MuiInputBase-input':
-                  {
-                    fontSize:
-                      '0.68rem',
-                    fontWeight: 800,
-                  },
-              }}
-            >
-              {Array.from(
-                { length: 12 },
-                (_, index) =>
-                  index + 1,
-              ).map((month) => (
-                <MenuItem
-                  key={month}
-                  value={month}
-                >
-                  {month}월
-                </MenuItem>
-              ))}
-            </TextField>
-          </Box>
+            sx={{
+              width: '100%',
+              '& .MuiInputBase-input': {
+                fontSize: '0.68rem',
+                fontWeight: 800,
+              },
+            }}
+          />
 
           <Typography
             sx={{
