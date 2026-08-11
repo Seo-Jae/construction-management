@@ -65,6 +65,151 @@ const initialLogin = {
 
 const APP_BRAND_GREEN = '#03c75a';
 
+const KOREA_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Seoul',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+const getKoreaTodayKey = () => KOREA_DATE_FORMATTER.format(new Date());
+
+const getCurrentMonthCalendar = () => {
+  const todayKey = getKoreaTodayKey();
+  const [year, month] = todayKey.split('-').map(Number);
+  const firstWeekday = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const cells = [
+    ...Array.from({ length: firstWeekday }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, index) => index + 1),
+  ];
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  return {
+    year,
+    month,
+    todayKey,
+    cells,
+    toDateKey: (day) => `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`,
+  };
+};
+
+const buildAttendanceByDate = (monthEvents, todayEvents) => {
+  const todayKey = getKoreaTodayKey();
+  const grouped = {};
+  const merged = [
+    ...(Array.isArray(monthEvents) ? monthEvents : []),
+    ...(Array.isArray(todayEvents)
+      ? todayEvents.map((event) => ({ ...event, work_date: event.work_date || todayKey }))
+      : []),
+  ];
+
+  merged.forEach((event) => {
+    const dateKey = String(event?.work_date || '').slice(0, 10);
+    if (!dateKey || !['check_in', 'check_out'].includes(event?.event_type)) return;
+    if (!grouped[dateKey]) grouped[dateKey] = {};
+    grouped[dateKey][event.event_type] = event;
+  });
+  return grouped;
+};
+
+function MonthlyAttendanceCalendar({ monthEvents, todayEvents, selectedDate, onSelectDate }) {
+  const calendar = getCurrentMonthCalendar();
+  const attendanceByDate = buildAttendanceByDate(monthEvents, todayEvents);
+  const selectedEvents = attendanceByDate[selectedDate] || {};
+  const selectedDay = Number(String(selectedDate || '').slice(-2));
+
+  return (
+    <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.25 }}>
+        <Typography sx={{ fontSize: '0.84rem', fontWeight: 900 }}>금월 출결현황</Typography>
+        <Typography sx={{ fontSize: '0.76rem', color: '#64748b', fontWeight: 800 }}>
+          {calendar.year}년 {String(calendar.month).padStart(2, '0')}월
+        </Typography>
+      </Stack>
+
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 0.4 }}>
+        {['일', '월', '화', '수', '목', '금', '토'].map((weekday, index) => (
+          <Typography
+            key={weekday}
+            sx={{
+              py: 0.35,
+              textAlign: 'center',
+              fontSize: '0.64rem',
+              fontWeight: 800,
+              color: index === 0 ? '#dc2626' : index === 6 ? '#2563eb' : '#64748b',
+            }}
+          >
+            {weekday}
+          </Typography>
+        ))}
+
+        {calendar.cells.map((day, index) => {
+          if (!day) return <Box key={`empty-${index}`} sx={{ minHeight: 43 }} />;
+          const dateKey = calendar.toDateKey(day);
+          const dayEvents = attendanceByDate[dateKey] || {};
+          const hasCheckIn = Boolean(dayEvents.check_in);
+          const hasCheckOut = Boolean(dayEvents.check_out);
+          const isToday = dateKey === calendar.todayKey;
+          const isSelected = dateKey === selectedDate;
+
+          return (
+            <Box
+              component="button"
+              type="button"
+              key={dateKey}
+              onClick={() => onSelectDate(dateKey)}
+              aria-label={`${calendar.month}월 ${day}일 출결 확인`}
+              sx={{
+                minWidth: 0,
+                minHeight: 43,
+                p: 0.35,
+                borderRadius: 1.5,
+                border: '1px solid',
+                borderColor: isSelected ? APP_BRAND_GREEN : isToday ? '#86efac' : 'transparent',
+                bgcolor: isSelected ? '#ecfdf5' : '#fff',
+                color: '#0f172a',
+                font: 'inherit',
+                cursor: 'pointer',
+              }}
+            >
+              <Typography sx={{ fontSize: '0.68rem', lineHeight: 1, fontWeight: isToday ? 900 : 700 }}>
+                {day}
+              </Typography>
+              <Stack direction="row" spacing={0.25} justifyContent="center" sx={{ mt: 0.55, minHeight: 15 }}>
+                {hasCheckIn && (
+                  <Box sx={{ px: 0.45, py: 0.1, borderRadius: 2, bgcolor: '#d1fae5', color: '#047857', fontSize: '0.52rem', fontWeight: 900 }}>
+                    출
+                  </Box>
+                )}
+                {hasCheckOut && (
+                  <Box sx={{ px: 0.45, py: 0.1, borderRadius: 2, bgcolor: '#dbeafe', color: '#1d4ed8', fontSize: '0.52rem', fontWeight: 900 }}>
+                    퇴
+                  </Box>
+                )}
+              </Stack>
+            </Box>
+          );
+        })}
+      </Box>
+
+      <Box sx={{ mt: 1.25, px: 1.25, py: 1, borderRadius: 1.75, bgcolor: '#f8fafc' }}>
+        <Typography sx={{ fontSize: '0.68rem', color: '#64748b', fontWeight: 800 }}>
+          {calendar.month}월 {selectedDay || Number(calendar.todayKey.slice(-2))}일 출결
+        </Typography>
+        <Stack direction="row" spacing={1.5} sx={{ mt: 0.45 }}>
+          <Typography sx={{ fontSize: '0.74rem', fontWeight: 900, color: selectedEvents.check_in ? '#047857' : '#94a3b8' }}>
+            출근 {selectedEvents.check_in ? formatKoreaDateTime(selectedEvents.check_in.event_at, { timeOnly: true }) : '미처리'}
+          </Typography>
+          <Typography sx={{ fontSize: '0.74rem', fontWeight: 900, color: selectedEvents.check_out ? '#1d4ed8' : '#94a3b8' }}>
+            퇴근 {selectedEvents.check_out ? formatKoreaDateTime(selectedEvents.check_out.event_at, { timeOnly: true }) : '미처리'}
+          </Typography>
+        </Stack>
+      </Box>
+    </Paper>
+  );
+}
+
 const isInstalledApp = () =>
   window.matchMedia('(display-mode: standalone)').matches ||
   window.matchMedia('(display-mode: fullscreen)').matches ||
@@ -159,7 +304,7 @@ const statusMeta = {
 
 function MobileShell({ children, appMode = false }) {
   return (
-    <Box sx={{ minHeight: '100dvh', bgcolor: appMode ? '#f5f7f6' : '#eef3f8', display: 'flex', flexDirection: 'column' }}>
+    <Box sx={{ minHeight: '100dvh', bgcolor: appMode ? '#f5f7f6' : '#eef3f8' }}>
       <AppBar
         position="sticky"
         elevation={0}
@@ -206,16 +351,11 @@ function MobileShell({ children, appMode = false }) {
       <Box
         sx={{
           width: '100%',
-          maxWidth: appMode ? 'none' : 520,
+          maxWidth: appMode ? 680 : 520,
           mx: 'auto',
-          px: appMode ? 1.75 : 2,
-          pt: appMode ? 1.75 : 2,
-          pb: appMode ? 'calc(14px + env(safe-area-inset-bottom))' : 2,
-          boxSizing: 'border-box',
-          flex: appMode ? 1 : undefined,
-          minHeight: appMode ? 0 : undefined,
-          display: appMode ? 'flex' : 'block',
-          flexDirection: appMode ? 'column' : undefined,
+          px: appMode ? 2.25 : 2,
+          pt: appMode ? 2.5 : 2,
+          pb: appMode ? 'calc(24px + env(safe-area-inset-bottom))' : 2,
           ...(appMode && {
             '& .MuiInputBase-root': { minHeight: 56, fontSize: '1rem' },
             '& .MuiInputLabel-root': { fontSize: '1rem' },
@@ -244,6 +384,8 @@ export default function AttendanceWorkerPortal() {
   );
   const [worker, setWorker] = useState(null);
   const [todayEvents, setTodayEvents] = useState([]);
+  const [monthEvents, setMonthEvents] = useState([]);
+  const [selectedAttendanceDate, setSelectedAttendanceDate] = useState(getKoreaTodayKey);
   const [loading, setLoading] = useState(Boolean(sessionToken));
   const [message, setMessage] = useState(null);
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -283,6 +425,7 @@ export default function AttendanceWorkerPortal() {
     if (!token) {
       setWorker(null);
       setTodayEvents([]);
+      setMonthEvents([]);
       setLoading(false);
       return null;
     }
@@ -298,6 +441,7 @@ export default function AttendanceWorkerPortal() {
       saveSession('');
       setWorker(null);
       setTodayEvents([]);
+      setMonthEvents([]);
       setMessage({ severity: 'warning', text: error.message || '다시 로그인해주세요.' });
       setLoading(false);
       return null;
@@ -306,6 +450,7 @@ export default function AttendanceWorkerPortal() {
     const nextWorker = data?.worker || null;
     setWorker(nextWorker);
     setTodayEvents(Array.isArray(data?.today_events) ? data.today_events : []);
+    setMonthEvents(Array.isArray(data?.month_events) ? data.month_events : []);
     setLoading(false);
     return nextWorker;
   }, [deviceKey, saveSession, sessionToken]);
@@ -464,6 +609,7 @@ export default function AttendanceWorkerPortal() {
     saveSession('');
     setWorker(null);
     setTodayEvents([]);
+    setMonthEvents([]);
     setMessage(null);
     setMode('login');
   };
@@ -689,27 +835,29 @@ export default function AttendanceWorkerPortal() {
 
     return (
       <MobileShell appMode={appMode}>
-        <Box
-          className="attendance-worker-home"
-          sx={{
-            flex: appMode ? 1 : undefined,
-            minHeight: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: appMode ? 1.5 : 0,
-          }}
-        >
-        {message && <Alert severity={message.severity} sx={{ mb: appMode ? 0 : 2 }} onClose={() => setMessage(null)}>{message.text}</Alert>}
+        {message && <Alert severity={message.severity} sx={{ mb: 2 }} onClose={() => setMessage(null)}>{message.text}</Alert>}
+        <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 3, borderColor: '#fecaca', bgcolor: '#fffafa' }}>
+          <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
+            <Typography sx={{ fontSize: '0.86rem', fontWeight: 900, color: '#991b1b' }}>중점위험요인 전파</Typography>
+            <Chip label="준비 중" size="small" sx={{ height: 22, fontSize: '0.62rem', fontWeight: 800, bgcolor: '#fee2e2', color: '#991b1b' }} />
+          </Stack>
+          <Typography sx={{ mt: 1, fontSize: '0.74rem', color: '#64748b' }}>등록된 중점위험요인이 없습니다.</Typography>
+        </Paper>
+
+        <Box sx={{ mb: 2 }}>
+          <MonthlyAttendanceCalendar
+            monthEvents={monthEvents}
+            todayEvents={todayEvents}
+            selectedDate={selectedAttendanceDate}
+            onSelectDate={setSelectedAttendanceDate}
+          />
+        </Box>
+
         <Paper
           variant="outlined"
           sx={{
             p: appMode ? 3 : 2.25,
             borderRadius: appMode ? 3.5 : 3,
-            flex: appMode ? '1 1 0' : undefined,
-            minHeight: appMode ? 0 : undefined,
-            display: appMode ? 'flex' : 'block',
-            flexDirection: appMode ? 'column' : undefined,
-            justifyContent: appMode ? 'center' : undefined,
           }}
         >
           <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
@@ -726,8 +874,8 @@ export default function AttendanceWorkerPortal() {
 
         {worker.status === 'active' ? (
           <>
-            <Card variant="outlined" sx={{ mt: appMode ? 0 : 2, borderRadius: appMode ? 3.5 : 3, flex: appMode ? '1.08 1 0' : undefined, minHeight: appMode ? 0 : undefined }}>
-              <CardContent sx={{ p: appMode ? 3 : undefined, height: appMode ? '100%' : undefined, boxSizing: 'border-box', display: appMode ? 'flex' : 'block', flexDirection: appMode ? 'column' : undefined, justifyContent: appMode ? 'center' : undefined, '&:last-child': { pb: appMode ? 3 : undefined } }}>
+            <Card variant="outlined" sx={{ mt: 2, borderRadius: appMode ? 3.5 : 3 }}>
+              <CardContent sx={{ p: appMode ? 3 : undefined, '&:last-child': { pb: appMode ? 3 : undefined } }}>
                 <Typography sx={{ fontSize: appMode ? '1rem' : '0.78rem', color: '#64748b', fontWeight: 800 }}>오늘 출·퇴근</Typography>
                 <Stack direction="row" spacing={appMode ? 2 : 1.5} sx={{ mt: appMode ? 2 : 1.5 }}>
                   <Paper variant="outlined" sx={{ flex: 1, p: appMode ? 2.25 : 1.5, textAlign: 'center', bgcolor: checkIn ? '#ecfdf5' : '#f8fafc', borderRadius: appMode ? 3 : undefined }}>
@@ -753,23 +901,21 @@ export default function AttendanceWorkerPortal() {
               startIcon={processingScan ? <CircularProgress size={20} color="inherit" /> : <CameraAltRoundedIcon />}
               onClick={handleOpenScanner}
               disabled={processingScan || scannerStarting || Boolean(checkIn && checkOut)}
-              sx={{ mt: appMode ? 0 : 2, minHeight: appMode ? 'clamp(70px, 9dvh, 88px)' : 58, borderRadius: appMode ? 3 : 2.5, bgcolor: primaryActionColor, fontWeight: 900, fontSize: appMode ? '1.08rem' : '1rem', flexShrink: 0, '&:hover': { bgcolor: primaryActionColor } }}
+              sx={{ mt: 2, minHeight: appMode ? 66 : 58, borderRadius: appMode ? 3 : 2.5, bgcolor: primaryActionColor, fontWeight: 900, fontSize: appMode ? '1.08rem' : '1rem', '&:hover': { bgcolor: primaryActionColor } }}
             >
               {checkIn && checkOut ? '오늘 근태 처리 완료' : processingScan ? '처리 중' : scannerStarting ? '카메라 준비 중' : '출·퇴근 QR 촬영'}
             </Button>
           </>
         ) : (
-          <Button fullWidth variant="outlined" startIcon={<RefreshRoundedIcon />} onClick={() => loadMe(sessionToken)} sx={{ mt: appMode ? 0 : 2, minHeight: appMode ? 'clamp(70px, 9dvh, 88px)' : undefined }}>
+          <Button fullWidth variant="outlined" startIcon={<RefreshRoundedIcon />} onClick={() => loadMe(sessionToken)} sx={{ mt: 2 }}>
             승인상태 다시 확인
           </Button>
         )}
 
-        <Stack direction="row" spacing={1} sx={{ mt: appMode ? 0 : 2, flexShrink: 0 }}>
+        <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
           {!appMode && <Button fullWidth variant="outlined" startIcon={<AddToHomeScreenRoundedIcon />} onClick={handleInstall}>앱으로 설치</Button>}
           <Button fullWidth variant="text" color="inherit" startIcon={<LogoutRoundedIcon />} onClick={handleLogout}>로그아웃</Button>
         </Stack>
-        </Box>
-
         <Dialog open={scannerOpen} onClose={closeScanner} fullWidth maxWidth="xs">
           <DialogTitle sx={{ pr: 6, fontWeight: 900 }}>
             동적 QR 촬영
