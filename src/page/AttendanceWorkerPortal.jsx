@@ -63,6 +63,57 @@ const initialLogin = {
   password: '',
 };
 
+const waitForVideoReady = (video, timeoutMs = 8000) => new Promise((resolve, reject) => {
+  if (video.readyState >= 2 && video.videoWidth > 0) {
+    resolve();
+    return;
+  }
+
+  let timeoutId;
+  const cleanup = () => {
+    window.clearTimeout(timeoutId);
+    video.removeEventListener('loadeddata', handleReady);
+    video.removeEventListener('canplay', handleReady);
+  };
+  const handleReady = () => {
+    if (video.videoWidth <= 0) return;
+    cleanup();
+    resolve();
+  };
+
+  timeoutId = window.setTimeout(() => {
+    cleanup();
+    reject(new Error('CameraPreviewTimeout'));
+  }, timeoutMs);
+  video.addEventListener('loadeddata', handleReady);
+  video.addEventListener('canplay', handleReady);
+});
+
+const getCameraErrorMessage = (error) => {
+  const errorName = String(error?.name || '');
+  const errorMessage = String(error?.message || '');
+
+  if (!window.isSecureContext) {
+    return '카메라는 보안 연결(HTTPS)에서만 사용할 수 있습니다. 운영 주소로 다시 접속해주세요.';
+  }
+  if (errorName === 'NotAllowedError' || errorName === 'SecurityError') {
+    return '카메라 권한이 차단되어 있습니다. 아이폰은 Safari 주소창의 가가(AA) → 웹사이트 설정 → 카메라 → 허용으로 바꾼 뒤 다시 눌러주세요.';
+  }
+  if (errorName === 'NotFoundError' || errorName === 'DevicesNotFoundError') {
+    return '사용할 수 있는 카메라를 찾지 못했습니다. 휴대폰 카메라 상태를 확인해주세요.';
+  }
+  if (errorName === 'NotReadableError' || errorName === 'TrackStartError' || errorName === 'AbortError') {
+    return '다른 앱이 카메라를 사용 중이거나 카메라를 시작하지 못했습니다. 다른 카메라 앱을 닫고 다시 시도해주세요.';
+  }
+  if (errorName === 'OverconstrainedError' || errorName === 'ConstraintNotSatisfiedError') {
+    return '휴대폰 카메라 설정을 적용하지 못했습니다. 다시 촬영을 눌러주세요.';
+  }
+  if (errorMessage.includes('CameraPreviewTimeout')) {
+    return '카메라 권한은 확인됐지만 영상이 재생되지 않았습니다. 브라우저를 완전히 닫았다가 다시 열고 촬영해주세요.';
+  }
+  return '카메라를 시작하지 못했습니다. 브라우저의 카메라 권한을 허용한 뒤 다시 시도해주세요.';
+};
+
 const readInitialProject = () => {
   const requested = new URLSearchParams(window.location.search).get('project');
   return ATTENDANCE_PROJECTS.includes(requested) ? requested : '';
@@ -128,11 +179,14 @@ export default function AttendanceWorkerPortal() {
   const [loading, setLoading] = useState(Boolean(sessionToken));
   const [message, setMessage] = useState(null);
   const [scannerOpen, setScannerOpen] = useState(false);
+  const [scannerStarting, setScannerStarting] = useState(false);
+  const [cameraReady, setCameraReady] = useState(false);
   const [processingScan, setProcessingScan] = useState(false);
   const [installPrompt, setInstallPrompt] = useState(null);
   const [installHelpOpen, setInstallHelpOpen] = useState(false);
   const videoRef = useRef(null);
   const scannerControlsRef = useRef(null);
+  const cameraStreamRef = useRef(null);
   const handledDeepLinkRef = useRef('');
   const deviceKey = useRef(getAttendanceDeviceKey()).current;
 
@@ -320,14 +374,68 @@ export default function AttendanceWorkerPortal() {
     setMode('login');
   };
 
+  const stopScanner = useCallback(() => {
+    try {
+      scannerControlsRef.current?.stop();
+    } catch (error) {
+      console.warn('QR 판독기 종료 오류:', error);
+    }
+    scannerControlsRef.current = null;
+
+    cameraStreamRef.current?.getTracks().forEach((track) => track.stop());
+    cameraStreamRef.current = null;
+    if (videoRef.current) videoRef.current.srcObject = null;
+  }, []);
+
+  const closeScanner = useCallback(() => {
+    stopScanner();
+    setScannerOpen(false);
+    setScannerStarting(false);
+    setCameraReady(false);
+  }, [stopScanner]);
+
+  const handleOpenScanner = async () => {
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      setMessage({ severity: 'error', text: getCameraErrorMessage(new Error('MediaDevicesUnavailable')) });
+      return;
+    }
+
+    stopScanner();
+    setMessage(null);
+    setCameraReady(false);
+    setScannerStarting(true);
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+        },
+      });
+
+      if (!stream.getVideoTracks().length) {
+        stream.getTracks().forEach((track) => track.stop());
+        throw new DOMException('CameraNotFound', 'NotFoundError');
+      }
+
+      cameraStreamRef.current = stream;
+      setScannerOpen(true);
+    } catch (error) {
+      console.error('카메라 권한 요청 오류:', error);
+      stopScanner();
+      setScannerStarting(false);
+      setMessage({ severity: 'error', text: getCameraErrorMessage(error) });
+    }
+  };
+
   const processQrToken = useCallback(async (rawValue) => {
     const qrToken = extractAttendanceQrToken(rawValue);
     if (!qrToken || !sessionToken || processingScan) return;
 
     setProcessingScan(true);
-    setScannerOpen(false);
-    scannerControlsRef.current?.stop();
-    scannerControlsRef.current = null;
+    closeScanner();
 
     const exchange = await supabase.rpc('attendance_exchange_qr_v52_14', {
       p_session_token: sessionToken,
@@ -364,7 +472,7 @@ export default function AttendanceWorkerPortal() {
     const url = new URL(window.location.href);
     url.searchParams.delete('attendanceQr');
     window.history.replaceState({}, '', url.toString());
-  }, [deviceKey, loadMe, processingScan, sessionToken]);
+  }, [closeScanner, deviceKey, loadMe, processingScan, sessionToken]);
 
   useEffect(() => {
     if (!worker || worker.status !== 'active' || !sessionToken) return;
@@ -375,32 +483,57 @@ export default function AttendanceWorkerPortal() {
   }, [processQrToken, sessionToken, worker]);
 
   useEffect(() => {
-    if (!scannerOpen || !videoRef.current) return undefined;
+    if (!scannerOpen || !videoRef.current || !cameraStreamRef.current) return undefined;
     let cancelled = false;
+    const stream = cameraStreamRef.current;
+    const video = videoRef.current;
     const reader = new BrowserQRCodeReader(undefined, {
       delayBetweenScanAttempts: 120,
       delayBetweenScanSuccess: 800,
     });
 
-    reader.decodeFromVideoDevice(undefined, videoRef.current, (result) => {
-      if (!cancelled && result) {
-        processQrToken(result.getText());
+    const startScanner = async () => {
+      try {
+        video.autoplay = true;
+        video.muted = true;
+        video.playsInline = true;
+        video.setAttribute('autoplay', 'true');
+        video.setAttribute('muted', 'true');
+        video.setAttribute('playsinline', 'true');
+        video.srcObject = stream;
+
+        await video.play();
+        await waitForVideoReady(video);
+
+        const controls = await reader.decodeFromStream(stream, video, (result) => {
+          if (!cancelled && result) processQrToken(result.getText());
+        });
+
+        if (cancelled) {
+          controls.stop();
+          return;
+        }
+        scannerControlsRef.current = controls;
+        setCameraReady(true);
+        setScannerStarting(false);
+      } catch (error) {
+        if (cancelled) return;
+        console.error('카메라 실행 오류:', error);
+        stopScanner();
+        setScannerOpen(false);
+        setScannerStarting(false);
+        setCameraReady(false);
+        setMessage({ severity: 'error', text: getCameraErrorMessage(error) });
       }
-    }).then((controls) => {
-      if (cancelled) controls.stop();
-      else scannerControlsRef.current = controls;
-    }).catch((error) => {
-      console.error('카메라 실행 오류:', error);
-      setScannerOpen(false);
-      setMessage({ severity: 'error', text: '카메라를 열 수 없습니다. 브라우저 카메라 권한을 허용해주세요.' });
-    });
+    };
+
+    startScanner();
 
     return () => {
       cancelled = true;
-      scannerControlsRef.current?.stop();
-      scannerControlsRef.current = null;
+      stopScanner();
     };
-  }, [processQrToken, scannerOpen]);
+  }, [processQrToken, scannerOpen, stopScanner]);
 
   if (loading && !worker) {
     return (
@@ -461,11 +594,11 @@ export default function AttendanceWorkerPortal() {
               variant="contained"
               size="large"
               startIcon={processingScan ? <CircularProgress size={20} color="inherit" /> : <CameraAltRoundedIcon />}
-              onClick={() => setScannerOpen(true)}
-              disabled={processingScan || Boolean(checkIn && checkOut)}
+              onClick={handleOpenScanner}
+              disabled={processingScan || scannerStarting || Boolean(checkIn && checkOut)}
               sx={{ mt: 2, minHeight: 58, borderRadius: 2.5, bgcolor: '#0f6fae', fontWeight: 900, fontSize: '1rem' }}
             >
-              {checkIn && checkOut ? '오늘 근태 처리 완료' : processingScan ? '처리 중' : '출·퇴근 QR 촬영'}
+              {checkIn && checkOut ? '오늘 근태 처리 완료' : processingScan ? '처리 중' : scannerStarting ? '카메라 준비 중' : '출·퇴근 QR 촬영'}
             </Button>
           </>
         ) : (
@@ -479,15 +612,21 @@ export default function AttendanceWorkerPortal() {
           <Button fullWidth variant="text" color="inherit" startIcon={<LogoutRoundedIcon />} onClick={handleLogout}>로그아웃</Button>
         </Stack>
 
-        <Dialog open={scannerOpen} onClose={() => setScannerOpen(false)} fullWidth maxWidth="xs">
+        <Dialog open={scannerOpen} onClose={closeScanner} fullWidth maxWidth="xs">
           <DialogTitle sx={{ pr: 6, fontWeight: 900 }}>
             동적 QR 촬영
-            <IconButton onClick={() => setScannerOpen(false)} sx={{ position: 'absolute', right: 8, top: 8 }}><CloseRoundedIcon /></IconButton>
+            <IconButton onClick={closeScanner} sx={{ position: 'absolute', right: 8, top: 8 }}><CloseRoundedIcon /></IconButton>
           </DialogTitle>
           <DialogContent>
             <Alert severity="info" sx={{ mb: 1.5, fontSize: '0.75rem' }}>화면의 QR을 네모 안에 맞춰주세요. 인식 즉시 서버에서 처리합니다.</Alert>
             <Box sx={{ position: 'relative', bgcolor: '#000', borderRadius: 2, overflow: 'hidden', aspectRatio: '1 / 1' }}>
               <Box component="video" ref={videoRef} sx={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
+              {!cameraReady && (
+                <Stack alignItems="center" justifyContent="center" spacing={1.5} sx={{ position: 'absolute', inset: 0, bgcolor: '#020617', color: '#fff', zIndex: 2 }}>
+                  <CircularProgress size={34} color="inherit" />
+                  <Typography sx={{ fontSize: '0.78rem', fontWeight: 800 }}>후면 카메라를 준비하고 있습니다.</Typography>
+                </Stack>
+              )}
               <Box sx={{ position: 'absolute', inset: '15%', border: '3px solid #38bdf8', borderRadius: 2, boxShadow: '0 0 0 999px rgba(0,0,0,0.28)' }} />
             </Box>
           </DialogContent>
