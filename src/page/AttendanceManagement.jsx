@@ -10,8 +10,11 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  Fade,
   IconButton,
+  MenuItem,
   Paper,
+  Snackbar,
   Stack,
   Tab,
   Table,
@@ -35,6 +38,7 @@ import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded';
 import PrintRoundedIcon from '@mui/icons-material/PrintRounded';
 import QrCode2RoundedIcon from '@mui/icons-material/QrCode2Rounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
+import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
 import QrCode from 'qrcode';
 import { supabase } from '../supabaseClient';
 import {
@@ -54,6 +58,8 @@ const tabItems = [
 ];
 
 const eventLabel = (type) => (type === 'check_in' ? '출근' : '퇴근');
+const hourOptions = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, '0'));
+const minuteOptions = Array.from({ length: 60 }, (_, index) => String(index).padStart(2, '0'));
 
 export default function AttendanceManagement({ projectName, canManage = false, onLogout }) {
   const [tab, setTab] = useState('approval');
@@ -71,6 +77,8 @@ export default function AttendanceManagement({ projectName, canManage = false, o
   const [correction, setCorrection] = useState(null);
   const [correctionReason, setCorrectionReason] = useState('');
   const [correctionTime, setCorrectionTime] = useState('');
+  const [timeEditorOpen, setTimeEditorOpen] = useState(false);
+  const [timeDraft, setTimeDraft] = useState({ hour: '07', minute: '00' });
   const openingQrRef = useRef(false);
 
   const loadDashboard = useCallback(async (silent = false) => {
@@ -209,19 +217,39 @@ export default function AttendanceManagement({ projectName, canManage = false, o
   const openCorrection = (record, type) => {
     const current = type === 'check_in' ? record.check_in_at : record.check_out_at;
     const defaultValue = current
-      ? new Date(new Date(current).getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 16)
-      : `${workDate}T${type === 'check_in' ? '07:00' : '17:00'}`;
+      ? new Date(new Date(current).getTime() + 9 * 60 * 60 * 1000).toISOString().slice(11, 16)
+      : type === 'check_in' ? '07:00' : '17:00';
     setCorrection({ workerId: record.worker_id, workerName: record.name_ko, type });
     setCorrectionTime(defaultValue);
     setCorrectionReason('');
+    setTimeEditorOpen(false);
+  };
+
+  const openTimeEditor = () => {
+    const [hour = '07', minute = '00'] = String(correctionTime || '').split(':');
+    setTimeDraft({
+      hour: hourOptions.includes(hour) ? hour : '07',
+      minute: minuteOptions.includes(minute) ? minute : '00',
+    });
+    setTimeEditorOpen(true);
+  };
+
+  const applyCorrectionTime = () => {
+    setCorrectionTime(`${timeDraft.hour}:${timeDraft.minute}`);
+    setTimeEditorOpen(false);
+  };
+
+  const closeCorrection = () => {
+    setTimeEditorOpen(false);
+    setCorrection(null);
   };
 
   const saveCorrection = async () => {
     if (!correction || !correctionTime || correctionReason.trim().length < 2) {
-      setMessage({ severity: 'warning', text: '변경시각과 수정 사유를 입력해주세요.' });
+      setMessage({ severity: 'warning', text: '변경 시간과 수정 사유를 입력해주세요.' });
       return;
     }
-    const koreaLocal = `${correctionTime}:00+09:00`;
+    const koreaLocal = `${workDate}T${correctionTime}:00+09:00`;
     const { error } = await supabase.rpc('attendance_manager_correct_event_v52_14', {
       p_worker_id: correction.workerId,
       p_work_date: workDate,
@@ -233,7 +261,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
       setMessage({ severity: 'error', text: error.message });
       return;
     }
-    setCorrection(null);
+    closeCorrection();
     setMessage({ severity: 'success', text: '근태 기록을 수정하고 변경이력을 남겼습니다.' });
     await loadDashboard(true);
   };
@@ -254,7 +282,33 @@ export default function AttendanceManagement({ projectName, canManage = false, o
 
   return (
     <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-      {message && <Alert severity={message.severity} onClose={() => setMessage(null)}>{message.text}</Alert>}
+      <Snackbar
+        key={message?.text || 'attendance-toast'}
+        open={Boolean(message)}
+        autoHideDuration={3000}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        TransitionComponent={Fade}
+        transitionDuration={{ enter: 220, exit: 500 }}
+        onClose={(_event, reason) => {
+          if (reason === 'clickaway') return;
+          setMessage(null);
+        }}
+        sx={{
+          top: '72px !important',
+          zIndex: (theme) => theme.zIndex.snackbar + 10,
+          '& .MuiAlert-root': {
+            width: 'max-content',
+            minWidth: { xs: 280, sm: 420 },
+            maxWidth: 'min(920px, calc(100vw - 32px))',
+            boxShadow: '0 12px 30px rgba(15, 23, 42, 0.22)',
+          },
+          '& .MuiAlert-message': { whiteSpace: 'normal' },
+        }}
+      >
+        <Alert severity={message?.severity || 'info'} variant="filled" onClose={() => setMessage(null)}>
+          {message?.text || ''}
+        </Alert>
+      </Snackbar>
       <Paper variant="outlined" sx={{ px: 1.5, borderColor: '#cbd5e1' }}>
         <Tabs value={tab} onChange={handleTabChange} variant="scrollable" scrollButtons="auto">
           {tabItems.map((item) => (
@@ -392,10 +446,75 @@ export default function AttendanceManagement({ projectName, canManage = false, o
         )}
       </Box>
 
-      <Dialog open={Boolean(correction)} onClose={() => setCorrection(null)} fullWidth maxWidth="xs">
-        <DialogTitle sx={{ fontWeight: 900 }}>{correction?.workerName} {eventLabel(correction?.type)} 수정<IconButton onClick={() => setCorrection(null)} sx={{ position: 'absolute', right: 8, top: 8 }}><CloseRoundedIcon /></IconButton></DialogTitle>
-        <DialogContent><Stack spacing={2} sx={{ mt: 1 }}><TextField label="변경 시각" type="datetime-local" value={correctionTime} onChange={(event) => setCorrectionTime(event.target.value)} InputLabelProps={{ shrink: true }} /><TextField label="수정 사유" value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} multiline minRows={3} placeholder="수동수정 사유를 반드시 입력해주세요." /><Alert severity="warning" sx={{ fontSize: '0.72rem' }}>원본 값과 수정자·수정시각·사유가 변경이력에 저장됩니다.</Alert></Stack></DialogContent>
-        <DialogActions><Button onClick={() => setCorrection(null)}>취소</Button><Button variant="contained" startIcon={<CheckCircleRoundedIcon />} onClick={saveCorrection}>저장</Button></DialogActions>
+      <Dialog
+        open={Boolean(correction)}
+        onClose={(_event, reason) => {
+          if (reason === 'backdropClick' || timeEditorOpen) return;
+          closeCorrection();
+        }}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle sx={{ fontWeight: 900 }}>{correction?.workerName} {eventLabel(correction?.type)} 수정<IconButton onClick={closeCorrection} sx={{ position: 'absolute', right: 8, top: 8 }}><CloseRoundedIcon /></IconButton></DialogTitle>
+        <DialogContent>
+          <Stack spacing={2} sx={{ mt: 1 }}>
+            <Button
+              variant="outlined"
+              color="inherit"
+              startIcon={<ScheduleRoundedIcon />}
+              onClick={openTimeEditor}
+              sx={{ minHeight: 56, justifyContent: 'space-between', px: 2, borderColor: '#cbd5e1' }}
+            >
+              <Box component="span" sx={{ color: '#64748b', fontSize: '0.78rem' }}>변경 시간</Box>
+              <Box component="strong" sx={{ color: '#0f172a', fontSize: '1rem' }}>{correctionTime || '시간 설정'}</Box>
+            </Button>
+            <TextField label="수정 사유" value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} multiline minRows={3} placeholder="수동수정 사유를 반드시 입력해주세요." />
+            <Alert severity="warning" sx={{ fontSize: '0.72rem' }}>원본 값과 수정자·수정시각·사유가 변경이력에 저장됩니다.</Alert>
+          </Stack>
+        </DialogContent>
+        <DialogActions><Button onClick={closeCorrection}>취소</Button><Button variant="contained" startIcon={<CheckCircleRoundedIcon />} onClick={saveCorrection}>저장</Button></DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(correction) && timeEditorOpen}
+        onClose={(_event, reason) => {
+          if (reason === 'backdropClick' || reason === 'escapeKeyDown') return;
+        }}
+        disableEscapeKeyDown
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle sx={{ fontWeight: 900 }}>시간 설정</DialogTitle>
+        <DialogContent>
+          <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mt: 1 }}>
+            <TextField
+              select
+              fullWidth
+              label="시"
+              value={timeDraft.hour}
+              onChange={(event) => setTimeDraft((previous) => ({ ...previous, hour: event.target.value }))}
+            >
+              {hourOptions.map((hour) => <MenuItem key={hour} value={hour}>{hour}시</MenuItem>)}
+            </TextField>
+            <Typography sx={{ fontSize: '1.35rem', fontWeight: 900 }}>:</Typography>
+            <TextField
+              select
+              fullWidth
+              label="분"
+              value={timeDraft.minute}
+              onChange={(event) => setTimeDraft((previous) => ({ ...previous, minute: event.target.value }))}
+            >
+              {minuteOptions.map((minute) => <MenuItem key={minute} value={minute}>{minute}분</MenuItem>)}
+            </TextField>
+          </Stack>
+          <Typography sx={{ mt: 1.5, color: '#64748b', fontSize: '0.74rem', lineHeight: 1.6 }}>
+            일자는 현재 조회 중인 근태기록 일자로 고정되며 시간만 변경됩니다.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setTimeEditorOpen(false)}>취소</Button>
+          <Button variant="contained" onClick={applyCorrectionTime}>적용</Button>
+        </DialogActions>
       </Dialog>
     </Box>
   );

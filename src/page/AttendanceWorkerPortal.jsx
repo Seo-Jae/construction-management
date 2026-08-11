@@ -13,6 +13,7 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  Fade,
   FormControl,
   FormControlLabel,
   IconButton,
@@ -20,6 +21,7 @@ import {
   MenuItem,
   Paper,
   Select,
+  Snackbar,
   Stack,
   TextField,
   Toolbar,
@@ -64,6 +66,38 @@ const initialLogin = {
 };
 
 const APP_BRAND_GREEN = '#03c75a';
+
+function AttendanceToast({ message, onClose, appMode = false }) {
+  return (
+    <Snackbar
+      key={message?.text || 'attendance-worker-toast'}
+      open={Boolean(message)}
+      autoHideDuration={3000}
+      anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+      TransitionComponent={Fade}
+      transitionDuration={{ enter: 220, exit: 500 }}
+      onClose={(_event, reason) => {
+        if (reason === 'clickaway') return;
+        onClose();
+      }}
+      sx={{
+        top: appMode ? 'calc(84px + env(safe-area-inset-top)) !important' : '72px !important',
+        zIndex: (theme) => theme.zIndex.snackbar + 10,
+        '& .MuiAlert-root': {
+          width: 'max-content',
+          minWidth: { xs: 280, sm: 420 },
+          maxWidth: 'min(680px, calc(100vw - 32px))',
+          boxShadow: '0 12px 30px rgba(15, 23, 42, 0.22)',
+        },
+        '& .MuiAlert-message': { whiteSpace: 'normal' },
+      }}
+    >
+      <Alert severity={message?.severity || 'info'} variant="filled" onClose={onClose}>
+        {message?.text || ''}
+      </Alert>
+    </Snackbar>
+  );
+}
 
 const KOREA_DATE_FORMATTER = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Asia/Seoul',
@@ -835,7 +869,7 @@ export default function AttendanceWorkerPortal() {
 
     return (
       <MobileShell appMode={appMode}>
-        {message && <Alert severity={message.severity} sx={{ mb: 2 }} onClose={() => setMessage(null)}>{message.text}</Alert>}
+        <AttendanceToast message={message} onClose={() => setMessage(null)} appMode={appMode} />
         <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 3, borderColor: '#fecaca', bgcolor: '#fffafa' }}>
           <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
             <Typography sx={{ fontSize: '0.86rem', fontWeight: 900, color: '#991b1b' }}>중점위험요인 전파</Typography>
@@ -950,7 +984,7 @@ export default function AttendanceWorkerPortal() {
 
   return (
     <MobileShell appMode={appMode}>
-      {message && <Alert severity={message.severity} sx={{ mb: 2 }} onClose={() => setMessage(null)}>{message.text}</Alert>}
+      <AttendanceToast message={message} onClose={() => setMessage(null)} appMode={appMode} />
       <Paper variant="outlined" sx={{ p: appMode ? 3 : 2.25, borderRadius: appMode ? 3.5 : 3 }}>
         <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
           {mode === 'signup' && <IconButton size="small" onClick={() => setMode('login')}><ArrowBackRoundedIcon /></IconButton>}
