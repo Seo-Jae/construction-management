@@ -31,12 +31,14 @@ import DevicesRoundedIcon from '@mui/icons-material/DevicesRounded';
 import EditCalendarRoundedIcon from '@mui/icons-material/EditCalendarRounded';
 import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
+import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded';
 import PrintRoundedIcon from '@mui/icons-material/PrintRounded';
 import QrCode2RoundedIcon from '@mui/icons-material/QrCode2Rounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import QrCode from 'qrcode';
 import { supabase } from '../supabaseClient';
 import {
+  buildAttendanceQrDisplayUrl,
   buildAttendanceWorkerUrl,
   formatKoreaDateTime,
   formatPhone,
@@ -44,17 +46,17 @@ import {
 } from '../utils/attendance';
 
 const tabItems = [
-  { value: 'qr', label: '출·퇴근 QR', icon: <QrCode2RoundedIcon fontSize="small" /> },
   { value: 'approval', label: '가입 승인', icon: <FactCheckRoundedIcon fontSize="small" /> },
   { value: 'records', label: '근태 기록', icon: <EditCalendarRoundedIcon fontSize="small" /> },
   { value: 'devices', label: '기기 변경', icon: <DevicesRoundedIcon fontSize="small" /> },
   { value: 'audit', label: '변경 이력', icon: <HistoryRoundedIcon fontSize="small" /> },
+  { value: 'qr', label: '출·퇴근 QR', icon: <QrCode2RoundedIcon fontSize="small" /> },
 ];
 
 const eventLabel = (type) => (type === 'check_in' ? '출근' : '퇴근');
 
-export default function AttendanceManagement({ projectName, canManage = false }) {
-  const [tab, setTab] = useState('qr');
+export default function AttendanceManagement({ projectName, canManage = false, onLogout }) {
+  const [tab, setTab] = useState('approval');
   const [workDate, setWorkDate] = useState(getKoreaDateValue());
   const [dashboard, setDashboard] = useState({
     pending_workers: [],
@@ -64,14 +66,12 @@ export default function AttendanceManagement({ projectName, canManage = false })
   });
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState(null);
-  const [dynamicQr, setDynamicQr] = useState(null);
-  const [dynamicQrImage, setDynamicQrImage] = useState('');
   const [staticQrImage, setStaticQrImage] = useState('');
-  const [qrSeconds, setQrSeconds] = useState(5);
+  const [openingQrWindow, setOpeningQrWindow] = useState(false);
   const [correction, setCorrection] = useState(null);
   const [correctionReason, setCorrectionReason] = useState('');
   const [correctionTime, setCorrectionTime] = useState('');
-  const issuingRef = useRef(false);
+  const openingQrRef = useRef(false);
 
   const loadDashboard = useCallback(async (silent = false) => {
     if (!projectName) return;
@@ -114,47 +114,57 @@ export default function AttendanceManagement({ projectName, canManage = false })
     return () => { active = false; };
   }, [projectName]);
 
-  const issueDynamicQr = useCallback(async () => {
-    if (!projectName || !canManage || issuingRef.current) return;
-    issuingRef.current = true;
-    const { data, error } = await supabase.rpc('attendance_issue_qr_v52_14', {
-      p_project_name: projectName,
-    });
-    issuingRef.current = false;
+  const openDynamicQrWindow = useCallback(async () => {
+    if (!projectName || !canManage || openingQrRef.current) return;
 
-    if (error) {
-      setMessage({ severity: 'error', text: error.message || '동적 QR 발급에 실패했습니다.' });
+    const confirmed = window.confirm(
+      '출·퇴근 QR 전용 창을 열면 보안을 위해 담당자 화면은 자동 로그아웃됩니다. 계속할까요?',
+    );
+    if (!confirmed) return;
+
+    const displayWindow = window.open(
+      'about:blank',
+      'wooklim-attendance-qr-display',
+      'width=920,height=980,resizable=yes,scrollbars=yes',
+    );
+
+    if (!displayWindow) {
+      setMessage({ severity: 'warning', text: '팝업 차단을 해제한 뒤 출·퇴근 QR을 다시 눌러주세요.' });
       return;
     }
 
-    const workerUrl = buildAttendanceWorkerUrl({
-      projectName,
-      qrToken: data?.qr_token || '',
-    });
-    const image = await QrCode.toDataURL(workerUrl, {
-      width: 620,
-      margin: 1,
-      errorCorrectionLevel: 'M',
-      color: { dark: '#020617', light: '#ffffff' },
-    });
-    setDynamicQr(data || null);
-    setDynamicQrImage(image);
-    setQrSeconds(5);
-  }, [canManage, projectName]);
+    openingQrRef.current = true;
+    setOpeningQrWindow(true);
+    displayWindow.document.title = '출·퇴근 QR 준비 중';
+    displayWindow.document.body.style.cssText = 'margin:0;display:grid;place-items:center;min-height:100vh;font-family:Arial,sans-serif;background:#07111f;color:#fff';
+    displayWindow.document.body.textContent = '보안 QR 표시 세션을 준비하고 있습니다.';
 
-  useEffect(() => {
-    if (tab !== 'qr' || !canManage) return undefined;
-    const firstIssueTimer = window.setTimeout(() => issueDynamicQr(), 0);
-    const issueTimer = window.setInterval(issueDynamicQr, 5000);
-    const secondTimer = window.setInterval(() => {
-      setQrSeconds((previous) => (previous <= 1 ? 5 : previous - 1));
-    }, 1000);
-    return () => {
-      window.clearTimeout(firstIssueTimer);
-      window.clearInterval(issueTimer);
-      window.clearInterval(secondTimer);
-    };
-  }, [canManage, issueDynamicQr, tab]);
+    const { data, error } = await supabase.rpc(
+      'attendance_start_qr_display_v52_14_1',
+      { p_project_name: projectName },
+    );
+
+    openingQrRef.current = false;
+    setOpeningQrWindow(false);
+
+    if (error) {
+      displayWindow.close();
+      setMessage({ severity: 'error', text: error.message || 'QR 표시 세션을 시작하지 못했습니다.' });
+      return;
+    }
+
+    const displayUrl = buildAttendanceQrDisplayUrl({
+      displayToken: data?.display_token || '',
+    });
+    displayWindow.opener = null;
+    displayWindow.location.replace(displayUrl);
+    window.setTimeout(() => onLogout?.(), 300);
+  }, [canManage, onLogout, projectName]);
+
+  const handleTabChange = (_event, value) => {
+    setTab(value);
+    if (value === 'qr' && canManage) void openDynamicQrWindow();
+  };
 
   const handleWorkerDecision = async (workerId, approved) => {
     if (!canManage) return;
@@ -246,7 +256,7 @@ export default function AttendanceManagement({ projectName, canManage = false })
     <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
       {message && <Alert severity={message.severity} onClose={() => setMessage(null)}>{message.text}</Alert>}
       <Paper variant="outlined" sx={{ px: 1.5, borderColor: '#cbd5e1' }}>
-        <Tabs value={tab} onChange={(_event, value) => setTab(value)} variant="scrollable" scrollButtons="auto">
+        <Tabs value={tab} onChange={handleTabChange} variant="scrollable" scrollButtons="auto">
           {tabItems.map((item) => (
             <Tab
               key={item.value}
@@ -266,29 +276,33 @@ export default function AttendanceManagement({ projectName, canManage = false })
 
       <Box sx={{ flexGrow: 1, minHeight: 0, overflow: 'auto' }}>
         {tab === 'qr' && (
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(460px, 1.35fr) minmax(360px, 0.65fr)' }, gap: 2 }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', lg: 'minmax(420px, 1fr) minmax(360px, 0.8fr)' }, gap: 2 }}>
             <Paper variant="outlined" sx={{ p: 2.5, textAlign: 'center', borderColor: '#cbd5e1' }}>
-              <Typography sx={{ fontSize: '1.05rem', fontWeight: 900 }}>5초 동적 출·퇴근 QR</Typography>
+              <Typography sx={{ fontSize: '1.05rem', fontWeight: 900 }}>보안 출·퇴근 QR 전용 창</Typography>
               <Typography sx={{ mt: 0.5, color: '#64748b', fontSize: '0.76rem' }}>{projectName}</Typography>
               {!canManage ? (
                 <Alert severity="warning" sx={{ mt: 3, textAlign: 'left' }}>
                   동적 QR 발급은 근태관리 수정 권한이 있는 담당자만 가능합니다.
                 </Alert>
               ) : (
-                <>
-              <Box sx={{ width: 'min(52vh, 520px)', maxWidth: '92%', mx: 'auto', mt: 1.5, position: 'relative' }}>
-                {dynamicQrImage ? (
-                  <Box component="img" src={dynamicQrImage} alt="동적 출퇴근 QR" sx={{ display: 'block', width: '100%', border: '1px solid #e2e8f0', borderRadius: 2 }} />
-                ) : (
-                  <Box sx={{ aspectRatio: '1', display: 'grid', placeItems: 'center', bgcolor: '#f8fafc' }}><CircularProgress /></Box>
-                )}
-              </Box>
-              <Box sx={{ mt: 1.5, height: 8, bgcolor: '#e2e8f0', borderRadius: 999, overflow: 'hidden' }}>
-                <Box sx={{ width: `${(qrSeconds / 5) * 100}%`, height: '100%', bgcolor: '#0284c7', transition: 'width 1s linear' }} />
-              </Box>
-              <Typography sx={{ mt: 0.7, color: '#64748b', fontSize: '0.72rem' }}>{qrSeconds}초 후 자동 변경 · 서버 유효시간 7초</Typography>
-              {dynamicQr?.expires_at && <Typography sx={{ color: '#94a3b8', fontSize: '0.66rem' }}>발급: {formatKoreaDateTime(dynamicQr.issued_at, { withSeconds: true })}</Typography>}
-                </>
+                <Stack spacing={2} sx={{ mt: 3 }}>
+                  <Alert severity="success" sx={{ textAlign: 'left', fontSize: '0.76rem' }}>
+                    관리 화면과 분리된 새 창에서 QR만 표시합니다. 전용 창이 열리면 원래 담당자 화면은 자동 로그아웃되며, QR 창은 표시 세션 만료 전까지 계속 작동합니다.
+                  </Alert>
+                  <Button
+                    variant="contained"
+                    size="large"
+                    startIcon={openingQrWindow ? <CircularProgress size={18} color="inherit" /> : <LaunchRoundedIcon />}
+                    onClick={openDynamicQrWindow}
+                    disabled={openingQrWindow}
+                    sx={{ minHeight: 54, bgcolor: '#0f6fae', fontWeight: 900 }}
+                  >
+                    {openingQrWindow ? 'QR 전용 창 준비 중' : '출·퇴근 QR 전용 창 열기'}
+                  </Button>
+                  <Typography sx={{ color: '#64748b', fontSize: '0.72rem', lineHeight: 1.65 }}>
+                    이 탭을 선택할 때 자동으로 새 창이 열립니다. 팝업이 차단됐거나 창을 다시 열어야 할 때 위 버튼을 누르세요.
+                  </Typography>
+                </Stack>
               )}
             </Paper>
 
@@ -311,18 +325,18 @@ export default function AttendanceManagement({ projectName, canManage = false })
             <Divider />
             <TableContainer>
               <Table size="small">
-                <TableHead><TableRow><TableCell>신청일시</TableCell><TableCell>성명</TableCell><TableCell>구분</TableCell><TableCell>휴대폰</TableCell><TableCell>소속업체</TableCell><TableCell>직종</TableCell><TableCell align="right">처리</TableCell></TableRow></TableHead>
+                <TableHead><TableRow><TableCell>신청일시</TableCell><TableCell>성명</TableCell><TableCell>구분</TableCell><TableCell>휴대폰</TableCell><TableCell>직종</TableCell><TableCell align="right">처리</TableCell></TableRow></TableHead>
                 <TableBody>
                   {dashboard.pending_workers.map((row) => (
                     <TableRow key={row.id} hover>
                       <TableCell>{formatKoreaDateTime(row.created_at)}</TableCell>
                       <TableCell><b>{row.name_ko}</b>{row.name_en ? <Typography sx={{ fontSize: '0.68rem', color: '#64748b' }}>{row.name_en}</Typography> : null}</TableCell>
-                      <TableCell>{row.is_foreigner ? '외국인' : '내국인'}</TableCell>
-                      <TableCell>{formatPhone(row.phone)}</TableCell><TableCell>{row.company_name}</TableCell><TableCell>{row.trade_name}</TableCell>
+                      <TableCell><Stack direction="row" spacing={0.5} alignItems="center"><span>{row.is_foreigner ? '외국인' : '내국인'}</span>{row.is_test_account && <Chip label="테스트" size="small" color="info" />}</Stack></TableCell>
+                      <TableCell>{formatPhone(row.phone)}</TableCell><TableCell>{row.trade_name}</TableCell>
                       <TableCell align="right"><Stack direction="row" spacing={0.7} justifyContent="flex-end"><Button size="small" variant="contained" color="success" disabled={!canManage} onClick={() => handleWorkerDecision(row.id, true)}>승인</Button><Button size="small" variant="outlined" color="error" disabled={!canManage} onClick={() => handleWorkerDecision(row.id, false)}>반려</Button></Stack></TableCell>
                     </TableRow>
                   ))}
-                  {pendingCount === 0 && <TableRow><TableCell colSpan={7} align="center" sx={{ py: 8, color: '#94a3b8' }}>승인 대기 중인 근로자가 없습니다.</TableCell></TableRow>}
+                  {pendingCount === 0 && <TableRow><TableCell colSpan={6} align="center" sx={{ py: 8, color: '#94a3b8' }}>승인 대기 중인 근로자가 없습니다.</TableCell></TableRow>}
                 </TableBody>
               </Table>
             </TableContainer>
@@ -339,17 +353,17 @@ export default function AttendanceManagement({ projectName, canManage = false })
             {loading ? <Box sx={{ py: 10, textAlign: 'center' }}><CircularProgress /></Box> : (
               <TableContainer>
                 <Table size="small">
-                  <TableHead><TableRow><TableCell>성명</TableCell><TableCell>소속업체</TableCell><TableCell>직종</TableCell><TableCell>출근</TableCell><TableCell>퇴근</TableCell><TableCell>상태</TableCell></TableRow></TableHead>
+                  <TableHead><TableRow><TableCell>성명</TableCell><TableCell>직종</TableCell><TableCell>출근</TableCell><TableCell>퇴근</TableCell><TableCell>상태</TableCell></TableRow></TableHead>
                   <TableBody>
                     {dashboard.daily_records.map((row) => (
                       <TableRow key={row.worker_id} hover>
-                        <TableCell><b>{row.name_ko}</b></TableCell><TableCell>{row.company_name}</TableCell><TableCell>{row.trade_name}</TableCell>
+                        <TableCell><b>{row.name_ko}</b></TableCell><TableCell>{row.trade_name}</TableCell>
                         <TableCell><Stack direction="row" alignItems="center" spacing={0.5}><span>{formatKoreaDateTime(row.check_in_at, { timeOnly: true })}</span>{canManage && <Tooltip title="출근 수정"><IconButton size="small" onClick={() => openCorrection(row, 'check_in')}><EditCalendarRoundedIcon sx={{ fontSize: 16 }} /></IconButton></Tooltip>}</Stack></TableCell>
                         <TableCell><Stack direction="row" alignItems="center" spacing={0.5}><span>{formatKoreaDateTime(row.check_out_at, { timeOnly: true })}</span>{canManage && <Tooltip title="퇴근 수정"><IconButton size="small" onClick={() => openCorrection(row, 'check_out')}><EditCalendarRoundedIcon sx={{ fontSize: 16 }} /></IconButton></Tooltip>}</Stack></TableCell>
                         <TableCell><Chip size="small" color={row.check_in_at && row.check_out_at ? 'success' : row.check_in_at ? 'warning' : 'default'} label={row.check_in_at && row.check_out_at ? '완료' : row.check_in_at ? '근무중' : '미출근'} /></TableCell>
                       </TableRow>
                     ))}
-                    {dashboard.daily_records.length === 0 && <TableRow><TableCell colSpan={6} align="center" sx={{ py: 8, color: '#94a3b8' }}>승인된 근로자가 없습니다.</TableCell></TableRow>}
+                    {dashboard.daily_records.length === 0 && <TableRow><TableCell colSpan={5} align="center" sx={{ py: 8, color: '#94a3b8' }}>승인된 근로자가 없습니다.</TableCell></TableRow>}
                   </TableBody>
                 </Table>
               </TableContainer>
@@ -360,8 +374,8 @@ export default function AttendanceManagement({ projectName, canManage = false })
         {tab === 'devices' && (
           <Paper variant="outlined" sx={{ borderColor: '#cbd5e1' }}>
             <Box sx={{ p: 2 }}><Typography sx={{ fontWeight: 900 }}>기기 변경 승인</Typography><Typography sx={{ color: '#64748b', fontSize: '0.72rem' }}>휴대폰 교체·분실 시 새 기기 요청을 대면 확인합니다.</Typography></Box><Divider />
-            <TableContainer><Table size="small"><TableHead><TableRow><TableCell>요청일시</TableCell><TableCell>성명</TableCell><TableCell>휴대폰</TableCell><TableCell>소속</TableCell><TableCell align="right">처리</TableCell></TableRow></TableHead><TableBody>
-              {dashboard.device_requests.map((row) => <TableRow key={row.id}><TableCell>{formatKoreaDateTime(row.requested_at)}</TableCell><TableCell><b>{row.name_ko}</b></TableCell><TableCell>{formatPhone(row.phone)}</TableCell><TableCell>{row.company_name} · {row.trade_name}</TableCell><TableCell align="right"><Stack direction="row" spacing={0.7} justifyContent="flex-end"><Button size="small" variant="contained" color="success" disabled={!canManage} onClick={() => handleDeviceDecision(row.id, true)}>승인</Button><Button size="small" variant="outlined" color="error" disabled={!canManage} onClick={() => handleDeviceDecision(row.id, false)}>반려</Button></Stack></TableCell></TableRow>)}
+            <TableContainer><Table size="small"><TableHead><TableRow><TableCell>요청일시</TableCell><TableCell>성명</TableCell><TableCell>휴대폰</TableCell><TableCell>직종</TableCell><TableCell align="right">처리</TableCell></TableRow></TableHead><TableBody>
+              {dashboard.device_requests.map((row) => <TableRow key={row.id}><TableCell>{formatKoreaDateTime(row.requested_at)}</TableCell><TableCell><b>{row.name_ko}</b></TableCell><TableCell>{formatPhone(row.phone)}</TableCell><TableCell>{row.trade_name}</TableCell><TableCell align="right"><Stack direction="row" spacing={0.7} justifyContent="flex-end"><Button size="small" variant="contained" color="success" disabled={!canManage} onClick={() => handleDeviceDecision(row.id, true)}>승인</Button><Button size="small" variant="outlined" color="error" disabled={!canManage} onClick={() => handleDeviceDecision(row.id, false)}>반려</Button></Stack></TableCell></TableRow>)}
               {deviceCount === 0 && <TableRow><TableCell colSpan={5} align="center" sx={{ py: 8, color: '#94a3b8' }}>기기 변경 요청이 없습니다.</TableCell></TableRow>}
             </TableBody></Table></TableContainer>
           </Paper>

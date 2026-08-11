@@ -89,3 +89,10 @@ export const buildAttendanceWorkerUrl = ({
   if (qrToken) url.searchParams.set('attendanceQr', qrToken);
   return url.toString();
 };
+
+export const buildAttendanceQrDisplayUrl = ({ displayToken = '' } = {}) => {
+  const url = new URL(window.location.origin);
+  url.searchParams.set('view', 'attendance-qr-display');
+  if (displayToken) url.searchParams.set('displayToken', displayToken);
+  return url.toString();
+};

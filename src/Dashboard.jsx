@@ -3814,6 +3814,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               <AttendanceManagement
                 projectName={activeProjectName}
                 canManage={canManageAttendance}
+                onLogout={onLogout}
               />
             )}
 

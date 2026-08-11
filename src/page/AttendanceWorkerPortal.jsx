@@ -50,8 +50,8 @@ const initialSignup = {
   nameKo: '',
   isForeigner: false,
   nameEn: '',
+  isTestAccount: false,
   phone: '',
-  companyName: '',
   tradeName: '',
   password: '',
   passwordConfirm: '',
@@ -226,11 +226,11 @@ export default function AttendanceWorkerPortal() {
       setMessage({ severity: 'warning', text: '휴대폰번호를 정확히 입력해주세요.' });
       return;
     }
-    if (signup.companyName.trim().length < 2 || signup.tradeName.trim().length < 1) {
-      setMessage({ severity: 'warning', text: '소속업체와 직종을 입력해주세요.' });
+    if (signup.tradeName.trim().length < 1) {
+      setMessage({ severity: 'warning', text: '직종·공종을 입력해주세요.' });
       return;
     }
-    if (signup.password.length < 8 || !/[A-Za-z]/.test(signup.password) || !/\d/.test(signup.password)) {
+    if (!signup.isTestAccount && (signup.password.length < 8 || !/[A-Za-z]/.test(signup.password) || !/\d/.test(signup.password))) {
       setMessage({ severity: 'warning', text: '비밀번호는 영문과 숫자를 포함해 8자 이상 입력해주세요.' });
       return;
     }
@@ -244,13 +244,13 @@ export default function AttendanceWorkerPortal() {
     }
 
     setLoading(true);
-    const { data, error } = await supabase.rpc('attendance_worker_signup_v52_14', {
+    const { data, error } = await supabase.rpc('attendance_worker_signup_v52_14_1', {
       p_project_name: signup.projectName,
       p_name_ko: nameKo,
       p_is_foreigner: signup.isForeigner,
       p_name_en: signup.isForeigner ? nameEn : null,
+      p_is_test_account: signup.isTestAccount,
       p_phone: phone,
-      p_company_name: signup.companyName.trim(),
       p_trade_name: signup.tradeName.trim(),
       p_password: signup.password,
       p_device_key: deviceKey,
@@ -265,7 +265,12 @@ export default function AttendanceWorkerPortal() {
 
     saveSession(data?.session_token || '');
     setSignup({ ...initialSignup, projectName: signup.projectName });
-    setMessage({ severity: 'success', text: '가입 신청이 완료되었습니다. 현장담당자의 승인을 기다려주세요.' });
+    setMessage({
+      severity: 'success',
+      text: signup.isTestAccount
+        ? '테스트계정 가입 신청이 완료되었습니다. 로그인 비밀번호는 1입니다.'
+        : '가입 신청이 완료되었습니다. 현장담당자의 승인을 기다려주세요.',
+    });
     await loadMe(data?.session_token || '', true);
   };
 
@@ -421,7 +426,7 @@ export default function AttendanceWorkerPortal() {
             <Box>
               <Typography sx={{ fontSize: '1.15rem', fontWeight: 900 }}>{worker.name_ko}</Typography>
               <Typography sx={{ mt: 0.25, color: '#64748b', fontSize: '0.78rem' }}>{worker.project_name}</Typography>
-              <Typography sx={{ color: '#64748b', fontSize: '0.74rem' }}>{worker.company_name} · {worker.trade_name}</Typography>
+              <Typography sx={{ color: '#64748b', fontSize: '0.74rem' }}>{worker.trade_name}</Typography>
             </Box>
             <Chip label={meta.label} color={meta.color} size="small" />
           </Stack>
@@ -527,17 +532,48 @@ export default function AttendanceWorkerPortal() {
                 {ATTENDANCE_PROJECTS.map((project) => <MenuItem key={project} value={project}>{project}</MenuItem>)}
               </Select>
             </FormControl>
-            <TextField label="이름(한글)" value={signup.nameKo} onChange={(event) => setSignup((prev) => ({ ...prev, nameKo: event.target.value.replace(/[^가-힣]/g, '').slice(0, 10) }))} />
+            <TextField
+              label="이름(한글)"
+              value={signup.nameKo}
+              onChange={(event) => setSignup((prev) => ({ ...prev, nameKo: event.target.value.slice(0, 10) }))}
+              inputProps={{ maxLength: 10 }}
+            />
             <FormControlLabel control={<Checkbox checked={signup.isForeigner} onChange={(event) => setSignup((prev) => ({ ...prev, isForeigner: event.target.checked, nameEn: event.target.checked ? prev.nameEn : '' }))} />} label="외국인 근로자입니다" />
             {signup.isForeigner && <TextField label="영문명" value={signup.nameEn} onChange={(event) => setSignup((prev) => ({ ...prev, nameEn: event.target.value }))} helperText="여권 또는 외국인등록증의 영문명" />}
+            <FormControlLabel
+              control={(
+                <Checkbox
+                  checked={signup.isTestAccount}
+                  onChange={(event) => {
+                    const checked = event.target.checked;
+                    setSignup((prev) => ({
+                      ...prev,
+                      isTestAccount: checked,
+                      password: checked ? '1' : '',
+                      passwordConfirm: checked ? '1' : '',
+                    }));
+                    setMessage(checked ? { severity: 'info', text: '테스트계정의 로그인 비밀번호는 자동으로 1로 설정됩니다.' } : null);
+                  }}
+                />
+              )}
+              label="테스트계정입니다"
+            />
+            {signup.isTestAccount && (
+              <Alert severity="info" sx={{ fontSize: '0.75rem' }}>
+                테스트계정 비밀번호는 <b>1</b>입니다. 담당자 승인 후 휴대폰번호와 비밀번호 1로 로그인하세요.
+              </Alert>
+            )}
             <TextField label="휴대폰번호" value={formatPhone(signup.phone)} onChange={(event) => setSignup((prev) => ({ ...prev, phone: normalizePhone(event.target.value) }))} inputMode="tel" />
-            <TextField label="소속업체" value={signup.companyName} onChange={(event) => setSignup((prev) => ({ ...prev, companyName: event.target.value }))} />
             <TextField label="직종·공종" value={signup.tradeName} onChange={(event) => setSignup((prev) => ({ ...prev, tradeName: event.target.value }))} placeholder="예: 경량, 합지, 몰딩" />
-            <TextField label="비밀번호" type="password" value={signup.password} onChange={(event) => setSignup((prev) => ({ ...prev, password: event.target.value }))} helperText="영문과 숫자를 포함해 8자 이상" autoComplete="new-password" />
-            <TextField label="비밀번호 확인" type="password" value={signup.passwordConfirm} onChange={(event) => setSignup((prev) => ({ ...prev, passwordConfirm: event.target.value }))} autoComplete="new-password" />
+            {!signup.isTestAccount && (
+              <>
+                <TextField label="비밀번호" type="password" value={signup.password} onChange={(event) => setSignup((prev) => ({ ...prev, password: event.target.value }))} helperText="영문과 숫자를 포함해 8자 이상" autoComplete="new-password" />
+                <TextField label="비밀번호 확인" type="password" value={signup.passwordConfirm} onChange={(event) => setSignup((prev) => ({ ...prev, passwordConfirm: event.target.value }))} autoComplete="new-password" />
+              </>
+            )}
             <FormControlLabel
               control={<Checkbox checked={signup.privacyAgreed} onChange={(event) => setSignup((prev) => ({ ...prev, privacyAgreed: event.target.checked }))} />}
-              label={<Typography sx={{ fontSize: '0.75rem', lineHeight: 1.5 }}>[필수] 가입 승인과 근태처리를 위한 이름·휴대폰·소속·등록기기 정보 수집에 동의합니다. 위치정보는 수집하지 않습니다.</Typography>}
+              label={<Typography sx={{ fontSize: '0.75rem', lineHeight: 1.5 }}>[필수] 가입 승인과 근태처리를 위한 이름·휴대폰·직종·등록기기 정보 수집에 동의합니다. 위치정보는 수집하지 않습니다.</Typography>}
             />
             <Button variant="contained" size="large" onClick={handleSignup} disabled={loading} sx={{ minHeight: 50, bgcolor: '#0f6fae', fontWeight: 900 }}>가입 신청</Button>
           </Stack>

@@ -17,6 +17,7 @@ import {
   SUPABASE_AUTH_STORAGE_KEY,
 } from './supabaseClient';
 import Dashboard from './Dashboard';
+import AttendanceQrDisplay from './page/AttendanceQrDisplay.jsx';
 import AttendanceWorkerPortal from './page/AttendanceWorkerPortal.jsx';
 import MessengerWindow from './page/MessengerWindow.jsx';
 import Login from './Login';
@@ -547,6 +548,10 @@ export default function App() {
 
   if (requestedPublicView === 'attendance-worker') {
     return <AttendanceWorkerPortal />;
+  }
+
+  if (requestedPublicView === 'attendance-qr-display') {
+    return <AttendanceQrDisplay />;
   }
 
   if (!session) {
