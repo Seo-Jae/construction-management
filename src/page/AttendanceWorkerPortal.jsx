@@ -64,29 +64,37 @@ const initialLogin = {
 };
 
 const waitForVideoReady = (video, timeoutMs = 8000) => new Promise((resolve, reject) => {
-  if (video.readyState >= 2 && video.videoWidth > 0) {
+  let timeoutId;
+  let pollingId;
+
+  const cleanup = () => {
+    window.clearTimeout(timeoutId);
+    window.clearInterval(pollingId);
+    video.removeEventListener('loadedmetadata', handleReady);
+    video.removeEventListener('loadeddata', handleReady);
+    video.removeEventListener('canplay', handleReady);
+    video.removeEventListener('playing', handleReady);
+  };
+  const handleReady = () => {
+    if (video.readyState < 2 || video.videoWidth <= 0 || video.videoHeight <= 0) return;
+    cleanup();
+    resolve();
+  };
+
+  if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
     resolve();
     return;
   }
 
-  let timeoutId;
-  const cleanup = () => {
-    window.clearTimeout(timeoutId);
-    video.removeEventListener('loadeddata', handleReady);
-    video.removeEventListener('canplay', handleReady);
-  };
-  const handleReady = () => {
-    if (video.videoWidth <= 0) return;
-    cleanup();
-    resolve();
-  };
-
+  video.addEventListener('loadedmetadata', handleReady);
+  video.addEventListener('loadeddata', handleReady);
+  video.addEventListener('canplay', handleReady);
+  video.addEventListener('playing', handleReady);
+  pollingId = window.setInterval(handleReady, 100);
   timeoutId = window.setTimeout(() => {
     cleanup();
     reject(new Error('CameraPreviewTimeout'));
   }, timeoutMs);
-  video.addEventListener('loadeddata', handleReady);
-  video.addEventListener('canplay', handleReady);
 });
 
 const getCameraErrorMessage = (error) => {
@@ -181,6 +189,7 @@ export default function AttendanceWorkerPortal() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannerStarting, setScannerStarting] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
+  const [scannerVideoElement, setScannerVideoElement] = useState(null);
   const [processingScan, setProcessingScan] = useState(false);
   const [installPrompt, setInstallPrompt] = useState(null);
   const [installHelpOpen, setInstallHelpOpen] = useState(false);
@@ -189,6 +198,11 @@ export default function AttendanceWorkerPortal() {
   const cameraStreamRef = useRef(null);
   const handledDeepLinkRef = useRef('');
   const deviceKey = useRef(getAttendanceDeviceKey()).current;
+
+  const handleScannerVideoRef = useCallback((node) => {
+    videoRef.current = node;
+    setScannerVideoElement(node);
+  }, []);
 
   const saveSession = useCallback((token) => {
     const normalized = String(token || '');
@@ -483,10 +497,10 @@ export default function AttendanceWorkerPortal() {
   }, [processQrToken, sessionToken, worker]);
 
   useEffect(() => {
-    if (!scannerOpen || !videoRef.current || !cameraStreamRef.current) return undefined;
+    if (!scannerOpen || !scannerVideoElement || !cameraStreamRef.current) return undefined;
     let cancelled = false;
     const stream = cameraStreamRef.current;
-    const video = videoRef.current;
+    const video = scannerVideoElement;
     const reader = new BrowserQRCodeReader(undefined, {
       delayBetweenScanAttempts: 120,
       delayBetweenScanSuccess: 800,
@@ -502,20 +516,62 @@ export default function AttendanceWorkerPortal() {
         video.setAttribute('playsinline', 'true');
         video.srcObject = stream;
 
-        await video.play();
-        await waitForVideoReady(video);
-
-        const controls = await reader.decodeFromStream(stream, video, (result) => {
-          if (!cancelled && result) processQrToken(result.getText());
-        });
-
-        if (cancelled) {
-          controls.stop();
-          return;
+        const videoReadyPromise = waitForVideoReady(video);
+        const playPromise = video.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+          await Promise.race([
+            videoReadyPromise,
+            playPromise.then(() => videoReadyPromise),
+          ]);
+        } else {
+          await videoReadyPromise;
         }
-        scannerControlsRef.current = controls;
+
+        if (cancelled) return;
         setCameraReady(true);
         setScannerStarting(false);
+
+        const canvas = document.createElement('canvas');
+        let canvasContext;
+        try {
+          canvasContext = canvas.getContext('2d', { willReadFrequently: true });
+        } catch {
+          canvasContext = canvas.getContext('2d');
+        }
+        if (!canvasContext) throw new Error('CameraCanvasUnavailable');
+
+        let stopped = false;
+        let scanTimerId;
+        const controls = {
+          stop: () => {
+            stopped = true;
+            window.clearTimeout(scanTimerId);
+          },
+        };
+        scannerControlsRef.current = controls;
+
+        const scanFrame = () => {
+          if (cancelled || stopped) return;
+          if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+            if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+              canvas.width = video.videoWidth;
+              canvas.height = video.videoHeight;
+            }
+            try {
+              canvasContext.drawImage(video, 0, 0, canvas.width, canvas.height);
+              const result = reader.decodeFromCanvas(canvas);
+              if (result) {
+                controls.stop();
+                processQrToken(result.getText());
+                return;
+              }
+            } catch {
+              // QR이 없는 프레임은 정상이며 다음 프레임에서 다시 판독합니다.
+            }
+          }
+          scanTimerId = window.setTimeout(scanFrame, 140);
+        };
+        scanFrame();
       } catch (error) {
         if (cancelled) return;
         console.error('카메라 실행 오류:', error);
@@ -533,7 +589,7 @@ export default function AttendanceWorkerPortal() {
       cancelled = true;
       stopScanner();
     };
-  }, [processQrToken, scannerOpen, stopScanner]);
+  }, [processQrToken, scannerOpen, scannerVideoElement, stopScanner]);
 
   if (loading && !worker) {
     return (
@@ -620,7 +676,7 @@ export default function AttendanceWorkerPortal() {
           <DialogContent>
             <Alert severity="info" sx={{ mb: 1.5, fontSize: '0.75rem' }}>화면의 QR을 네모 안에 맞춰주세요. 인식 즉시 서버에서 처리합니다.</Alert>
             <Box sx={{ position: 'relative', bgcolor: '#000', borderRadius: 2, overflow: 'hidden', aspectRatio: '1 / 1' }}>
-              <Box component="video" ref={videoRef} sx={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
+              <Box component="video" ref={handleScannerVideoRef} autoPlay muted playsInline sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               {!cameraReady && (
                 <Stack alignItems="center" justifyContent="center" spacing={1.5} sx={{ position: 'absolute', inset: 0, bgcolor: '#020617', color: '#fff', zIndex: 2 }}>
                   <CircularProgress size={34} color="inherit" />
