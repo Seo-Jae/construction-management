@@ -425,6 +425,7 @@ function SiteSchedulePanel({
   siteSchedules,
   selectedId,
   saving,
+  canEdit,
   onChange,
   onSelect,
   onAdd,
@@ -476,9 +477,9 @@ function SiteSchedulePanel({
         title="현장설명·입찰 현황"
         subtitle="현설은 빨간색, 입찰은 파란색으로 캘린더에 표시됩니다."
         saving={saving}
-        onSave={onSave}
+        onSave={canEdit ? onSave : null}
         rightContent={
-          <>
+          canEdit ? <>
             <Button
               size="small"
               variant="outlined"
@@ -512,7 +513,7 @@ function SiteSchedulePanel({
             >
               삭제
             </Button>
-          </>
+          </> : null
         }
       />
 
@@ -592,6 +593,7 @@ function SiteSchedulePanel({
                         <TextField
                           fullWidth
                           size="small"
+                          inputProps={{ readOnly: !canEdit }}
                           value={
                             schedule[
                               column.key
@@ -648,6 +650,7 @@ function SiteSchedulePanel({
                       fullWidth
                       type="datetime-local"
                       size="small"
+                      inputProps={{ readOnly: !canEdit }}
                       value={
                         schedule.briefingAt
                       }
@@ -697,6 +700,7 @@ function SiteSchedulePanel({
                       fullWidth
                       type="datetime-local"
                       size="small"
+                      inputProps={{ readOnly: !canEdit }}
                       value={schedule.bidAt}
                       onFocus={() =>
                         onSelect(schedule.id)
@@ -759,6 +763,7 @@ function SiteSchedulePanel({
                       }
                       inputProps={{
                         maxLength: 12,
+                        readOnly: !canEdit,
                       }}
                       sx={{
                         minWidth: 0,
@@ -792,6 +797,7 @@ function SiteSchedulePanel({
                     <TextField
                       fullWidth
                       size="small"
+                      inputProps={{ readOnly: !canEdit }}
                       value={schedule.note}
                       placeholder="비고"
                       onFocus={() =>
@@ -836,6 +842,7 @@ function MeetingSchedulePanel({
   meetings,
   selectedId,
   saving,
+  canEdit,
   onChange,
   onSelect,
   onAdd,
@@ -878,9 +885,9 @@ function MeetingSchedulePanel({
         title="현장회의일정"
         subtitle="행 추가 후 현장과 회의내용을 직접 입력합니다."
         saving={saving}
-        onSave={onSave}
+        onSave={canEdit ? onSave : null}
         rightContent={
-          <>
+          canEdit ? <>
             <Button
               size="small"
               variant="outlined"
@@ -914,7 +921,7 @@ function MeetingSchedulePanel({
             >
               삭제
             </Button>
-          </>
+          </> : null
         }
       />
 
@@ -998,6 +1005,7 @@ function MeetingSchedulePanel({
                       fullWidth
                       type="datetime-local"
                       size="small"
+                      inputProps={{ readOnly: !canEdit }}
                       value={
                         meeting.dateTime
                       }
@@ -1047,6 +1055,7 @@ function MeetingSchedulePanel({
                         <TextField
                           fullWidth
                           size="small"
+                          inputProps={{ readOnly: !canEdit }}
                           value={
                             meeting[
                               column.key
@@ -1376,7 +1385,7 @@ function CalendarPanel({
   );
 }
 
-export default function AdminDashboardScheduleBoard() {
+export default function AdminDashboardScheduleBoard({ canEdit = false }) {
   const [siteSchedules, setSiteSchedules] =
     useState(() =>
       normalizeSiteSchedules([]),
@@ -1515,6 +1524,8 @@ export default function AdminDashboardScheduleBoard() {
     field,
     value,
   ) => {
+    if (!canEdit) return;
+
     setSiteSchedules((previous) =>
       previous.map(
         (schedule, scheduleIndex) =>
@@ -1535,6 +1546,8 @@ export default function AdminDashboardScheduleBoard() {
     field,
     value,
   ) => {
+    if (!canEdit) return;
+
     setMeetings((previous) =>
       previous.map(
         (meeting, meetingIndex) =>
@@ -1551,6 +1564,8 @@ export default function AdminDashboardScheduleBoard() {
   };
 
   const handleAddSiteSchedule = () => {
+    if (!canEdit) return;
+
     const row =
       createEmptySiteSchedule();
 
@@ -1567,6 +1582,8 @@ export default function AdminDashboardScheduleBoard() {
   };
 
   const handleDeleteSiteSchedule = () => {
+    if (!canEdit) return;
+
     setSiteSchedules((previous) => {
       if (previous.length === 0) {
         return previous;
@@ -1591,6 +1608,8 @@ export default function AdminDashboardScheduleBoard() {
   };
 
   const handleAddMeeting = () => {
+    if (!canEdit) return;
+
     const row =
       createEmptyMeeting();
 
@@ -1604,6 +1623,8 @@ export default function AdminDashboardScheduleBoard() {
   };
 
   const handleDeleteMeeting = () => {
+    if (!canEdit) return;
+
     setMeetings((previous) => {
       if (previous.length === 0) {
         return previous;
@@ -1628,6 +1649,11 @@ export default function AdminDashboardScheduleBoard() {
   };
 
   const handleSave = async () => {
+    if (!canEdit) {
+      setErrorMessage('Dashboard 조회 권한에서는 일정을 저장할 수 없습니다.');
+      return;
+    }
+
     setSaving(true);
     setErrorMessage('');
     setSuccessMessage('');
@@ -1648,27 +1674,14 @@ export default function AdminDashboardScheduleBoard() {
         );
       }
 
-      const now =
-        new Date().toISOString();
-
-      const { error } = await supabase
-        .from(
-          'admin_dashboard_planning',
-        )
-        .upsert(
-          {
-            id: RECORD_ID,
-            site_schedules:
-              siteSchedules,
-            meeting_schedules:
-              meetings,
-            updated_by: user.id,
-            updated_at: now,
-          },
-          {
-            onConflict: 'id',
-          },
-        );
+      const { error } = await supabase.rpc(
+        'save_admin_dashboard_planning_v52_13',
+        {
+          p_record_id: RECORD_ID,
+          p_site_schedules: siteSchedules,
+          p_meeting_schedules: meetings,
+        },
+      );
 
       if (error) {
         throw error;
@@ -1780,6 +1793,12 @@ export default function AdminDashboardScheduleBoard() {
         </Alert>
       </Snackbar>
 
+      {!canEdit && (
+        <Alert severity="info" sx={{ mb: 1.2, py: 0, fontSize: '0.7rem' }}>
+          조회 전용 권한입니다. Dashboard 일정의 추가·수정·삭제·저장은 사용할 수 없습니다.
+        </Alert>
+      )}
+
       <Box
         sx={{
           display: 'grid',
@@ -1804,6 +1823,7 @@ export default function AdminDashboardScheduleBoard() {
             selectedSiteScheduleId
           }
           saving={saving}
+          canEdit={canEdit}
           onChange={
             handleSiteScheduleChange
           }
@@ -1879,6 +1899,7 @@ export default function AdminDashboardScheduleBoard() {
             selectedMeetingId
           }
           saving={saving}
+          canEdit={canEdit}
           onChange={
             handleMeetingChange
           }

@@ -837,6 +837,7 @@ export default function AdminDashboard({
   processOptions = [],
   onOpenProject,
   allowedProjectNames = null,
+  canEdit = false,
 }) {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1824,6 +1825,7 @@ export default function AdminDashboard({
               (project) =>
                 project.projectName,
             )}
+            canEdit={canEdit}
           />
         </>
       )}

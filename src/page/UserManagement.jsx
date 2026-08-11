@@ -53,6 +53,15 @@ const OVERRIDE_STATE_OPTIONS = [
   { value: 'allow', label: '추가', color: '#0369a1' },
   { value: 'deny', label: '차단', color: '#b91c1c' },
 ];
+const DASHBOARD_PERMISSION_KEYS = {
+  view: 'construction.dashboard.view',
+  edit: 'construction.dashboard.manage',
+};
+const DASHBOARD_ACCESS_OPTIONS = [
+  { value: 'view', label: '조회' },
+  { value: 'edit', label: '수정' },
+  { value: 'deny', label: '차단' },
+];
 
 const normalizeSearchText = (value) =>
   String(value || '')
@@ -420,7 +429,7 @@ function DetailedPermissionEditor({
             ))}
         </TextField>
         <Typography sx={{ color: '#64748b', fontSize: '0.65rem', lineHeight: 1.5 }}>
-          상속은 템플릿·공통설정을 따르고, 추가와 차단은 선택한 범위에서 우선 적용됩니다.
+          Dashboard는 조회·수정·차단 중 하나를 지정합니다. 다른 메뉴는 상속·추가·차단으로 세부 동작을 설정합니다.
         </Typography>
       </Box>
 
@@ -530,6 +539,91 @@ function DetailedPermissionEditor({
                             </Box>
                           </TableCell>
                           <TableCell sx={{ py: 0.55 }}>
+                            {menu.menuCode === 'dashboard' ? (() => {
+                              const canView = isEffectivelyGranted(
+                                DASHBOARD_PERMISSION_KEYS.view,
+                              );
+                              const canEdit = isEffectivelyGranted(
+                                DASHBOARD_PERMISSION_KEYS.edit,
+                              );
+                              const accessMode = canView && canEdit
+                                ? 'edit'
+                                : canView
+                                  ? 'view'
+                                  : 'deny';
+
+                              const handleDashboardModeChange = (nextMode) => {
+                                const viewEffect = nextMode === 'deny'
+                                  ? 'deny'
+                                  : 'allow';
+                                const editEffect = nextMode === 'edit'
+                                  ? 'allow'
+                                  : 'deny';
+
+                                onOverrideChange(
+                                  scopeKey,
+                                  DASHBOARD_PERMISSION_KEYS.view,
+                                  viewEffect,
+                                );
+                                onOverrideChange(
+                                  scopeKey,
+                                  DASHBOARD_PERMISSION_KEYS.edit,
+                                  editEffect,
+                                );
+                              };
+
+                              return (
+                                <Box
+                                  sx={{
+                                    maxWidth: 360,
+                                    p: 0.65,
+                                    border: '1px solid #e2e8f0',
+                                    borderRadius: '7px',
+                                    bgcolor: accessMode === 'deny' ? '#ffffff' : '#f0f9ff',
+                                  }}
+                                >
+                                  <Box sx={{ mb: 0.45, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 0.5 }}>
+                                    <Typography sx={{ color: '#334155', fontSize: '0.62rem', fontWeight: 800 }}>
+                                      Dashboard 사용 권한
+                                    </Typography>
+                                    <Chip
+                                      size="small"
+                                      label={
+                                        accessMode === 'edit'
+                                          ? '최종 수정 가능'
+                                          : accessMode === 'view'
+                                            ? '최종 조회 전용'
+                                            : '최종 차단'
+                                      }
+                                      color={accessMode === 'deny' ? 'default' : 'info'}
+                                      variant={accessMode === 'deny' ? 'outlined' : 'filled'}
+                                      sx={{ height: 18, fontSize: '0.53rem' }}
+                                    />
+                                  </Box>
+                                  <ToggleButtonGroup
+                                    exclusive
+                                    size="small"
+                                    fullWidth
+                                    value={accessMode}
+                                    onChange={(_event, value) => value && handleDashboardModeChange(value)}
+                                    disabled={disabled}
+                                    sx={{
+                                      height: 25,
+                                      '& .MuiToggleButton-root': { px: 0.55, py: 0, fontSize: '0.55rem', fontWeight: 800 },
+                                      '& .MuiToggleButton-root.Mui-selected:nth-of-type(1)': { color: '#0369a1', bgcolor: '#e0f2fe' },
+                                      '& .MuiToggleButton-root.Mui-selected:nth-of-type(2)': { color: '#166534', bgcolor: '#dcfce7' },
+                                      '& .MuiToggleButton-root.Mui-selected:nth-of-type(3)': { color: '#b91c1c', bgcolor: '#fee2e2' },
+                                    }}
+                                  >
+                                    {DASHBOARD_ACCESS_OPTIONS.map((option) => (
+                                      <ToggleButton key={option.value} value={option.value}>
+                                        {option.label}
+                                      </ToggleButton>
+                                    ))}
+                                  </ToggleButtonGroup>
+                                </Box>
+                              );
+                            })() : (
                             <Box sx={{ display: 'flex', gap: 0.7, flexWrap: 'wrap' }}>
                               {menu.permissions.map((permission) => {
                                 const state = getDirectState(permission.permission_key);
@@ -586,6 +680,7 @@ function DetailedPermissionEditor({
                                 );
                               })}
                             </Box>
+                            )}
                           </TableCell>
                         </TableRow>
                       ))}
@@ -1964,7 +2059,7 @@ export default function UserManagement({ currentUserId = '' }) {
                     ))}
                   </TextField>
                   <Alert severity="info" sx={{ mt: 1, py: 0, fontSize: '0.7rem' }}>
-                    템플릿의 기본값 위에 개인별 추가·차단 권한이 적용됩니다. 조회 권한은 실제 좌측 메뉴 노출에 반영되며, 역할을 올리지 않아도 필요한 메뉴만 추가할 수 있습니다.
+                    템플릿의 기본값 위에 개인별 권한이 적용됩니다. Dashboard는 조회·수정·차단으로 구분되며, 조회는 화면만 열 수 있고 수정부터 일정 저장이 가능합니다.
                   </Alert>
                 </Paper>
 
@@ -1972,7 +2067,7 @@ export default function UserManagement({ currentUserId = '' }) {
                   <SectionTitle
                     number="4"
                     title="세부권한"
-                    description="기본 템플릿은 유지하고 필요한 메뉴·동작만 공통 또는 현장별로 추가·차단합니다. 각 권한 그룹은 펼쳐서 설정합니다."
+                    description="Dashboard는 조회·수정·차단으로 지정하고, 다른 메뉴는 필요한 동작을 공통 또는 현장별로 추가·차단합니다."
                   />
                   <Divider sx={{ my: 1.2 }} />
                   <DetailedPermissionEditor

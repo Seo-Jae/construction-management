@@ -758,6 +758,21 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           ) !== false,
         );
 
+  const canEditAdminDashboard = Boolean(
+    isSuperAdmin || (
+      hasAllProjectAccess
+        ? hasPermission('construction.dashboard.manage', '') === true
+        : dashboardAllowedProjectNames.length > 0 &&
+          dashboardAllowedProjectNames.every(
+            (projectName) =>
+              hasPermission(
+                'construction.dashboard.manage',
+                projectName,
+              ) === true,
+          )
+    ),
+  );
+
   const selectedProjectIsAccessible =
     selectedProjectName &&
     selectedProjectName !== ALL_PROJECTS_OPTION &&
@@ -3775,6 +3790,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               processOptions={processOptions}
               onOpenProject={handleOpenAdminProject}
               allowedProjectNames={dashboardAllowedProjectNames}
+              canEdit={canEditAdminDashboard}
             />
           )}
 
