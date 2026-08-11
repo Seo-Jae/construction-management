@@ -6,6 +6,7 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Collapse,
   Dialog,
   DialogActions,
   DialogContent,
@@ -26,6 +27,8 @@ import {
   ToggleButtonGroup,
   Typography,
 } from '@mui/material';
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
+import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded';
 import { supabase } from '../supabaseClient';
 import KoreanDatePicker from '../components/KoreanDatePicker.jsx';
 
@@ -339,6 +342,8 @@ function DetailedPermissionEditor({
     ),
     [draft.permissionOverrides],
   );
+  const [expandedAreas, setExpandedAreas] = useState({});
+
   const groupedAreas = useMemo(() => {
     const areas = new Map();
 
@@ -419,102 +424,178 @@ function DetailedPermissionEditor({
         </Typography>
       </Box>
 
-      <Box sx={{ display: 'grid', gap: 1 }}>
-        {groupedAreas.map((area) => (
-          <TableContainer
-            key={area.areaCode}
-            component={Paper}
-            variant="outlined"
-            sx={{ boxShadow: 'none', borderColor: '#e2e8f0' }}
-          >
-            <Table size="small" sx={{ tableLayout: 'fixed' }}>
-              <TableHead>
-                <TableRow sx={{ bgcolor: '#f1f5f9' }}>
-                  <TableCell sx={{ width: 170, py: 0.7, fontSize: '0.7rem', fontWeight: 900 }}>
-                    {area.areaLabel}
-                  </TableCell>
-                  <TableCell sx={{ py: 0.7, fontSize: '0.66rem', fontWeight: 800 }}>
-                    세부 동작 권한
-                  </TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {area.menus.map((menu) => (
-                  <TableRow key={menu.menuCode} hover>
-                    <TableCell sx={{ py: 0.75, verticalAlign: 'top' }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
-                        <Typography sx={{ color: '#334155', fontSize: '0.68rem', fontWeight: 900 }}>
-                          {menu.menuLabel}
-                        </Typography>
-                        {menu.isPreparing && (
-                          <Chip size="small" label="준비중" variant="outlined" sx={{ height: 19, fontSize: '0.55rem' }} />
-                        )}
-                      </Box>
-                    </TableCell>
-                    <TableCell sx={{ py: 0.55 }}>
-                      <Box sx={{ display: 'flex', gap: 0.7, flexWrap: 'wrap' }}>
-                        {menu.permissions.map((permission) => {
-                          const state = getDirectState(permission.permission_key);
-                          const granted = isEffectivelyGranted(permission.permission_key);
+      <Box sx={{ display: 'grid', gap: 0.8 }}>
+        {groupedAreas.map((area) => {
+          const expanded = Boolean(expandedAreas[area.areaCode]);
+          const directOverrides = area.menus
+            .flatMap((menu) => menu.permissions)
+            .filter((permission) => getDirectState(permission.permission_key) !== 'inherit')
+            .length;
 
-                          return (
-                            <Box
-                              key={permission.permission_key}
-                              sx={{
-                                minWidth: 215,
-                                p: 0.65,
-                                border: '1px solid #e2e8f0',
-                                borderRadius: '7px',
-                                bgcolor: granted ? '#f0f9ff' : '#ffffff',
-                              }}
-                            >
-                              <Box sx={{ mb: 0.45, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 0.5 }}>
-                                <Typography sx={{ color: '#334155', fontSize: '0.62rem', fontWeight: 800 }}>
-                                  {permission.action_label}
-                                </Typography>
-                                <Chip
-                                  size="small"
-                                  label={granted ? '최종 허용' : '최종 차단'}
-                                  color={granted ? 'info' : 'default'}
-                                  variant={granted ? 'filled' : 'outlined'}
-                                  sx={{ height: 18, fontSize: '0.53rem' }}
-                                />
-                              </Box>
-                              <ToggleButtonGroup
-                                exclusive
-                                size="small"
-                                fullWidth
-                                value={state}
-                                onChange={(_event, value) => value && onOverrideChange(
-                                  scopeKey,
-                                  permission.permission_key,
-                                  value,
-                                )}
-                                disabled={disabled}
-                                sx={{
-                                  height: 25,
-                                  '& .MuiToggleButton-root': { px: 0.55, py: 0, fontSize: '0.55rem', fontWeight: 800 },
-                                  '& .MuiToggleButton-root.Mui-selected:nth-of-type(2)': { color: '#0369a1', bgcolor: '#e0f2fe' },
-                                  '& .MuiToggleButton-root.Mui-selected:nth-of-type(3)': { color: '#b91c1c', bgcolor: '#fee2e2' },
-                                }}
-                              >
-                                {OVERRIDE_STATE_OPTIONS.map((option) => (
-                                  <ToggleButton key={option.value} value={option.value}>
-                                    {option.label}
-                                  </ToggleButton>
-                                ))}
-                              </ToggleButtonGroup>
+          return (
+            <Paper
+              key={area.areaCode}
+              variant="outlined"
+              sx={{
+                overflow: 'hidden',
+                boxShadow: 'none',
+                borderColor: '#e2e8f0',
+              }}
+            >
+              <Box
+                role="button"
+                tabIndex={0}
+                onClick={() => setExpandedAreas((previous) => ({
+                  ...previous,
+                  [area.areaCode]: !expanded,
+                }))}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    setExpandedAreas((previous) => ({
+                      ...previous,
+                      [area.areaCode]: !expanded,
+                    }));
+                  }
+                }}
+                sx={{
+                  minHeight: 43,
+                  px: 1.2,
+                  py: 0.65,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 0.8,
+                  cursor: 'pointer',
+                  bgcolor: expanded ? '#f1f5f9' : '#f8fafc',
+                  '&:hover': { bgcolor: '#f1f5f9' },
+                }}
+              >
+                <Box sx={{ flex: 1, minWidth: 0 }}>
+                  <Typography sx={{ color: '#334155', fontSize: '0.72rem', fontWeight: 900 }}>
+                    {area.areaLabel}
+                  </Typography>
+                  <Typography sx={{ mt: 0.1, color: '#94a3b8', fontSize: '0.58rem' }}>
+                    메뉴 {area.menus.length}개
+                    {directOverrides > 0 ? ` · 현재 범위 개별설정 ${directOverrides}건` : ' · 템플릿 상속'}
+                  </Typography>
+                </Box>
+
+                <Button
+                  size="small"
+                  variant="text"
+                  endIcon={expanded ? <ExpandLessRoundedIcon /> : <ExpandMoreRoundedIcon />}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setExpandedAreas((previous) => ({
+                      ...previous,
+                      [area.areaCode]: !expanded,
+                    }));
+                  }}
+                  sx={{
+                    minWidth: 80,
+                    color: '#475569',
+                    fontSize: '0.64rem',
+                    fontWeight: 800,
+                  }}
+                >
+                  {expanded ? '접기' : '펼치기'}
+                </Button>
+              </Box>
+
+              <Collapse in={expanded} timeout="auto" unmountOnExit>
+                <Divider />
+                <TableContainer>
+                  <Table size="small" sx={{ tableLayout: 'fixed' }}>
+                    <TableHead>
+                      <TableRow sx={{ bgcolor: '#ffffff' }}>
+                        <TableCell sx={{ width: 170, py: 0.7, fontSize: '0.66rem', fontWeight: 900 }}>
+                          메뉴
+                        </TableCell>
+                        <TableCell sx={{ py: 0.7, fontSize: '0.66rem', fontWeight: 800 }}>
+                          세부 동작 권한
+                        </TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {area.menus.map((menu) => (
+                        <TableRow key={menu.menuCode} hover>
+                          <TableCell sx={{ py: 0.75, verticalAlign: 'top' }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexWrap: 'wrap' }}>
+                              <Typography sx={{ color: '#334155', fontSize: '0.68rem', fontWeight: 900 }}>
+                                {menu.menuLabel}
+                              </Typography>
+                              {menu.isPreparing && (
+                                <Chip size="small" label="준비중" variant="outlined" sx={{ height: 19, fontSize: '0.55rem' }} />
+                              )}
                             </Box>
-                          );
-                        })}
-                      </Box>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        ))}
+                          </TableCell>
+                          <TableCell sx={{ py: 0.55 }}>
+                            <Box sx={{ display: 'flex', gap: 0.7, flexWrap: 'wrap' }}>
+                              {menu.permissions.map((permission) => {
+                                const state = getDirectState(permission.permission_key);
+                                const granted = isEffectivelyGranted(permission.permission_key);
+
+                                return (
+                                  <Box
+                                    key={permission.permission_key}
+                                    sx={{
+                                      minWidth: 215,
+                                      p: 0.65,
+                                      border: '1px solid #e2e8f0',
+                                      borderRadius: '7px',
+                                      bgcolor: granted ? '#f0f9ff' : '#ffffff',
+                                    }}
+                                  >
+                                    <Box sx={{ mb: 0.45, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 0.5 }}>
+                                      <Typography sx={{ color: '#334155', fontSize: '0.62rem', fontWeight: 800 }}>
+                                        {permission.action_label}
+                                      </Typography>
+                                      <Chip
+                                        size="small"
+                                        label={granted ? '최종 허용' : '최종 차단'}
+                                        color={granted ? 'info' : 'default'}
+                                        variant={granted ? 'filled' : 'outlined'}
+                                        sx={{ height: 18, fontSize: '0.53rem' }}
+                                      />
+                                    </Box>
+                                    <ToggleButtonGroup
+                                      exclusive
+                                      size="small"
+                                      fullWidth
+                                      value={state}
+                                      onChange={(_event, value) => value && onOverrideChange(
+                                        scopeKey,
+                                        permission.permission_key,
+                                        value,
+                                      )}
+                                      disabled={disabled}
+                                      sx={{
+                                        height: 25,
+                                        '& .MuiToggleButton-root': { px: 0.55, py: 0, fontSize: '0.55rem', fontWeight: 800 },
+                                        '& .MuiToggleButton-root.Mui-selected:nth-of-type(2)': { color: '#0369a1', bgcolor: '#e0f2fe' },
+                                        '& .MuiToggleButton-root.Mui-selected:nth-of-type(3)': { color: '#b91c1c', bgcolor: '#fee2e2' },
+                                      }}
+                                    >
+                                      {OVERRIDE_STATE_OPTIONS.map((option) => (
+                                        <ToggleButton key={option.value} value={option.value}>
+                                          {option.label}
+                                        </ToggleButton>
+                                      ))}
+                                    </ToggleButtonGroup>
+                                  </Box>
+                                );
+                              })}
+                            </Box>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Collapse>
+            </Paper>
+          );
+        })}
       </Box>
     </>
   );
@@ -1883,7 +1964,7 @@ export default function UserManagement({ currentUserId = '' }) {
                     ))}
                   </TextField>
                   <Alert severity="info" sx={{ mt: 1, py: 0, fontSize: '0.7rem' }}>
-                    템플릿의 기본값 위에 개인별 추가·차단 권한이 적용됩니다. 실제 메뉴 노출과 기능 차단 연결 전까지 기존 접근 방식은 유지됩니다.
+                    템플릿의 기본값 위에 개인별 추가·차단 권한이 적용됩니다. 조회 권한은 실제 좌측 메뉴 노출에 반영되며, 역할을 올리지 않아도 필요한 메뉴만 추가할 수 있습니다.
                   </Alert>
                 </Paper>
 
@@ -1891,7 +1972,7 @@ export default function UserManagement({ currentUserId = '' }) {
                   <SectionTitle
                     number="4"
                     title="세부권한"
-                    description="템플릿 상속값을 기준으로 모든 현장 공통 또는 현장별 추가·차단 예외를 설정합니다."
+                    description="기본 템플릿은 유지하고 필요한 메뉴·동작만 공통 또는 현장별로 추가·차단합니다. 각 권한 그룹은 펼쳐서 설정합니다."
                   />
                   <Divider sx={{ my: 1.2 }} />
                   <DetailedPermissionEditor

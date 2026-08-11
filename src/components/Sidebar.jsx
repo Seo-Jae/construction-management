@@ -172,7 +172,13 @@ const subMenuSx = (selected) => ({
   },
 });
 
-function SubMenuList({ items, currentView, onViewChange }) {
+function SubMenuList({ items, currentView, onViewChange, canView }) {
+  const visibleItems = items.filter((item) => (
+    typeof canView !== 'function' || canView(item.value)
+  ));
+
+  if (visibleItems.length === 0) return null;
+
   return (
     <Box
       sx={{
@@ -183,7 +189,7 @@ function SubMenuList({ items, currentView, onViewChange }) {
         borderLeft: '1px solid #334155',
       }}
     >
-      {items.map((item) => {
+      {visibleItems.map((item) => {
         const selected = currentView === item.value;
 
         return (
@@ -280,9 +286,19 @@ export default function Sidebar({
   onViewChange,
   drawerOpen = true,
   userRole = '담당자',
+  canView,
 }) {
-  const isManagementRole = ['관리자', '최고관리자'].includes(userRole);
   const isSuperAdmin = userRole === '최고관리자';
+  const canAccessView = (view) => (
+    typeof canView !== 'function' || canView(view)
+  );
+  const hasDailyMenu = dailyMenus.some((item) => canAccessView(item.value));
+  const hasWeeklyOverviewMenu = weeklyOverviewMenus.some((item) => canAccessView(item.value));
+  const hasProgressMenu = progressMenus.some((item) => canAccessView(item.value));
+  const hasMaterialMenu = materialMenus.some((item) => canAccessView(item.value));
+  const hasLaborMenu = laborMenus.some((item) => canAccessView(item.value));
+  const hasPaymentMenu = paymentMenus.some((item) => canAccessView(item.value));
+  const hasReportMenu = reportMenus.some((item) => canAccessView(item.value));
   const isDailyView = [
     'daily',
     'daily-monthly-workers',
@@ -519,7 +535,7 @@ export default function Sidebar({
 
   return (
     <List sx={{ px: 0.75, py: 0.75 }}>
-      {isManagementRole && (
+      {canAccessView('admin-dashboard') && (
         <Tooltip
           title={drawerOpen ? '' : 'Dashboard'}
           placement="right"
@@ -613,6 +629,7 @@ export default function Sidebar({
         </Tooltip>
       )}
 
+      {canAccessView('approval-inbox') && (
       <Tooltip
         title={
           drawerOpen
@@ -694,9 +711,10 @@ export default function Sidebar({
             </Box>
           )}
         </ListItemButton>
-      </Tooltip>
+      </Tooltip>      )}
 
-      {isManagementRole && (
+
+      {hasWeeklyOverviewMenu && (
         <>
           <Tooltip
             title={
@@ -777,11 +795,13 @@ export default function Sidebar({
               onViewChange={
                 handleViewChange
               }
+              canView={canAccessView}
             />
           </Collapse>
         </>
       )}
 
+      {canAccessView('main') && (
       <Tooltip
         title={drawerOpen ? '' : 'Main'}
         placement="right"
@@ -813,8 +833,10 @@ export default function Sidebar({
             sx={{ opacity: drawerOpen ? 1 : 0 }}
           />
         </ListItemButton>
-      </Tooltip>
+      </Tooltip>      )}
 
+
+      {canAccessView('organization-chart') && (
       <Tooltip
         title={drawerOpen ? '' : '조직도'}
         placement="right"
@@ -846,8 +868,11 @@ export default function Sidebar({
             sx={{ opacity: drawerOpen ? 1 : 0 }}
           />
         </ListItemButton>
-      </Tooltip>
+      </Tooltip>      )}
 
+
+      {hasDailyMenu && (
+        <>
       <Tooltip
         title={drawerOpen ? '' : '공사일보관리'}
         placement="right"
@@ -898,9 +923,14 @@ export default function Sidebar({
           items={dailyMenus}
           currentView={currentView}
           onViewChange={handleViewChange}
+          canView={canAccessView}
         />
-      </Collapse>
+      </Collapse>        </>
+      )}
 
+
+      {hasProgressMenu && (
+        <>
       <Tooltip
         title={drawerOpen ? '' : '공정진척관리'}
         placement="right"
@@ -941,9 +971,13 @@ export default function Sidebar({
           items={progressMenus}
           currentView={currentView}
           onViewChange={handleViewChange}
+          canView={canAccessView}
         />
-      </Collapse>
+      </Collapse>        </>
+      )}
 
+
+      {canAccessView('drawing-quantity') && (
       <Tooltip
         title={drawerOpen ? '' : '타입별 도면분석'}
         placement="right"
@@ -975,8 +1009,11 @@ export default function Sidebar({
             sx={{ opacity: drawerOpen ? 1 : 0 }}
           />
         </ListItemButton>
-      </Tooltip>
+      </Tooltip>      )}
 
+
+      {hasMaterialMenu && (
+        <>
       <Tooltip
         title={
           drawerOpen
@@ -1056,9 +1093,14 @@ export default function Sidebar({
           onViewChange={
             handleViewChange
           }
+          canView={canAccessView}
         />
-      </Collapse>
+      </Collapse>        </>
+      )}
 
+
+      {hasPaymentMenu && (
+        <>
       <Tooltip
         title={drawerOpen ? '' : '기성관리'}
         placement="right"
@@ -1111,9 +1153,14 @@ export default function Sidebar({
           items={paymentMenus}
           currentView={currentView}
           onViewChange={handleViewChange}
+          canView={canAccessView}
         />
-      </Collapse>
+      </Collapse>        </>
+      )}
 
+
+      {hasLaborMenu && (
+        <>
       <Tooltip
         title={drawerOpen ? '' : '노임관리'}
         placement="right"
@@ -1168,9 +1215,14 @@ export default function Sidebar({
           items={laborMenus}
           currentView={currentView}
           onViewChange={handleViewChange}
+          canView={canAccessView}
         />
-      </Collapse>
+      </Collapse>        </>
+      )}
 
+
+      {hasReportMenu && (
+        <>
       <Tooltip
         title={drawerOpen ? '' : '업무 보고 관리'}
         placement="right"
@@ -1211,8 +1263,11 @@ export default function Sidebar({
           items={reportMenus}
           currentView={currentView}
           onViewChange={handleViewChange}
+          canView={canAccessView}
         />
-      </Collapse>
+      </Collapse>        </>
+      )}
+
     </List>
   );
 }

@@ -332,6 +332,71 @@ const viewTitles = {
   'weekly-overview-archive': '주간업무보관',
 };
 
+const VIEW_PERMISSION_KEYS = {
+  'admin-dashboard': 'construction.dashboard.view',
+  main: 'common.main.view',
+  'organization-chart': 'common.organization.view',
+  'approval-inbox': 'approval.inbox.view',
+  'weekly-overview': 'construction.weekly_overview.view',
+  'weekly-overview-archive': 'construction.weekly_archive.view',
+  daily: 'construction.daily_report.view',
+  'daily-monthly-workers': 'construction.daily_monthly_workers.view',
+  'daily-cumulative-workers': 'construction.daily_cumulative_workers.view',
+  'progress-input': 'construction.progress.view',
+  'progress-multi': 'construction.progress_multi.view',
+  'progress-daily': 'construction.progress_daily.view',
+  'progress-weekly': 'construction.progress_weekly.view',
+  'progress-monthly': 'construction.progress_monthly.view',
+  'drawing-quantity': 'construction.drawing.view',
+  'material-order': 'material.order.view',
+  'material-input-status': 'material.input.view',
+  'payment-claim': 'claim.statement.view',
+  'payment-contract-mapping': 'claim.process_link.view',
+  'payment-sales-status': 'claim.sales.view',
+  'labor-contract': 'labor.contract.view',
+  'labor-cost': 'labor.cost.view',
+  'report-weekly': 'report.weekly.view',
+  'report-expense-resolution': 'report.expense.view',
+  'report-approval': 'report.proposal.view',
+  'report-outsourcing-approval': 'report.outsourcing.view',
+  'report-accident': 'safety.incident.view',
+};
+
+const GLOBAL_PERMISSION_VIEWS = new Set([
+  'approval-inbox',
+  'weekly-overview',
+  'weekly-overview-archive',
+  'organization-chart',
+]);
+
+const normalizeRuntimeAccess = (value) => {
+  if (!value || typeof value !== 'object') return null;
+
+  return {
+    accessScope: String(value.access_scope || '').trim(),
+    projectNames: Array.isArray(value.project_names)
+      ? value.project_names.map((item) => String(item || '').trim()).filter(Boolean)
+      : [],
+    templatePermissions: Array.isArray(value.template_permissions)
+      ? value.template_permissions.map((item) => String(item || '').trim()).filter(Boolean)
+      : [],
+    permissionOverrides: Array.isArray(value.permission_overrides)
+      ? value.permission_overrides
+          .map((item) => ({
+            scopeKey: String(item?.scope_key || '').trim(),
+            permissionKey: String(item?.permission_key || '').trim(),
+            effect: String(item?.effect || '').trim(),
+          }))
+          .filter((item) => item.scopeKey && item.permissionKey && ['allow', 'deny'].includes(item.effect))
+      : [],
+    specialPermissions: Array.isArray(value.special_permissions)
+      ? value.special_permissions.map((item) => String(item || '').trim()).filter(Boolean)
+      : [],
+    permissionTemplateCode: String(value.permission_template_code || '').trim(),
+    runtimeSource: String(value.runtime_source || '').trim(),
+  };
+};
+
 function ReportPlaceholder({ title }) {
   return (
     <Paper
@@ -421,6 +486,8 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const userRole = authenticatedUserRole || profileUserRole;
   const isSuperAdmin = userRole === '최고관리자';
   const isManagementRole = ['관리자', '최고관리자'].includes(userRole);
+  const [runtimeAccess, setRuntimeAccess] = useState(null);
+  const [runtimeAccessReady, setRuntimeAccessReady] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -463,6 +530,62 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     };
   }, [user?.id, userProfile?.role, userProfile?.account_status]);
 
+  useEffect(() => {
+    let active = true;
+
+    const loadRuntimeAccess = async () => {
+      if (!user?.id) {
+        if (active) {
+          setRuntimeAccess(null);
+          setRuntimeAccessReady(true);
+        }
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase.rpc(
+          'get_my_runtime_access_v2',
+        );
+
+        if (error) throw error;
+        if (!active) return;
+
+        setRuntimeAccess(normalizeRuntimeAccess(data));
+      } catch (error) {
+        console.warn(
+          '런타임 권한 조회 실패 - 기존 역할 기준으로 임시 동작합니다:',
+          error,
+        );
+
+        if (active) {
+          setRuntimeAccess(null);
+        }
+      } finally {
+        if (active) {
+          setRuntimeAccessReady(true);
+        }
+      }
+    };
+
+    loadRuntimeAccess();
+
+    const timer = window.setInterval(
+      loadRuntimeAccess,
+      60 * 1000,
+    );
+    const handleFocus = () => {
+      loadRuntimeAccess();
+    };
+
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [user?.id]);
+
   const dashboardStorageBase = `constructionManagementDashboard:${
     user?.id || user?.email || 'anonymous'
   }`;
@@ -495,22 +618,170 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const [projectOptionsLoading, setProjectOptionsLoading] =
     useState(false);
 
-  const activeProjectName = isManagementRole
-    ? (
-        selectedProjectName ===
-        ALL_PROJECTS_OPTION
-          ? ''
-          : selectedProjectName
-      )
-    : userProfile?.project_name || '';
+  const runtimeProjectNames = runtimeAccess
+    ? sortProjectNames(runtimeAccess.projectNames || [])
+    : [];
+  const runtimeProjectKey = runtimeProjectNames.join('\u0001');
+  const hasAllProjectAccess = Boolean(
+    runtimeAccess && runtimeAccess.accessScope === 'all',
+  );
+  const fallbackProjectName = String(
+    userProfile?.project_name || '',
+  ).trim();
+  const accessibleProjectNames = runtimeAccess
+    ? runtimeProjectNames
+    : (
+        fallbackProjectName &&
+        fallbackProjectName !== '본사' &&
+        fallbackProjectName !== ALL_PROJECTS_OPTION
+          ? [fallbackProjectName]
+          : []
+      );
+
+  const permissionTemplateSet = new Set(
+    runtimeAccess?.templatePermissions || [],
+  );
+  const specialPermissionSet = new Set(
+    runtimeAccess?.specialPermissions || [],
+  );
+  const permissionOverrideMap = new Map(
+    (runtimeAccess?.permissionOverrides || []).map((item) => [
+      `${item.scopeKey}:${item.permissionKey}`,
+      item.effect,
+    ]),
+  );
+
+  const hasPermission = (
+    permissionKey,
+    projectName = '',
+  ) => {
+    if (!permissionKey) return true;
+    if (isSuperAdmin) return true;
+
+    if (!runtimeAccessReady || !runtimeAccess) {
+      return null;
+    }
+
+    let granted =
+      permissionTemplateSet.has(permissionKey) ||
+      specialPermissionSet.has(permissionKey);
+
+    const commonEffect = permissionOverrideMap.get(
+      `*:${permissionKey}`,
+    );
+    if (commonEffect) {
+      granted = commonEffect === 'allow';
+    }
+
+    const normalizedProjectName = String(
+      projectName || '',
+    ).trim();
+
+    if (normalizedProjectName) {
+      const projectEffect = permissionOverrideMap.get(
+        `${normalizedProjectName}:${permissionKey}`,
+      );
+      if (projectEffect) {
+        granted = projectEffect === 'allow';
+      }
+    }
+
+    return granted;
+  };
+
+  const legacyCanAccessView = (view) => {
+    if (view === 'user-management') return isSuperAdmin;
+    if (
+      [
+        'admin-dashboard',
+        'weekly-overview',
+        'weekly-overview-archive',
+      ].includes(view)
+    ) {
+      return isManagementRole;
+    }
+    return true;
+  };
+
+  const canAccessView = (
+    view,
+    projectName = '',
+  ) => {
+    if (view === 'messenger') return true;
+    if (view === 'user-management') return isSuperAdmin;
+
+    if (
+      view === 'admin-dashboard' &&
+      runtimeAccessReady &&
+      runtimeAccess &&
+      !isSuperAdmin
+    ) {
+      if (hasAllProjectAccess) {
+        return Boolean(
+          hasPermission('construction.dashboard.view', ''),
+        );
+      }
+
+      return accessibleProjectNames.some((project) =>
+        hasPermission('construction.dashboard.view', project),
+      );
+    }
+
+    const permissionKey = VIEW_PERMISSION_KEYS[view];
+    if (!permissionKey) return true;
+
+    const scopeProjectName = GLOBAL_PERMISSION_VIEWS.has(view)
+      ? ''
+      : projectName;
+
+    const permissionResult = hasPermission(
+      permissionKey,
+      scopeProjectName,
+    );
+
+    return permissionResult === null
+      ? legacyCanAccessView(view)
+      : permissionResult;
+  };
+
+  const dashboardAllowedProjectNames =
+    hasAllProjectAccess
+      ? (
+          canAccessView('admin-dashboard')
+            ? null
+            : []
+        )
+      : accessibleProjectNames.filter((projectName) =>
+          hasPermission(
+            'construction.dashboard.view',
+            projectName,
+          ) !== false,
+        );
+
+  const selectedProjectIsAccessible =
+    selectedProjectName &&
+    selectedProjectName !== ALL_PROJECTS_OPTION &&
+    (
+      hasAllProjectAccess ||
+      accessibleProjectNames.includes(selectedProjectName)
+    );
+
+  const activeProjectName =
+    selectedProjectName === ALL_PROJECTS_OPTION
+      ? ''
+      : selectedProjectIsAccessible
+        ? selectedProjectName
+        : (
+            accessibleProjectNames.includes(fallbackProjectName)
+              ? fallbackProjectName
+              : accessibleProjectNames[0] || ''
+          );
 
   const cumulativeProjectScope =
-    isManagementRole
-      ? (
-          selectedProjectName ||
-          ALL_PROJECTS_OPTION
-        )
-      : userProfile?.project_name || '';
+    selectedProjectName === ALL_PROJECTS_OPTION &&
+    hasAllProjectAccess
+      ? ALL_PROJECTS_OPTION
+      : activeProjectName;
 
   const activeProcessOptions =
     getProjectProcessOptions(
@@ -694,15 +965,28 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   ]);
 
   useEffect(() => {
-    if (!isManagementRole) {
-      setProjectOptions([]);
-      return undefined;
-    }
-
     let active = true;
 
     const loadProjectOptions = async () => {
-      setProjectOptionsLoading(true);
+      if (runtimeAccessReady && runtimeAccess && !hasAllProjectAccess) {
+        setProjectOptions(runtimeProjectNames);
+        setProjectOptionsLoading(false);
+        return;
+      }
+
+      if (
+        runtimeAccessReady &&
+        runtimeAccess &&
+        hasAllProjectAccess
+      ) {
+        setProjectOptionsLoading(true);
+      } else if (!isManagementRole) {
+        setProjectOptions(accessibleProjectNames);
+        setProjectOptionsLoading(false);
+        return;
+      } else {
+        setProjectOptionsLoading(true);
+      }
 
       try {
         const allRows = [];
@@ -721,17 +1005,12 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               from + SUPABASE_PAGE_SIZE - 1,
             );
 
-          if (error) {
-            throw error;
-          }
+          if (error) throw error;
 
           const rows = data || [];
           allRows.push(...rows);
 
-          if (rows.length < SUPABASE_PAGE_SIZE) {
-            break;
-          }
-
+          if (rows.length < SUPABASE_PAGE_SIZE) break;
           from += SUPABASE_PAGE_SIZE;
         }
 
@@ -739,32 +1018,23 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           Array.from(
             new Set(
               allRows
-                .map((row) =>
-                  String(
-                    row?.project_name || '',
-                  ).trim(),
-                )
+                .map((row) => String(row?.project_name || '').trim())
                 .filter(Boolean),
             ),
           ),
         );
 
-        if (active) {
-          setProjectOptions(names);
-        }
+        if (active) setProjectOptions(names);
       } catch (error) {
-        console.error(
-          '관리자 현장목록 조회 오류:',
-          error,
-        );
+        console.error('접근 현장목록 조회 오류:', error);
 
         if (active) {
-          setProjectOptions([]);
+          setProjectOptions(
+            runtimeAccess ? runtimeProjectNames : accessibleProjectNames,
+          );
         }
       } finally {
-        if (active) {
-          setProjectOptionsLoading(false);
-        }
+        if (active) setProjectOptionsLoading(false);
       }
     };
 
@@ -778,91 +1048,115 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
     return () => {
       active = false;
-      window.removeEventListener(
-        'focus',
-        handleFocus,
-      );
+      window.removeEventListener('focus', handleFocus);
     };
-  }, [isManagementRole]);
+  }, [
+    accessibleProjectNames.join('\u0001'),
+    hasAllProjectAccess,
+    isManagementRole,
+    runtimeAccessReady,
+    runtimeProjectKey,
+  ]);
 
   useEffect(() => {
-    if (!userProfile) {
-      return;
+    if (!userProfile) return;
+
+    if (runtimeAccessReady && runtimeAccess && !hasAllProjectAccess) {
+      const nextProjectName =
+        selectedProjectIsAccessible
+          ? selectedProjectName
+          : (
+              accessibleProjectNames.includes(fallbackProjectName)
+                ? fallbackProjectName
+                : accessibleProjectNames[0] || ''
+            );
+
+      if (nextProjectName !== selectedProjectName) {
+        setSelectedProjectName(nextProjectName);
+      }
+
+      if (nextProjectName) {
+        setLastSelectedProjectName(nextProjectName);
+      }
+    } else if (!runtimeAccess && !isManagementRole) {
+      setSelectedProjectName(fallbackProjectName);
+      if (fallbackProjectName) {
+        setLastSelectedProjectName(fallbackProjectName);
+      }
     }
 
     const requestedView = new URLSearchParams(
       window.location.search,
     ).get('view');
 
-    if (!isManagementRole) {
-      setSelectedProjectName(
-        userProfile?.project_name || '',
-      );
-
-      setCurrentView((previousView) => {
-        if (
-          [
-            'admin-dashboard',
-            'approval-inbox',
-            'weekly-overview',
-            'weekly-overview-archive',
-          ].includes(previousView)
-        ) {
-          return 'main';
-        }
-
-        return previousView || 'main';
-      });
-      return;
-    }
-
-    if (requestedView === 'approval-inbox') {
-      setCurrentView('approval-inbox');
-      return;
-    }
-
     if (
-      [
-        'weekly-overview',
-        'weekly-overview-archive',
-      ].includes(
-        requestedView,
-      )
+      requestedView &&
+      Object.prototype.hasOwnProperty.call(viewTitles, requestedView) &&
+      requestedView !== 'messenger' &&
+      canAccessView(requestedView, activeProjectName)
     ) {
       setCurrentView(requestedView);
       return;
     }
 
-    /*
-      브라우저 최소화, 다른 창 전환, 인증 프로필 재조회,
-      Dashboard 컴포넌트 재마운트가 발생해도
-      현재 메뉴와 선택 현장을 sessionStorage에서 복원합니다.
-    */
-    setCurrentView((previousView) =>
-      previousView ||
-      readDashboardSessionValue('currentView') ||
-      'admin-dashboard',
-    );
+    setCurrentView((previousView) => {
+      const storedView = readDashboardSessionValue('currentView');
+      const candidates = [
+        previousView,
+        storedView,
+        'main',
+        'admin-dashboard',
+        'approval-inbox',
+        'weekly-overview',
+        'weekly-overview-archive',
+        'organization-chart',
+        'daily',
+        'progress-input',
+      ];
 
-    setSelectedProjectName((previousProjectName) =>
-      previousProjectName ||
-      readDashboardSessionValue('selectedProjectName'),
-    );
+      const allowedView = candidates.find(
+        (view) =>
+          view &&
+          view !== 'messenger' &&
+          Object.prototype.hasOwnProperty.call(viewTitles, view) &&
+          canAccessView(view, activeProjectName),
+      );
 
-    setLastSelectedProjectName((previousProjectName) =>
-      previousProjectName ||
-      readDashboardSessionValue('lastSelectedProjectName'),
-    );
+      return allowedView || 'main';
+    });
   }, [
+    accessibleProjectNames.join('\u0001'),
+    activeProjectName,
+    fallbackProjectName,
+    hasAllProjectAccess,
     isManagementRole,
+    runtimeAccess,
+    runtimeAccessReady,
+    selectedProjectIsAccessible,
+    selectedProjectName,
     userProfile,
-    userProfile?.project_name,
   ]);
 
   const handleOpenAdminProject = (projectName) => {
-    setSelectedProjectName(projectName);
-    setLastSelectedProjectName(projectName);
-    setCurrentView('main');
+    const normalizedProjectName = String(projectName || '').trim();
+
+    if (
+      !normalizedProjectName ||
+      (
+        runtimeAccess &&
+        !hasAllProjectAccess &&
+        !accessibleProjectNames.includes(normalizedProjectName)
+      )
+    ) {
+      return;
+    }
+
+    setSelectedProjectName(normalizedProjectName);
+    setLastSelectedProjectName(normalizedProjectName);
+
+    if (canAccessView('main', normalizedProjectName)) {
+      setCurrentView('main');
+    }
   };
 
   const handleHistoricalUploadComplete = async (
@@ -934,46 +1228,44 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   };
 
   const handleSidebarViewChange = (nextView) => {
-    if (nextView === 'user-management') {
-      if (!isSuperAdmin) return;
-      setCurrentView(nextView);
-      return;
-    }
-
     if (
-      [
-        'weekly-overview',
-        'weekly-overview-archive',
-      ].includes(nextView)
-    ) {
-      if (!isManagementRole) {
-        return;
-      }
-
-      /*
-        주간업무총괄의 작성·보관 화면은
-        현장 선택과 무관한 관리자 전역 화면입니다.
-      */
-      setCurrentView(nextView);
-      return;
-    }
-
-    if (
-      nextView === 'admin-dashboard' &&
-      !isManagementRole
+      nextView === 'user-management' &&
+      !isSuperAdmin
     ) {
       return;
     }
 
+    const permissionProjectName =
+      GLOBAL_PERMISSION_VIEWS.has(nextView)
+        ? ''
+        : activeProjectName;
+
     if (
-      nextView !==
-        'daily-cumulative-workers' &&
-      selectedProjectName ===
-        ALL_PROJECTS_OPTION
+      !canAccessView(
+        nextView,
+        permissionProjectName,
+      )
     ) {
-      setSelectedProjectName(
-        lastSelectedProjectName || '',
+      showDashboardToast(
+        '이 메뉴에 대한 조회 권한이 없습니다.',
+        'warning',
       );
+      return;
+    }
+
+    if (
+      nextView !== 'daily-cumulative-workers' &&
+      selectedProjectName === ALL_PROJECTS_OPTION
+    ) {
+      const restoreProjectName =
+        (
+          hasAllProjectAccess &&
+          lastSelectedProjectName
+        )
+          ? lastSelectedProjectName
+          : accessibleProjectNames[0] || '';
+
+      setSelectedProjectName(restoreProjectName);
     }
 
     setCurrentView(nextView);
@@ -1309,7 +1601,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     if (currentView === 'messenger') {
       setCurrentView(
         previousViewBeforeMessengerRef.current ||
-          (isManagementRole ? 'admin-dashboard' : 'main'),
+          (canAccessView('admin-dashboard') ? 'admin-dashboard' : 'main'),
       );
     }
 
@@ -3188,7 +3480,11 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           </Typography>
 
           {managementArea === MANAGEMENT_AREA_CONSTRUCTION &&
-            isManagementRole &&
+            (
+              hasAllProjectAccess ||
+              projectOptions.length > 1 ||
+              (!runtimeAccessReady && isManagementRole)
+            ) &&
             ![
               'weekly-overview',
               'weekly-overview-archive',
@@ -3216,8 +3512,8 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               <Autocomplete
                 size="small"
                 options={
-                  currentView ===
-                  'daily-cumulative-workers'
+                  currentView === 'daily-cumulative-workers' &&
+                  hasAllProjectAccess
                     ? [
                         ALL_PROJECTS_OPTION,
                         ...projectOptions,
@@ -3348,6 +3644,14 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             onViewChange={handleSidebarViewChange}
             drawerOpen={open}
             userRole={userRole}
+            canView={(view) =>
+              canAccessView(
+                view,
+                GLOBAL_PERMISSION_VIEWS.has(view)
+                  ? ''
+                  : activeProjectName,
+              )
+            }
           />
         ) : (
           <Box
@@ -3465,10 +3769,12 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             </Paper>
           ) : (
             <>
-          {currentView === 'admin-dashboard' && isManagementRole && (
+          {currentView === 'admin-dashboard' &&
+            canAccessView('admin-dashboard') && (
             <AdminDashboard
               processOptions={processOptions}
               onOpenProject={handleOpenAdminProject}
+              allowedProjectNames={dashboardAllowedProjectNames}
             />
           )}
 
@@ -3483,20 +3789,20 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             />
           )}
 
-          {currentView === 'approval-inbox' && (
+          {currentView === 'approval-inbox' &&
+            canAccessView('approval-inbox') && (
             <ApprovalInbox />
           )}
 
-          {isManagementRole &&
-            currentView === 'weekly-overview' && (
+          {currentView === 'weekly-overview' &&
+            canAccessView('weekly-overview') && (
               <WeeklyOverview
                 userProfile={activeUserProfile}
               />
             )}
 
-          {isManagementRole &&
-            currentView ===
-              'weekly-overview-archive' && (
+          {currentView === 'weekly-overview-archive' &&
+            canAccessView('weekly-overview-archive') && (
               <WeeklyOverviewArchive
                 userProfile={activeUserProfile}
               />
@@ -3513,7 +3819,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               viewMonth={viewMonth}
               handlePrevMonth={handlePrevMonth}
               handleNextMonth={handleNextMonth}
-              onNavigate={setCurrentView}
+              onNavigate={handleSidebarViewChange}
               workAlertOpen={
                 userRole === '담당자' &&
                 workAlertOpen
@@ -3724,8 +4030,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             <ReportPlaceholder title="사고 경위 보고" />
           )}
 
-          {isManagementRole &&
-            !PROJECT_FREE_VIEWS.includes(
+          {!PROJECT_FREE_VIEWS.includes(
               currentView,
             ) &&
             !activeProjectName && (
