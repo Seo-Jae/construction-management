@@ -29,6 +29,7 @@ import {
   Typography,
 } from '@mui/material';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
+import CampaignRoundedIcon from '@mui/icons-material/CampaignRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import DevicesRoundedIcon from '@mui/icons-material/DevicesRounded';
 import EditCalendarRoundedIcon from '@mui/icons-material/EditCalendarRounded';
@@ -41,6 +42,7 @@ import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
 import QrCode from 'qrcode';
 import { supabase } from '../supabaseClient';
+import RiskBroadcastManagement from './RiskBroadcastManagement.jsx';
 import {
   buildAttendanceQrDisplayUrl,
   buildAttendanceWorkerUrl,
@@ -52,6 +54,7 @@ import {
 const tabItems = [
   { value: 'approval', label: '가입 승인', icon: <FactCheckRoundedIcon fontSize="small" /> },
   { value: 'records', label: '근태 기록', icon: <EditCalendarRoundedIcon fontSize="small" /> },
+  { value: 'risk', label: '중점위험요인 관리', icon: <CampaignRoundedIcon fontSize="small" /> },
   { value: 'devices', label: '기기 변경', icon: <DevicesRoundedIcon fontSize="small" /> },
   { value: 'audit', label: '변경 이력', icon: <HistoryRoundedIcon fontSize="small" /> },
   { value: 'qr', label: '출·퇴근 QR', icon: <QrCode2RoundedIcon fontSize="small" /> },
@@ -324,7 +327,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
         </Tabs>
       </Paper>
 
-      {!canManage && (
+      {!canManage && tab !== 'risk' && (
         <Alert severity="info">조회 권한으로 접속했습니다. QR 발급, 가입 승인, 기기 변경, 근태 수정은 할 수 없습니다.</Alert>
       )}
 
@@ -423,6 +426,13 @@ export default function AttendanceManagement({ projectName, canManage = false, o
               </TableContainer>
             )}
           </Paper>
+        )}
+
+        {tab === 'risk' && (
+          <RiskBroadcastManagement
+            currentProjectName={projectName}
+            onMessage={setMessage}
+          />
         )}
 
         {tab === 'devices' && (

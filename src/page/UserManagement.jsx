@@ -32,7 +32,7 @@ import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded';
 import { supabase } from '../supabaseClient';
 import KoreanDatePicker from '../components/KoreanDatePicker.jsx';
 
-const ROLE_OPTIONS = ['담당자', '관리자', '최고관리자'];
+const ROLE_OPTIONS = ['담당자', '안전관리자', '관리자', '최고관리자'];
 const ALL_PROJECTS_OPTION = '전체현장';
 const ACCESS_SCOPE_OPTIONS = [
   { value: 'home_project', label: '소속현장' },
@@ -149,13 +149,19 @@ const normalizeSpecialPermissions = (values) => (
   )].sort()
 );
 
-const inferDepartmentCode = (organizationType) =>
-  organizationType === '외부업체' ? 'external' : 'construction';
+const inferDepartmentCode = (organizationType, role = '') => {
+  if (organizationType === '외부업체') return 'external';
+  if (role === '안전관리자') return 'safety';
+  return 'construction';
+};
 
 const inferTemplateCode = (account, organizationType) => {
   const role = String(account?.role || '담당자');
 
   if (role === '최고관리자') return 'super_admin';
+  if (role === '안전관리자') {
+    return organizationType === '현장' ? 'site_safety' : 'hq_safety';
+  }
   if (organizationType === '본사') return 'hq_construction';
   if (organizationType === '외부업체') return 'external_partner';
   return role === '관리자' ? 'site_manager' : 'site_construction';
@@ -166,7 +172,7 @@ const createDraft = (account, accessSetting = null) => {
     accessSetting?.organization_type ||
     (account?.organization_type === '본사' ? '본사' : '현장');
   const role = account?.role || '담당자';
-  const isManagementRole = ['관리자', '최고관리자'].includes(role);
+  const isManagementRole = ['안전관리자', '관리자', '최고관리자'].includes(role);
   const accessProjects = Array.isArray(accessSetting?.project_access)
     ? accessSetting.project_access
     : [];
@@ -203,7 +209,7 @@ const createDraft = (account, accessSetting = null) => {
     positionTitle: String(account?.position_title || '').trim(),
     organizationType,
     departmentCode:
-      accessSetting?.department_code || inferDepartmentCode(organizationType),
+      accessSetting?.department_code || inferDepartmentCode(organizationType, role),
     permissionTemplateCode:
       accessSetting?.permission_template_code ||
       inferTemplateCode(account, organizationType),
@@ -1036,7 +1042,7 @@ export default function UserManagement({ currentUserId = '' }) {
         field === 'organizationType' ? value : current.organizationType;
       const nextDepartmentCode =
         field === 'organizationType'
-          ? inferDepartmentCode(value)
+          ? inferDepartmentCode(value, current.role)
           : field === 'departmentCode'
             ? value
             : current.departmentCode;
@@ -1101,6 +1107,18 @@ export default function UserManagement({ currentUserId = '' }) {
         nextDraft[userId].accessScope = 'all';
         nextDraft[userId].projectNames = [ALL_PROJECTS_OPTION];
         nextDraft[userId].projectAccess = [];
+      }
+
+      if (
+        field === 'role' &&
+        value === '안전관리자'
+      ) {
+        nextDraft[userId].organizationType = '본사';
+        nextDraft[userId].departmentCode = 'safety';
+        nextDraft[userId].permissionTemplateCode = 'hq_safety';
+        if (current.accessScope === 'home_project') {
+          nextDraft[userId].accessScope = 'selected';
+        }
       }
 
       return nextDraft;
@@ -1302,10 +1320,10 @@ export default function UserManagement({ currentUserId = '' }) {
       draft.accessScope === 'all' &&
       (
         draft.organizationType !== '본사' ||
-        !['관리자', '최고관리자'].includes(draft.role)
+        !['안전관리자', '관리자', '최고관리자'].includes(draft.role)
       )
     ) {
-      setErrorMessage('전체현장은 본사 관리자·최고관리자에게만 지정할 수 있습니다.');
+      setErrorMessage('전체현장은 본사 안전관리자·관리자·최고관리자에게만 지정할 수 있습니다.');
       return;
     }
 
@@ -1376,7 +1394,9 @@ export default function UserManagement({ currentUserId = '' }) {
 
     try {
       const { error } = await supabase.rpc(
-        'admin_update_user_access_v2',
+        draft.role === '안전관리자'
+          ? 'admin_update_safety_manager_access_v52_14_9'
+          : 'admin_update_user_access_v2',
         {
           p_user_id: userId,
           p_role: draft.role,
@@ -1918,7 +1938,7 @@ export default function UserManagement({ currentUserId = '' }) {
                           option.value === 'all' &&
                           (
                             selectedDraft.organizationType !== '본사' ||
-                            !['관리자', '최고관리자'].includes(selectedDraft.role)
+                            !['안전관리자', '관리자', '최고관리자'].includes(selectedDraft.role)
                           )
                         }
                       >

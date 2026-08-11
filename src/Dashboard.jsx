@@ -449,6 +449,14 @@ const normalizeUserRole = (role) => {
     return '관리자';
   }
 
+  if (
+    normalized === '안전관리자' ||
+    normalized === 'safetymanager' ||
+    normalized === 'safetyadmin'
+  ) {
+    return '안전관리자';
+  }
+
   return '담당자';
 };
 
@@ -477,6 +485,11 @@ const resolveUserRole = (profile) => {
   for (const candidate of roleCandidates) {
     const resolved = normalizeUserRole(candidate);
     if (resolved === '관리자') return resolved;
+  }
+
+  for (const candidate of roleCandidates) {
+    const resolved = normalizeUserRole(candidate);
+    if (resolved === '안전관리자') return resolved;
   }
 
   return '담당자';

@@ -244,6 +244,79 @@ function MonthlyAttendanceCalendar({ monthEvents, todayEvents, selectedDate, onS
   );
 }
 
+function RiskBroadcastPanel({ broadcasts }) {
+  const activeBroadcasts = Array.isArray(broadcasts) ? broadcasts : [];
+
+  return (
+    <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 3, borderColor: '#fecaca', bgcolor: '#fffafa' }}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
+        <Typography sx={{ fontSize: '0.86rem', fontWeight: 900, color: '#991b1b' }}>
+          중점위험요인 전파
+        </Typography>
+        <Chip
+          label={activeBroadcasts.length ? `${activeBroadcasts.length}건` : '등록 없음'}
+          size="small"
+          sx={{ height: 22, fontSize: '0.62rem', fontWeight: 800, bgcolor: '#fee2e2', color: '#991b1b' }}
+        />
+      </Stack>
+
+      {activeBroadcasts.length === 0 ? (
+        <Typography sx={{ mt: 1, fontSize: '0.74rem', color: '#64748b' }}>
+          등록된 중점위험요인이 없습니다.
+        </Typography>
+      ) : (
+        <Stack spacing={1.1} sx={{ mt: 1.25 }}>
+          {activeBroadcasts.map((broadcast) => {
+            const isCommon = broadcast.scope_type === 'common';
+            const badgeColor = isCommon ? '#15803d' : '#1d4ed8';
+            const badgeBackground = isCommon ? '#dcfce7' : '#dbeafe';
+            return (
+              <Box
+                key={broadcast.id}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 1.15,
+                  p: 1.15,
+                  borderRadius: 2,
+                  bgcolor: '#fff',
+                  border: '1px solid #fee2e2',
+                }}
+              >
+                <Box
+                  sx={{
+                    width: 42,
+                    height: 42,
+                    flex: '0 0 42px',
+                    borderRadius: '50%',
+                    display: 'grid',
+                    placeItems: 'center',
+                    bgcolor: badgeBackground,
+                    color: badgeColor,
+                    fontSize: '0.7rem',
+                    fontWeight: 900,
+                    border: `1px solid ${badgeColor}33`,
+                  }}
+                >
+                  {isCommon ? '공통' : '담당'}
+                </Box>
+                <Box sx={{ minWidth: 0, flex: 1 }}>
+                  <Typography sx={{ whiteSpace: 'pre-wrap', color: '#1e293b', fontSize: '0.78rem', fontWeight: 800, lineHeight: 1.65 }}>
+                    {broadcast.content}
+                  </Typography>
+                  <Typography sx={{ mt: 0.55, color: '#64748b', fontSize: '0.64rem', lineHeight: 1.5 }}>
+                    {formatKoreaDateTime(broadcast.created_at)} · {broadcast.author_position || broadcast.author_role || '작성자'} {broadcast.author_name || ''}
+                  </Typography>
+                </Box>
+              </Box>
+            );
+          })}
+        </Stack>
+      )}
+    </Paper>
+  );
+}
+
 const isInstalledApp = () =>
   window.matchMedia('(display-mode: standalone)').matches ||
   window.matchMedia('(display-mode: fullscreen)').matches ||
@@ -419,6 +492,7 @@ export default function AttendanceWorkerPortal() {
   const [worker, setWorker] = useState(null);
   const [todayEvents, setTodayEvents] = useState([]);
   const [monthEvents, setMonthEvents] = useState([]);
+  const [riskBroadcasts, setRiskBroadcasts] = useState([]);
   const [selectedAttendanceDate, setSelectedAttendanceDate] = useState(getKoreaTodayKey);
   const [loading, setLoading] = useState(Boolean(sessionToken));
   const [message, setMessage] = useState(null);
@@ -460,6 +534,7 @@ export default function AttendanceWorkerPortal() {
       setWorker(null);
       setTodayEvents([]);
       setMonthEvents([]);
+      setRiskBroadcasts([]);
       setLoading(false);
       return null;
     }
@@ -476,6 +551,7 @@ export default function AttendanceWorkerPortal() {
       setWorker(null);
       setTodayEvents([]);
       setMonthEvents([]);
+      setRiskBroadcasts([]);
       setMessage({ severity: 'warning', text: error.message || '다시 로그인해주세요.' });
       setLoading(false);
       return null;
@@ -485,6 +561,7 @@ export default function AttendanceWorkerPortal() {
     setWorker(nextWorker);
     setTodayEvents(Array.isArray(data?.today_events) ? data.today_events : []);
     setMonthEvents(Array.isArray(data?.month_events) ? data.month_events : []);
+    setRiskBroadcasts(Array.isArray(data?.risk_broadcasts) ? data.risk_broadcasts : []);
     setLoading(false);
     return nextWorker;
   }, [deviceKey, saveSession, sessionToken]);
@@ -644,6 +721,7 @@ export default function AttendanceWorkerPortal() {
     setWorker(null);
     setTodayEvents([]);
     setMonthEvents([]);
+    setRiskBroadcasts([]);
     setMessage(null);
     setMode('login');
   };
@@ -870,13 +948,7 @@ export default function AttendanceWorkerPortal() {
     return (
       <MobileShell appMode={appMode}>
         <AttendanceToast message={message} onClose={() => setMessage(null)} appMode={appMode} />
-        <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 3, borderColor: '#fecaca', bgcolor: '#fffafa' }}>
-          <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
-            <Typography sx={{ fontSize: '0.86rem', fontWeight: 900, color: '#991b1b' }}>중점위험요인 전파</Typography>
-            <Chip label="준비 중" size="small" sx={{ height: 22, fontSize: '0.62rem', fontWeight: 800, bgcolor: '#fee2e2', color: '#991b1b' }} />
-          </Stack>
-          <Typography sx={{ mt: 1, fontSize: '0.74rem', color: '#64748b' }}>등록된 중점위험요인이 없습니다.</Typography>
-        </Paper>
+        <RiskBroadcastPanel broadcasts={riskBroadcasts} />
 
         <Box sx={{ mb: 2 }}>
           <MonthlyAttendanceCalendar
