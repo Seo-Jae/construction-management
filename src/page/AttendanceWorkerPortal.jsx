@@ -159,7 +159,7 @@ const statusMeta = {
 
 function MobileShell({ children, appMode = false }) {
   return (
-    <Box sx={{ minHeight: '100dvh', bgcolor: appMode ? '#f5f7f6' : '#eef3f8' }}>
+    <Box sx={{ minHeight: '100dvh', bgcolor: appMode ? '#f5f7f6' : '#eef3f8', display: 'flex', flexDirection: 'column' }}>
       <AppBar
         position="sticky"
         elevation={0}
@@ -206,11 +206,16 @@ function MobileShell({ children, appMode = false }) {
       <Box
         sx={{
           width: '100%',
-          maxWidth: appMode ? 680 : 520,
+          maxWidth: appMode ? 'none' : 520,
           mx: 'auto',
-          px: appMode ? 2.25 : 2,
-          pt: appMode ? 2.5 : 2,
-          pb: appMode ? 'calc(24px + env(safe-area-inset-bottom))' : 2,
+          px: appMode ? 1.75 : 2,
+          pt: appMode ? 1.75 : 2,
+          pb: appMode ? 'calc(14px + env(safe-area-inset-bottom))' : 2,
+          boxSizing: 'border-box',
+          flex: appMode ? 1 : undefined,
+          minHeight: appMode ? 0 : undefined,
+          display: appMode ? 'flex' : 'block',
+          flexDirection: appMode ? 'column' : undefined,
           ...(appMode && {
             '& .MuiInputBase-root': { minHeight: 56, fontSize: '1rem' },
             '& .MuiInputLabel-root': { fontSize: '1rem' },
@@ -684,8 +689,29 @@ export default function AttendanceWorkerPortal() {
 
     return (
       <MobileShell appMode={appMode}>
-        {message && <Alert severity={message.severity} sx={{ mb: 2 }} onClose={() => setMessage(null)}>{message.text}</Alert>}
-        <Paper variant="outlined" sx={{ p: appMode ? 3 : 2.25, borderRadius: appMode ? 3.5 : 3 }}>
+        <Box
+          className="attendance-worker-home"
+          sx={{
+            flex: appMode ? 1 : undefined,
+            minHeight: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: appMode ? 1.5 : 0,
+          }}
+        >
+        {message && <Alert severity={message.severity} sx={{ mb: appMode ? 0 : 2 }} onClose={() => setMessage(null)}>{message.text}</Alert>}
+        <Paper
+          variant="outlined"
+          sx={{
+            p: appMode ? 3 : 2.25,
+            borderRadius: appMode ? 3.5 : 3,
+            flex: appMode ? '1 1 0' : undefined,
+            minHeight: appMode ? 0 : undefined,
+            display: appMode ? 'flex' : 'block',
+            flexDirection: appMode ? 'column' : undefined,
+            justifyContent: appMode ? 'center' : undefined,
+          }}
+        >
           <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
             <Box>
               <Typography sx={{ fontSize: appMode ? '1.4rem' : '1.15rem', fontWeight: 900 }}>{worker.name_ko}</Typography>
@@ -700,8 +726,8 @@ export default function AttendanceWorkerPortal() {
 
         {worker.status === 'active' ? (
           <>
-            <Card variant="outlined" sx={{ mt: 2, borderRadius: appMode ? 3.5 : 3 }}>
-              <CardContent sx={{ p: appMode ? 3 : undefined, '&:last-child': { pb: appMode ? 3 : undefined } }}>
+            <Card variant="outlined" sx={{ mt: appMode ? 0 : 2, borderRadius: appMode ? 3.5 : 3, flex: appMode ? '1.08 1 0' : undefined, minHeight: appMode ? 0 : undefined }}>
+              <CardContent sx={{ p: appMode ? 3 : undefined, height: appMode ? '100%' : undefined, boxSizing: 'border-box', display: appMode ? 'flex' : 'block', flexDirection: appMode ? 'column' : undefined, justifyContent: appMode ? 'center' : undefined, '&:last-child': { pb: appMode ? 3 : undefined } }}>
                 <Typography sx={{ fontSize: appMode ? '1rem' : '0.78rem', color: '#64748b', fontWeight: 800 }}>오늘 출·퇴근</Typography>
                 <Stack direction="row" spacing={appMode ? 2 : 1.5} sx={{ mt: appMode ? 2 : 1.5 }}>
                   <Paper variant="outlined" sx={{ flex: 1, p: appMode ? 2.25 : 1.5, textAlign: 'center', bgcolor: checkIn ? '#ecfdf5' : '#f8fafc', borderRadius: appMode ? 3 : undefined }}>
@@ -727,21 +753,22 @@ export default function AttendanceWorkerPortal() {
               startIcon={processingScan ? <CircularProgress size={20} color="inherit" /> : <CameraAltRoundedIcon />}
               onClick={handleOpenScanner}
               disabled={processingScan || scannerStarting || Boolean(checkIn && checkOut)}
-              sx={{ mt: 2, minHeight: appMode ? 66 : 58, borderRadius: appMode ? 3 : 2.5, bgcolor: primaryActionColor, fontWeight: 900, fontSize: appMode ? '1.08rem' : '1rem', '&:hover': { bgcolor: primaryActionColor } }}
+              sx={{ mt: appMode ? 0 : 2, minHeight: appMode ? 'clamp(70px, 9dvh, 88px)' : 58, borderRadius: appMode ? 3 : 2.5, bgcolor: primaryActionColor, fontWeight: 900, fontSize: appMode ? '1.08rem' : '1rem', flexShrink: 0, '&:hover': { bgcolor: primaryActionColor } }}
             >
               {checkIn && checkOut ? '오늘 근태 처리 완료' : processingScan ? '처리 중' : scannerStarting ? '카메라 준비 중' : '출·퇴근 QR 촬영'}
             </Button>
           </>
         ) : (
-          <Button fullWidth variant="outlined" startIcon={<RefreshRoundedIcon />} onClick={() => loadMe(sessionToken)} sx={{ mt: 2 }}>
+          <Button fullWidth variant="outlined" startIcon={<RefreshRoundedIcon />} onClick={() => loadMe(sessionToken)} sx={{ mt: appMode ? 0 : 2, minHeight: appMode ? 'clamp(70px, 9dvh, 88px)' : undefined }}>
             승인상태 다시 확인
           </Button>
         )}
 
-        <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
+        <Stack direction="row" spacing={1} sx={{ mt: appMode ? 0 : 2, flexShrink: 0 }}>
           {!appMode && <Button fullWidth variant="outlined" startIcon={<AddToHomeScreenRoundedIcon />} onClick={handleInstall}>앱으로 설치</Button>}
           <Button fullWidth variant="text" color="inherit" startIcon={<LogoutRoundedIcon />} onClick={handleLogout}>로그아웃</Button>
         </Stack>
+        </Box>
 
         <Dialog open={scannerOpen} onClose={closeScanner} fullWidth maxWidth="xs">
           <DialogTitle sx={{ pr: 6, fontWeight: 900 }}>
