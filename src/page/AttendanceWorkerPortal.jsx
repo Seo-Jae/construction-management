@@ -63,6 +63,13 @@ const initialLogin = {
   password: '',
 };
 
+const APP_BRAND_GREEN = '#03c75a';
+
+const isInstalledApp = () =>
+  window.matchMedia('(display-mode: standalone)').matches ||
+  window.matchMedia('(display-mode: fullscreen)').matches ||
+  window.navigator.standalone === true;
+
 const waitForVideoReady = (video, timeoutMs = 8000) => new Promise((resolve, reject) => {
   let timeoutId;
   let pollingId;
@@ -150,22 +157,70 @@ const statusMeta = {
   },
 };
 
-function MobileShell({ children }) {
+function MobileShell({ children, appMode = false }) {
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: '#eef3f8' }}>
-      <AppBar position="sticky" elevation={0} sx={{ bgcolor: '#0f4c81' }}>
-        <Toolbar sx={{ minHeight: '58px !important', px: 2 }}>
-          <Box>
-            <Typography sx={{ fontSize: '0.65rem', fontWeight: 900, letterSpacing: '0.12em', color: '#bae6fd' }}>
+    <Box sx={{ minHeight: '100dvh', bgcolor: appMode ? '#f5f7f6' : '#eef3f8' }}>
+      <AppBar
+        position="sticky"
+        elevation={0}
+        sx={{
+          bgcolor: appMode ? APP_BRAND_GREEN : '#0f4c81',
+          pt: appMode ? 'env(safe-area-inset-top)' : 0,
+        }}
+      >
+        <Toolbar sx={{ minHeight: appMode ? '72px !important' : '58px !important', px: appMode ? 2.25 : 2 }}>
+          <Stack direction="row" spacing={1.5} alignItems="center">
+            {appMode && (
+              <Box
+                aria-hidden="true"
+                sx={{
+                  width: 44,
+                  height: 44,
+                  borderRadius: 2.25,
+                  display: 'grid',
+                  placeItems: 'center',
+                  bgcolor: '#fff',
+                  color: APP_BRAND_GREEN,
+                  fontSize: '1.75rem',
+                  lineHeight: 1,
+                  fontWeight: 1000,
+                  letterSpacing: '-0.12em',
+                  pr: '0.12em',
+                  boxShadow: '0 4px 14px rgba(0,0,0,0.12)',
+                }}
+              >
+                W
+              </Box>
+            )}
+            <Box>
+            <Typography sx={{ fontSize: appMode ? '0.72rem' : '0.65rem', fontWeight: 900, letterSpacing: '0.12em', color: appMode ? 'rgba(255,255,255,0.86)' : '#bae6fd' }}>
               WOOKLIM CONSTRUCTION
             </Typography>
-            <Typography sx={{ fontSize: '1rem', fontWeight: 900 }}>
-              모바일 근태관리
+            <Typography sx={{ fontSize: appMode ? '1.18rem' : '1rem', fontWeight: 900 }}>
+              욱림건설 근태시스템
             </Typography>
-          </Box>
+            </Box>
+          </Stack>
         </Toolbar>
       </AppBar>
-      <Box sx={{ width: '100%', maxWidth: 520, mx: 'auto', p: 2 }}>
+      <Box
+        sx={{
+          width: '100%',
+          maxWidth: appMode ? 680 : 520,
+          mx: 'auto',
+          px: appMode ? 2.25 : 2,
+          pt: appMode ? 2.5 : 2,
+          pb: appMode ? 'calc(24px + env(safe-area-inset-bottom))' : 2,
+          ...(appMode && {
+            '& .MuiInputBase-root': { minHeight: 56, fontSize: '1rem' },
+            '& .MuiInputLabel-root': { fontSize: '1rem' },
+            '& .MuiButton-root': { minHeight: 52, fontSize: '0.96rem' },
+            '& .MuiFormControlLabel-label': { fontSize: '1rem' },
+            '& .MuiAlert-message': { fontSize: '0.92rem', lineHeight: 1.65 },
+            '& .MuiChip-label': { fontSize: '0.86rem' },
+          }),
+        }}
+      >
         {children}
       </Box>
     </Box>
@@ -193,11 +248,13 @@ export default function AttendanceWorkerPortal() {
   const [processingScan, setProcessingScan] = useState(false);
   const [installPrompt, setInstallPrompt] = useState(null);
   const [installHelpOpen, setInstallHelpOpen] = useState(false);
+  const [appMode, setAppMode] = useState(isInstalledApp);
   const videoRef = useRef(null);
   const scannerControlsRef = useRef(null);
   const cameraStreamRef = useRef(null);
   const handledDeepLinkRef = useRef('');
   const deviceKey = useRef(getAttendanceDeviceKey()).current;
+  const primaryActionColor = appMode ? APP_BRAND_GREEN : '#0f6fae';
 
   const handleScannerVideoRef = useCallback((node) => {
     videoRef.current = node;
@@ -254,13 +311,31 @@ export default function AttendanceWorkerPortal() {
   }, [loadMe]);
 
   useEffect(() => {
+    const standaloneMedia = window.matchMedia('(display-mode: standalone)');
+    const fullscreenMedia = window.matchMedia('(display-mode: fullscreen)');
+    const updateAppMode = () => setAppMode(isInstalledApp());
+
+    standaloneMedia.addEventListener?.('change', updateAppMode);
+    fullscreenMedia.addEventListener?.('change', updateAppMode);
+    window.addEventListener('appinstalled', updateAppMode);
+
+    return () => {
+      standaloneMedia.removeEventListener?.('change', updateAppMode);
+      fullscreenMedia.removeEventListener?.('change', updateAppMode);
+      window.removeEventListener('appinstalled', updateAppMode);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (appMode) return undefined;
+
     const handleBeforeInstall = (event) => {
       event.preventDefault();
       setInstallPrompt(event);
     };
     window.addEventListener('beforeinstallprompt', handleBeforeInstall);
     return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
-  }, []);
+  }, [appMode]);
 
   const handleInstall = async () => {
     if (!installPrompt) {
@@ -593,10 +668,10 @@ export default function AttendanceWorkerPortal() {
 
   if (loading && !worker) {
     return (
-      <MobileShell>
+      <MobileShell appMode={appMode}>
         <Box sx={{ py: 12, textAlign: 'center' }}>
           <CircularProgress />
-          <Typography sx={{ mt: 2, color: '#64748b' }}>근태 계정을 확인하고 있습니다.</Typography>
+          <Typography sx={{ mt: 2, color: '#64748b', fontSize: appMode ? '1rem' : undefined }}>근태 계정을 확인하고 있습니다.</Typography>
         </Box>
       </MobileShell>
     );
@@ -608,36 +683,36 @@ export default function AttendanceWorkerPortal() {
     const checkOut = todayEvents.find((item) => item.event_type === 'check_out');
 
     return (
-      <MobileShell>
+      <MobileShell appMode={appMode}>
         {message && <Alert severity={message.severity} sx={{ mb: 2 }} onClose={() => setMessage(null)}>{message.text}</Alert>}
-        <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3 }}>
+        <Paper variant="outlined" sx={{ p: appMode ? 3 : 2.25, borderRadius: appMode ? 3.5 : 3 }}>
           <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
             <Box>
-              <Typography sx={{ fontSize: '1.15rem', fontWeight: 900 }}>{worker.name_ko}</Typography>
-              <Typography sx={{ mt: 0.25, color: '#64748b', fontSize: '0.78rem' }}>{worker.project_name}</Typography>
-              <Typography sx={{ color: '#64748b', fontSize: '0.74rem' }}>{worker.trade_name}</Typography>
+              <Typography sx={{ fontSize: appMode ? '1.4rem' : '1.15rem', fontWeight: 900 }}>{worker.name_ko}</Typography>
+              <Typography sx={{ mt: 0.5, color: '#64748b', fontSize: appMode ? '0.98rem' : '0.78rem', lineHeight: 1.45 }}>{worker.project_name}</Typography>
+              <Typography sx={{ mt: appMode ? 0.35 : 0, color: '#64748b', fontSize: appMode ? '0.92rem' : '0.74rem' }}>{worker.trade_name}</Typography>
             </Box>
             <Chip label={meta.label} color={meta.color} size="small" />
           </Stack>
           <Divider sx={{ my: 2 }} />
-          <Typography sx={{ color: '#64748b', fontSize: '0.78rem', lineHeight: 1.65 }}>{meta.description}</Typography>
+          <Typography sx={{ color: '#64748b', fontSize: appMode ? '0.98rem' : '0.78rem', lineHeight: 1.7 }}>{meta.description}</Typography>
         </Paper>
 
         {worker.status === 'active' ? (
           <>
-            <Card variant="outlined" sx={{ mt: 2, borderRadius: 3 }}>
-              <CardContent>
-                <Typography sx={{ fontSize: '0.78rem', color: '#64748b', fontWeight: 800 }}>오늘 출·퇴근</Typography>
-                <Stack direction="row" spacing={1.5} sx={{ mt: 1.5 }}>
-                  <Paper variant="outlined" sx={{ flex: 1, p: 1.5, textAlign: 'center', bgcolor: checkIn ? '#ecfdf5' : '#f8fafc' }}>
-                    <Typography sx={{ fontSize: '0.7rem', color: '#64748b' }}>출근</Typography>
-                    <Typography sx={{ mt: 0.5, fontWeight: 900, color: checkIn ? '#047857' : '#94a3b8' }}>
+            <Card variant="outlined" sx={{ mt: 2, borderRadius: appMode ? 3.5 : 3 }}>
+              <CardContent sx={{ p: appMode ? 3 : undefined, '&:last-child': { pb: appMode ? 3 : undefined } }}>
+                <Typography sx={{ fontSize: appMode ? '1rem' : '0.78rem', color: '#64748b', fontWeight: 800 }}>오늘 출·퇴근</Typography>
+                <Stack direction="row" spacing={appMode ? 2 : 1.5} sx={{ mt: appMode ? 2 : 1.5 }}>
+                  <Paper variant="outlined" sx={{ flex: 1, p: appMode ? 2.25 : 1.5, textAlign: 'center', bgcolor: checkIn ? '#ecfdf5' : '#f8fafc', borderRadius: appMode ? 3 : undefined }}>
+                    <Typography sx={{ fontSize: appMode ? '0.95rem' : '0.7rem', color: '#64748b' }}>출근</Typography>
+                    <Typography sx={{ mt: 0.65, fontSize: appMode ? '1.35rem' : undefined, fontWeight: 900, color: checkIn ? '#047857' : '#94a3b8' }}>
                       {checkIn ? formatKoreaDateTime(checkIn.event_at, { timeOnly: true }) : '미처리'}
                     </Typography>
                   </Paper>
-                  <Paper variant="outlined" sx={{ flex: 1, p: 1.5, textAlign: 'center', bgcolor: checkOut ? '#eff6ff' : '#f8fafc' }}>
-                    <Typography sx={{ fontSize: '0.7rem', color: '#64748b' }}>퇴근</Typography>
-                    <Typography sx={{ mt: 0.5, fontWeight: 900, color: checkOut ? '#1d4ed8' : '#94a3b8' }}>
+                  <Paper variant="outlined" sx={{ flex: 1, p: appMode ? 2.25 : 1.5, textAlign: 'center', bgcolor: checkOut ? '#ecfdf5' : '#f8fafc', borderRadius: appMode ? 3 : undefined }}>
+                    <Typography sx={{ fontSize: appMode ? '0.95rem' : '0.7rem', color: '#64748b' }}>퇴근</Typography>
+                    <Typography sx={{ mt: 0.65, fontSize: appMode ? '1.35rem' : undefined, fontWeight: 900, color: checkOut ? '#047857' : '#94a3b8' }}>
                       {checkOut ? formatKoreaDateTime(checkOut.event_at, { timeOnly: true }) : '미처리'}
                     </Typography>
                   </Paper>
@@ -652,7 +727,7 @@ export default function AttendanceWorkerPortal() {
               startIcon={processingScan ? <CircularProgress size={20} color="inherit" /> : <CameraAltRoundedIcon />}
               onClick={handleOpenScanner}
               disabled={processingScan || scannerStarting || Boolean(checkIn && checkOut)}
-              sx={{ mt: 2, minHeight: 58, borderRadius: 2.5, bgcolor: '#0f6fae', fontWeight: 900, fontSize: '1rem' }}
+              sx={{ mt: 2, minHeight: appMode ? 66 : 58, borderRadius: appMode ? 3 : 2.5, bgcolor: primaryActionColor, fontWeight: 900, fontSize: appMode ? '1.08rem' : '1rem', '&:hover': { bgcolor: primaryActionColor } }}
             >
               {checkIn && checkOut ? '오늘 근태 처리 완료' : processingScan ? '처리 중' : scannerStarting ? '카메라 준비 중' : '출·퇴근 QR 촬영'}
             </Button>
@@ -664,7 +739,7 @@ export default function AttendanceWorkerPortal() {
         )}
 
         <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
-          <Button fullWidth variant="outlined" startIcon={<AddToHomeScreenRoundedIcon />} onClick={handleInstall}>앱으로 설치</Button>
+          {!appMode && <Button fullWidth variant="outlined" startIcon={<AddToHomeScreenRoundedIcon />} onClick={handleInstall}>앱으로 설치</Button>}
           <Button fullWidth variant="text" color="inherit" startIcon={<LogoutRoundedIcon />} onClick={handleLogout}>로그아웃</Button>
         </Stack>
 
@@ -688,7 +763,7 @@ export default function AttendanceWorkerPortal() {
           </DialogContent>
         </Dialog>
 
-        <Dialog open={installHelpOpen} onClose={() => setInstallHelpOpen(false)} fullWidth maxWidth="xs">
+        <Dialog open={!appMode && installHelpOpen} onClose={() => setInstallHelpOpen(false)} fullWidth maxWidth="xs">
           <DialogTitle sx={{ fontWeight: 900 }}>휴대폰에 앱 추가</DialogTitle>
           <DialogContent>
             <Typography sx={{ fontSize: '0.84rem', lineHeight: 1.8 }}>
@@ -701,14 +776,14 @@ export default function AttendanceWorkerPortal() {
   }
 
   return (
-    <MobileShell>
+    <MobileShell appMode={appMode}>
       {message && <Alert severity={message.severity} sx={{ mb: 2 }} onClose={() => setMessage(null)}>{message.text}</Alert>}
-      <Paper variant="outlined" sx={{ p: 2.25, borderRadius: 3 }}>
+      <Paper variant="outlined" sx={{ p: appMode ? 3 : 2.25, borderRadius: appMode ? 3.5 : 3 }}>
         <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
           {mode === 'signup' && <IconButton size="small" onClick={() => setMode('login')}><ArrowBackRoundedIcon /></IconButton>}
           <Box>
-            <Typography sx={{ fontSize: '1.15rem', fontWeight: 900 }}>{mode === 'signup' ? '근로자 가입 신청' : '근로자 로그인'}</Typography>
-            <Typography sx={{ color: '#64748b', fontSize: '0.74rem' }}>별도의 사내 ERP 계정 없이 이용합니다.</Typography>
+            <Typography sx={{ fontSize: appMode ? '1.4rem' : '1.15rem', fontWeight: 900 }}>{mode === 'signup' ? '근로자 가입 신청' : '근로자 로그인'}</Typography>
+            <Typography sx={{ mt: appMode ? 0.45 : 0, color: '#64748b', fontSize: appMode ? '0.92rem' : '0.74rem' }}>별도의 사내 ERP 계정 없이 이용합니다.</Typography>
           </Box>
         </Stack>
 
@@ -716,7 +791,7 @@ export default function AttendanceWorkerPortal() {
           <Stack spacing={1.5}>
             <TextField label="휴대폰번호" value={formatPhone(login.phone)} onChange={(event) => setLogin((prev) => ({ ...prev, phone: normalizePhone(event.target.value) }))} inputMode="tel" autoComplete="tel" />
             <TextField label="비밀번호" type="password" value={login.password} onChange={(event) => setLogin((prev) => ({ ...prev, password: event.target.value }))} autoComplete="current-password" onKeyDown={(event) => { if (event.key === 'Enter') handleLogin(); }} />
-            <Button variant="contained" size="large" startIcon={<LoginRoundedIcon />} onClick={handleLogin} disabled={loading} sx={{ minHeight: 50, bgcolor: '#0f6fae', fontWeight: 900 }}>로그인</Button>
+            <Button variant="contained" size="large" startIcon={<LoginRoundedIcon />} onClick={handleLogin} disabled={loading} sx={{ minHeight: appMode ? 60 : 50, bgcolor: primaryActionColor, fontWeight: 900, '&:hover': { bgcolor: primaryActionColor } }}>로그인</Button>
             <Button variant="outlined" startIcon={<HowToRegRoundedIcon />} onClick={() => setMode('signup')}>처음 이용하시나요? 가입 신청</Button>
           </Stack>
         ) : (
@@ -754,7 +829,7 @@ export default function AttendanceWorkerPortal() {
               label="테스트계정입니다"
             />
             {signup.isTestAccount && (
-              <Alert severity="info" sx={{ fontSize: '0.75rem' }}>
+              <Alert severity="info" sx={{ fontSize: appMode ? '0.92rem' : '0.75rem' }}>
                 테스트계정 비밀번호는 <b>1</b>입니다. 담당자 승인 후 휴대폰번호와 비밀번호 1로 로그인하세요.
               </Alert>
             )}
@@ -768,13 +843,13 @@ export default function AttendanceWorkerPortal() {
             )}
             <FormControlLabel
               control={<Checkbox checked={signup.privacyAgreed} onChange={(event) => setSignup((prev) => ({ ...prev, privacyAgreed: event.target.checked }))} />}
-              label={<Typography sx={{ fontSize: '0.75rem', lineHeight: 1.5 }}>[필수] 가입 승인과 근태처리를 위한 이름·휴대폰·직종·등록기기 정보 수집에 동의합니다. 위치정보는 수집하지 않습니다.</Typography>}
+              label={<Typography sx={{ fontSize: appMode ? '0.92rem' : '0.75rem', lineHeight: 1.6 }}>[필수] 가입 승인과 근태처리를 위한 이름·휴대폰·직종·등록기기 정보 수집에 동의합니다. 위치정보는 수집하지 않습니다.</Typography>}
             />
-            <Button variant="contained" size="large" onClick={handleSignup} disabled={loading} sx={{ minHeight: 50, bgcolor: '#0f6fae', fontWeight: 900 }}>가입 신청</Button>
+            <Button variant="contained" size="large" onClick={handleSignup} disabled={loading} sx={{ minHeight: appMode ? 60 : 50, bgcolor: primaryActionColor, fontWeight: 900, '&:hover': { bgcolor: primaryActionColor } }}>가입 신청</Button>
           </Stack>
         )}
       </Paper>
-      <Button fullWidth variant="text" startIcon={<AddToHomeScreenRoundedIcon />} onClick={handleInstall} sx={{ mt: 1.5 }}>휴대폰 홈 화면에 앱 추가</Button>
+      {!appMode && <Button fullWidth variant="text" startIcon={<AddToHomeScreenRoundedIcon />} onClick={handleInstall} sx={{ mt: 1.5 }}>휴대폰 홈 화면에 앱 추가</Button>}
     </MobileShell>
   );
 }
