@@ -77,20 +77,6 @@ export default function MessengerButton({
     }
   }, [userId]);
 
-  const requestNotificationPermission = useCallback(() => {
-    if (
-      typeof window === 'undefined' ||
-      !('Notification' in window) ||
-      window.Notification.permission !== 'default'
-    ) {
-      return;
-    }
-
-    window.Notification.requestPermission().catch((error) => {
-      console.warn('메신저 알림 권한 요청 실패:', error);
-    });
-  }, []);
-
   const showIncomingNotice = useCallback(
     (row) => {
       if (!row || row.sender_id === userId) return;
@@ -205,7 +191,8 @@ export default function MessengerButton({
   }, [refreshUnread, showIncomingNotice, userId]);
 
   const handleClick = () => {
-    requestNotificationPermission();
+    // v52.10.2: 알림 권한은 메신저 별도창의 명시적인 '알림 사용' 버튼에서 요청한다.
+    // 메신저 아이콘 클릭에서는 창 열기만 수행해 브라우저의 조용한 권한 UI와 충돌하지 않도록 한다.
     onOpen?.();
   };
 
