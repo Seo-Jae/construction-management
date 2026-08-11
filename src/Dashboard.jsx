@@ -37,6 +37,7 @@ import {
   getProjectCellKeys,
 } from './utils/buildingUnits.js';
 import Sidebar from './components/Sidebar.jsx';
+import MessengerButton from './components/MessengerButton.jsx';
 import KoreanDatePicker from './components/KoreanDatePicker.jsx';
 import MainDashboard from './page/MainDashboard.jsx';
 import DailyReport from './page/DailyReport.jsx';
@@ -62,6 +63,7 @@ import AdminDashboard from './page/AdminDashboard.jsx';
 import UserManagementWithAccessHistory from './page/UserManagementWithAccessHistory.jsx';
 import OrganizationChart from './page/OrganizationChart.jsx';
 import DrawingQuantityAnalysis from './page/DrawingQuantityAnalysis.jsx';
+import Messenger from './page/Messenger.jsx';
 
 const drawerWidth = 240;
 const SUPABASE_PAGE_SIZE = 1000;
@@ -80,6 +82,7 @@ const PROJECT_FREE_VIEWS = [
   'admin-dashboard',
   'user-management',
   'organization-chart',
+  'messenger',
   'approval-inbox',
   'weekly-overview',
   'weekly-overview-archive',
@@ -302,6 +305,7 @@ const viewTitles = {
   'admin-dashboard': '전체 현장 Dashboard',
   'user-management': '회원관리',
   'organization-chart': '조직도',
+  messenger: '메신저',
   daily: '출력일보작성',
   'daily-monthly-workers': '금월 투입현황',
   'daily-cumulative-workers': '누계투입조회',
@@ -598,6 +602,10 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       ? 'admin-dashboard'
       : 'main';
   });
+
+  const previousViewBeforeMessengerRef = useRef(
+    isManagementRole ? 'admin-dashboard' : 'main',
+  );
 
   const [managementArea, setManagementArea] = useState(() => {
     const requestedView = new URLSearchParams(
@@ -1235,8 +1243,30 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     setManagementMenuAnchor(null);
   };
 
+  const handleToggleMessenger = () => {
+    if (currentView === 'messenger') {
+      setCurrentView(
+        previousViewBeforeMessengerRef.current ||
+          (isManagementRole ? 'admin-dashboard' : 'main'),
+      );
+      return;
+    }
+
+    previousViewBeforeMessengerRef.current = currentView ||
+      (isManagementRole ? 'admin-dashboard' : 'main');
+    setCurrentView('messenger');
+  };
+
   const handleSelectManagementArea = (area) => {
     setManagementArea(area);
+
+    if (currentView === 'messenger') {
+      setCurrentView(
+        previousViewBeforeMessengerRef.current ||
+          (isManagementRole ? 'admin-dashboard' : 'main'),
+      );
+    }
+
     handleCloseManagementMenu();
   };
 
@@ -2887,6 +2917,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     'admin-dashboard',
     'user-management',
     'organization-chart',
+    'messenger',
     'approval-inbox',
     'weekly-overview',
     'weekly-overview-archive',
@@ -2904,9 +2935,11 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     .filter(Boolean)
     .join(' - ');
   const headerTitle =
-    managementArea === MANAGEMENT_AREA_SAFETY
-      ? '안전 관리'
-      : constructionHeaderTitle;
+    currentView === 'messenger'
+      ? '메신저'
+      : managementArea === MANAGEMENT_AREA_SAFETY
+        ? '안전 관리'
+        : constructionHeaderTitle;
 
   const managementAreaLabel =
     managementArea === MANAGEMENT_AREA_SAFETY
@@ -3115,6 +3148,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               'weekly-overview-archive',
               'user-management',
               'organization-chart',
+              'messenger',
             ].includes(
               currentView,
             ) && (
@@ -3214,7 +3248,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             </Box>
           )}
 
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+            <MessengerButton
+              userId={user?.id || userProfile?.auth_user_id || ''}
+              active={currentView === 'messenger'}
+              onOpen={handleToggleMessenger}
+            />
+
             <Box sx={{ textAlign: 'right', lineHeight: 1.15 }}>
               <Typography variant="caption" sx={{ display: 'block', color: '#e2e8f0' }}>
                 접속자: {userProfile?.manager_name} ({userRole})
@@ -3335,7 +3375,11 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                 : 'hidden',
           }}
         >
-          {managementArea === MANAGEMENT_AREA_SAFETY ? (
+          {currentView === 'messenger' ? (
+            <Messenger
+              currentUserId={user?.id || userProfile?.auth_user_id || ''}
+            />
+          ) : managementArea === MANAGEMENT_AREA_SAFETY ? (
             <Paper
               variant="outlined"
               sx={{
