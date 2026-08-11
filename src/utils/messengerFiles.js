@@ -73,6 +73,20 @@ export const sanitizeMessengerFileName = (fileName = 'file') => {
   return normalized || 'file';
 };
 
+const getMessengerStorageExtension = (fileName = '') => {
+  const safeText = String(fileName || '');
+  const dotIndex = safeText.lastIndexOf('.');
+  if (dotIndex < 0) return '';
+
+  const extension = safeText
+    .slice(dotIndex + 1)
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '')
+    .slice(0, 12);
+
+  return extension ? `.${extension}` : '';
+};
+
 export const buildMessengerStoragePath = ({
   roomId,
   userId,
@@ -82,7 +96,10 @@ export const buildMessengerStoragePath = ({
     globalThis.crypto?.randomUUID?.() ||
     `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-  return `${roomId}/${userId}/${Date.now()}-${randomId}-${sanitizeMessengerFileName(fileName)}`;
+  // Supabase Storage object key에는 한글 원본 파일명을 넣지 않습니다.
+  // 원본 파일명은 messenger_attachments.file_name에 별도로 보존합니다.
+  // Storage 경로는 UUID/숫자/ASCII 확장자만 사용해 Invalid key를 방지합니다.
+  return `${roomId}/${userId}/${Date.now()}-${randomId}${getMessengerStorageExtension(fileName)}`;
 };
 
 const loadImageSource = async (file) => {

@@ -590,6 +590,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
     if (
       storedView &&
+      storedView !== 'messenger' &&
       Object.prototype.hasOwnProperty.call(
         viewTitles,
         storedView,
@@ -606,6 +607,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const previousViewBeforeMessengerRef = useRef(
     isManagementRole ? 'admin-dashboard' : 'main',
   );
+  const messengerWindowRef = useRef(null);
 
   const [managementArea, setManagementArea] = useState(() => {
     const requestedView = new URLSearchParams(
@@ -1244,17 +1246,38 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   };
 
   const handleToggleMessenger = () => {
-    if (currentView === 'messenger') {
-      setCurrentView(
-        previousViewBeforeMessengerRef.current ||
-          (isManagementRole ? 'admin-dashboard' : 'main'),
-      );
-      return;
-    }
+    try {
+      if (
+        messengerWindowRef.current &&
+        !messengerWindowRef.current.closed
+      ) {
+        messengerWindowRef.current.focus();
+        return;
+      }
 
-    previousViewBeforeMessengerRef.current = currentView ||
-      (isManagementRole ? 'admin-dashboard' : 'main');
-    setCurrentView('messenger');
+      const targetUrl = new URL(window.location.href);
+      targetUrl.searchParams.set('view', 'messenger-window');
+
+      const messengerWindow = window.open(
+        targetUrl.toString(),
+        'wooklim-construction-messenger',
+        'popup=yes,width=1480,height=880,resizable=yes,scrollbars=yes',
+      );
+
+      if (!messengerWindow) {
+        showDashboardToast(
+          '메신저 창을 열지 못했습니다. 브라우저의 팝업 차단을 해제해주세요.',
+          'warning',
+        );
+        return;
+      }
+
+      messengerWindowRef.current = messengerWindow;
+      messengerWindow.focus();
+    } catch (error) {
+      console.error('메신저 별도창 열기 오류:', error);
+      showDashboardToast('메신저 창을 열지 못했습니다.', 'error');
+    }
   };
 
   const handleSelectManagementArea = (area) => {
@@ -3251,7 +3274,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
             <MessengerButton
               userId={user?.id || userProfile?.auth_user_id || ''}
-              active={currentView === 'messenger'}
+              active={false}
               onOpen={handleToggleMessenger}
             />
 

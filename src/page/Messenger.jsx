@@ -64,6 +64,7 @@ import {
 
 const MESSAGE_PAGE_SIZE = 100;
 const MAX_MULTI_UPLOAD_FILES = 5;
+const ACTIVE_ROOM_STORAGE_PREFIX = 'wooklim-messenger-active-room:';
 
 const normalizeText = (value) => String(value || '').trim();
 
@@ -154,7 +155,7 @@ function UserSecondaryText({ user }) {
   );
 }
 
-export default function Messenger({ currentUserId }) {
+export default function Messenger({ currentUserId, standalone = false }) {
   const theme = useTheme();
   const compactMode = useMediaQuery(theme.breakpoints.down('md'));
   const showInfoColumn = useMediaQuery(theme.breakpoints.up('lg'));
@@ -179,6 +180,7 @@ export default function Messenger({ currentUserId }) {
   const [usersError, setUsersError] = useState('');
 
   const [messageText, setMessageText] = useState('');
+  const [pendingPasteFiles, setPendingPasteFiles] = useState([]);
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadLabel, setUploadLabel] = useState('');
@@ -199,6 +201,8 @@ export default function Messenger({ currentUserId }) {
   const [addMemberSaving, setAddMemberSaving] = useState(false);
   const [roomInfoOpen, setRoomInfoOpen] = useState(false);
   const [leavingRoom, setLeavingRoom] = useState(false);
+  const [leaveTransferOpen, setLeaveTransferOpen] = useState(false);
+  const [leaveTransferUserId, setLeaveTransferUserId] = useState('');
   const [unreadMessageId, setUnreadMessageId] = useState('');
 
   const [previewAttachment, setPreviewAttachment] = useState(null);
@@ -206,6 +210,8 @@ export default function Messenger({ currentUserId }) {
 
   const messageScrollRef = useRef(null);
   const fileInputRef = useRef(null);
+  const messageInputRef = useRef(null);
+  const pendingPasteFilesRef = useRef([]);
 
   const selectedRoom = useMemo(
     () => rooms.find((room) => room.room_id === selectedRoomId) || null,
@@ -562,6 +568,62 @@ export default function Messenger({ currentUserId }) {
   }, [selectedRoomId]);
 
   useEffect(() => {
+    if (!currentUserId) return undefined;
+
+    const storageKey = `${ACTIVE_ROOM_STORAGE_PREFIX}${currentUserId}`;
+
+    const publishActiveRoom = () => {
+      try {
+        if (
+          selectedRoomId &&
+          document.visibilityState === 'visible' &&
+          document.hasFocus()
+        ) {
+          window.localStorage.setItem(
+            storageKey,
+            JSON.stringify({
+              roomId: selectedRoomId,
+              at: Date.now(),
+            }),
+          );
+          return;
+        }
+
+        const raw = window.localStorage.getItem(storageKey);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        if (!selectedRoomId || parsed?.roomId === selectedRoomId) {
+          window.localStorage.removeItem(storageKey);
+        }
+      } catch {
+        // 알림 억제용 보조정보이므로 저장 실패는 메신저 동작에 영향을 주지 않습니다.
+      }
+    };
+
+    publishActiveRoom();
+    const timer = window.setInterval(publishActiveRoom, 5000);
+    window.addEventListener('focus', publishActiveRoom);
+    window.addEventListener('blur', publishActiveRoom);
+    document.addEventListener('visibilitychange', publishActiveRoom);
+
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', publishActiveRoom);
+      window.removeEventListener('blur', publishActiveRoom);
+      document.removeEventListener('visibilitychange', publishActiveRoom);
+      try {
+        const raw = window.localStorage.getItem(storageKey);
+        const parsed = raw ? JSON.parse(raw) : null;
+        if (!parsed || parsed.roomId === selectedRoomId) {
+          window.localStorage.removeItem(storageKey);
+        }
+      } catch {
+        // noop
+      }
+    };
+  }, [currentUserId, selectedRoomId]);
+
+  useEffect(() => {
     setRoomsLoading(true);
     loadRooms();
     loadUsers();
@@ -635,8 +697,18 @@ export default function Messenger({ currentUserId }) {
       }
     };
 
-    const refreshForRoomUpdate = async () => {
+    const refreshForRoomUpdate = async (payload) => {
+      const changedRoomId =
+        payload?.new?.id || payload?.old?.id || '';
+
       await loadRooms();
+
+      if (
+        changedRoomId &&
+        changedRoomId === selectedRoomIdRef.current
+      ) {
+        await loadMembers(changedRoomId, { silent: true });
+      }
     };
 
     const channel = supabase
@@ -717,43 +789,225 @@ export default function Messenger({ currentUserId }) {
   ]);
 
   const handleSelectRoom = (roomId) => {
+    if (roomId !== selectedRoomId) {
+      setPendingPasteFiles((previous) => {
+        previous.forEach((item) => {
+          if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+        });
+        return [];
+      });
+    }
     setSelectedRoomId(roomId);
     setRoomInfoOpen(false);
     setUnreadMessageId('');
   };
 
   const handleBackToRooms = () => {
+    setPendingPasteFiles((previous) => {
+      previous.forEach((item) => {
+        if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      });
+      return [];
+    });
     setSelectedRoomId('');
     setRoomInfoOpen(false);
     setUnreadMessageId('');
   };
 
+  const focusComposer = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      messageInputRef.current?.focus?.();
+    });
+  }, []);
+
+  useEffect(() => {
+    if (selectedRoomId) {
+      focusComposer();
+    }
+  }, [focusComposer, selectedRoomId]);
+
+  const clearPendingPasteFiles = useCallback(() => {
+    setPendingPasteFiles((previous) => {
+      previous.forEach((item) => {
+        if (item.previewUrl) {
+          URL.revokeObjectURL(item.previewUrl);
+        }
+      });
+      return [];
+    });
+  }, []);
+
+  useEffect(() => {
+    pendingPasteFilesRef.current = pendingPasteFiles;
+  }, [pendingPasteFiles]);
+
+  useEffect(
+    () => () => {
+      pendingPasteFilesRef.current.forEach((item) => {
+        if (item.previewUrl) {
+          URL.revokeObjectURL(item.previewUrl);
+        }
+      });
+    },
+    [],
+  );
+
+  const uploadFiles = useCallback(
+    async (selectedFiles, { showSuccessToast = true } = {}) => {
+      const files = Array.from(selectedFiles || []).filter(Boolean);
+      if (!selectedRoomId || files.length === 0 || uploading) return 0;
+
+      if (files.length > MAX_MULTI_UPLOAD_FILES) {
+        showToast(
+          `한 번에 최대 ${MAX_MULTI_UPLOAD_FILES}개 파일까지 전송할 수 있습니다.`,
+          'warning',
+        );
+        return 0;
+      }
+
+      setUploading(true);
+      let successCount = 0;
+
+      try {
+        for (let index = 0; index < files.length; index += 1) {
+          const originalFile = files[index];
+          setUploadLabel(
+            `${index + 1}/${files.length} ${originalFile.name || '이미지'} 처리 중`,
+          );
+
+          const prepared = await prepareMessengerFile(originalFile);
+          const file = prepared.file;
+
+          if (file.size > MESSENGER_MAX_FILE_BYTES) {
+            throw new Error(
+              `${originalFile.name || '파일'}: 파일은 10MB 이하만 전송할 수 있습니다.`,
+            );
+          }
+
+          const storagePath = buildMessengerStoragePath({
+            roomId: selectedRoomId,
+            userId: currentUserId,
+            fileName: file.name,
+          });
+
+          const { error: uploadError } = await supabase.storage
+            .from(MESSENGER_STORAGE_BUCKET)
+            .upload(storagePath, file, {
+              cacheControl: '3600',
+              contentType: file.type || 'application/octet-stream',
+              upsert: false,
+            });
+
+          if (uploadError) throw uploadError;
+
+          const { error: messageError } = await supabase.rpc(
+            'messenger_send_attachment_message',
+            {
+              p_room_id: selectedRoomId,
+              p_message_type: prepared.messageType,
+              p_storage_path: storagePath,
+              p_file_name: file.name,
+              p_mime_type: file.type || 'application/octet-stream',
+              p_file_size: file.size,
+              p_image_width: prepared.imageWidth,
+              p_image_height: prepared.imageHeight,
+            },
+          );
+
+          if (messageError) {
+            await supabase.storage
+              .from(MESSENGER_STORAGE_BUCKET)
+              .remove([storagePath]);
+            throw messageError;
+          }
+
+          successCount += 1;
+        }
+
+        await fetchMessagePage({ roomId: selectedRoomId, silent: true });
+        await loadRooms();
+        scrollToBottom('smooth');
+
+        if (showSuccessToast && successCount > 0) {
+          showToast(`${successCount}개 파일을 전송했습니다.`, 'success');
+        }
+        return successCount;
+      } catch (error) {
+        console.error('메신저 파일 전송 오류:', error);
+        showToast(error?.message || '파일 전송에 실패했습니다.', 'error');
+        return successCount;
+      } finally {
+        setUploading(false);
+        setUploadLabel('');
+        focusComposer();
+      }
+    },
+    [
+      currentUserId,
+      fetchMessagePage,
+      focusComposer,
+      loadRooms,
+      scrollToBottom,
+      selectedRoomId,
+      showToast,
+      uploading,
+    ],
+  );
+
   const handleSendText = async () => {
     const body = normalizeText(messageText);
-    if (!selectedRoomId || !body || sending) return;
+    const pastedFiles = pendingPasteFiles.map((item) => item.file);
+
+    if (
+      !selectedRoomId ||
+      sending ||
+      uploading ||
+      (!body && pastedFiles.length === 0)
+    ) {
+      return;
+    }
 
     if (body.length > 4000) {
       showToast('메시지는 4,000자 이하로 입력해주세요.', 'warning');
+      focusComposer();
       return;
     }
 
     setSending(true);
-    try {
-      const { error } = await supabase.rpc('messenger_send_text_message', {
-        p_room_id: selectedRoomId,
-        p_body: body,
-      });
-      if (error) throw error;
+    let textSent = false;
 
-      setMessageText('');
-      await fetchMessagePage({ roomId: selectedRoomId, silent: true });
-      await loadRooms();
-      scrollToBottom('smooth');
+    try {
+      if (body) {
+        const { error } = await supabase.rpc('messenger_send_text_message', {
+          p_room_id: selectedRoomId,
+          p_body: body,
+        });
+        if (error) throw error;
+        textSent = true;
+        setMessageText('');
+      }
+
+      if (pastedFiles.length > 0) {
+        const uploadedCount = await uploadFiles(pastedFiles, {
+          showSuccessToast: false,
+        });
+
+        if (uploadedCount === pastedFiles.length) {
+          clearPendingPasteFiles();
+        }
+      }
+
+      if (textSent && pastedFiles.length === 0) {
+        await fetchMessagePage({ roomId: selectedRoomId, silent: true });
+        await loadRooms();
+        scrollToBottom('smooth');
+      }
     } catch (error) {
       console.error('메시지 전송 오류:', error);
       showToast(error?.message || '메시지 전송에 실패했습니다.', 'error');
     } finally {
       setSending(false);
+      focusComposer();
     }
   };
 
@@ -764,88 +1018,78 @@ export default function Messenger({ currentUserId }) {
     }
   };
 
+  const handleComposerPaste = (event) => {
+    const items = Array.from(event.clipboardData?.items || []);
+    const imageFiles = items
+      .filter(
+        (item) =>
+          item.kind === 'file' &&
+          String(item.type || '').toLowerCase().startsWith('image/'),
+      )
+      .map((item, index) => {
+        const source = item.getAsFile();
+        if (!source) return null;
+        const extension =
+          String(source.type || '').toLowerCase() === 'image/jpeg'
+            ? 'jpg'
+            : String(source.type || '').toLowerCase() === 'image/webp'
+              ? 'webp'
+              : 'png';
+
+        return new File(
+          [source],
+          `clipboard-${Date.now()}-${index + 1}.${extension}`,
+          {
+            type: source.type || `image/${extension}`,
+            lastModified: Date.now(),
+          },
+        );
+      })
+      .filter(Boolean);
+
+    if (imageFiles.length === 0) return;
+
+    event.preventDefault();
+
+    setPendingPasteFiles((previous) => {
+      const available = Math.max(0, MAX_MULTI_UPLOAD_FILES - previous.length);
+      const accepted = imageFiles.slice(0, available);
+
+      if (accepted.length < imageFiles.length) {
+        showToast(
+          `붙여넣기 이미지는 한 번에 최대 ${MAX_MULTI_UPLOAD_FILES}개까지 준비할 수 있습니다.`,
+          'warning',
+        );
+      }
+
+      return [
+        ...previous,
+        ...accepted.map((file) => ({
+          id:
+            globalThis.crypto?.randomUUID?.() ||
+            `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          file,
+          previewUrl: URL.createObjectURL(file),
+        })),
+      ];
+    });
+  };
+
+  const handleRemovePendingPasteFile = (itemId) => {
+    setPendingPasteFiles((previous) => {
+      const target = previous.find((item) => item.id === itemId);
+      if (target?.previewUrl) {
+        URL.revokeObjectURL(target.previewUrl);
+      }
+      return previous.filter((item) => item.id !== itemId);
+    });
+    focusComposer();
+  };
+
   const handleFilesSelected = async (event) => {
     const selectedFiles = Array.from(event.target.files || []);
     event.target.value = '';
-
-    if (!selectedRoomId || selectedFiles.length === 0 || uploading) return;
-
-    if (selectedFiles.length > MAX_MULTI_UPLOAD_FILES) {
-      showToast(
-        `한 번에 최대 ${MAX_MULTI_UPLOAD_FILES}개 파일까지 전송할 수 있습니다.`,
-        'warning',
-      );
-      return;
-    }
-
-    setUploading(true);
-    let successCount = 0;
-
-    try {
-      for (let index = 0; index < selectedFiles.length; index += 1) {
-        const originalFile = selectedFiles[index];
-        setUploadLabel(
-          `${index + 1}/${selectedFiles.length} ${originalFile.name} 처리 중`,
-        );
-
-        const prepared = await prepareMessengerFile(originalFile);
-        const file = prepared.file;
-
-        if (file.size > MESSENGER_MAX_FILE_BYTES) {
-          throw new Error(`${originalFile.name}: 파일은 10MB 이하만 전송할 수 있습니다.`);
-        }
-
-        const storagePath = buildMessengerStoragePath({
-          roomId: selectedRoomId,
-          userId: currentUserId,
-          fileName: file.name,
-        });
-
-        const { error: uploadError } = await supabase.storage
-          .from(MESSENGER_STORAGE_BUCKET)
-          .upload(storagePath, file, {
-            cacheControl: '3600',
-            contentType: file.type || 'application/octet-stream',
-            upsert: false,
-          });
-
-        if (uploadError) throw uploadError;
-
-        const { error: messageError } = await supabase.rpc(
-          'messenger_send_attachment_message',
-          {
-            p_room_id: selectedRoomId,
-            p_message_type: prepared.messageType,
-            p_storage_path: storagePath,
-            p_file_name: file.name,
-            p_mime_type: file.type || 'application/octet-stream',
-            p_file_size: file.size,
-            p_image_width: prepared.imageWidth,
-            p_image_height: prepared.imageHeight,
-          },
-        );
-
-        if (messageError) {
-          await supabase.storage
-            .from(MESSENGER_STORAGE_BUCKET)
-            .remove([storagePath]);
-          throw messageError;
-        }
-
-        successCount += 1;
-      }
-
-      await fetchMessagePage({ roomId: selectedRoomId, silent: true });
-      await loadRooms();
-      scrollToBottom('smooth');
-      showToast(`${successCount}개 파일을 전송했습니다.`, 'success');
-    } catch (error) {
-      console.error('메신저 파일 전송 오류:', error);
-      showToast(error?.message || '파일 전송에 실패했습니다.', 'error');
-    } finally {
-      setUploading(false);
-      setUploadLabel('');
-    }
+    await uploadFiles(selectedFiles);
   };
 
   const handleLoadOlder = async () => {
@@ -1132,54 +1376,137 @@ export default function Messenger({ currentUserId }) {
     }
   };
 
-  const handleLeaveRoom = async () => {
-    if (!selectedRoomId || !selectedRoom || leavingRoom) return;
-
-    const ownerTransferNotice =
-      selectedRoom.room_type === 'group' &&
-      selectedRoom.is_owner &&
-      members.length > 1
-        ? '\n방장 권한은 남아 있는 참여자에게 자동으로 이전됩니다.'
-        : '';
+  const handleTransferOwner = async (member) => {
+    if (
+      !selectedRoom?.is_owner ||
+      selectedRoom.room_type !== 'group' ||
+      !member?.user_id ||
+      member.is_current_user
+    ) {
+      return;
+    }
 
     if (
       !window.confirm(
-        `“${selectedRoom.display_name || '대화방'}”에서 나갈까요?${ownerTransferNotice}`,
+        `${member.manager_name}님에게 방장 권한을 넘길까요?\n권한을 넘긴 뒤에도 대화방에는 계속 참여합니다.`,
       )
     ) {
       return;
     }
 
+    try {
+      const { data, error } = await supabase.rpc('messenger_transfer_owner', {
+        p_room_id: selectedRoom.room_id,
+        p_new_owner_id: member.user_id,
+      });
+      if (error) throw error;
+      if (!data) throw new Error('방장 권한 변경이 완료되지 않았습니다.');
+
+      await Promise.all([
+        loadMembers(selectedRoom.room_id),
+        loadRooms(),
+      ]);
+      showToast(`${member.manager_name}님에게 방장 권한을 넘겼습니다.`, 'success');
+    } catch (error) {
+      console.error('방장 권한 위임 오류:', error);
+      showToast(error?.message || '방장 권한을 넘기지 못했습니다.', 'error');
+    }
+  };
+
+  const resetAfterLeavingRoom = async () => {
+    setSelectedRoomId('');
+    selectedRoomIdRef.current = '';
+    setMembers([]);
+    setMessages([]);
+    setAttachmentsByMessage({});
+    setHasOlderMessages(false);
+    setRoomInfoOpen(false);
+    setUnreadMessageId('');
+    setManageOpen(false);
+    setAddMembersOpen(false);
+    setLeaveTransferOpen(false);
+    setLeaveTransferUserId('');
+    clearPendingPasteFiles();
+
+    await loadRooms();
+    notifyUnreadRefresh();
+  };
+
+  const performLeaveRoom = async (transferOwnerId = null) => {
+    if (!selectedRoomId || !selectedRoom || leavingRoom) return;
+
     setLeavingRoom(true);
     try {
-      const roomId = selectedRoomId;
       const { data, error } = await supabase.rpc('messenger_leave_room', {
-        p_room_id: roomId,
+        p_room_id: selectedRoomId,
+        p_transfer_owner_id: transferOwnerId || null,
       });
 
       if (error) throw error;
-      if (!data) throw new Error('대화방 나가기 처리가 완료되지 않았습니다.');
+      if (!data?.left) {
+        throw new Error('대화방 나가기 처리가 완료되지 않았습니다.');
+      }
 
-      setSelectedRoomId('');
-      selectedRoomIdRef.current = '';
-      setMembers([]);
-      setMessages([]);
-      setAttachmentsByMessage({});
-      setHasOlderMessages(false);
-      setRoomInfoOpen(false);
-      setUnreadMessageId('');
-      setManageOpen(false);
-      setAddMembersOpen(false);
+      const transferredName = normalizeText(data?.transferred_to_name);
+      await resetAfterLeavingRoom();
 
-      await loadRooms();
-      notifyUnreadRefresh();
-      showToast('대화방에서 나갔습니다.', 'success');
+      showToast(
+        transferredName
+          ? `${transferredName}님에게 방장 권한을 넘기고 대화방에서 나갔습니다.`
+          : '대화방에서 나갔습니다.',
+        'success',
+      );
     } catch (error) {
       console.error('대화방 나가기 오류:', error);
       showToast(error?.message || '대화방에서 나가지 못했습니다.', 'error');
     } finally {
       setLeavingRoom(false);
     }
+  };
+
+  const handleLeaveRoom = () => {
+    if (!selectedRoomId || !selectedRoom || leavingRoom) return;
+
+    if (
+      selectedRoom.room_type === 'group' &&
+      selectedRoom.is_owner &&
+      members.filter((member) => !member.is_current_user).length > 0
+    ) {
+      setLeaveTransferUserId('');
+      setLeaveTransferOpen(true);
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `“${selectedRoom.display_name || '대화방'}”에서 나갈까요?`,
+      )
+    ) {
+      return;
+    }
+
+    performLeaveRoom(null);
+  };
+
+  const handleConfirmLeaveTransfer = () => {
+    const target = members.find(
+      (member) => member.user_id === leaveTransferUserId,
+    );
+
+    if (!target) {
+      showToast('방장 권한을 넘길 참여자를 선택해주세요.', 'warning');
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `${target.manager_name}님에게 방장 권한을 넘기고 대화방에서 나갈까요?`,
+      )
+    ) {
+      return;
+    }
+
+    performLeaveRoom(target.user_id);
   };
 
   const renderMemberList = ({ manageable = false } = {}) => (
@@ -1192,18 +1519,34 @@ export default function Messenger({ currentUserId }) {
             manageable &&
             selectedRoom?.is_owner &&
             !member.is_owner ? (
-              <Tooltip title="그룹에서 제외">
-                <IconButton
-                  edge="end"
+              <Stack direction="row" spacing={0.35} alignItems="center">
+                <Button
                   size="small"
-                  onClick={() => handleRemoveMember(member)}
+                  variant="text"
+                  onClick={() => handleTransferOwner(member)}
+                  sx={{
+                    minWidth: 0,
+                    px: 0.7,
+                    fontSize: '0.62rem',
+                    fontWeight: 800,
+                    whiteSpace: 'nowrap',
+                  }}
                 >
-                  <CloseRoundedIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
+                  방장 위임
+                </Button>
+                <Tooltip title="그룹에서 제외">
+                  <IconButton
+                    edge="end"
+                    size="small"
+                    onClick={() => handleRemoveMember(member)}
+                  >
+                    <CloseRoundedIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              </Stack>
             ) : null
           }
-          sx={{ pr: manageable && selectedRoom?.is_owner && !member.is_owner ? 4 : 0 }}
+          sx={{ pr: manageable && selectedRoom?.is_owner && !member.is_owner ? 13 : 0 }}
         >
           <ListItemAvatar sx={{ minWidth: 38 }}>
             <Avatar
@@ -1931,6 +2274,83 @@ export default function Messenger({ currentUserId }) {
               </Box>
             )}
 
+            {pendingPasteFiles.length > 0 && (
+              <Box
+                sx={{
+                  mb: 0.8,
+                  p: 0.75,
+                  display: 'flex',
+                  gap: 0.8,
+                  flexWrap: 'wrap',
+                  border: '1px solid #dbeafe',
+                  borderRadius: 1.2,
+                  bgcolor: '#f8fbff',
+                }}
+              >
+                {pendingPasteFiles.map((item) => (
+                  <Box
+                    key={item.id}
+                    sx={{
+                      position: 'relative',
+                      width: 92,
+                      height: 76,
+                      borderRadius: 1,
+                      overflow: 'hidden',
+                      border: '1px solid #cbd5e1',
+                      bgcolor: '#ffffff',
+                    }}
+                  >
+                    <Box
+                      component="img"
+                      src={item.previewUrl}
+                      alt={item.file?.name || '붙여넣은 이미지'}
+                      sx={{
+                        width: '100%',
+                        height: '100%',
+                        display: 'block',
+                        objectFit: 'cover',
+                      }}
+                    />
+                    <IconButton
+                      size="small"
+                      aria-label="붙여넣은 이미지 제거"
+                      onClick={() => handleRemovePendingPasteFile(item.id)}
+                      sx={{
+                        position: 'absolute',
+                        top: 3,
+                        right: 3,
+                        width: 22,
+                        height: 22,
+                        color: '#ffffff',
+                        bgcolor: 'rgba(15,23,42,0.72)',
+                        '&:hover': {
+                          bgcolor: 'rgba(220,38,38,0.82)',
+                        },
+                      }}
+                    >
+                      <CloseRoundedIcon sx={{ fontSize: 15 }} />
+                    </IconButton>
+                  </Box>
+                ))}
+                <Box
+                  sx={{
+                    minWidth: 150,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'center',
+                    color: '#64748b',
+                  }}
+                >
+                  <Typography sx={{ fontSize: '0.68rem', fontWeight: 800 }}>
+                    붙여넣은 이미지 {pendingPasteFiles.length}개
+                  </Typography>
+                  <Typography sx={{ mt: 0.2, fontSize: '0.6rem' }}>
+                    전송 버튼을 누르면 대화방에 업로드됩니다.
+                  </Typography>
+                </Box>
+              </Box>
+            )}
+
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.65 }}>
               <input
                 ref={fileInputRef}
@@ -1958,12 +2378,13 @@ export default function Messenger({ currentUserId }) {
                 multiline
                 minRows={1}
                 maxRows={4}
+                inputRef={messageInputRef}
                 value={messageText}
                 onChange={(event) => setMessageText(event.target.value)}
                 onKeyDown={handleComposerKeyDown}
-                placeholder="메시지를 입력하세요. (Shift+Enter 줄바꿈)"
+                onPaste={handleComposerPaste}
+                placeholder="메시지를 입력하세요. (Shift+Enter 줄바꿈 · 캡처이미지 Ctrl+V)"
                 inputProps={{ maxLength: 4000 }}
-                disabled={sending}
                 sx={{
                   '& .MuiOutlinedInput-root': {
                     minHeight: 42,
@@ -1984,7 +2405,11 @@ export default function Messenger({ currentUserId }) {
                 <span>
                   <IconButton
                     color="primary"
-                    disabled={sending || uploading || !normalizeText(messageText)}
+                    disabled={
+                      sending ||
+                      uploading ||
+                      (!normalizeText(messageText) && pendingPasteFiles.length === 0)
+                    }
                     onClick={handleSendText}
                   >
                     {sending ? <CircularProgress size={20} /> : <SendRoundedIcon />}
@@ -2196,7 +2621,7 @@ export default function Messenger({ currentUserId }) {
 
           {!selectedRoom?.is_owner && (
             <Alert severity="info" sx={{ mt: 1.5, fontSize: '0.7rem' }}>
-              그룹방 이름과 참여자 변경은 그룹방 생성자만 할 수 있습니다.
+              그룹방 이름과 참여자 변경은 현재 방장만 할 수 있습니다.
             </Alert>
           )}
         </DialogContent>
@@ -2273,6 +2698,71 @@ export default function Messenger({ currentUserId }) {
             onClick={handleAddMembers}
           >
             {addMemberSaving ? '추가 중...' : `${addMemberIds.length}명 추가`}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={leaveTransferOpen}
+        onClose={() => !leavingRoom && setLeaveTransferOpen(false)}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle sx={{ fontWeight: 900 }}>방장 권한 위임 후 나가기</DialogTitle>
+        <DialogContent dividers sx={{ px: 1.5, py: 1 }}>
+          <Alert severity="info" sx={{ mb: 1.2, fontSize: '0.7rem' }}>
+            방장이 대화방을 나가려면 남아 있는 참여자 한 명에게 방장 권한을 먼저 넘겨야 합니다.
+          </Alert>
+          <List dense disablePadding>
+            {members
+              .filter((member) => !member.is_current_user)
+              .map((member) => (
+                <ListItemButton
+                  key={member.user_id}
+                  selected={leaveTransferUserId === member.user_id}
+                  onClick={() => setLeaveTransferUserId(member.user_id)}
+                  sx={{ borderRadius: 1 }}
+                >
+                  <ListItemAvatar sx={{ minWidth: 40 }}>
+                    <Avatar
+                      sx={{
+                        width: 30,
+                        height: 30,
+                        bgcolor: '#64748b',
+                        fontSize: '0.72rem',
+                        fontWeight: 900,
+                      }}
+                    >
+                      {getInitial(member.manager_name)}
+                    </Avatar>
+                  </ListItemAvatar>
+                  <ListItemText
+                    primary={
+                      <Typography sx={{ fontSize: '0.76rem', fontWeight: 800 }}>
+                        {member.manager_name}
+                      </Typography>
+                    }
+                    secondary={<UserSecondaryText user={member} />}
+                  />
+                </ListItemButton>
+              ))}
+          </List>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            disabled={leavingRoom}
+            onClick={() => setLeaveTransferOpen(false)}
+          >
+            취소
+          </Button>
+          <Button
+            variant="contained"
+            color="warning"
+            disabled={leavingRoom || !leaveTransferUserId}
+            onClick={handleConfirmLeaveTransfer}
+            startIcon={leavingRoom ? <CircularProgress size={15} /> : null}
+          >
+            권한 넘기고 나가기
           </Button>
         </DialogActions>
       </Dialog>

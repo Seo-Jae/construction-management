@@ -17,6 +17,7 @@ import {
   SUPABASE_AUTH_STORAGE_KEY,
 } from './supabaseClient';
 import Dashboard from './Dashboard';
+import MessengerWindow from './page/MessengerWindow.jsx';
 import Login from './Login';
 
 const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
@@ -181,6 +182,7 @@ export default function App() {
   }, []);
 
   const resetLocalSessionState = useCallback(() => {
+    window.localStorage.removeItem(LAST_ACTIVITY_STORAGE_KEY);
     window.sessionStorage.removeItem(LAST_ACTIVITY_STORAGE_KEY);
     window.sessionStorage.removeItem(ACCESS_SESSION_KEY_STORAGE_KEY);
     window.sessionStorage.removeItem(ACCESS_SESSION_ID_STORAGE_KEY);
@@ -394,14 +396,23 @@ export default function App() {
     let lastRecordedAt = 0;
 
     const readLastActivity = () => {
-      const storedValue = Number(
+      const localValue = Number(
+        window.localStorage.getItem(
+          LAST_ACTIVITY_STORAGE_KEY,
+        ),
+      );
+      if (Number.isFinite(localValue) && localValue > 0) {
+        return localValue;
+      }
+
+      // v52.09 이전 버전에서 sessionStorage에 남아 있던 값을 1회 호환합니다.
+      const legacyValue = Number(
         window.sessionStorage.getItem(
           LAST_ACTIVITY_STORAGE_KEY,
         ),
       );
-
-      return Number.isFinite(storedValue) && storedValue > 0
-        ? storedValue
+      return Number.isFinite(legacyValue) && legacyValue > 0
+        ? legacyValue
         : 0;
     };
 
@@ -444,10 +455,11 @@ export default function App() {
       }
 
       lastRecordedAt = now;
-      window.sessionStorage.setItem(
+      window.localStorage.setItem(
         LAST_ACTIVITY_STORAGE_KEY,
         String(now),
       );
+      // 같은 창에서는 storage 이벤트가 발생하지 않으므로 직접 재예약합니다.
       scheduleLogout();
     };
 
@@ -482,7 +494,18 @@ export default function App() {
         passive: true,
       });
     });
+    const handleSharedActivity = (event) => {
+      if (event.key === LAST_ACTIVITY_STORAGE_KEY) {
+        const sharedValue = Number(event.newValue || 0);
+        if (Number.isFinite(sharedValue) && sharedValue > lastRecordedAt) {
+          lastRecordedAt = sharedValue;
+        }
+        scheduleLogout();
+      }
+    };
+
     window.addEventListener('focus', checkWhenReturning);
+    window.addEventListener('storage', handleSharedActivity);
     document.addEventListener(
       'visibilitychange',
       checkWhenReturning,
@@ -494,6 +517,7 @@ export default function App() {
         window.removeEventListener(eventName, recordActivity);
       });
       window.removeEventListener('focus', checkWhenReturning);
+      window.removeEventListener('storage', handleSharedActivity);
       document.removeEventListener(
         'visibilitychange',
         checkWhenReturning,
@@ -547,6 +571,20 @@ export default function App() {
         email={session.user.email}
         status={accountStatus}
         onRefresh={() => fetchProfile(session.user)}
+        onLogout={handleLogout}
+      />
+    );
+  }
+
+  const requestedView = new URLSearchParams(
+    window.location.search,
+  ).get('view');
+
+  if (requestedView === 'messenger-window') {
+    return (
+      <MessengerWindow
+        currentUserId={session.user.id || userProfile?.auth_user_id || ''}
+        userProfile={userProfile}
         onLogout={handleLogout}
       />
     );
