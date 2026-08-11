@@ -16,8 +16,11 @@
     "@mui/material": "^9.2.0",
     "@mui/x-data-grid": "^9.8.0",
     "@supabase/supabase-js": "^2.110.0",
+    "@zxing/browser": "^0.1.5",
+    "@zxing/library": "^0.21.3",
     "exceljs": "^4.4.0",
     "pdfjs-dist": "^5.7.284",
+    "qrcode": "^1.5.4",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },

@@ -18,6 +18,7 @@ import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
 import RequestQuoteOutlinedIcon from '@mui/icons-material/RequestQuoteOutlined';
 import BadgeOutlinedIcon from '@mui/icons-material/BadgeOutlined';
 import ManageAccountsOutlinedIcon from '@mui/icons-material/ManageAccountsOutlined';
+import PunchClockRoundedIcon from '@mui/icons-material/PunchClockRounded';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { fetchPendingApprovalSummary } from '../utils/approvalQueries.js';
@@ -622,6 +623,39 @@ export default function Sidebar({
                 fontSize: '0.8rem',
                 fontWeight:
                   currentView === 'user-management' ? 700 : 500,
+              }}
+              sx={{ opacity: drawerOpen ? 1 : 0 }}
+            />
+          </ListItemButton>
+        </Tooltip>
+      )}
+
+      {canAccessView('attendance') && (
+        <Tooltip
+          title={drawerOpen ? '' : '근태관리'}
+          placement="right"
+          arrow
+        >
+          <ListItemButton
+            selected={currentView === 'attendance'}
+            onClick={() => handleViewChange('attendance')}
+            sx={topMenuSx(currentView === 'attendance')}
+          >
+            <ListItemIcon
+              sx={{
+                minWidth: 34,
+                color: 'inherit',
+                justifyContent: 'center',
+              }}
+            >
+              <PunchClockRoundedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText
+              primary="근태관리"
+              primaryTypographyProps={{
+                noWrap: true,
+                fontSize: '0.8rem',
+                fontWeight: currentView === 'attendance' ? 700 : 500,
               }}
               sx={{ opacity: drawerOpen ? 1 : 0 }}
             />

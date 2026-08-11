@@ -64,6 +64,7 @@ import UserManagementWithAccessHistory from './page/UserManagementWithAccessHist
 import OrganizationChart from './page/OrganizationChart.jsx';
 import DrawingQuantityAnalysis from './page/DrawingQuantityAnalysis.jsx';
 import Messenger from './page/Messenger.jsx';
+import AttendanceManagement from './page/AttendanceManagement.jsx';
 
 const drawerWidth = 240;
 const SUPABASE_PAGE_SIZE = 1000;
@@ -330,6 +331,7 @@ const viewTitles = {
   'approval-inbox': '결재함',
   'weekly-overview': '주간업무작성',
   'weekly-overview-archive': '주간업무보관',
+  attendance: '근태관리',
 };
 
 const VIEW_PERMISSION_KEYS = {
@@ -360,6 +362,7 @@ const VIEW_PERMISSION_KEYS = {
   'report-approval': 'report.proposal.view',
   'report-outsourcing-approval': 'report.outsourcing.view',
   'report-accident': 'safety.incident.view',
+  attendance: 'attendance.management.view',
 };
 
 const GLOBAL_PERMISSION_VIEWS = new Set([
@@ -791,6 +794,14 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               ? fallbackProjectName
               : accessibleProjectNames[0] || ''
           );
+
+  const canManageAttendance = Boolean(
+    isSuperAdmin ||
+      hasPermission(
+        'attendance.management.manage',
+        activeProjectName,
+      ) === true,
+  );
 
   const cumulativeProjectScope =
     selectedProjectName === ALL_PROJECTS_OPTION &&
@@ -3797,6 +3808,14 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           {currentView === 'user-management' && isSuperAdmin && (
             <UserManagementWithAccessHistory currentUserId={user?.id || ''} />
           )}
+
+          {currentView === 'attendance' && activeProjectName &&
+            canAccessView('attendance', activeProjectName) && (
+              <AttendanceManagement
+                projectName={activeProjectName}
+                canManage={canManageAttendance}
+              />
+            )}
 
           {currentView === 'organization-chart' && (
             <OrganizationChart

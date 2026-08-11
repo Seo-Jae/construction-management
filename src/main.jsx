@@ -12,3 +12,15 @@ createRoot(document.getElementById('root')).render(
     </ThemeProvider>
   </StrictMode>,
 )
+
+if (
+  'serviceWorker' in navigator &&
+  new URLSearchParams(window.location.search).get('view') ===
+    'attendance-worker'
+) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/attendance-sw.js').catch((error) => {
+      console.warn('근태 앱 설치 준비 실패:', error)
+    })
+  })
+}

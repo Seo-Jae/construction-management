@@ -17,6 +17,7 @@ import {
   SUPABASE_AUTH_STORAGE_KEY,
 } from './supabaseClient';
 import Dashboard from './Dashboard';
+import AttendanceWorkerPortal from './page/AttendanceWorkerPortal.jsx';
 import MessengerWindow from './page/MessengerWindow.jsx';
 import Login from './Login';
 
@@ -134,6 +135,9 @@ export default function App() {
   const [loginNotice, setLoginNotice] = useState('');
   const logoutInProgressRef = useRef(false);
   const accessSessionIdRef = useRef('');
+  const requestedPublicView = new URLSearchParams(
+    window.location.search,
+  ).get('view');
 
   const accountStatus = String(
     userProfile?.account_status || (userProfile ? 'active' : ''),
@@ -540,6 +544,10 @@ export default function App() {
       window.removeEventListener('focus', refreshSilently);
     };
   }, [fetchProfile, session]);
+
+  if (requestedPublicView === 'attendance-worker') {
+    return <AttendanceWorkerPortal />;
+  }
 
   if (!session) {
     return profileLoading ? (
