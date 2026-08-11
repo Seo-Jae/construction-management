@@ -37,8 +37,10 @@ import {
   useTheme,
 } from '@mui/material';
 import AddCommentRoundedIcon from '@mui/icons-material/AddCommentRounded';
+import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded';
+import CampaignRoundedIcon from '@mui/icons-material/CampaignRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
@@ -205,6 +207,16 @@ export default function Messenger({ currentUserId, standalone = false }) {
   const [olderLoading, setOlderLoading] = useState(false);
   const [hasOlderMessages, setHasOlderMessages] = useState(false);
 
+  const [announcements, setAnnouncements] = useState([]);
+  const [announcementsLoading, setAnnouncementsLoading] = useState(false);
+  const [announcementDialogOpen, setAnnouncementDialogOpen] = useState(false);
+  const [announcementMode, setAnnouncementMode] = useState('new');
+  const [selectedAnnouncementId, setSelectedAnnouncementId] = useState('');
+  const [announcementTitle, setAnnouncementTitle] = useState('');
+  const [announcementBody, setAnnouncementBody] = useState('');
+  const [announcementSaving, setAnnouncementSaving] = useState(false);
+  const [closedAnnouncementId, setClosedAnnouncementId] = useState('');
+
   const [users, setUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersError, setUsersError] = useState('');
@@ -271,6 +283,26 @@ export default function Messenger({ currentUserId, standalone = false }) {
     () => rooms.find((room) => room.room_id === selectedRoomId) || null,
     [rooms, selectedRoomId],
   );
+
+  const selectedAnnouncement = useMemo(
+    () =>
+      announcements.find(
+        (announcement) => announcement.id === selectedAnnouncementId,
+      ) || null,
+    [announcements, selectedAnnouncementId],
+  );
+
+  const bannerAnnouncement = useMemo(() => {
+    const latestAnnouncement = announcements[0] || null;
+    if (
+      !latestAnnouncement ||
+      latestAnnouncement.is_dismissed ||
+      latestAnnouncement.id === closedAnnouncementId
+    ) {
+      return null;
+    }
+    return latestAnnouncement;
+  }, [announcements, closedAnnouncementId]);
 
   const filteredRooms = useMemo(() => {
     const query = normalizeText(roomSearch).toLocaleLowerCase('ko');
@@ -467,6 +499,50 @@ export default function Messenger({ currentUserId, standalone = false }) {
     }
   }, []);
 
+  const loadAnnouncements = useCallback(
+    async (roomId, options = {}) => {
+      if (!roomId) {
+        setAnnouncements([]);
+        return;
+      }
+
+      const silent = options.silent === true;
+      if (!silent) setAnnouncementsLoading(true);
+
+      try {
+        const { data, error } = await supabase.rpc(
+          'messenger_list_announcements',
+          { p_room_id: roomId },
+        );
+        if (error) throw error;
+
+        const nextAnnouncements = Array.isArray(data) ? data : [];
+        setAnnouncements(nextAnnouncements);
+        setSelectedAnnouncementId((previousId) => {
+          if (
+            previousId &&
+            nextAnnouncements.some((announcement) => announcement.id === previousId)
+          ) {
+            return previousId;
+          }
+          return nextAnnouncements[0]?.id || '';
+        });
+      } catch (error) {
+        console.error('메신저 공지사항 조회 오류:', error);
+        if (!silent) {
+          setAnnouncements([]);
+          showToast(
+            '공지사항을 불러오지 못했습니다. v52.12 SQL 적용 여부를 확인해주세요.',
+            'error',
+          );
+        }
+      } finally {
+        if (!silent) setAnnouncementsLoading(false);
+      }
+    },
+    [showToast],
+  );
+
   const createSignedUrlMap = useCallback(async (attachmentRows) => {
     const paths = Array.from(
       new Set(
@@ -607,6 +683,7 @@ export default function Messenger({ currentUserId, standalone = false }) {
       await Promise.all([
         loadMembers(roomId),
         fetchMessagePage({ roomId, silent }),
+        loadAnnouncements(roomId, { silent }),
       ]);
 
       if (shouldRead && document.visibilityState === 'visible') {
@@ -614,7 +691,7 @@ export default function Messenger({ currentUserId, standalone = false }) {
         await loadRooms();
       }
     },
-    [fetchMessagePage, loadMembers, loadRooms, markRoomRead],
+    [fetchMessagePage, loadAnnouncements, loadMembers, loadRooms, markRoomRead],
   );
 
   useEffect(() => {
@@ -753,10 +830,14 @@ export default function Messenger({ currentUserId, standalone = false }) {
       setMembers([]);
       setMessages([]);
       setAttachmentsByMessage({});
+      setAnnouncements([]);
+      setAnnouncementDialogOpen(false);
+      setClosedAnnouncementId('');
       setHasOlderMessages(false);
       return;
     }
 
+    setClosedAnnouncementId('');
     refreshSelectedRoom(selectedRoomId);
   }, [refreshSelectedRoom, selectedRoomId]);
 
@@ -830,6 +911,18 @@ export default function Messenger({ currentUserId, standalone = false }) {
       }
     };
 
+    const refreshForAnnouncementChange = async (payload) => {
+      const changedRoomId =
+        payload?.new?.room_id || payload?.old?.room_id || '';
+
+      if (
+        changedRoomId &&
+        changedRoomId === selectedRoomIdRef.current
+      ) {
+        await loadAnnouncements(changedRoomId, { silent: true });
+      }
+    };
+
     const channel = supabase
       .channel(`messenger-page-${currentUserId}`)
       .on(
@@ -877,6 +970,15 @@ export default function Messenger({ currentUserId, standalone = false }) {
         },
         refreshForRoomUpdate,
       )
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messenger_announcements',
+        },
+        refreshForAnnouncementChange,
+      )
       .subscribe();
 
     const timer = window.setInterval(() => {
@@ -901,6 +1003,7 @@ export default function Messenger({ currentUserId, standalone = false }) {
   }, [
     currentUserId,
     fetchMessagePage,
+    loadAnnouncements,
     loadMembers,
     loadRooms,
     markRoomRead,
@@ -931,6 +1034,90 @@ export default function Messenger({ currentUserId, standalone = false }) {
     setSelectedRoomId('');
     setRoomInfoOpen(false);
     setUnreadMessageId('');
+  };
+
+  const handleStartNewAnnouncement = () => {
+    setAnnouncementMode('new');
+    setSelectedAnnouncementId('');
+    setAnnouncementTitle('');
+    setAnnouncementBody('');
+  };
+
+  const handleOpenAnnouncements = async () => {
+    if (!selectedRoomId) return;
+    handleStartNewAnnouncement();
+    setAnnouncementDialogOpen(true);
+    await loadAnnouncements(selectedRoomId);
+  };
+
+  const handleSelectAnnouncement = (announcementId) => {
+    setSelectedAnnouncementId(announcementId);
+    setAnnouncementMode('preview');
+  };
+
+  const handleCreateAnnouncement = async () => {
+    const title = normalizeText(announcementTitle);
+    const body = normalizeText(announcementBody);
+
+    if (!selectedRoomId || announcementSaving) return;
+    if (!title) {
+      showToast('공지 제목을 입력해주세요.', 'warning');
+      return;
+    }
+    if (!body) {
+      showToast('공지 내용을 입력해주세요.', 'warning');
+      return;
+    }
+    if (title.length > 100 || body.length > 4000) {
+      showToast('제목은 100자, 내용은 4,000자 이하로 입력해주세요.', 'warning');
+      return;
+    }
+
+    setAnnouncementSaving(true);
+    try {
+      const { error } = await supabase.rpc('messenger_create_announcement', {
+        p_room_id: selectedRoomId,
+        p_title: title,
+        p_body: body,
+      });
+      if (error) throw error;
+
+      setClosedAnnouncementId('');
+      await loadAnnouncements(selectedRoomId, { silent: true });
+      setAnnouncementDialogOpen(false);
+      setAnnouncementTitle('');
+      setAnnouncementBody('');
+      showToast('공지사항을 등록했습니다.', 'success');
+    } catch (error) {
+      console.error('메신저 공지사항 등록 오류:', error);
+      showToast(error?.message || '공지사항 등록에 실패했습니다.', 'error');
+    } finally {
+      setAnnouncementSaving(false);
+    }
+  };
+
+  const handleDismissAnnouncement = async (announcementId) => {
+    if (!announcementId) return;
+
+    try {
+      const { error } = await supabase.rpc('messenger_dismiss_announcement', {
+        p_announcement_id: announcementId,
+      });
+      if (error) throw error;
+
+      setAnnouncements((previous) =>
+        previous.map((announcement) =>
+          announcement.id === announcementId
+            ? { ...announcement, is_dismissed: true }
+            : announcement,
+        ),
+      );
+      setClosedAnnouncementId(announcementId);
+      showToast('이 공지사항은 다시 표시되지 않습니다.', 'success');
+    } catch (error) {
+      console.error('메신저 공지사항 숨김 오류:', error);
+      showToast(error?.message || '공지사항 숨김 처리에 실패했습니다.', 'error');
+    }
   };
 
   const focusComposer = useCallback(() => {
@@ -2070,6 +2257,85 @@ export default function Messenger({ currentUserId, standalone = false }) {
             </Tooltip>
           </Box>
 
+          {bannerAnnouncement && (
+            <Box
+              sx={{
+                px: 1.4,
+                py: 1,
+                bgcolor: '#fffbeb',
+                borderBottom: '1px solid #fde68a',
+              }}
+            >
+              <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.8 }}>
+                <CampaignRoundedIcon
+                  sx={{ mt: 0.1, flexShrink: 0, color: '#d97706', fontSize: 20 }}
+                />
+                <Box
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => {
+                    setSelectedAnnouncementId(bannerAnnouncement.id);
+                    setAnnouncementMode('preview');
+                    setAnnouncementDialogOpen(true);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setSelectedAnnouncementId(bannerAnnouncement.id);
+                      setAnnouncementMode('preview');
+                      setAnnouncementDialogOpen(true);
+                    }
+                  }}
+                  sx={{ minWidth: 0, flexGrow: 1, cursor: 'pointer' }}
+                >
+                  <Typography sx={{ color: '#92400e', fontSize: '0.74rem', fontWeight: 900 }}>
+                    {bannerAnnouncement.title}
+                  </Typography>
+                  <Typography
+                    sx={{
+                      mt: 0.25,
+                      color: '#78350f',
+                      fontSize: '0.68rem',
+                      lineHeight: 1.45,
+                      whiteSpace: 'pre-wrap',
+                      display: '-webkit-box',
+                      WebkitBoxOrient: 'vertical',
+                      WebkitLineClamp: 2,
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {bannerAnnouncement.body}
+                  </Typography>
+                  <Typography sx={{ mt: 0.35, color: '#a16207', fontSize: '0.58rem' }}>
+                    {bannerAnnouncement.author_name || '사용자'}
+                    {bannerAnnouncement.author_position
+                      ? ` · ${bannerAnnouncement.author_position}`
+                      : ''}
+                    {` · ${formatMessengerDateTime(bannerAnnouncement.created_at)}`}
+                  </Typography>
+                </Box>
+              </Box>
+              <Box sx={{ mt: 0.65, display: 'flex', justifyContent: 'space-between' }}>
+                <Button
+                  size="small"
+                  color="inherit"
+                  onClick={() => handleDismissAnnouncement(bannerAnnouncement.id)}
+                  sx={{ minWidth: 0, px: 0.5, color: '#92400e', fontSize: '0.62rem' }}
+                >
+                  다시 보지 않기
+                </Button>
+                <Button
+                  size="small"
+                  color="inherit"
+                  onClick={() => setClosedAnnouncementId(bannerAnnouncement.id)}
+                  sx={{ minWidth: 0, px: 0.5, color: '#92400e', fontSize: '0.62rem' }}
+                >
+                  닫기
+                </Button>
+              </Box>
+            </Box>
+          )}
+
           <Box
             ref={messageScrollRef}
             sx={{
@@ -2487,18 +2753,47 @@ export default function Messenger({ currentUserId, standalone = false }) {
                 accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.hwp,.hwpx,.zip,.txt,.csv"
                 onChange={handleFilesSelected}
               />
-              <Tooltip title="사진·파일 첨부 (파일당 최대 10MB)">
-                <span>
+              <Box
+                sx={{
+                  width: 30,
+                  height: 42,
+                  flexShrink: 0,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                }}
+              >
+                <Tooltip title="사진·파일 첨부 (파일당 최대 10MB)">
+                  <span>
+                    <IconButton
+                      size="small"
+                      disabled={uploading || sending}
+                      onClick={() => fileInputRef.current?.click()}
+                      sx={{ width: 28, height: 20, color: '#475569', borderRadius: 1 }}
+                    >
+                      <AttachFileRoundedIcon sx={{ fontSize: 17 }} />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+                <Tooltip title="공지사항 올리기">
                   <IconButton
                     size="small"
-                    disabled={uploading || sending}
-                    onClick={() => fileInputRef.current?.click()}
-                    sx={{ color: '#475569' }}
+                    aria-label="공지사항 올리기"
+                    onClick={handleOpenAnnouncements}
+                    sx={{
+                      width: 20,
+                      height: 20,
+                      border: '1.5px solid #0f6fae',
+                      color: '#0f6fae',
+                      bgcolor: '#ffffff',
+                      '&:hover': { bgcolor: '#e0f2fe' },
+                    }}
                   >
-                    <AttachFileRoundedIcon />
+                    <AddRoundedIcon sx={{ fontSize: 16 }} />
                   </IconButton>
-                </span>
-              </Tooltip>
+                </Tooltip>
+              </Box>
 
               <TextField
                 fullWidth
@@ -2957,6 +3252,200 @@ export default function Messenger({ currentUserId, standalone = false }) {
         <DialogActions>
           <Button onClick={() => setUnreadMessageId('')}>닫기</Button>
         </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={announcementDialogOpen}
+        onClose={() => !announcementSaving && setAnnouncementDialogOpen(false)}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle sx={{ py: 1.2, display: 'flex', alignItems: 'center', gap: 0.8 }}>
+          <CampaignRoundedIcon sx={{ color: '#d97706' }} />
+          <Typography sx={{ flexGrow: 1, fontSize: '0.92rem', fontWeight: 900 }}>
+            공지사항
+          </Typography>
+          <IconButton
+            size="small"
+            disabled={announcementSaving}
+            onClick={() => setAnnouncementDialogOpen(false)}
+          >
+            <CloseRoundedIcon fontSize="small" />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 0 }}>
+          <Box
+            sx={{
+              height: { xs: 'min(72vh, 640px)', md: 560 },
+              display: 'grid',
+              gridTemplateColumns: { xs: '1fr', md: '260px minmax(0, 1fr)' },
+              gridTemplateRows: { xs: '230px minmax(0, 1fr)', md: '1fr' },
+            }}
+          >
+            <Box
+              sx={{
+                minWidth: 0,
+                minHeight: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                borderRight: { md: '1px solid #e2e8f0' },
+                borderBottom: { xs: '1px solid #e2e8f0', md: 0 },
+                bgcolor: '#f8fafc',
+              }}
+            >
+              <Box sx={{ p: 1 }}>
+                <Button
+                  fullWidth
+                  variant={announcementMode === 'new' ? 'contained' : 'outlined'}
+                  startIcon={<AddRoundedIcon />}
+                  onClick={handleStartNewAnnouncement}
+                  sx={{ fontWeight: 900 }}
+                >
+                  새 공지 작성
+                </Button>
+              </Box>
+              <Divider />
+              <Box sx={{ minHeight: 0, flexGrow: 1, overflowY: 'auto' }}>
+                {announcementsLoading ? (
+                  <Box sx={{ height: '100%', display: 'grid', placeItems: 'center' }}>
+                    <CircularProgress size={24} />
+                  </Box>
+                ) : announcements.length === 0 ? (
+                  <Box sx={{ px: 2, py: 4, textAlign: 'center', color: '#94a3b8' }}>
+                    <Typography sx={{ fontSize: '0.7rem', fontWeight: 700 }}>
+                      등록된 공지사항이 없습니다.
+                    </Typography>
+                  </Box>
+                ) : (
+                  <List disablePadding>
+                    {announcements.map((announcement) => (
+                      <ListItemButton
+                        key={announcement.id}
+                        selected={
+                          announcementMode === 'preview' &&
+                          selectedAnnouncementId === announcement.id
+                        }
+                        onClick={() => handleSelectAnnouncement(announcement.id)}
+                        sx={{
+                          px: 1.4,
+                          py: 1.05,
+                          alignItems: 'flex-start',
+                          borderBottom: '1px solid #e2e8f0',
+                        }}
+                      >
+                        <ListItemText
+                          sx={{ my: 0 }}
+                          primary={
+                            <Typography noWrap sx={{ color: '#0f172a', fontSize: '0.73rem', fontWeight: 900 }}>
+                              {announcement.title}
+                            </Typography>
+                          }
+                          secondary={
+                            <Box component="span" sx={{ display: 'block', mt: 0.35 }}>
+                              <Box component="span" sx={{ display: 'block', color: '#64748b', fontSize: '0.62rem' }}>
+                                {announcement.author_name || '사용자'}
+                                {announcement.author_position
+                                  ? ` · ${announcement.author_position}`
+                                  : ''}
+                              </Box>
+                              <Box component="span" sx={{ display: 'block', mt: 0.15, color: '#94a3b8', fontSize: '0.58rem' }}>
+                                {formatMessengerDateTime(announcement.created_at)}
+                              </Box>
+                            </Box>
+                          }
+                        />
+                      </ListItemButton>
+                    ))}
+                  </List>
+                )}
+              </Box>
+            </Box>
+
+            <Box sx={{ minWidth: 0, minHeight: 0, p: { xs: 1.4, sm: 2 }, overflowY: 'auto' }}>
+              {announcementMode === 'new' ? (
+                <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', gap: 1.3 }}>
+                  <Box>
+                    <Typography sx={{ color: '#0f172a', fontSize: '0.86rem', fontWeight: 900 }}>
+                      새 공지사항 작성
+                    </Typography>
+                    <Typography sx={{ mt: 0.25, color: '#64748b', fontSize: '0.64rem' }}>
+                      이 대화방의 모든 참여자가 공지사항을 등록할 수 있습니다.
+                    </Typography>
+                  </Box>
+                  <TextField
+                    fullWidth
+                    label="공지 제목"
+                    value={announcementTitle}
+                    onChange={(event) => setAnnouncementTitle(event.target.value)}
+                    inputProps={{ maxLength: 100 }}
+                    disabled={announcementSaving}
+                  />
+                  <TextField
+                    fullWidth
+                    multiline
+                    minRows={7}
+                    label="공지 내용"
+                    value={announcementBody}
+                    onChange={(event) => setAnnouncementBody(event.target.value)}
+                    inputProps={{ maxLength: 4000 }}
+                    disabled={announcementSaving}
+                    sx={{ flexGrow: 1 }}
+                  />
+                  <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.8 }}>
+                    <Button
+                      variant="outlined"
+                      disabled={announcementSaving}
+                      onClick={() => setAnnouncementDialogOpen(false)}
+                    >
+                      취소
+                    </Button>
+                    <Button
+                      variant="contained"
+                      disabled={
+                        announcementSaving ||
+                        !normalizeText(announcementTitle) ||
+                        !normalizeText(announcementBody)
+                      }
+                      onClick={handleCreateAnnouncement}
+                    >
+                      {announcementSaving ? <CircularProgress size={18} color="inherit" /> : '공지 등록'}
+                    </Button>
+                  </Box>
+                </Box>
+              ) : selectedAnnouncement ? (
+                <Box>
+                  <Typography sx={{ color: '#0f172a', fontSize: '1rem', fontWeight: 900 }}>
+                    {selectedAnnouncement.title}
+                  </Typography>
+                  <Typography sx={{ mt: 0.55, color: '#64748b', fontSize: '0.65rem' }}>
+                    {selectedAnnouncement.author_name || '사용자'}
+                    {selectedAnnouncement.author_position
+                      ? ` · ${selectedAnnouncement.author_position}`
+                      : ''}
+                    {` · ${formatMessengerDateTime(selectedAnnouncement.created_at)}`}
+                  </Typography>
+                  <Divider sx={{ my: 1.5 }} />
+                  <Typography
+                    sx={{
+                      color: '#334155',
+                      fontSize: '0.76rem',
+                      lineHeight: 1.75,
+                      whiteSpace: 'pre-wrap',
+                      overflowWrap: 'anywhere',
+                    }}
+                  >
+                    {selectedAnnouncement.body}
+                  </Typography>
+                </Box>
+              ) : (
+                <EmptyPane
+                  title="공지사항을 선택해주세요."
+                  description="왼쪽 목록에서 이전 공지사항을 선택하면 내용을 확인할 수 있습니다."
+                />
+              )}
+            </Box>
+          </Box>
+        </DialogContent>
       </Dialog>
 
       <Dialog
