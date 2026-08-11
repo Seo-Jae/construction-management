@@ -65,6 +65,34 @@ import {
 const MESSAGE_PAGE_SIZE = 100;
 const MAX_MULTI_UPLOAD_FILES = 5;
 const ACTIVE_ROOM_STORAGE_PREFIX = 'wooklim-messenger-active-room:';
+const SELECTED_ROOM_STORAGE_PREFIX = 'wooklim-messenger-selected-room:';
+const DRAFT_STORAGE_PREFIX = 'wooklim-messenger-drafts:';
+const OPEN_ROOM_STORAGE_PREFIX = 'wooklim-messenger-open-room:';
+
+const readStoredSelectedRoom = (userId) => {
+  if (!userId || typeof window === 'undefined') return '';
+  try {
+    return String(
+      window.localStorage.getItem(`${SELECTED_ROOM_STORAGE_PREFIX}${userId}`) || '',
+    );
+  } catch {
+    return '';
+  }
+};
+
+const readStoredDrafts = (userId) => {
+  if (!userId || typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(`${DRAFT_STORAGE_PREFIX}${userId}`);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed
+      : {};
+  } catch {
+    return {};
+  }
+};
 
 const normalizeText = (value) => String(value || '').trim();
 
@@ -164,7 +192,9 @@ export default function Messenger({ currentUserId, standalone = false }) {
   const [roomsLoading, setRoomsLoading] = useState(true);
   const [roomsError, setRoomsError] = useState('');
   const [roomSearch, setRoomSearch] = useState('');
-  const [selectedRoomId, setSelectedRoomId] = useState('');
+  const [selectedRoomId, setSelectedRoomId] = useState(() =>
+    readStoredSelectedRoom(currentUserId),
+  );
   const selectedRoomIdRef = useRef('');
 
   const [members, setMembers] = useState([]);
@@ -179,7 +209,31 @@ export default function Messenger({ currentUserId, standalone = false }) {
   const [usersLoading, setUsersLoading] = useState(false);
   const [usersError, setUsersError] = useState('');
 
-  const [messageText, setMessageText] = useState('');
+  const [drafts, setDrafts] = useState(() => readStoredDrafts(currentUserId));
+  const messageText = selectedRoomId
+    ? String(drafts[selectedRoomId] || '')
+    : '';
+  const setMessageText = useCallback(
+    (nextValue) => {
+      if (!selectedRoomId) return;
+
+      setDrafts((previous) => {
+        const currentValue = String(previous[selectedRoomId] || '');
+        const resolvedValue =
+          typeof nextValue === 'function'
+            ? nextValue(currentValue)
+            : nextValue;
+        const nextText = String(resolvedValue || '');
+        const nextDrafts = { ...previous };
+
+        if (nextText) nextDrafts[selectedRoomId] = nextText;
+        else delete nextDrafts[selectedRoomId];
+
+        return nextDrafts;
+      });
+    },
+    [selectedRoomId],
+  );
   const [pendingPasteFiles, setPendingPasteFiles] = useState([]);
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -566,6 +620,71 @@ export default function Messenger({ currentUserId, standalone = false }) {
   useEffect(() => {
     selectedRoomIdRef.current = selectedRoomId;
   }, [selectedRoomId]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    const key = `${SELECTED_ROOM_STORAGE_PREFIX}${currentUserId}`;
+    try {
+      if (selectedRoomId) window.localStorage.setItem(key, selectedRoomId);
+      else window.localStorage.removeItem(key);
+    } catch {
+      // 현재 대화방 기억은 보조 기능이므로 저장 실패가 채팅을 막지 않는다.
+    }
+  }, [currentUserId, selectedRoomId]);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    const key = `${DRAFT_STORAGE_PREFIX}${currentUserId}`;
+    try {
+      if (Object.keys(drafts).length > 0) {
+        window.localStorage.setItem(key, JSON.stringify(drafts));
+      } else {
+        window.localStorage.removeItem(key);
+      }
+    } catch {
+      // 초안 저장 실패 시에도 현재 열린 창의 입력 내용은 React 상태에 유지된다.
+    }
+  }, [currentUserId, drafts]);
+
+  useEffect(() => {
+    if (!currentUserId) return undefined;
+
+    const key = `${OPEN_ROOM_STORAGE_PREFIX}${currentUserId}`;
+
+    const openRequestedRoom = () => {
+      try {
+        const raw = window.localStorage.getItem(key);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        const requestedRoomId = String(parsed?.roomId || '');
+
+        if (!requestedRoomId) {
+          window.localStorage.removeItem(key);
+          return;
+        }
+
+        if (rooms.some((room) => room.room_id === requestedRoomId)) {
+          setSelectedRoomId(requestedRoomId);
+          setRoomInfoOpen(false);
+          window.localStorage.removeItem(key);
+        }
+      } catch {
+        window.localStorage.removeItem(key);
+      }
+    };
+
+    openRequestedRoom();
+    const handleStorage = (event) => {
+      if (event.key === key) openRequestedRoom();
+    };
+    window.addEventListener('storage', handleStorage);
+
+    return () => {
+      window.removeEventListener('storage', handleStorage);
+    };
+  }, [currentUserId, rooms]);
 
   useEffect(() => {
     if (!currentUserId) return undefined;
@@ -1414,6 +1533,14 @@ export default function Messenger({ currentUserId, standalone = false }) {
   };
 
   const resetAfterLeavingRoom = async () => {
+    const roomIdToClear = selectedRoomId;
+    if (roomIdToClear) {
+      setDrafts((previous) => {
+        const nextDrafts = { ...previous };
+        delete nextDrafts[roomIdToClear];
+        return nextDrafts;
+      });
+    }
     setSelectedRoomId('');
     selectedRoomIdRef.current = '';
     setMembers([]);
@@ -1951,7 +2078,7 @@ export default function Messenger({ currentUserId, standalone = false }) {
               overflowY: 'auto',
               px: { xs: 1.1, sm: 1.7 },
               py: 1.4,
-              bgcolor: '#f1f5f9',
+              bgcolor: '#e2e8f0',
             }}
           >
             {messagesLoading ? (

@@ -1257,11 +1257,17 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
       const targetUrl = new URL(window.location.href);
       targetUrl.searchParams.set('view', 'messenger-window');
+      const messengerWindowName = 'wooklim-construction-messenger';
+      const messengerFeatures =
+        'popup=yes,width=1480,height=880,resizable=yes,scrollbars=yes';
 
+      // v52.10: 같은 이름의 메신저 창이 이미 살아 있으면 URL을 다시 열어
+      // 새로고침하지 않고 그 창만 앞으로 가져온다. Dashboard가 재렌더링되어
+      // ref가 사라졌더라도 작성 중 메시지와 현재 대화방을 유지할 수 있다.
       const messengerWindow = window.open(
-        targetUrl.toString(),
-        'wooklim-construction-messenger',
-        'popup=yes,width=1480,height=880,resizable=yes,scrollbars=yes',
+        '',
+        messengerWindowName,
+        messengerFeatures,
       );
 
       if (!messengerWindow) {
@@ -1270,6 +1276,23 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           'warning',
         );
         return;
+      }
+
+      try {
+        const currentHref = messengerWindow.location?.href || '';
+        const currentUrl =
+          currentHref && currentHref !== 'about:blank'
+            ? new URL(currentHref)
+            : null;
+        const alreadyMessenger =
+          currentUrl?.searchParams?.get('view') === 'messenger-window';
+
+        if (!alreadyMessenger) {
+          messengerWindow.location.replace(targetUrl.toString());
+        }
+      } catch {
+        // 동일 출처 확인이 불가능한 예외 상황에서만 메신저 주소로 이동한다.
+        messengerWindow.location.href = targetUrl.toString();
       }
 
       messengerWindowRef.current = messengerWindow;
