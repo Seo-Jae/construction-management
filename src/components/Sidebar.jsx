@@ -72,6 +72,10 @@ const materialMenus = [
 
 const laborMenus = [
   {
+    value: 'labor-monthly',
+    label: '월별 노임작성',
+  },
+  {
     value: 'labor-contract',
     label: '근로계약서작성',
   },
