@@ -76,6 +76,10 @@ const laborMenus = [
     label: '월별 노임작성',
   },
   {
+    value: 'labor-worker-master',
+    label: '근로자 정보관리',
+  },
+  {
     value: 'labor-contract',
     label: '근로계약서작성',
   },

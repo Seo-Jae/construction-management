@@ -57,6 +57,7 @@ import MaterialOrderUpload from './page/MaterialOrderUpload.jsx';
 import MaterialInputStatus from './page/MaterialInputStatus.jsx';
 import LaborContractManagement from './page/LaborContractManagement.jsx';
 import MonthlyLaborManagement from './page/MonthlyLaborManagement.jsx';
+import WorkerMasterManagement from './page/WorkerMasterManagement.jsx';
 import LaborCostManagement from './page/LaborCostManagement.jsx';
 import ProgressClaimManagement from './page/ProgressClaimManagement.jsx';
 import ContractItemProcessMapping from './page/ContractItemProcessMapping.jsx';
@@ -89,6 +90,7 @@ const PROJECT_FREE_VIEWS = [
   'weekly-overview',
   'weekly-overview-archive',
   'daily-cumulative-workers',
+  'labor-worker-master',
 ];
 
 const sortProjectNames = (projectNames) =>
@@ -340,6 +342,7 @@ const viewTitles = {
   'payment-contract-mapping': '계약품목 공정연결',
   'payment-sales-status': '매입매출현황',
   'labor-monthly': '월별 노임작성',
+  'labor-worker-master': '근로자 정보관리',
   'labor-contract': '근로계약서작성',
   'labor-cost': '공정별 노임작성',
   'report-weekly': '주간 업무 보고',
@@ -375,6 +378,7 @@ const VIEW_PERMISSION_KEYS = {
   'payment-contract-mapping': 'claim.process_link.view',
   'payment-sales-status': 'claim.sales.view',
   'labor-monthly': 'labor.cost.view',
+  'labor-worker-master': 'labor.worker_master.manage',
   'labor-contract': 'labor.contract.view',
   'labor-cost': 'labor.cost.view',
   'report-weekly': 'report.weekly.view',
@@ -390,6 +394,7 @@ const GLOBAL_PERMISSION_VIEWS = new Set([
   'weekly-overview',
   'weekly-overview-archive',
   'organization-chart',
+  'labor-worker-master',
 ]);
 
 const normalizeRuntimeAccess = (value) => {
@@ -3408,6 +3413,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     'approval-inbox',
     'weekly-overview',
     'weekly-overview-archive',
+    'labor-worker-master',
   ];
   const constructionLocationTitle =
     currentView === 'daily-cumulative-workers'
@@ -3640,6 +3646,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               'user-management',
               'organization-chart',
               'messenger',
+              'labor-worker-master',
             ].includes(
               currentView,
             ) && (
@@ -4129,6 +4136,19 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             activeProjectName && (
               <MonthlyLaborManagement
                 projectName={activeProjectName}
+              />
+            )}
+
+          {currentView ===
+            'labor-worker-master' && (
+              <WorkerMasterManagement
+                canManage={Boolean(
+                  isSuperAdmin ||
+                    hasPermission(
+                      'labor.worker_master.manage',
+                      '',
+                    ) === true
+                )}
               />
             )}
 

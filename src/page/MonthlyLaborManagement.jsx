@@ -1,10 +1,15 @@
-import React, { useMemo, useState } from 'react';
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 import {
   Alert,
   Autocomplete,
   Box,
   Button,
   Checkbox,
+  CircularProgress,
   Dialog,
   DialogActions,
   DialogContent,
@@ -28,6 +33,8 @@ import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import PersonSearchRoundedIcon from '@mui/icons-material/PersonSearchRounded';
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
+import { supabase } from '../supabaseClient';
 
 const TRADE_OPTIONS = [
   '소장',
@@ -75,12 +82,19 @@ const createTemporaryWorker = () => ({
 });
 
 const normalizeWorkerOption = (worker) => ({
-  id: String(worker?.id || worker?.worker_master_id || '').trim(),
-  name: String(worker?.name || worker?.name_ko || '').trim(),
+  id: String(
+    worker?.worker_master_id ||
+      worker?.id ||
+      '',
+  ).trim(),
+  name: String(
+    worker?.name_ko ||
+      worker?.name ||
+      '',
+  ).trim(),
   trade: String(
-    worker?.trade ||
-      worker?.job ||
-      worker?.recent_trade ||
+    worker?.recent_trade ||
+      worker?.trade ||
       '',
   ).trim(),
   birthDate: String(
@@ -90,7 +104,6 @@ const normalizeWorkerOption = (worker) => ({
   ).trim(),
   phoneMasked: String(
     worker?.phone_masked ||
-      worker?.phoneMasked ||
       worker?.phone_last4 ||
       '',
   ).trim(),
@@ -98,28 +111,47 @@ const normalizeWorkerOption = (worker) => ({
 
 const formatLookupBirthDate = (value) => {
   if (!value) return '-';
-  const normalized = String(value).trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
-    return normalized;
-  }
-  return normalized;
+  return String(value).trim();
 };
 
 const formatLookupPhone = (value) => {
   if (!value) return '-';
+
   const normalized = String(value).trim();
+
   if (/^\d{4}$/.test(normalized)) {
     return `****${normalized}`;
   }
-  return normalized;
+
+  if (
+    normalized.startsWith('****') ||
+    normalized.includes('*')
+  ) {
+    return normalized;
+  }
+
+  const digits = normalized.replace(/\D/g, '');
+  if (digits.length >= 4) {
+    return `****${digits.slice(-4)}`;
+  }
+
+  return '-';
 };
 
-const moveRowsOneStep = (rows, selectedIds, direction) => {
+const moveRowsOneStep = (
+  rows,
+  selectedIds,
+  direction,
+) => {
   const selectedSet = new Set(selectedIds);
   const next = [...rows];
 
   if (direction === 'up') {
-    for (let index = 1; index < next.length; index += 1) {
+    for (
+      let index = 1;
+      index < next.length;
+      index += 1
+    ) {
       if (
         selectedSet.has(next[index].id) &&
         !selectedSet.has(next[index - 1].id)
@@ -130,10 +162,15 @@ const moveRowsOneStep = (rows, selectedIds, direction) => {
         ];
       }
     }
+
     return next;
   }
 
-  for (let index = next.length - 2; index >= 0; index -= 1) {
+  for (
+    let index = next.length - 2;
+    index >= 0;
+    index -= 1
+  ) {
     if (
       selectedSet.has(next[index].id) &&
       !selectedSet.has(next[index + 1].id)
@@ -150,33 +187,33 @@ const moveRowsOneStep = (rows, selectedIds, direction) => {
 
 export default function MonthlyLaborManagement({
   projectName,
-  workerOptions = [],
 }) {
-  const [yearMonth, setYearMonth] = useState(getKoreaYearMonth);
+  const [yearMonth, setYearMonth] =
+    useState(getKoreaYearMonth);
   const [rows, setRows] = useState([]);
-  const [selectedIds, setSelectedIds] = useState([]);
-  const [lookupOpen, setLookupOpen] = useState(false);
-  const [lookupQuery, setLookupQuery] = useState('');
-  const [bulkTrade, setBulkTrade] = useState('');
+  const [selectedIds, setSelectedIds] =
+    useState([]);
+  const [lookupOpen, setLookupOpen] =
+    useState(false);
+  const [lookupQuery, setLookupQuery] =
+    useState('');
+  const [lookupResults, setLookupResults] =
+    useState([]);
+  const [lookupLoading, setLookupLoading] =
+    useState(false);
+  const [lookupMessage, setLookupMessage] =
+    useState('');
+  const [bulkTrade, setBulkTrade] =
+    useState('');
 
-  const normalizedWorkerOptions = useMemo(
-    () => workerOptions.map(normalizeWorkerOption),
-    [workerOptions],
-  );
-
-  const lookupResults = useMemo(() => {
-    const query = lookupQuery.trim().toLocaleLowerCase('ko-KR');
-
-    if (!query) return [];
-
-    return normalizedWorkerOptions
-      .filter((worker) =>
-        worker.name
-          .toLocaleLowerCase('ko-KR')
-          .includes(query),
-      )
-      .slice(0, 30);
-  }, [lookupQuery, normalizedWorkerOptions]);
+  useEffect(() => {
+    setRows([]);
+    setSelectedIds([]);
+    setLookupQuery('');
+    setLookupResults([]);
+    setLookupMessage('');
+    setLookupOpen(false);
+  }, [projectName]);
 
   const selectedSet = useMemo(
     () => new Set(selectedIds),
@@ -191,6 +228,67 @@ export default function MonthlyLaborManagement({
     selectedIds.length > 0 &&
     selectedIds.length < rows.length;
 
+  const searchWorkers = async () => {
+    const query = lookupQuery.trim();
+
+    if (query.length < 2) {
+      setLookupResults([]);
+      setLookupMessage(
+        '성명을 2자 이상 입력해주세요.',
+      );
+      return;
+    }
+
+    if (!projectName) {
+      setLookupResults([]);
+      setLookupMessage(
+        '현장을 먼저 선택해주세요.',
+      );
+      return;
+    }
+
+    setLookupLoading(true);
+    setLookupMessage('');
+
+    const { data, error } = await supabase.rpc(
+      'labor_worker_master_search_v52_33',
+      {
+        p_query: query,
+        p_project_name: projectName,
+      },
+    );
+
+    setLookupLoading(false);
+
+    if (error) {
+      setLookupResults([]);
+      setLookupMessage(
+        error.message ||
+          '근로자 조회에 실패했습니다.',
+      );
+      return;
+    }
+
+    const next = (
+      Array.isArray(data) ? data : []
+    ).map(normalizeWorkerOption);
+
+    setLookupResults(next);
+
+    if (next.length === 0) {
+      setLookupMessage(
+        '검색된 기존 근로자가 없습니다.',
+      );
+    }
+  };
+
+  const openLookup = () => {
+    setLookupOpen(true);
+    setLookupQuery('');
+    setLookupResults([]);
+    setLookupMessage('');
+  };
+
   const addTemporaryWorker = () => {
     setRows((previous) => [
       ...previous,
@@ -204,7 +302,8 @@ export default function MonthlyLaborManagement({
     setRows((previous) => {
       if (
         previous.some(
-          (row) => row.workerMasterId === worker.id,
+          (row) =>
+            row.workerMasterId === worker.id,
         )
       ) {
         return previous;
@@ -225,11 +324,18 @@ export default function MonthlyLaborManagement({
     });
   };
 
-  const updateRow = (rowId, field, value) => {
+  const updateRow = (
+    rowId,
+    field,
+    value,
+  ) => {
     setRows((previous) =>
       previous.map((row) =>
         row.id === rowId
-          ? { ...row, [field]: value }
+          ? {
+              ...row,
+              [field]: value,
+            }
           : row,
       ),
     );
@@ -238,14 +344,18 @@ export default function MonthlyLaborManagement({
   const toggleRow = (rowId) => {
     setSelectedIds((previous) =>
       previous.includes(rowId)
-        ? previous.filter((id) => id !== rowId)
+        ? previous.filter(
+            (id) => id !== rowId,
+          )
         : [...previous, rowId],
     );
   };
 
   const toggleAll = (checked) => {
     setSelectedIds(
-      checked ? rows.map((row) => row.id) : [],
+      checked
+        ? rows.map((row) => row.id)
+        : [],
     );
   };
 
@@ -254,14 +364,17 @@ export default function MonthlyLaborManagement({
 
     setRows((previous) =>
       previous.filter(
-        (row) => !selectedSet.has(row.id),
+        (row) =>
+          !selectedSet.has(row.id),
       ),
     );
+
     setSelectedIds([]);
   };
 
   const moveSelected = (direction) => {
     if (selectedIds.length === 0) return;
+
     setRows((previous) =>
       moveRowsOneStep(
         previous,
@@ -272,13 +385,23 @@ export default function MonthlyLaborManagement({
   };
 
   const applyBulkTrade = () => {
-    const nextTrade = String(bulkTrade || '').trim();
-    if (!nextTrade || selectedIds.length === 0) return;
+    const nextTrade =
+      String(bulkTrade || '').trim();
+
+    if (
+      !nextTrade ||
+      selectedIds.length === 0
+    ) {
+      return;
+    }
 
     setRows((previous) =>
       previous.map((row) =>
         selectedSet.has(row.id)
-          ? { ...row, trade: nextTrade }
+          ? {
+              ...row,
+              trade: nextTrade,
+            }
           : row,
       ),
     );
@@ -313,7 +436,12 @@ export default function MonthlyLaborManagement({
             md: 'center',
           }}
         >
-          <Box sx={{ minWidth: 0, flexGrow: 1 }}>
+          <Box
+            sx={{
+              minWidth: 0,
+              flexGrow: 1,
+            }}
+          >
             <Typography
               sx={{
                 fontSize: '0.95rem',
@@ -323,6 +451,7 @@ export default function MonthlyLaborManagement({
             >
               월별 노임작성
             </Typography>
+
             <Typography
               sx={{
                 mt: 0.2,
@@ -330,7 +459,10 @@ export default function MonthlyLaborManagement({
                 fontSize: '0.72rem',
               }}
             >
-              {projectName || '현장 미선택'} · 근로자 명단 구성
+              {projectName ||
+                '현장 미선택'}
+              {' · '}
+              근로자 명단 구성
             </Typography>
           </Box>
 
@@ -340,9 +472,13 @@ export default function MonthlyLaborManagement({
             label="작성월"
             value={yearMonth}
             onChange={(event) =>
-              setYearMonth(event.target.value)
+              setYearMonth(
+                event.target.value,
+              )
             }
-            InputLabelProps={{ shrink: true }}
+            InputLabelProps={{
+              shrink: true,
+            }}
             sx={{ width: 170 }}
           />
         </Stack>
@@ -358,9 +494,10 @@ export default function MonthlyLaborManagement({
           },
         }}
       >
-        v52.32는 월별 노임작성의 1차 기능 골격입니다.
-        근로자 마스터 DB·개인정보·SMS 인증·Excel 생성은
-        다음 단계에서 연결합니다.
+        기존 근로자는 회사 공통 근로자
+        마스터에서 성명으로 조회합니다.
+        검색 결과에는 생년월일·휴대폰
+        뒤 4자리·최근 공종만 표시됩니다.
       </Alert>
 
       <Paper
@@ -388,8 +525,10 @@ export default function MonthlyLaborManagement({
           <Button
             size="small"
             variant="contained"
-            startIcon={<PersonSearchRoundedIcon />}
-            onClick={() => setLookupOpen(true)}
+            startIcon={
+              <PersonSearchRoundedIcon />
+            }
+            onClick={openLookup}
             sx={{
               boxShadow: 'none',
               fontWeight: 800,
@@ -412,7 +551,9 @@ export default function MonthlyLaborManagement({
             <span>
               <IconButton
                 size="small"
-                disabled={selectedIds.length === 0}
+                disabled={
+                  selectedIds.length === 0
+                }
                 onClick={deleteSelected}
                 aria-label="선택 근로자 삭제"
               >
@@ -431,8 +572,12 @@ export default function MonthlyLaborManagement({
             <span>
               <IconButton
                 size="small"
-                disabled={selectedIds.length === 0}
-                onClick={() => moveSelected('up')}
+                disabled={
+                  selectedIds.length === 0
+                }
+                onClick={() =>
+                  moveSelected('up')
+                }
                 aria-label="선택 근로자 위로"
               >
                 <ArrowUpwardRoundedIcon fontSize="small" />
@@ -444,8 +589,12 @@ export default function MonthlyLaborManagement({
             <span>
               <IconButton
                 size="small"
-                disabled={selectedIds.length === 0}
-                onClick={() => moveSelected('down')}
+                disabled={
+                  selectedIds.length === 0
+                }
+                onClick={() =>
+                  moveSelected('down')
+                }
                 aria-label="선택 근로자 아래로"
               >
                 <ArrowDownwardRoundedIcon fontSize="small" />
@@ -464,10 +613,16 @@ export default function MonthlyLaborManagement({
             size="small"
             options={TRADE_OPTIONS}
             value={bulkTrade}
-            onChange={(_event, value) =>
+            onChange={(
+              _event,
+              value,
+            ) =>
               setBulkTrade(value || '')
             }
-            onInputChange={(_event, value) =>
+            onInputChange={(
+              _event,
+              value,
+            ) =>
               setBulkTrade(value || '')
             }
             renderInput={(params) => (
@@ -484,7 +639,9 @@ export default function MonthlyLaborManagement({
             variant="outlined"
             disabled={
               selectedIds.length === 0 ||
-              !String(bulkTrade || '').trim()
+              !String(
+                bulkTrade || '',
+              ).trim()
             }
             onClick={applyBulkTrade}
             sx={{ fontWeight: 800 }}
@@ -500,7 +657,8 @@ export default function MonthlyLaborManagement({
               fontWeight: 800,
             }}
           >
-            총 {rows.length}명 · 선택 {selectedIds.length}명
+            총 {rows.length}명 · 선택{' '}
+            {selectedIds.length}명
           </Typography>
         </Box>
 
@@ -530,12 +688,18 @@ export default function MonthlyLaborManagement({
                   <Checkbox
                     size="small"
                     checked={allSelected}
-                    indeterminate={partiallySelected}
+                    indeterminate={
+                      partiallySelected
+                    }
                     onChange={(event) =>
-                      toggleAll(event.target.checked)
+                      toggleAll(
+                        event.target
+                          .checked,
+                      )
                     }
                   />
                 </TableCell>
+
                 <TableCell
                   align="center"
                   sx={{
@@ -545,6 +709,7 @@ export default function MonthlyLaborManagement({
                 >
                   순번
                 </TableCell>
+
                 <TableCell
                   align="center"
                   sx={{
@@ -554,6 +719,7 @@ export default function MonthlyLaborManagement({
                 >
                   성명
                 </TableCell>
+
                 <TableCell
                   align="center"
                   sx={{
@@ -563,6 +729,7 @@ export default function MonthlyLaborManagement({
                 >
                   공종
                 </TableCell>
+
                 <TableCell
                   align="center"
                   sx={{
@@ -572,6 +739,7 @@ export default function MonthlyLaborManagement({
                 >
                   생년월일
                 </TableCell>
+
                 <TableCell
                   align="center"
                   sx={{
@@ -581,9 +749,12 @@ export default function MonthlyLaborManagement({
                 >
                   휴대폰
                 </TableCell>
+
                 <TableCell
                   align="center"
-                  sx={{ fontWeight: 900 }}
+                  sx={{
+                    fontWeight: 900,
+                  }}
                 >
                   비고
                 </TableCell>
@@ -601,103 +772,135 @@ export default function MonthlyLaborManagement({
                       color: '#94a3b8',
                     }}
                   >
-                    근로자 조회 또는 신규 추가로 명단을 구성해주세요.
+                    근로자 조회 또는 신규
+                    추가로 명단을
+                    구성해주세요.
                   </TableCell>
                 </TableRow>
               ) : (
-                rows.map((row, index) => (
-                  <TableRow
-                    key={row.id}
-                    hover
-                    selected={selectedSet.has(row.id)}
-                  >
-                    <TableCell
-                      padding="checkbox"
-                      align="center"
-                    >
-                      <Checkbox
-                        size="small"
-                        checked={selectedSet.has(row.id)}
-                        onChange={() => toggleRow(row.id)}
-                      />
-                    </TableCell>
-
-                    <TableCell align="center">
-                      {index + 1}
-                    </TableCell>
-
-                    <TableCell>
-                      <TextField
-                        fullWidth
-                        size="small"
-                        value={row.name}
-                        placeholder="성명"
-                        onChange={(event) =>
-                          updateRow(
-                            row.id,
-                            'name',
-                            event.target.value,
-                          )
-                        }
-                      />
-                    </TableCell>
-
-                    <TableCell>
-                      <Autocomplete
-                        freeSolo
-                        size="small"
-                        options={TRADE_OPTIONS}
-                        value={row.trade || ''}
-                        onChange={(_event, value) =>
-                          updateRow(
-                            row.id,
-                            'trade',
-                            value || '',
-                          )
-                        }
-                        onInputChange={(_event, value) =>
-                          updateRow(
-                            row.id,
-                            'trade',
-                            value || '',
-                          )
-                        }
-                        renderInput={(params) => (
-                          <TextField
-                            {...params}
-                            placeholder="공종"
-                          />
-                        )}
-                      />
-                    </TableCell>
-
-                    <TableCell align="center">
-                      {row.birthDate || '-'}
-                    </TableCell>
-
-                    <TableCell align="center">
-                      {formatLookupPhone(
-                        row.phoneMasked,
+                rows.map(
+                  (row, index) => (
+                    <TableRow
+                      key={row.id}
+                      hover
+                      selected={selectedSet.has(
+                        row.id,
                       )}
-                    </TableCell>
-
-                    <TableCell>
-                      <TextField
-                        fullWidth
-                        size="small"
-                        value={row.note}
-                        placeholder="비고"
-                        onChange={(event) =>
-                          updateRow(
+                    >
+                      <TableCell
+                        padding="checkbox"
+                        align="center"
+                      >
+                        <Checkbox
+                          size="small"
+                          checked={selectedSet.has(
                             row.id,
-                            'note',
-                            event.target.value,
-                          )
-                        }
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))
+                          )}
+                          onChange={() =>
+                            toggleRow(
+                              row.id,
+                            )
+                          }
+                        />
+                      </TableCell>
+
+                      <TableCell align="center">
+                        {index + 1}
+                      </TableCell>
+
+                      <TableCell>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          value={row.name}
+                          placeholder="성명"
+                          onChange={(
+                            event,
+                          ) =>
+                            updateRow(
+                              row.id,
+                              'name',
+                              event.target
+                                .value,
+                            )
+                          }
+                        />
+                      </TableCell>
+
+                      <TableCell>
+                        <Autocomplete
+                          freeSolo
+                          size="small"
+                          options={
+                            TRADE_OPTIONS
+                          }
+                          value={
+                            row.trade ||
+                            ''
+                          }
+                          onChange={(
+                            _event,
+                            value,
+                          ) =>
+                            updateRow(
+                              row.id,
+                              'trade',
+                              value || '',
+                            )
+                          }
+                          onInputChange={(
+                            _event,
+                            value,
+                          ) =>
+                            updateRow(
+                              row.id,
+                              'trade',
+                              value || '',
+                            )
+                          }
+                          renderInput={(
+                            params,
+                          ) => (
+                            <TextField
+                              {...params}
+                              placeholder="공종"
+                            />
+                          )}
+                        />
+                      </TableCell>
+
+                      <TableCell align="center">
+                        {row.birthDate ||
+                          '-'}
+                      </TableCell>
+
+                      <TableCell align="center">
+                        {formatLookupPhone(
+                          row.phoneMasked,
+                        )}
+                      </TableCell>
+
+                      <TableCell>
+                        <TextField
+                          fullWidth
+                          size="small"
+                          value={row.note}
+                          placeholder="비고"
+                          onChange={(
+                            event,
+                          ) =>
+                            updateRow(
+                              row.id,
+                              'note',
+                              event.target
+                                .value,
+                            )
+                          }
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ),
+                )
               )}
             </TableBody>
           </Table>
@@ -706,11 +909,15 @@ export default function MonthlyLaborManagement({
 
       <Dialog
         open={lookupOpen}
-        onClose={() => setLookupOpen(false)}
+        onClose={() =>
+          setLookupOpen(false)
+        }
         fullWidth
         maxWidth="sm"
       >
-        <DialogTitle sx={{ fontWeight: 900 }}>
+        <DialogTitle
+          sx={{ fontWeight: 900 }}
+        >
           근로자 조회
         </DialogTitle>
 
@@ -722,142 +929,193 @@ export default function MonthlyLaborManagement({
               fontSize: '0.75rem',
             }}
           >
-            성명을 검색하고 추가한 뒤 창을 닫지 않은 상태에서
-            다음 근로자를 계속 검색·추가할 수 있습니다.
+            성명을 검색하고 추가한 뒤
+            창을 닫지 않고 다음 근로자를
+            계속 검색·추가할 수 있습니다.
           </Typography>
 
-          <TextField
-            fullWidth
-            autoFocus
-            size="small"
-            label="성명 검색"
-            value={lookupQuery}
-            onChange={(event) =>
-              setLookupQuery(event.target.value)
-            }
-            placeholder="예: 김철수"
-          />
+          <Stack
+            direction="row"
+            spacing={0.75}
+          >
+            <TextField
+              fullWidth
+              autoFocus
+              size="small"
+              label="성명 검색"
+              value={lookupQuery}
+              onChange={(event) =>
+                setLookupQuery(
+                  event.target.value,
+                )
+              }
+              onKeyDown={(event) => {
+                if (
+                  event.key === 'Enter'
+                ) {
+                  event.preventDefault();
+                  void searchWorkers();
+                }
+              }}
+              placeholder="예: 김철수"
+            />
 
-          <Stack spacing={0.75} sx={{ mt: 1.5 }}>
-            {!lookupQuery.trim() ? (
+            <Button
+              variant="contained"
+              onClick={() =>
+                void searchWorkers()
+              }
+              disabled={lookupLoading}
+              startIcon={
+                lookupLoading ? (
+                  <CircularProgress
+                    size={15}
+                    color="inherit"
+                  />
+                ) : (
+                  <SearchRoundedIcon />
+                )
+              }
+              sx={{
+                minWidth: 92,
+                boxShadow: 'none',
+              }}
+            >
+              검색
+            </Button>
+          </Stack>
+
+          <Stack
+            spacing={0.75}
+            sx={{ mt: 1.5 }}
+          >
+            {lookupMessage && (
               <Box
                 sx={{
-                  py: 5,
+                  py: 3,
                   textAlign: 'center',
-                  color: '#94a3b8',
+                  color: '#64748b',
                   fontSize: '0.76rem',
                 }}
               >
-                근로자 성명을 입력해주세요.
+                {lookupMessage}
               </Box>
-            ) : lookupResults.length === 0 ? (
-              <Box
-                sx={{
-                  py: 4,
-                  textAlign: 'center',
-                }}
-              >
-                <Typography
-                  sx={{
-                    color: '#64748b',
-                    fontSize: '0.76rem',
-                  }}
-                >
-                  검색된 기존 근로자가 없습니다.
-                </Typography>
-                {normalizedWorkerOptions.length === 0 && (
-                  <Typography
-                    sx={{
-                      mt: 0.7,
-                      color: '#94a3b8',
-                      fontSize: '0.68rem',
-                    }}
-                  >
-                    현재는 근로자 마스터 DB 연결 전 단계입니다.
-                  </Typography>
-                )}
-              </Box>
-            ) : (
-              lookupResults.map((worker) => {
-                const alreadyAdded = rows.some(
-                  (row) =>
-                    row.workerMasterId === worker.id,
-                );
-
-                return (
-                  <Paper
-                    key={worker.id}
-                    variant="outlined"
-                    sx={{
-                      p: 1,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 1,
-                      borderColor: '#cbd5e1',
-                    }}
-                  >
-                    <Box sx={{ minWidth: 0, flexGrow: 1 }}>
-                      <Typography
-                        sx={{
-                          fontSize: '0.8rem',
-                          fontWeight: 900,
-                        }}
-                      >
-                        {worker.name || '-'}
-                      </Typography>
-                      <Typography
-                        sx={{
-                          mt: 0.2,
-                          color: '#64748b',
-                          fontSize: '0.68rem',
-                        }}
-                      >
-                        {formatLookupBirthDate(
-                          worker.birthDate,
-                        )}
-                        {' · '}
-                        {formatLookupPhone(
-                          worker.phoneMasked,
-                        )}
-                        {worker.trade
-                          ? ` · ${worker.trade}`
-                          : ''}
-                      </Typography>
-                    </Box>
-
-                    <Button
-                      size="small"
-                      variant={
-                        alreadyAdded
-                          ? 'outlined'
-                          : 'contained'
-                      }
-                      disabled={alreadyAdded}
-                      onClick={() =>
-                        addWorkerFromMaster(worker)
-                      }
-                      sx={{ boxShadow: 'none' }}
-                    >
-                      {alreadyAdded ? '추가됨' : '추가'}
-                    </Button>
-                  </Paper>
-                );
-              })
             )}
+
+            {!lookupMessage &&
+              lookupResults.map(
+                (worker) => {
+                  const alreadyAdded =
+                    rows.some(
+                      (row) =>
+                        row.workerMasterId ===
+                        worker.id,
+                    );
+
+                  return (
+                    <Paper
+                      key={worker.id}
+                      variant="outlined"
+                      sx={{
+                        p: 1,
+                        display: 'flex',
+                        alignItems:
+                          'center',
+                        gap: 1,
+                        borderColor:
+                          '#cbd5e1',
+                      }}
+                    >
+                      <Box
+                        sx={{
+                          minWidth: 0,
+                          flexGrow: 1,
+                        }}
+                      >
+                        <Typography
+                          sx={{
+                            fontSize:
+                              '0.8rem',
+                            fontWeight: 900,
+                          }}
+                        >
+                          {worker.name ||
+                            '-'}
+                        </Typography>
+
+                        <Typography
+                          sx={{
+                            mt: 0.2,
+                            color:
+                              '#64748b',
+                            fontSize:
+                              '0.68rem',
+                          }}
+                        >
+                          {formatLookupBirthDate(
+                            worker.birthDate,
+                          )}
+                          {' · '}
+                          {formatLookupPhone(
+                            worker.phoneMasked,
+                          )}
+                          {worker.trade
+                            ? ` · ${worker.trade}`
+                            : ''}
+                        </Typography>
+                      </Box>
+
+                      <Button
+                        size="small"
+                        variant={
+                          alreadyAdded
+                            ? 'outlined'
+                            : 'contained'
+                        }
+                        disabled={
+                          alreadyAdded
+                        }
+                        onClick={() =>
+                          addWorkerFromMaster(
+                            worker,
+                          )
+                        }
+                        sx={{
+                          boxShadow:
+                            'none',
+                        }}
+                      >
+                        {alreadyAdded
+                          ? '추가됨'
+                          : '추가'}
+                      </Button>
+                    </Paper>
+                  );
+                },
+              )}
           </Stack>
         </DialogContent>
 
         <DialogActions>
           <Button
-            onClick={addTemporaryWorker}
-            startIcon={<AddCircleOutlineRoundedIcon />}
+            onClick={
+              addTemporaryWorker
+            }
+            startIcon={
+              <AddCircleOutlineRoundedIcon />
+            }
           >
             신규 근로자 추가
           </Button>
+
           <Button
             variant="contained"
-            onClick={() => setLookupOpen(false)}
-            sx={{ boxShadow: 'none' }}
+            onClick={() =>
+              setLookupOpen(false)
+            }
+            sx={{
+              boxShadow: 'none',
+            }}
           >
             완료
           </Button>
