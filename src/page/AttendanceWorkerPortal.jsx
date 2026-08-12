@@ -356,6 +356,19 @@ const waitForVideoReady = (video, timeoutMs = 8000) => new Promise((resolve, rej
   }, timeoutMs);
 });
 
+const queryCameraPermissionState = async () => {
+  try {
+    if (!navigator.permissions?.query) return 'unknown';
+    const permission = await navigator.permissions.query({
+      name: 'camera',
+    });
+    return String(permission?.state || 'unknown');
+  } catch {
+    // iOS Safari 등 camera Permissions API를 지원하지 않는 브라우저
+    return 'unknown';
+  }
+};
+
 const getCameraErrorMessage = (error) => {
   const errorName = String(error?.name || '');
   const errorMessage = String(error?.message || '');
@@ -364,7 +377,7 @@ const getCameraErrorMessage = (error) => {
     return '카메라는 보안 연결(HTTPS)에서만 사용할 수 있습니다. 운영 주소로 다시 접속해주세요.';
   }
   if (errorName === 'NotAllowedError' || errorName === 'SecurityError') {
-    return '카메라 권한이 차단되어 있습니다. 아이폰은 Safari 주소창의 가가(AA) → 웹사이트 설정 → 카메라 → 허용으로 바꾼 뒤 다시 눌러주세요.';
+    return '카메라 권한이 차단되어 있습니다. Android는 Chrome 설정 → 사이트 설정 → 카메라에서 허용하고, 아이폰은 Safari 웹사이트 설정 → 카메라 → 허용으로 바꾼 뒤 다시 눌러주세요.';
   }
   if (errorName === 'NotFoundError' || errorName === 'DevicesNotFoundError') {
     return '사용할 수 있는 카메라를 찾지 못했습니다. 휴대폰 카메라 상태를 확인해주세요.';
@@ -656,6 +669,8 @@ export default function AttendanceWorkerPortal() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const [scannerStarting, setScannerStarting] = useState(false);
   const [cameraReady, setCameraReady] = useState(false);
+  const [cameraPermissionOpen, setCameraPermissionOpen] = useState(false);
+  const [cameraPermissionState, setCameraPermissionState] = useState('unknown');
   const [scannerVideoElement, setScannerVideoElement] = useState(null);
   const [processingScan, setProcessingScan] = useState(false);
   const [installPrompt, setInstallPrompt] = useState(null);
@@ -975,9 +990,14 @@ export default function AttendanceWorkerPortal() {
     setCameraReady(false);
   }, [stopScanner]);
 
-  const handleOpenScanner = async () => {
+  const requestCameraAndOpenScanner = async () => {
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
-      setMessage({ severity: 'error', text: getCameraErrorMessage(new Error('MediaDevicesUnavailable')) });
+      setMessage({
+        severity: 'error',
+        text: getCameraErrorMessage(
+          new Error('MediaDevicesUnavailable'),
+        ),
+      });
       return;
     }
 
@@ -985,8 +1005,14 @@ export default function AttendanceWorkerPortal() {
     setMessage(null);
     setCameraReady(false);
     setScannerStarting(true);
+    setCameraPermissionOpen(false);
 
     try {
+      /*
+        getUserMedia()를 반드시 사용자 버튼 클릭 흐름에서 호출합니다.
+        권한이 아직 결정되지 않았다면 이 시점에 Chrome/Safari의
+        카메라 허용/차단 시스템 팝업이 표시됩니다.
+      */
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
         video: {
@@ -998,17 +1024,72 @@ export default function AttendanceWorkerPortal() {
 
       if (!stream.getVideoTracks().length) {
         stream.getTracks().forEach((track) => track.stop());
-        throw new DOMException('CameraNotFound', 'NotFoundError');
+        throw new DOMException(
+          'CameraNotFound',
+          'NotFoundError',
+        );
       }
 
       cameraStreamRef.current = stream;
+      setCameraPermissionState('granted');
       setScannerOpen(true);
     } catch (error) {
       console.error('카메라 권한 요청 오류:', error);
       stopScanner();
       setScannerStarting(false);
-      setMessage({ severity: 'error', text: getCameraErrorMessage(error) });
+
+      const nextPermissionState =
+        await queryCameraPermissionState();
+
+      if (
+        String(error?.name || '') === 'NotAllowedError' ||
+        String(error?.name || '') === 'SecurityError' ||
+        nextPermissionState === 'denied'
+      ) {
+        /*
+          이미 차단된 권한은 웹페이지가 브라우저 시스템 팝업을
+          강제로 다시 띄울 수 없습니다.
+          검은 카메라 화면 대신 복구 방법을 즉시 표시합니다.
+        */
+        setCameraPermissionState('denied');
+        setCameraPermissionOpen(true);
+        return;
+      }
+
+      setMessage({
+        severity: 'error',
+        text: getCameraErrorMessage(error),
+      });
     }
+  };
+
+  const handleOpenScanner = async () => {
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      setMessage({
+        severity: 'error',
+        text: getCameraErrorMessage(
+          new Error('MediaDevicesUnavailable'),
+        ),
+      });
+      return;
+    }
+
+    const permissionState =
+      await queryCameraPermissionState();
+
+    setCameraPermissionState(permissionState);
+
+    if (permissionState === 'granted') {
+      await requestCameraAndOpenScanner();
+      return;
+    }
+
+    /*
+      prompt / denied / unknown:
+      검은 카메라 화면부터 열지 않고 먼저 권한 안내창을 표시합니다.
+      사용자가 "카메라 사용 허용"을 누른 다음 getUserMedia()를 호출합니다.
+    */
+    setCameraPermissionOpen(true);
   };
 
   const processQrToken = useCallback(async (rawValue) => {
@@ -1280,6 +1361,111 @@ export default function AttendanceWorkerPortal() {
             앱으로 설치
           </Button>
         )}
+        <Dialog
+          open={cameraPermissionOpen}
+          onClose={() => {
+            if (!scannerStarting) {
+              setCameraPermissionOpen(false);
+            }
+          }}
+          fullWidth
+          maxWidth="xs"
+        >
+          <DialogTitle sx={{ fontWeight: 900 }}>
+            카메라 권한 필요
+          </DialogTitle>
+          <DialogContent dividers>
+            {cameraPermissionState === 'denied' ? (
+              <Stack spacing={1.25}>
+                <Alert severity="warning">
+                  카메라 권한이 현재 차단되어 있습니다.
+                  차단된 권한은 앱에서 시스템 허용창을 강제로
+                  다시 띄울 수 없습니다.
+                </Alert>
+                <Typography
+                  sx={{
+                    fontSize: appMode ? '0.94rem' : '0.8rem',
+                    lineHeight: 1.8,
+                  }}
+                >
+                  Android Chrome에서는
+                  <b> Chrome 설정 → 사이트 설정 → 카메라</b>에서
+                  현재 욱림건설 근태시스템 사이트를 찾아
+                  <b> 허용</b>으로 변경해주세요.
+                </Typography>
+                <Typography
+                  sx={{
+                    fontSize: appMode ? '0.88rem' : '0.74rem',
+                    color: '#64748b',
+                    lineHeight: 1.7,
+                  }}
+                >
+                  Android 자체에서 Chrome의 카메라 권한이 꺼져
+                  있다면 휴대폰 설정 → 앱 → Chrome → 권한 →
+                  카메라도 허용해야 합니다.
+                </Typography>
+              </Stack>
+            ) : (
+              <Stack spacing={1.25}>
+                <Alert severity="info">
+                  출·퇴근 QR 촬영을 위해 후면 카메라 권한이
+                  필요합니다.
+                </Alert>
+                <Typography
+                  sx={{
+                    fontSize: appMode ? '0.94rem' : '0.8rem',
+                    lineHeight: 1.8,
+                  }}
+                >
+                  아래 <b>카메라 사용 허용</b>을 누르면
+                  Chrome/Safari의 카메라 권한창이 표시됩니다.
+                  권한창에서 <b>허용</b>을 선택해주세요.
+                </Typography>
+              </Stack>
+            )}
+          </DialogContent>
+          <Box
+            sx={{
+              px: 3,
+              py: 2,
+              display: 'flex',
+              gap: 1,
+              justifyContent: 'flex-end',
+            }}
+          >
+            <Button
+              color="inherit"
+              disabled={scannerStarting}
+              onClick={() => setCameraPermissionOpen(false)}
+            >
+              취소
+            </Button>
+            <Button
+              variant="contained"
+              startIcon={
+                scannerStarting
+                  ? <CircularProgress size={18} color="inherit" />
+                  : <CameraAltRoundedIcon />
+              }
+              disabled={scannerStarting}
+              onClick={requestCameraAndOpenScanner}
+              sx={{
+                bgcolor: primaryActionColor,
+                fontWeight: 900,
+                '&:hover': {
+                  bgcolor: primaryActionColor,
+                },
+              }}
+            >
+              {scannerStarting
+                ? '권한 확인 중'
+                : cameraPermissionState === 'denied'
+                  ? '카메라 권한 다시 확인'
+                  : '카메라 사용 허용'}
+            </Button>
+          </Box>
+        </Dialog>
+
         <Dialog open={scannerOpen} onClose={closeScanner} fullWidth maxWidth="xs">
           <DialogTitle sx={{ pr: 6, fontWeight: 900 }}>
             동적 QR 촬영
