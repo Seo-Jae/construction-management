@@ -409,7 +409,75 @@ const statusMeta = {
   },
 };
 
-function MobileShell({ children, appMode = false }) {
+function AttendanceNoticeTicker({ notices, appMode = false }) {
+  const visibleNotices = Array.isArray(notices)
+    ? notices.map((item) => String(item?.content || '').trim()).filter(Boolean)
+    : [];
+
+  if (visibleNotices.length === 0) return null;
+
+  const tickerText = visibleNotices.join('　◆　');
+  const durationSeconds = Math.max(18, Math.min(55, Math.round(tickerText.length * 0.42)));
+
+  return (
+    <Box
+      role="status"
+      aria-label={`공지사항 ${tickerText}`}
+      sx={{
+        width: '100%',
+        minHeight: appMode ? 44 : 38,
+        display: 'flex',
+        alignItems: 'stretch',
+        bgcolor: '#fff7ed',
+        borderBottom: '1px solid #fed7aa',
+        color: '#9a3412',
+        overflow: 'hidden',
+        boxShadow: '0 3px 10px rgba(15,23,42,0.08)',
+      }}
+    >
+      <Box
+        sx={{
+          flex: '0 0 auto',
+          px: appMode ? 1.6 : 1.3,
+          display: 'grid',
+          placeItems: 'center',
+          bgcolor: '#ea580c',
+          color: '#fff',
+          fontSize: appMode ? '0.82rem' : '0.7rem',
+          fontWeight: 1000,
+          letterSpacing: '0.04em',
+          zIndex: 1,
+        }}
+      >
+        공지
+      </Box>
+      <Box sx={{ minWidth: 0, flex: 1, overflow: 'hidden', display: 'flex', alignItems: 'center' }}>
+        <Typography
+          component="div"
+          sx={{
+            width: 'max-content',
+            flexShrink: 0,
+            whiteSpace: 'nowrap',
+            pl: 1.5,
+            fontSize: appMode ? '0.9rem' : '0.76rem',
+            fontWeight: 900,
+            lineHeight: 1,
+            willChange: 'transform',
+            animation: `attendanceNoticeTicker ${durationSeconds}s linear infinite`,
+            '@keyframes attendanceNoticeTicker': {
+              '0%': { transform: 'translateX(100vw)' },
+              '100%': { transform: 'translateX(-100%)' },
+            },
+          }}
+        >
+          {tickerText}
+        </Typography>
+      </Box>
+    </Box>
+  );
+}
+
+function MobileShell({ children, appMode = false, topBanner = null }) {
   return (
     <Box sx={{ minHeight: '100dvh', bgcolor: appMode ? '#f5f7f6' : '#eef3f8' }}>
       <AppBar
@@ -455,6 +523,7 @@ function MobileShell({ children, appMode = false }) {
           </Stack>
         </Toolbar>
       </AppBar>
+      {topBanner}
       <Box
         sx={{
           width: '100%',
@@ -493,6 +562,7 @@ export default function AttendanceWorkerPortal() {
   const [todayEvents, setTodayEvents] = useState([]);
   const [monthEvents, setMonthEvents] = useState([]);
   const [riskBroadcasts, setRiskBroadcasts] = useState([]);
+  const [attendanceNotices, setAttendanceNotices] = useState([]);
   const [selectedAttendanceDate, setSelectedAttendanceDate] = useState(getKoreaTodayKey);
   const [loading, setLoading] = useState(Boolean(sessionToken));
   const [message, setMessage] = useState(null);
@@ -535,6 +605,7 @@ export default function AttendanceWorkerPortal() {
       setTodayEvents([]);
       setMonthEvents([]);
       setRiskBroadcasts([]);
+      setAttendanceNotices([]);
       setLoading(false);
       return null;
     }
@@ -552,6 +623,7 @@ export default function AttendanceWorkerPortal() {
       setTodayEvents([]);
       setMonthEvents([]);
       setRiskBroadcasts([]);
+      setAttendanceNotices([]);
       setMessage({ severity: 'warning', text: error.message || '다시 로그인해주세요.' });
       setLoading(false);
       return null;
@@ -562,6 +634,7 @@ export default function AttendanceWorkerPortal() {
     setTodayEvents(Array.isArray(data?.today_events) ? data.today_events : []);
     setMonthEvents(Array.isArray(data?.month_events) ? data.month_events : []);
     setRiskBroadcasts(Array.isArray(data?.risk_broadcasts) ? data.risk_broadcasts : []);
+    setAttendanceNotices(Array.isArray(data?.announcements) ? data.announcements : []);
     setLoading(false);
     return nextWorker;
   }, [deviceKey, saveSession, sessionToken]);
@@ -570,6 +643,22 @@ export default function AttendanceWorkerPortal() {
     const timer = window.setTimeout(() => loadMe(), 0);
     return () => window.clearTimeout(timer);
   }, [loadMe]);
+
+
+  useEffect(() => {
+    if (!sessionToken || !worker?.id) return undefined;
+
+    const refresh = () => {
+      void loadMe(sessionToken, true);
+    };
+    const timer = window.setInterval(refresh, 60 * 1000);
+    window.addEventListener('focus', refresh);
+
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refresh);
+    };
+  }, [loadMe, sessionToken, worker?.id]);
 
   useEffect(() => {
     const standaloneMedia = window.matchMedia('(display-mode: standalone)');
@@ -722,6 +811,7 @@ export default function AttendanceWorkerPortal() {
     setTodayEvents([]);
     setMonthEvents([]);
     setRiskBroadcasts([]);
+    setAttendanceNotices([]);
     setMessage(null);
     setMode('login');
   };
@@ -946,7 +1036,10 @@ export default function AttendanceWorkerPortal() {
     const checkOut = todayEvents.find((item) => item.event_type === 'check_out');
 
     return (
-      <MobileShell appMode={appMode}>
+      <MobileShell
+        appMode={appMode}
+        topBanner={<AttendanceNoticeTicker notices={attendanceNotices} appMode={appMode} />}
+      >
         <AttendanceToast message={message} onClose={() => setMessage(null)} appMode={appMode} />
         <RiskBroadcastPanel broadcasts={riskBroadcasts} />
 

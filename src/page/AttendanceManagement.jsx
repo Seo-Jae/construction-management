@@ -3,6 +3,7 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
@@ -11,6 +12,7 @@ import {
   DialogTitle,
   Divider,
   Fade,
+  FormControlLabel,
   IconButton,
   MenuItem,
   Paper,
@@ -59,12 +61,32 @@ const tabItems = [
   { value: 'devices', label: '기기 변경', icon: <DevicesRoundedIcon fontSize="small" /> },
   { value: 'audit', label: '변경 이력', icon: <HistoryRoundedIcon fontSize="small" /> },
   { value: 'workers', label: '근로자 관리', icon: <ManageAccountsRoundedIcon fontSize="small" /> },
+  { value: 'notices', label: '공지사항 관리', icon: <CampaignRoundedIcon fontSize="small" /> },
   { value: 'qr', label: '출·퇴근 QR', icon: <QrCode2RoundedIcon fontSize="small" /> },
 ];
 
 const eventLabel = (type) => (type === 'check_in' ? '출근' : '퇴근');
 const hourOptions = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, '0'));
 const minuteOptions = Array.from({ length: 60 }, (_, index) => String(index).padStart(2, '0'));
+
+
+const addDateDays = (dateValue, days) => {
+  const [year, month, day] = String(dateValue || '').split('-').map(Number);
+  if (!year || !month || !day) return dateValue;
+  const date = new Date(Date.UTC(year, month - 1, day + days));
+  return date.toISOString().slice(0, 10);
+};
+
+const emptyNoticeDraft = () => {
+  const startsOn = getKoreaDateValue();
+  return {
+    id: '',
+    content: '',
+    startsOn,
+    endsOn: addDateDays(startsOn, 6),
+    isActive: true,
+  };
+};
 
 const workerStatusLabel = (status) => ({
   pending: '승인대기',
@@ -92,6 +114,11 @@ export default function AttendanceManagement({ projectName, canManage = false, o
   const [loading, setLoading] = useState(true);
   const [workers, setWorkers] = useState([]);
   const [workersLoading, setWorkersLoading] = useState(false);
+  const [notices, setNotices] = useState([]);
+  const [noticesLoading, setNoticesLoading] = useState(false);
+  const [noticeEditorOpen, setNoticeEditorOpen] = useState(false);
+  const [noticeDraft, setNoticeDraft] = useState(emptyNoticeDraft);
+  const [noticeSaving, setNoticeSaving] = useState(false);
   const [message, setMessage] = useState(null);
   const [staticQrImage, setStaticQrImage] = useState('');
   const [openingQrWindow, setOpeningQrWindow] = useState(false);
@@ -143,6 +170,25 @@ export default function AttendanceManagement({ projectName, canManage = false, o
     if (!silent) setWorkersLoading(false);
   }, [projectName]);
 
+
+  const loadNotices = useCallback(async (silent = false) => {
+    if (!projectName) return;
+    if (!silent) setNoticesLoading(true);
+
+    const { data, error } = await supabase.rpc('attendance_manager_list_notices_v52_17', {
+      p_project_name: projectName,
+    });
+
+    if (error) {
+      setMessage({ severity: 'error', text: error.message || '공지사항을 불러오지 못했습니다.' });
+      if (!silent) setNoticesLoading(false);
+      return;
+    }
+
+    setNotices(Array.isArray(data) ? data : []);
+    if (!silent) setNoticesLoading(false);
+  }, [projectName]);
+
   useEffect(() => {
     const timer = window.setTimeout(() => loadDashboard(), 0);
     return () => window.clearTimeout(timer);
@@ -153,6 +199,13 @@ export default function AttendanceManagement({ projectName, canManage = false, o
     const timer = window.setTimeout(() => loadWorkers(), 0);
     return () => window.clearTimeout(timer);
   }, [loadWorkers, tab]);
+
+
+  useEffect(() => {
+    if (tab !== 'notices') return undefined;
+    const timer = window.setTimeout(() => loadNotices(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadNotices, tab]);
 
   useEffect(() => {
     let active = true;
@@ -252,6 +305,76 @@ export default function AttendanceManagement({ projectName, canManage = false, o
         : `${worker.name_ko}님의 가입내역을 삭제했습니다. 같은 휴대폰번호로 다시 가입할 수 있습니다.`,
     });
     await Promise.all([loadWorkers(true), loadDashboard(true)]);
+  };
+
+  const openNewNotice = () => {
+    setNoticeDraft(emptyNoticeDraft());
+    setNoticeEditorOpen(true);
+  };
+
+  const openEditNotice = (notice) => {
+    setNoticeDraft({
+      id: notice?.id || '',
+      content: notice?.content || '',
+      startsOn: notice?.starts_on || getKoreaDateValue(),
+      endsOn: notice?.ends_on || getKoreaDateValue(),
+      isActive: notice?.is_active !== false,
+    });
+    setNoticeEditorOpen(true);
+  };
+
+  const saveNotice = async () => {
+    if (!canManage || noticeSaving) return;
+    const content = noticeDraft.content.trim();
+    if (content.length < 2) {
+      setMessage({ severity: 'warning', text: '공지내용을 2자 이상 입력해주세요.' });
+      return;
+    }
+    if (!noticeDraft.startsOn || !noticeDraft.endsOn) {
+      setMessage({ severity: 'warning', text: '게시 시작일과 종료일을 선택해주세요.' });
+      return;
+    }
+    if (noticeDraft.startsOn > noticeDraft.endsOn) {
+      setMessage({ severity: 'warning', text: '게시 종료일은 시작일보다 빠를 수 없습니다.' });
+      return;
+    }
+
+    setNoticeSaving(true);
+    const { error } = await supabase.rpc('attendance_manager_save_notice_v52_17', {
+      p_notice_id: noticeDraft.id || null,
+      p_project_name: projectName,
+      p_content: content,
+      p_starts_on: noticeDraft.startsOn,
+      p_ends_on: noticeDraft.endsOn,
+      p_is_active: Boolean(noticeDraft.isActive),
+    });
+    setNoticeSaving(false);
+
+    if (error) {
+      setMessage({ severity: 'error', text: error.message || '공지사항 저장에 실패했습니다.' });
+      return;
+    }
+
+    setNoticeEditorOpen(false);
+    setMessage({ severity: 'success', text: noticeDraft.id ? '공지사항을 수정했습니다.' : '공지사항을 등록했습니다.' });
+    await loadNotices(true);
+  };
+
+  const toggleNoticeActive = async (notice) => {
+    if (!canManage || !notice?.id) return;
+    const nextActive = !notice.is_active;
+    const { error } = await supabase.rpc('attendance_manager_set_notice_active_v52_17', {
+      p_notice_id: notice.id,
+      p_is_active: nextActive,
+    });
+
+    if (error) {
+      setMessage({ severity: 'error', text: error.message || '공지 사용여부 변경에 실패했습니다.' });
+      return;
+    }
+
+    setMessage({ severity: 'success', text: nextActive ? '공지사항을 다시 사용합니다.' : '공지사항 사용을 중지했습니다.' });
+    await loadNotices(true);
   };
 
   const handleWorkerDecision = async (workerId, approved) => {
@@ -608,7 +731,151 @@ export default function AttendanceManagement({ projectName, canManage = false, o
             )}
           </Paper>
         )}
+
+        {tab === 'notices' && (
+          <Paper variant="outlined" sx={{ borderColor: '#cbd5e1' }}>
+            <Box sx={{ p: 2, display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', justifyContent: 'space-between' }}>
+              <Box>
+                <Typography sx={{ fontWeight: 900 }}>공지사항 관리</Typography>
+                <Typography sx={{ color: '#64748b', fontSize: '0.72rem', lineHeight: 1.6 }}>
+                  게시기간 동안 로그인한 근로자 앱 상단에 공지가 오른쪽에서 왼쪽으로 계속 표시됩니다. 근로자는 공지를 끌 수 없습니다.
+                </Typography>
+              </Box>
+              <Stack direction="row" spacing={0.7}>
+                <IconButton onClick={() => loadNotices()} aria-label="공지사항 새로고침">
+                  <RefreshRoundedIcon />
+                </IconButton>
+                <Button variant="contained" disabled={!canManage} onClick={openNewNotice} sx={{ bgcolor: '#0f6fae', fontWeight: 900 }}>
+                  공지 등록
+                </Button>
+              </Stack>
+            </Box>
+            <Divider />
+            {!canManage && (
+              <Alert severity="info" sx={{ m: 1.5, mb: 0 }}>
+                조회 권한으로 접속했습니다. 공지 등록·수정·사용중지는 근태관리 수정 권한이 있는 담당자만 가능합니다.
+              </Alert>
+            )}
+            {noticesLoading ? (
+              <Box sx={{ py: 10, textAlign: 'center' }}><CircularProgress /></Box>
+            ) : (
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>공지내용</TableCell>
+                      <TableCell>게시 시작일</TableCell>
+                      <TableCell>게시 종료일</TableCell>
+                      <TableCell>사용여부</TableCell>
+                      <TableCell>작성자</TableCell>
+                      <TableCell>작성일</TableCell>
+                      <TableCell align="right">관리</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {notices.map((row) => (
+                      <TableRow key={row.id} hover>
+                        <TableCell sx={{ minWidth: 280, maxWidth: 520 }}>
+                          <Typography sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: '0.76rem', fontWeight: 700 }}>
+                            {row.content}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>{row.starts_on}</TableCell>
+                        <TableCell>{row.ends_on}</TableCell>
+                        <TableCell>
+                          <Chip size="small" color={row.is_active ? 'success' : 'default'} label={row.is_active ? '사용' : '미사용'} />
+                        </TableCell>
+                        <TableCell>{row.author_name || '-'}</TableCell>
+                        <TableCell>{formatKoreaDateTime(row.created_at)}</TableCell>
+                        <TableCell align="right">
+                          <Stack direction="row" spacing={0.6} justifyContent="flex-end">
+                            <Button size="small" variant="outlined" disabled={!canManage} onClick={() => openEditNotice(row)}>수정</Button>
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              color={row.is_active ? 'warning' : 'success'}
+                              disabled={!canManage}
+                              onClick={() => toggleNoticeActive(row)}
+                            >
+                              {row.is_active ? '사용중지' : '사용재개'}
+                            </Button>
+                          </Stack>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {notices.length === 0 && (
+                      <TableRow><TableCell colSpan={7} align="center" sx={{ py: 8, color: '#94a3b8' }}>등록된 공지사항이 없습니다.</TableCell></TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </Paper>
+        )}
       </Box>
+
+      <Dialog
+        open={noticeEditorOpen}
+        onClose={() => !noticeSaving && setNoticeEditorOpen(false)}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle sx={{ fontWeight: 900 }}>{noticeDraft.id ? '공지사항 수정' : '공지사항 등록'}</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={1.5}>
+            <TextField
+              fullWidth
+              multiline
+              minRows={3}
+              label="공지내용"
+              value={noticeDraft.content}
+              disabled={noticeSaving}
+              inputProps={{ maxLength: 1000 }}
+              onChange={(event) => setNoticeDraft((previous) => ({ ...previous, content: event.target.value }))}
+              helperText={`${noticeDraft.content.length}/1000자 · 근로자 앱에서는 한 줄 티커로 표시됩니다.`}
+            />
+            <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1.2}>
+              <TextField
+                fullWidth
+                type="date"
+                label="게시 시작일"
+                value={noticeDraft.startsOn}
+                disabled={noticeSaving}
+                InputLabelProps={{ shrink: true }}
+                onChange={(event) => setNoticeDraft((previous) => ({ ...previous, startsOn: event.target.value }))}
+              />
+              <TextField
+                fullWidth
+                type="date"
+                label="게시 종료일"
+                value={noticeDraft.endsOn}
+                disabled={noticeSaving}
+                InputLabelProps={{ shrink: true }}
+                onChange={(event) => setNoticeDraft((previous) => ({ ...previous, endsOn: event.target.value }))}
+              />
+            </Stack>
+            <FormControlLabel
+              control={(
+                <Checkbox
+                  checked={Boolean(noticeDraft.isActive)}
+                  disabled={noticeSaving}
+                  onChange={(event) => setNoticeDraft((previous) => ({ ...previous, isActive: event.target.checked }))}
+                />
+              )}
+              label="사용중 - 게시기간에 해당하면 근로자 앱에 표시"
+            />
+            <Alert severity="info" sx={{ fontSize: '0.72rem' }}>
+              로그인한 근로자에게 강제 표시되며 근로자 화면에는 닫기 버튼이 없습니다. 공지를 내리려면 여기에서 사용중지하거나 게시 종료일을 변경하세요.
+            </Alert>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={noticeSaving} onClick={() => setNoticeEditorOpen(false)}>취소</Button>
+          <Button variant="contained" disabled={noticeSaving} onClick={saveNotice} sx={{ bgcolor: '#0f6fae' }}>
+            {noticeSaving ? '저장 중...' : '저장'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={Boolean(correction)}
