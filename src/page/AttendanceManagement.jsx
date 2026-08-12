@@ -82,6 +82,7 @@ const emptyNoticeDraft = () => {
   return {
     id: '',
     content: '',
+    sortOrder: 1,
     startsOn,
     endsOn: addDateDays(startsOn, 6),
     isActive: true,
@@ -175,7 +176,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
     if (!projectName) return;
     if (!silent) setNoticesLoading(true);
 
-    const { data, error } = await supabase.rpc('attendance_manager_list_notices_v52_17', {
+    const { data, error } = await supabase.rpc('attendance_manager_list_notices_v52_21', {
       p_project_name: projectName,
     });
 
@@ -308,7 +309,10 @@ export default function AttendanceManagement({ projectName, canManage = false, o
   };
 
   const openNewNotice = () => {
-    setNoticeDraft(emptyNoticeDraft());
+    setNoticeDraft({
+      ...emptyNoticeDraft(),
+      sortOrder: notices.length + 1,
+    });
     setNoticeEditorOpen(true);
   };
 
@@ -316,6 +320,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
     setNoticeDraft({
       id: notice?.id || '',
       content: notice?.content || '',
+      sortOrder: Number(notice?.sort_order) || 1,
       startsOn: notice?.starts_on || getKoreaDateValue(),
       endsOn: notice?.ends_on || getKoreaDateValue(),
       isActive: notice?.is_active !== false,
@@ -330,6 +335,13 @@ export default function AttendanceManagement({ projectName, canManage = false, o
       setMessage({ severity: 'warning', text: '공지내용을 2자 이상 입력해주세요.' });
       return;
     }
+
+    const sortOrder = Math.trunc(Number(noticeDraft.sortOrder));
+    if (!Number.isFinite(sortOrder) || sortOrder < 1) {
+      setMessage({ severity: 'warning', text: '표시 순번은 1 이상의 숫자로 입력해주세요.' });
+      return;
+    }
+
     if (!noticeDraft.startsOn || !noticeDraft.endsOn) {
       setMessage({ severity: 'warning', text: '게시 시작일과 종료일을 선택해주세요.' });
       return;
@@ -340,10 +352,11 @@ export default function AttendanceManagement({ projectName, canManage = false, o
     }
 
     setNoticeSaving(true);
-    const { error } = await supabase.rpc('attendance_manager_save_notice_v52_17', {
+    const { error } = await supabase.rpc('attendance_manager_save_notice_v52_21', {
       p_notice_id: noticeDraft.id || null,
       p_project_name: projectName,
       p_content: content,
+      p_sort_order: sortOrder,
       p_starts_on: noticeDraft.startsOn,
       p_ends_on: noticeDraft.endsOn,
       p_is_active: Boolean(noticeDraft.isActive),
@@ -738,7 +751,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
               <Box>
                 <Typography sx={{ fontWeight: 900 }}>공지사항 관리</Typography>
                 <Typography sx={{ color: '#64748b', fontSize: '0.72rem', lineHeight: 1.6 }}>
-                  게시기간 동안 로그인한 근로자 앱 상단에 공지가 오른쪽에서 왼쪽으로 계속 표시됩니다. 근로자는 공지를 끌 수 없습니다.
+                  표시 순번을 지정할 수 있으며 게시기간 동안 로그인한 근로자 앱 상단에 순번대로 계속 표시됩니다. 근로자는 공지를 끌 수 없습니다.
                 </Typography>
               </Box>
               <Stack direction="row" spacing={0.7}>
@@ -763,6 +776,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
                 <Table size="small">
                   <TableHead>
                     <TableRow>
+                      <TableCell align="center" sx={{ width: 72 }}>순번</TableCell>
                       <TableCell>공지내용</TableCell>
                       <TableCell>게시 시작일</TableCell>
                       <TableCell>게시 종료일</TableCell>
@@ -773,8 +787,11 @@ export default function AttendanceManagement({ projectName, canManage = false, o
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {notices.map((row) => (
+                    {notices.map((row, index) => (
                       <TableRow key={row.id} hover>
+                        <TableCell align="center" sx={{ fontWeight: 900 }}>
+                          {Number(row.sort_order) || index + 1}
+                        </TableCell>
                         <TableCell sx={{ minWidth: 280, maxWidth: 520 }}>
                           <Typography sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: '0.76rem', fontWeight: 700 }}>
                             {row.content}
@@ -804,7 +821,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
                       </TableRow>
                     ))}
                     {notices.length === 0 && (
-                      <TableRow><TableCell colSpan={7} align="center" sx={{ py: 8, color: '#94a3b8' }}>등록된 공지사항이 없습니다.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={8} align="center" sx={{ py: 8, color: '#94a3b8' }}>등록된 공지사항이 없습니다.</TableCell></TableRow>
                     )}
                   </TableBody>
                 </Table>
@@ -823,6 +840,21 @@ export default function AttendanceManagement({ projectName, canManage = false, o
         <DialogTitle sx={{ fontWeight: 900 }}>{noticeDraft.id ? '공지사항 수정' : '공지사항 등록'}</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={1.5}>
+            <TextField
+              fullWidth
+              type="number"
+              label="표시 순번"
+              value={noticeDraft.sortOrder}
+              disabled={noticeSaving}
+              inputProps={{ min: 1, step: 1 }}
+              onChange={(event) =>
+                setNoticeDraft((previous) => ({
+                  ...previous,
+                  sortOrder: event.target.value,
+                }))
+              }
+              helperText="1번이 가장 먼저 표시됩니다. 저장하면 같은 현장의 공지 순서를 1, 2, 3…으로 자동 정리합니다."
+            />
             <TextField
               fullWidth
               multiline

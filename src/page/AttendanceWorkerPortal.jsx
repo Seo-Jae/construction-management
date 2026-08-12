@@ -411,18 +411,39 @@ const statusMeta = {
 
 function AttendanceNoticeTicker({ notices, appMode = false }) {
   const visibleNotices = Array.isArray(notices)
-    ? notices.map((item) => String(item?.content || '').trim()).filter(Boolean)
+    ? notices
+        .map((item, originalIndex) => ({
+          key: String(item?.id || `notice-${originalIndex}`),
+          content: String(item?.content || '').trim(),
+          sortOrder: Number(item?.sort_order) || originalIndex + 1,
+        }))
+        .filter((item) => Boolean(item.content))
+        .sort((first, second) =>
+          first.sortOrder === second.sortOrder
+            ? first.key.localeCompare(second.key)
+            : first.sortOrder - second.sortOrder,
+        )
     : [];
 
   if (visibleNotices.length === 0) return null;
 
-  const tickerText = visibleNotices.join('　◆　');
-  const durationSeconds = Math.max(18, Math.min(55, Math.round(tickerText.length * 0.42)));
+  const ariaText = visibleNotices
+    .map((notice, index) => `${index + 1}. ${notice.content}`)
+    .join(' / ');
+  const contentLength = visibleNotices.reduce(
+    (total, notice) => total + notice.content.length,
+    0,
+  );
+  const spacingWeight = Math.max(0, visibleNotices.length - 1) * 12;
+  const durationSeconds = Math.max(
+    20,
+    Math.min(70, Math.round((contentLength + spacingWeight) * 0.42)),
+  );
 
   return (
     <Box
       role="status"
-      aria-label={`공지사항 ${tickerText}`}
+      aria-label={`공지사항 ${ariaText}`}
       sx={{
         width: '100%',
         minHeight: appMode ? 56 : 42,
@@ -451,12 +472,25 @@ function AttendanceNoticeTicker({ notices, appMode = false }) {
       >
         공지
       </Box>
-      <Box sx={{ minWidth: 0, flex: 1, overflow: 'hidden', display: 'flex', alignItems: 'center' }}>
-        <Typography
+
+      <Box
+        sx={{
+          minWidth: 0,
+          flex: 1,
+          overflow: 'hidden',
+          display: 'flex',
+          alignItems: 'center',
+        }}
+      >
+        <Box
           component="div"
           sx={{
             width: 'max-content',
             flexShrink: 0,
+            display: 'flex',
+            alignItems: 'center',
+            // 공지 간격: 앱에서는 약 64px, 일반 브라우저에서는 약 48px
+            gap: appMode ? 8 : 6,
             whiteSpace: 'nowrap',
             pl: 1.5,
             fontSize: appMode ? '1.08rem' : '0.84rem',
@@ -470,8 +504,30 @@ function AttendanceNoticeTicker({ notices, appMode = false }) {
             },
           }}
         >
-          {tickerText}
-        </Typography>
+          {visibleNotices.map((notice, index) => (
+            <Box
+              component="span"
+              key={notice.key}
+              sx={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <Box
+                component="span"
+                sx={{
+                  mr: 0.7,
+                  fontWeight: 1000,
+                  fontVariantNumeric: 'tabular-nums',
+                }}
+              >
+                {index + 1}.
+              </Box>
+              <Box component="span">{notice.content}</Box>
+            </Box>
+          ))}
+        </Box>
       </Box>
     </Box>
   );
@@ -628,7 +684,7 @@ export default function AttendanceWorkerPortal() {
     }
 
     if (!silent) setLoading(true);
-    const { data, error } = await supabase.rpc('attendance_worker_me_v52_14', {
+    const { data, error } = await supabase.rpc('attendance_worker_me_v52_21', {
       p_session_token: token,
       p_device_key: deviceKey,
     });
