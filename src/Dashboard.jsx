@@ -249,6 +249,23 @@ const formatYYYYMMDD = (dateStr) => {
 
 const jobOptions = ['소장', '관리자', '직영', '먹매김', '단열', '합지', '경량벽체', '세대천정', '공용홀천정', '몰딩', '걸레받이', '수장', '외주', '기타', '용역'];
 
+/*
+  v52.29 과거 출력일보 직종명 최소 호환.
+  공정(process)은 별도 세부공정이므로 이 함수로 변경하지 않습니다.
+*/
+const LEGACY_DAILY_REPORT_JOB_MAP = {
+  먹메김: '먹매김',
+  경량: '경량벽체',
+  경량골조: '경량벽체',
+  경량석고: '경량벽체',
+  천정: '세대천정',
+};
+
+const normalizeDailyReportJob = (value) => {
+  const normalized = String(value || '').trim();
+  return LEGACY_DAILY_REPORT_JOB_MAP[normalized] || normalized;
+};
+
 const processOptions = ['바닥먹', '허리먹', '단열', '합지', '경량골조', '경량석고', '세대천정', '1차몰딩', '2차몰딩', '1차 걸레받이', '2차 걸레받이'];
 
 const MARK_VALLEY_EXTRA_PROCESS = '조적단열';
@@ -1748,7 +1765,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         : [];
 
       const jobCounts = workers.reduce((counts, worker) => {
-        const job = worker?.job;
+        const job = normalizeDailyReportJob(worker?.job);
         if (!job) return counts;
 
         counts[job] = (counts[job] || 0) + 1;
@@ -2207,6 +2224,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     clearDailyWorkerRows(worksheet);
 
     const selectedDateTime = parseReportDateKey(dateStr);
+    const selectedMonthPrefix = String(dateStr || '').slice(0, 6);
     const previousJobCounts = {};
 
     Object.entries(savedData).forEach(
@@ -2216,6 +2234,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         if (
           reportDateTime === null ||
           selectedDateTime === null ||
+          !String(reportDateKey).startsWith(selectedMonthPrefix) ||
           reportDateTime >= selectedDateTime
         ) {
           return;
@@ -2226,7 +2245,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           : [];
 
         previousWorkers.forEach((worker) => {
-          const job = worker?.job;
+          const job = normalizeDailyReportJob(worker?.job);
           const name = String(worker?.name || '').trim();
 
           if (!job || !name) return;
@@ -2258,7 +2277,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       if (index < 40) {
         const row = 18 + index;
 
-        worksheet.getCell(`B${row}`).value = worker.job || '';
+        worksheet.getCell(`B${row}`).value = normalizeDailyReportJob(worker.job) || '';
         worksheet.getCell(`C${row}`).value = worker.name || '';
         worksheet.getCell(`D${row}`).value =
           worker.process || worker.job || '';
@@ -2268,7 +2287,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       } else {
         const row = 18 + (index - 40);
 
-        worksheet.getCell(`H${row}`).value = worker.job || '';
+        worksheet.getCell(`H${row}`).value = normalizeDailyReportJob(worker.job) || '';
         worksheet.getCell(`I${row}`).value = worker.name || '';
         worksheet.getCell(`J${row}`).value =
           worker.process || worker.job || '';
@@ -2417,7 +2436,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const normalizeWorker = (worker, index = 0) => ({
     ...worker,
     id: worker?.id ?? `${Date.now()}-${index}-${Math.random()}`,
-    job: worker?.job ?? null,
+    job: normalizeDailyReportJob(worker?.job) || null,
     name: worker?.name ?? '',
     process: worker?.process || worker?.job || null,
     location: worker?.location || '',

@@ -30,7 +30,10 @@ import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
 
 const LEGACY_JOB_MAP = {
+  먹메김: '먹매김',
   경량: '경량벽체',
+  경량골조: '경량벽체',
+  경량석고: '경량벽체',
   천정: '세대천정',
 };
 
@@ -489,9 +492,14 @@ const readWorkerRow = ({
     sourceJob || sourceProcess,
   );
 
-  const process = mapLegacyJob(
-    sourceProcess || sourceJob,
-  );
+  /*
+    구분(job)만 현재 직종체계로 통합하고,
+    원본 공정(process)은 경량골조/경량석고 같은 세부공정을 보존합니다.
+    원본 공정이 비어 있을 때만 정규화된 job을 사용합니다.
+  */
+  const process = sourceProcess
+    ? normalizeText(sourceProcess)
+    : job;
 
   return {
     id:
