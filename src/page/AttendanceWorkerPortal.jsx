@@ -425,7 +425,7 @@ function AttendanceNoticeTicker({ notices, appMode = false }) {
       aria-label={`공지사항 ${tickerText}`}
       sx={{
         width: '100%',
-        minHeight: appMode ? 44 : 38,
+        minHeight: appMode ? 56 : 42,
         display: 'flex',
         alignItems: 'stretch',
         bgcolor: '#ffeb3b',
@@ -438,12 +438,12 @@ function AttendanceNoticeTicker({ notices, appMode = false }) {
       <Box
         sx={{
           flex: '0 0 auto',
-          px: appMode ? 1.6 : 1.3,
+          px: appMode ? 2 : 1.5,
           display: 'grid',
           placeItems: 'center',
           bgcolor: '#facc15',
           color: '#713f12',
-          fontSize: appMode ? '0.82rem' : '0.7rem',
+          fontSize: appMode ? '1rem' : '0.78rem',
           fontWeight: 1000,
           letterSpacing: '0.04em',
           zIndex: 1,
@@ -459,7 +459,7 @@ function AttendanceNoticeTicker({ notices, appMode = false }) {
             flexShrink: 0,
             whiteSpace: 'nowrap',
             pl: 1.5,
-            fontSize: appMode ? '0.9rem' : '0.76rem',
+            fontSize: appMode ? '1.08rem' : '0.84rem',
             fontWeight: 900,
             lineHeight: 1,
             willChange: 'transform',
