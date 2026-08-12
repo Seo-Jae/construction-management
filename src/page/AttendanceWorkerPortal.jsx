@@ -679,6 +679,13 @@ export default function AttendanceWorkerPortal() {
   const videoRef = useRef(null);
   const scannerControlsRef = useRef(null);
   const cameraStreamRef = useRef(null);
+  /*
+    v52.27:
+    worker state를 loadMe의 dependency로 사용하면
+    loadMe -> setWorker -> loadMe 재생성 -> effect 재실행 루프가 생길 수 있습니다.
+    최신 worker 값이 필요할 때는 ref를 사용해 함수 identity를 안정적으로 유지합니다.
+  */
+  const workerRef = useRef(null);
   const handledDeepLinkRef = useRef('');
   const deviceKey = useRef(getAttendanceDeviceKey()).current;
   const primaryActionColor = appMode ? APP_BRAND_GREEN : '#0f6fae';
@@ -720,6 +727,7 @@ export default function AttendanceWorkerPortal() {
 
   const loadMe = useCallback(async (token = sessionToken, silent = false) => {
     if (!token) {
+      workerRef.current = null;
       setWorker(null);
       setTodayEvents([]);
       setMonthEvents([]);
@@ -744,6 +752,7 @@ export default function AttendanceWorkerPortal() {
           저장된 로그인 정보를 제거합니다.
         */
         saveSession('');
+        workerRef.current = null;
         setWorker(null);
         setTodayEvents([]);
         setMonthEvents([]);
@@ -767,10 +776,11 @@ export default function AttendanceWorkerPortal() {
       }
 
       setLoading(false);
-      return worker;
+      return workerRef.current;
     }
 
     const nextWorker = data?.worker || null;
+    workerRef.current = nextWorker;
     setWorker(nextWorker);
     setTodayEvents(Array.isArray(data?.today_events) ? data.today_events : []);
     setMonthEvents(Array.isArray(data?.month_events) ? data.month_events : []);
@@ -783,7 +793,6 @@ export default function AttendanceWorkerPortal() {
     isAttendanceSessionInvalidError,
     saveSession,
     sessionToken,
-    worker,
   ]);
 
   useEffect(() => {
@@ -961,6 +970,7 @@ export default function AttendanceWorkerPortal() {
       });
     }
     saveSession('');
+    workerRef.current = null;
     setWorker(null);
     setTodayEvents([]);
     setMonthEvents([]);
@@ -1146,6 +1156,13 @@ export default function AttendanceWorkerPortal() {
 
   useEffect(() => {
     if (!scannerOpen || !scannerVideoElement || !cameraStreamRef.current) return undefined;
+
+    /*
+      v52.27:
+      이 effect cleanup은 실제 scanner dependency가 바뀔 때만 실행되어야 합니다.
+      loadMe의 worker dependency를 제거했기 때문에
+      60초 세션 갱신이나 setWorker 자체가 카메라 stream을 끊지 않습니다.
+    */
     let cancelled = false;
     const stream = cameraStreamRef.current;
     const video = scannerVideoElement;
