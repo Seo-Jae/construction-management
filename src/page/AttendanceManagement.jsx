@@ -36,6 +36,7 @@ import EditCalendarRoundedIcon from '@mui/icons-material/EditCalendarRounded';
 import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import LaunchRoundedIcon from '@mui/icons-material/LaunchRounded';
+import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded';
 import PrintRoundedIcon from '@mui/icons-material/PrintRounded';
 import QrCode2RoundedIcon from '@mui/icons-material/QrCode2Rounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
@@ -57,12 +58,27 @@ const tabItems = [
   { value: 'risk', label: '중점위험요인 관리', icon: <CampaignRoundedIcon fontSize="small" /> },
   { value: 'devices', label: '기기 변경', icon: <DevicesRoundedIcon fontSize="small" /> },
   { value: 'audit', label: '변경 이력', icon: <HistoryRoundedIcon fontSize="small" /> },
+  { value: 'workers', label: '근로자 관리', icon: <ManageAccountsRoundedIcon fontSize="small" /> },
   { value: 'qr', label: '출·퇴근 QR', icon: <QrCode2RoundedIcon fontSize="small" /> },
 ];
 
 const eventLabel = (type) => (type === 'check_in' ? '출근' : '퇴근');
 const hourOptions = Array.from({ length: 24 }, (_, index) => String(index).padStart(2, '0'));
 const minuteOptions = Array.from({ length: 60 }, (_, index) => String(index).padStart(2, '0'));
+
+const workerStatusLabel = (status) => ({
+  pending: '승인대기',
+  active: '사용중',
+  rejected: '반려',
+  disabled: '사용중지',
+}[status] || status || '-');
+
+const workerStatusColor = (status) => ({
+  pending: 'warning',
+  active: 'success',
+  rejected: 'error',
+  disabled: 'default',
+}[status] || 'default');
 
 export default function AttendanceManagement({ projectName, canManage = false, onLogout }) {
   const [tab, setTab] = useState('approval');
@@ -74,6 +90,8 @@ export default function AttendanceManagement({ projectName, canManage = false, o
     recent_audit: [],
   });
   const [loading, setLoading] = useState(true);
+  const [workers, setWorkers] = useState([]);
+  const [workersLoading, setWorkersLoading] = useState(false);
   const [message, setMessage] = useState(null);
   const [staticQrImage, setStaticQrImage] = useState('');
   const [openingQrWindow, setOpeningQrWindow] = useState(false);
@@ -107,10 +125,34 @@ export default function AttendanceManagement({ projectName, canManage = false, o
     setLoading(false);
   }, [projectName, workDate]);
 
+  const loadWorkers = useCallback(async (silent = false) => {
+    if (!projectName) return;
+    if (!silent) setWorkersLoading(true);
+
+    const { data, error } = await supabase.rpc('attendance_manager_list_workers_v52_16', {
+      p_project_name: projectName,
+    });
+
+    if (error) {
+      setMessage({ severity: 'error', text: error.message || '근로자 목록을 불러오지 못했습니다.' });
+      if (!silent) setWorkersLoading(false);
+      return;
+    }
+
+    setWorkers(Array.isArray(data) ? data : []);
+    if (!silent) setWorkersLoading(false);
+  }, [projectName]);
+
   useEffect(() => {
     const timer = window.setTimeout(() => loadDashboard(), 0);
     return () => window.clearTimeout(timer);
   }, [loadDashboard]);
+
+  useEffect(() => {
+    if (tab !== 'workers') return undefined;
+    const timer = window.setTimeout(() => loadWorkers(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadWorkers, tab]);
 
   useEffect(() => {
     let active = true;
@@ -175,6 +217,41 @@ export default function AttendanceManagement({ projectName, canManage = false, o
   const handleTabChange = (_event, value) => {
     setTab(value);
     if (value === 'qr' && canManage) void openDynamicQrWindow();
+  };
+
+  const handleDeleteWorker = async (worker) => {
+    if (!canManage || !worker?.id) return;
+
+    const confirmed = window.confirm(
+      `${worker.name_ko}님의 가입내역을 삭제할까요?\n\n` +
+      '삭제 즉시 현재 로그인은 해제되고, 같은 휴대폰번호와 같은 기기로 다시 가입할 수 있습니다.\n' +
+      '과거 근태 기록과 변경 이력은 보존됩니다.',
+    );
+    if (!confirmed) return;
+
+    const defaultReason = worker.is_test_account
+      ? '테스트계정 정리'
+      : '근로자 가입계정 정리';
+    const reason = window.prompt('삭제 사유를 입력해주세요.', defaultReason)?.trim();
+    if (!reason) return;
+
+    const { data, error } = await supabase.rpc('attendance_manager_delete_worker_v52_16', {
+      p_worker_id: worker.id,
+      p_reason: reason,
+    });
+
+    if (error) {
+      setMessage({ severity: 'error', text: error.message || '가입내역 삭제에 실패했습니다.' });
+      return;
+    }
+
+    setMessage({
+      severity: 'success',
+      text: data?.already_deleted
+        ? '이미 삭제 처리된 가입내역입니다.'
+        : `${worker.name_ko}님의 가입내역을 삭제했습니다. 같은 휴대폰번호로 다시 가입할 수 있습니다.`,
+    });
+    await Promise.all([loadWorkers(true), loadDashboard(true)]);
   };
 
   const handleWorkerDecision = async (workerId, approved) => {
@@ -447,11 +524,88 @@ export default function AttendanceManagement({ projectName, canManage = false, o
 
         {tab === 'audit' && (
           <Paper variant="outlined" sx={{ borderColor: '#cbd5e1' }}>
-            <Box sx={{ p: 2 }}><Typography sx={{ fontWeight: 900 }}>최근 변경 이력</Typography><Typography sx={{ color: '#64748b', fontSize: '0.72rem' }}>승인·반려·기기변경·수동수정 기록을 보존합니다.</Typography></Box><Divider />
+            <Box sx={{ p: 2 }}><Typography sx={{ fontWeight: 900 }}>최근 변경 이력</Typography><Typography sx={{ color: '#64748b', fontSize: '0.72rem' }}>승인·반려·기기변경·수동수정·가입내역 삭제 기록을 보존합니다.</Typography></Box><Divider />
             <TableContainer><Table size="small"><TableHead><TableRow><TableCell>일시</TableCell><TableCell>처리내용</TableCell><TableCell>대상</TableCell><TableCell>처리자</TableCell><TableCell>사유</TableCell></TableRow></TableHead><TableBody>
               {dashboard.recent_audit.map((row) => <TableRow key={row.id}><TableCell>{formatKoreaDateTime(row.created_at)}</TableCell><TableCell>{row.action_label}</TableCell><TableCell>{row.worker_name || '-'}</TableCell><TableCell>{row.actor_name || '-'}</TableCell><TableCell>{row.reason || '-'}</TableCell></TableRow>)}
               {dashboard.recent_audit.length === 0 && <TableRow><TableCell colSpan={5} align="center" sx={{ py: 8, color: '#94a3b8' }}>변경 이력이 없습니다.</TableCell></TableRow>}
             </TableBody></Table></TableContainer>
+          </Paper>
+        )}
+
+        {tab === 'workers' && (
+          <Paper variant="outlined" sx={{ borderColor: '#cbd5e1' }}>
+            <Box sx={{ p: 2, display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', justifyContent: 'space-between' }}>
+              <Box>
+                <Typography sx={{ fontWeight: 900 }}>근로자 관리</Typography>
+                <Typography sx={{ color: '#64748b', fontSize: '0.72rem', lineHeight: 1.6 }}>
+                  가입일자와 계정 상태를 확인하고 잘못 가입한 계정·테스트계정을 정리할 수 있습니다. 삭제 후 같은 휴대폰번호와 기기로 다시 가입할 수 있습니다.
+                </Typography>
+              </Box>
+              <IconButton onClick={() => loadWorkers()} aria-label="근로자 목록 새로고침">
+                <RefreshRoundedIcon />
+              </IconButton>
+            </Box>
+            <Divider />
+            {!canManage && (
+              <Alert severity="info" sx={{ m: 1.5, mb: 0 }}>
+                조회 권한으로 접속했습니다. 가입내역 삭제는 근태관리 수정 권한이 있는 담당자만 가능합니다.
+              </Alert>
+            )}
+            {workersLoading ? (
+              <Box sx={{ py: 10, textAlign: 'center' }}><CircularProgress /></Box>
+            ) : (
+              <TableContainer>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>가입일자</TableCell>
+                      <TableCell>성명</TableCell>
+                      <TableCell>구분</TableCell>
+                      <TableCell>휴대폰</TableCell>
+                      <TableCell>직종</TableCell>
+                      <TableCell>상태</TableCell>
+                      <TableCell>최근 로그인</TableCell>
+                      <TableCell align="right">처리</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {workers.map((row) => (
+                      <TableRow key={row.id} hover>
+                        <TableCell>{formatKoreaDateTime(row.created_at)}</TableCell>
+                        <TableCell>
+                          <b>{row.name_ko}</b>
+                          {row.name_en ? <Typography sx={{ fontSize: '0.68rem', color: '#64748b' }}>{row.name_en}</Typography> : null}
+                        </TableCell>
+                        <TableCell>
+                          <Stack direction="row" spacing={0.5} alignItems="center" flexWrap="wrap">
+                            <span>{row.is_foreigner ? '외국인' : '내국인'}</span>
+                            {row.is_test_account && <Chip label="테스트" size="small" color="info" />}
+                          </Stack>
+                        </TableCell>
+                        <TableCell>{formatPhone(row.phone)}</TableCell>
+                        <TableCell>{row.trade_name || '-'}</TableCell>
+                        <TableCell><Chip size="small" color={workerStatusColor(row.status)} label={workerStatusLabel(row.status)} /></TableCell>
+                        <TableCell>{row.last_login_at ? formatKoreaDateTime(row.last_login_at) : '-'}</TableCell>
+                        <TableCell align="right">
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            color="error"
+                            disabled={!canManage}
+                            onClick={() => handleDeleteWorker(row)}
+                          >
+                            가입내역 삭제
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                    {workers.length === 0 && (
+                      <TableRow><TableCell colSpan={8} align="center" sx={{ py: 8, color: '#94a3b8' }}>등록된 근로자가 없습니다.</TableCell></TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
           </Paper>
         )}
       </Box>
