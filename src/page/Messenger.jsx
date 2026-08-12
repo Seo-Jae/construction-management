@@ -54,6 +54,7 @@ import PersonRoundedIcon from '@mui/icons-material/PersonRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import SendRoundedIcon from '@mui/icons-material/SendRounded';
 import { supabase } from '../supabaseClient';
+import MessengerBroadcastDialog from '../components/MessengerBroadcastDialog';
 import {
   MESSENGER_MAX_FILE_BYTES,
   MESSENGER_STORAGE_BUCKET,
@@ -257,6 +258,7 @@ export default function Messenger({ currentUserId, standalone = false }) {
   const [newChatSelectedIds, setNewChatSelectedIds] = useState([]);
   const [newGroupName, setNewGroupName] = useState('');
   const [newChatCreating, setNewChatCreating] = useState(false);
+  const [broadcastOpen, setBroadcastOpen] = useState(false);
 
   const [manageOpen, setManageOpen] = useState(false);
   const [manageRoomName, setManageRoomName] = useState('');
@@ -1516,6 +1518,17 @@ export default function Messenger({ currentUserId, standalone = false }) {
     loadUsers();
   };
 
+  const handleOpenBroadcast = async () => {
+    await loadUsers();
+    setBroadcastOpen(true);
+  };
+
+  const handleBroadcastSent = async (sentCount) => {
+    await loadRooms();
+    notifyUnreadRefresh();
+    showToast(`${sentCount}명에게 전체 메시지를 전송했습니다.`, 'success');
+  };
+
   const toggleNewChatUser = (userId) => {
     if (newChatMode === 'direct') {
       setNewChatSelectedIds([userId]);
@@ -1978,6 +1991,15 @@ export default function Messenger({ currentUserId, standalone = false }) {
             사내 1:1 · 그룹 대화
           </Typography>
         </Box>
+        <Tooltip title="전체 메시지 전송">
+          <IconButton
+            size="small"
+            onClick={handleOpenBroadcast}
+            sx={{ color: '#b45309', bgcolor: '#fef3c7' }}
+          >
+            <CampaignRoundedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
         <Tooltip title="새 대화">
           <IconButton
             size="small"
@@ -2883,6 +2905,15 @@ export default function Messenger({ currentUserId, standalone = false }) {
           )}
         </Paper>
       )}
+
+      <MessengerBroadcastDialog
+        open={broadcastOpen}
+        users={users}
+        usersLoading={usersLoading}
+        usersError={usersError}
+        onClose={() => setBroadcastOpen(false)}
+        onSent={handleBroadcastSent}
+      />
 
       <Dialog
         open={newChatOpen}
