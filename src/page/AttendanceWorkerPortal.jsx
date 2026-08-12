@@ -533,7 +533,12 @@ function AttendanceNoticeTicker({ notices, appMode = false }) {
   );
 }
 
-function MobileShell({ children, appMode = false, topBanner = null }) {
+function MobileShell({
+  children,
+  appMode = false,
+  topBanner = null,
+  headerAction = null,
+}) {
   return (
     <Box sx={{ minHeight: '100dvh', bgcolor: appMode ? '#f5f7f6' : '#eef3f8' }}>
       <AppBar
@@ -544,8 +549,21 @@ function MobileShell({ children, appMode = false, topBanner = null }) {
           pt: appMode ? 'env(safe-area-inset-top)' : 0,
         }}
       >
-        <Toolbar sx={{ minHeight: appMode ? '72px !important' : '58px !important', px: appMode ? 0.75 : 2 }}>
-          <Stack direction="row" spacing={1.5} alignItems="center">
+        <Toolbar
+          sx={{
+            minHeight: appMode ? '72px !important' : '58px !important',
+            px: appMode ? 0.75 : 2,
+            display: 'flex',
+            justifyContent: 'space-between',
+            gap: 1,
+          }}
+        >
+          <Stack
+            direction="row"
+            spacing={1.5}
+            alignItems="center"
+            sx={{ minWidth: 0 }}
+          >
             {appMode && (
               <Box
                 aria-hidden="true"
@@ -577,6 +595,19 @@ function MobileShell({ children, appMode = false, topBanner = null }) {
             </Typography>
             </Box>
           </Stack>
+
+          {headerAction && (
+            <Box
+              sx={{
+                flex: '0 0 auto',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+              }}
+            >
+              {headerAction}
+            </Box>
+          )}
         </Toolbar>
       </AppBar>
       {topBanner}
@@ -1147,6 +1178,25 @@ export default function AttendanceWorkerPortal() {
       <MobileShell
         appMode={appMode}
         topBanner={<AttendanceNoticeTicker notices={attendanceNotices} appMode={appMode} />}
+        headerAction={
+          <IconButton
+            aria-label="로그아웃"
+            title="로그아웃"
+            onClick={handleLogout}
+            sx={{
+              width: appMode ? 44 : 40,
+              height: appMode ? 44 : 40,
+              color: '#ffffff',
+              bgcolor: 'rgba(255,255,255,0.12)',
+              border: '1px solid rgba(255,255,255,0.28)',
+              '&:hover': {
+                bgcolor: 'rgba(255,255,255,0.2)',
+              },
+            }}
+          >
+            <LogoutRoundedIcon />
+          </IconButton>
+        }
       >
         <AttendanceToast message={message} onClose={() => setMessage(null)} appMode={appMode} />
         <RiskBroadcastPanel broadcasts={riskBroadcasts} />
@@ -1219,10 +1269,17 @@ export default function AttendanceWorkerPortal() {
           </Button>
         )}
 
-        <Stack direction="row" spacing={1} sx={{ mt: 2 }}>
-          {!appMode && <Button fullWidth variant="outlined" startIcon={<AddToHomeScreenRoundedIcon />} onClick={handleInstall}>앱으로 설치</Button>}
-          <Button fullWidth variant="text" color="inherit" startIcon={<LogoutRoundedIcon />} onClick={handleLogout}>로그아웃</Button>
-        </Stack>
+        {!appMode && (
+          <Button
+            fullWidth
+            variant="outlined"
+            startIcon={<AddToHomeScreenRoundedIcon />}
+            onClick={handleInstall}
+            sx={{ mt: 2 }}
+          >
+            앱으로 설치
+          </Button>
+        )}
         <Dialog open={scannerOpen} onClose={closeScanner} fullWidth maxWidth="xs">
           <DialogTitle sx={{ pr: 6, fontWeight: 900 }}>
             동적 QR 촬영
