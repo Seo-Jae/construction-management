@@ -8,6 +8,7 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
@@ -15,6 +16,7 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  FormControlLabel,
   IconButton,
   Paper,
   Stack,
@@ -272,6 +274,7 @@ export default function MainWorkAlertDialog({
   const [summary, setSummary] = useState(initialSummary);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [hideToday, setHideToday] = useState(false);
 
   const loadSummary = useCallback(async () => {
     if (!projectName) {
@@ -386,13 +389,20 @@ export default function MainWorkAlertDialog({
 
   useEffect(() => {
     if (open) {
+      setHideToday(false);
       loadSummary();
     }
   }, [loadSummary, open]);
 
+  const handleClose = () => {
+    if (typeof onClose === 'function') {
+      onClose(hideToday);
+    }
+  };
+
   const handleMove = (view) => {
     if (typeof onClose === 'function') {
-      onClose();
+      onClose(hideToday);
     }
 
     if (typeof onNavigate === 'function') {
@@ -443,7 +453,7 @@ export default function MainWorkAlertDialog({
   return (
     <Dialog
       open={Boolean(open)}
-      onClose={onClose}
+      onClose={handleClose}
       fullWidth
       maxWidth="sm"
       aria-labelledby="main-work-alert-title"
@@ -507,7 +517,7 @@ export default function MainWorkAlertDialog({
           <Tooltip title="닫기">
             <IconButton
               size="small"
-              onClick={onClose}
+              onClick={handleClose}
               sx={{ color: '#ffffff' }}
             >
               <CloseRoundedIcon />
@@ -556,29 +566,61 @@ export default function MainWorkAlertDialog({
       <DialogActions
         sx={{
           px: { xs: 1.6, sm: 2.5 },
-          py: 1.4,
+          py: 1.25,
+          gap: 1,
           justifyContent: 'space-between',
+          flexWrap: { xs: 'wrap', sm: 'nowrap' },
         }}
       >
-        <Button
-          size="small"
-          startIcon={
-            loading ? (
-              <CircularProgress size={14} />
-            ) : (
-              <RefreshRoundedIcon />
-            )
-          }
-          onClick={loadSummary}
-          disabled={loading}
-          sx={{ fontWeight: 800 }}
+        <Box
+          sx={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 0.5,
+            flexWrap: 'wrap',
+          }}
         >
-          새로고침
-        </Button>
+          <FormControlLabel
+            control={
+              <Checkbox
+                size="small"
+                checked={hideToday}
+                onChange={(event) =>
+                  setHideToday(event.target.checked)
+                }
+              />
+            }
+            label="오늘 하루 보지 않기"
+            sx={{
+              mr: 0.5,
+              '& .MuiFormControlLabel-label': {
+                color: '#475569',
+                fontSize: '0.78rem',
+                fontWeight: 800,
+              },
+            }}
+          />
+
+          <Button
+            size="small"
+            startIcon={
+              loading ? (
+                <CircularProgress size={14} />
+              ) : (
+                <RefreshRoundedIcon />
+              )
+            }
+            onClick={loadSummary}
+            disabled={loading}
+            sx={{ fontWeight: 800 }}
+          >
+            새로고침
+          </Button>
+        </Box>
 
         <Button
           variant="contained"
-          onClick={onClose}
+          onClick={handleClose}
           sx={{ minWidth: 94, fontWeight: 900, boxShadow: 'none' }}
         >
           확인

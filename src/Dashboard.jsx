@@ -855,7 +855,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
   const [open, setOpen] = useState(true);
   const [managementMenuAnchor, setManagementMenuAnchor] = useState(null);
-  const [workAlertOpen, setWorkAlertOpen] = useState(true);
+  const [workAlertOpen, setWorkAlertOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [buildingConfigs, setBuildingConfigs] = useState({});
   const [selectedDateKey, setSelectedDateKey] = useState('');
@@ -919,6 +919,17 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   );
   const messengerWindowRef = useRef(null);
 
+  // v52.18:
+  // 권한 정보는 포커스 복귀/주기 갱신 때 계속 새로 읽되,
+  // 현재 업무 화면 자동 보정은 로그인 후 최초 1회만 수행합니다.
+  // 다른 프로그램/브라우저 탭을 사용했다가 돌아와도
+  // 작성 중인 화면이 Main으로 변경되지 않도록 보호합니다.
+  const navigationAccessInitializedRef = useRef(false);
+
+  useEffect(() => {
+    navigationAccessInitializedRef.current = false;
+  }, [user?.id]);
+
   const [managementArea, setManagementArea] = useState(() => {
     const requestedView = new URLSearchParams(
       window.location.search,
@@ -933,6 +944,56 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       ? MANAGEMENT_AREA_SAFETY
       : MANAGEMENT_AREA_CONSTRUCTION;
   });
+
+  const workAlertTodayKey = [
+    koreaNow.year,
+    String(koreaNow.month).padStart(2, '0'),
+    String(koreaNow.day).padStart(2, '0'),
+  ].join('-');
+
+  const workAlertHiddenStorageKey =
+    `constructionManagementMainWorkAlertHidden:${user?.id || user?.email || 'anonymous'}:${workAlertTodayKey}`;
+
+  /*
+    담당자가 Main 화면에 들어올 때마다 확인합니다.
+    - 오늘 하루 보지 않기 미선택: Main을 다시 열면 알림이 다시 표시됩니다.
+    - 오늘 하루 보지 않기 선택: 한국시간 기준 해당 날짜 동안 표시하지 않습니다.
+    - 자정이 지나면 storage key가 달라져 다음 날 다시 표시됩니다.
+  */
+  useEffect(() => {
+    if (userRole !== '담당자' || currentView !== 'main') {
+      setWorkAlertOpen(false);
+      return;
+    }
+
+    try {
+      const hiddenToday =
+        window.localStorage.getItem(workAlertHiddenStorageKey) === '1';
+      setWorkAlertOpen(!hiddenToday);
+    } catch (error) {
+      console.warn('Main 업무알림 숨김 상태 확인 실패:', error);
+      setWorkAlertOpen(true);
+    }
+  }, [
+    currentView,
+    userRole,
+    workAlertHiddenStorageKey,
+  ]);
+
+  const handleCloseWorkAlert = (hideToday = false) => {
+    if (hideToday) {
+      try {
+        window.localStorage.setItem(
+          workAlertHiddenStorageKey,
+          '1',
+        );
+      } catch (error) {
+        console.warn('Main 업무알림 오늘 숨김 저장 실패:', error);
+      }
+    }
+
+    setWorkAlertOpen(false);
+  };
 
   const [savedData, setSavedData] = useState({});
   const [manualStatus, setManualStatus] = useState({});
@@ -1128,6 +1189,23 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       window.location.search,
     ).get('view');
 
+    /*
+      v52.18:
+      runtimeAccess는 창 focus 및 60초 주기로 갱신됩니다.
+      기존에는 갱신할 때마다 아래 화면 보정 로직까지 다시 실행되어
+      일반 담당자의 현장별 권한 판정 순간에 현재 화면이 Main으로
+      변경될 수 있었습니다.
+
+      화면 보정은 권한정보가 준비된 뒤 최초 1회만 수행하고,
+      이후 focus/visibility/주기 갱신은 현재 currentView를 건드리지 않습니다.
+    */
+    if (
+      !runtimeAccessReady ||
+      navigationAccessInitializedRef.current
+    ) {
+      return;
+    }
+
     if (
       requestedView &&
       Object.prototype.hasOwnProperty.call(viewTitles, requestedView) &&
@@ -1135,6 +1213,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       canAccessView(requestedView, activeProjectName)
     ) {
       setCurrentView(requestedView);
+      navigationAccessInitializedRef.current = true;
       return;
     }
 
@@ -1163,6 +1242,8 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
       return allowedView || 'main';
     });
+
+    navigationAccessInitializedRef.current = true;
   }, [
     accessibleProjectNames.join('\u0001'),
     activeProjectName,
@@ -3873,9 +3954,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                 userRole === '담당자' &&
                 workAlertOpen
               }
-              onCloseWorkAlert={() =>
-                setWorkAlertOpen(false)
-              }
+              onCloseWorkAlert={handleCloseWorkAlert}
             />
           )}
 
