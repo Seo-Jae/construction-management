@@ -436,8 +436,8 @@ function AttendanceNoticeTicker({ notices, appMode = false }) {
   );
   const spacingWeight = Math.max(0, visibleNotices.length - 1) * 12;
   const durationSeconds = Math.max(
-    20,
-    Math.min(70, Math.round((contentLength + spacingWeight) * 0.42)),
+    14.3,
+    Math.min(50, Math.round((contentLength + spacingWeight) * 0.30)),
   );
 
   return (
