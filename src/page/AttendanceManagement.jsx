@@ -57,10 +57,10 @@ import {
 const tabItems = [
   { value: 'approval', label: '가입 승인', icon: <FactCheckRoundedIcon fontSize="small" /> },
   { value: 'records', label: '근태 기록', icon: <EditCalendarRoundedIcon fontSize="small" /> },
-  { value: 'risk', label: '중점위험요인 관리', icon: <CampaignRoundedIcon fontSize="small" /> },
   { value: 'devices', label: '기기 변경', icon: <DevicesRoundedIcon fontSize="small" /> },
   { value: 'audit', label: '변경 이력', icon: <HistoryRoundedIcon fontSize="small" /> },
   { value: 'workers', label: '근로자 관리', icon: <ManageAccountsRoundedIcon fontSize="small" /> },
+  { value: 'risk', label: '중점위험요인 관리', icon: <CampaignRoundedIcon fontSize="small" /> },
   { value: 'notices', label: '공지사항 관리', icon: <CampaignRoundedIcon fontSize="small" /> },
   { value: 'qr', label: '출·퇴근 QR', icon: <QrCode2RoundedIcon fontSize="small" /> },
 ];

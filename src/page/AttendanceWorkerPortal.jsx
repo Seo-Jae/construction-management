@@ -428,9 +428,9 @@ function AttendanceNoticeTicker({ notices, appMode = false }) {
         minHeight: appMode ? 44 : 38,
         display: 'flex',
         alignItems: 'stretch',
-        bgcolor: '#fff7ed',
-        borderBottom: '1px solid #fed7aa',
-        color: '#9a3412',
+        bgcolor: '#fff4b8',
+        borderBottom: '1px solid #facc15',
+        color: '#713f12',
         overflow: 'hidden',
         boxShadow: '0 3px 10px rgba(15,23,42,0.08)',
       }}
@@ -441,8 +441,8 @@ function AttendanceNoticeTicker({ notices, appMode = false }) {
           px: appMode ? 1.6 : 1.3,
           display: 'grid',
           placeItems: 'center',
-          bgcolor: '#ea580c',
-          color: '#fff',
+          bgcolor: '#facc15',
+          color: '#713f12',
           fontSize: appMode ? '0.82rem' : '0.7rem',
           fontWeight: 1000,
           letterSpacing: '0.04em',
@@ -488,7 +488,7 @@ function MobileShell({ children, appMode = false, topBanner = null }) {
           pt: appMode ? 'env(safe-area-inset-top)' : 0,
         }}
       >
-        <Toolbar sx={{ minHeight: appMode ? '72px !important' : '58px !important', px: appMode ? 2.25 : 2 }}>
+        <Toolbar sx={{ minHeight: appMode ? '72px !important' : '58px !important', px: appMode ? 1.125 : 2 }}>
           <Stack direction="row" spacing={1.5} alignItems="center">
             {appMode && (
               <Box
@@ -529,7 +529,7 @@ function MobileShell({ children, appMode = false, topBanner = null }) {
           width: '100%',
           maxWidth: appMode ? 680 : 520,
           mx: 'auto',
-          px: appMode ? 2.25 : 2,
+          px: appMode ? 1.125 : 2,
           pt: appMode ? 2.5 : 2,
           pb: appMode ? 'calc(24px + env(safe-area-inset-bottom))' : 2,
           ...(appMode && {
