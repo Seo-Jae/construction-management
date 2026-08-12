@@ -1006,7 +1006,9 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const [workerFetchDate, setWorkerFetchDate] = useState('');
   const [taskFetchDate, setTaskFetchDate] = useState('');
 
-  const [selectedProcess, setSelectedProcess] = useState(processOptions[0]);
+  const [selectedProcess, setSelectedProcess] = useState(() =>
+    readDashboardSessionValue('selectedProcess') || processOptions[0],
+  );
   const [selectedCells, setSelectedCells] = useState(new Set());
   const [selectedStatusAction, setSelectedStatusAction] = useState('작업완료'); 
   const [progressDate, setProgressDate] = useState(() =>
@@ -1053,6 +1055,10 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         `${dashboardStorageBase}:managementArea`,
         managementArea,
       );
+      window.sessionStorage.setItem(
+        `${dashboardStorageBase}:selectedProcess`,
+        selectedProcess || processOptions[0],
+      );
     } catch (error) {
       console.warn('화면 상태 저장 실패:', error);
     }
@@ -1061,6 +1067,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     dashboardStorageBase,
     lastSelectedProjectName,
     managementArea,
+    selectedProcess,
     selectedProjectName,
   ]);
 

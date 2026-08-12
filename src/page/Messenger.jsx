@@ -118,6 +118,36 @@ const createAttachmentMap = (rows = [], signedUrlMap = {}) => {
   return map;
 };
 
+const getMessengerImageLayout = (attachment) => {
+  const sourceWidth = Number(attachment?.image_width || 0);
+  const sourceHeight = Number(attachment?.image_height || 0);
+
+  if (
+    !Number.isFinite(sourceWidth) ||
+    !Number.isFinite(sourceHeight) ||
+    sourceWidth <= 0 ||
+    sourceHeight <= 0
+  ) {
+    return {
+      width: 320,
+      height: 240,
+      hasMetadata: false,
+    };
+  }
+
+  const scale = Math.min(
+    1,
+    320 / sourceWidth,
+    360 / sourceHeight,
+  );
+
+  return {
+    width: Math.max(1, Math.round(sourceWidth * scale)),
+    height: Math.max(1, Math.round(sourceHeight * scale)),
+    hasMetadata: true,
+  };
+};
+
 function EmptyPane({ title, description }) {
   return (
     <Box
@@ -277,6 +307,8 @@ export default function Messenger({ currentUserId, standalone = false }) {
   const [toast, setToast] = useState(null);
 
   const messageScrollRef = useRef(null);
+  const bottomPinRoomRef = useRef('');
+  const bottomPinUntilRef = useRef(0);
   const fileInputRef = useRef(null);
   const messageInputRef = useRef(null);
   const pendingPasteFilesRef = useRef([]);
@@ -417,6 +449,51 @@ export default function Messenger({ currentUserId, standalone = false }) {
       });
     });
   }, []);
+
+  const releaseBottomPin = useCallback(() => {
+    bottomPinRoomRef.current = '';
+    bottomPinUntilRef.current = 0;
+  }, []);
+
+  const pinBottomForMedia = useCallback(
+    (roomId, behavior = 'auto') => {
+      if (!roomId) return;
+
+      bottomPinRoomRef.current = roomId;
+      bottomPinUntilRef.current = Date.now() + 10 * 1000;
+
+      /*
+        React 렌더 직후뿐 아니라 이미지 decode/레이아웃이 끝나는 구간까지
+        몇 차례 마지막 메시지 위치를 재확인합니다.
+        사용자가 wheel/touch로 직접 위로 움직이면 즉시 pin을 해제합니다.
+      */
+      [0, 100, 400, 1200, 3000].forEach((delay, index) => {
+        window.setTimeout(() => {
+          if (
+            bottomPinRoomRef.current !== roomId ||
+            Date.now() > bottomPinUntilRef.current
+          ) {
+            return;
+          }
+
+          scrollToBottom(index === 0 ? behavior : 'auto');
+        }, delay);
+      });
+    },
+    [scrollToBottom],
+  );
+
+  const handleMessageImageLoad = useCallback(
+    (roomId) => {
+      if (
+        bottomPinRoomRef.current === roomId &&
+        Date.now() <= bottomPinUntilRef.current
+      ) {
+        scrollToBottom('auto');
+      }
+    },
+    [scrollToBottom],
+  );
 
   const loadUsers = useCallback(async () => {
     if (!currentUserId) return;
@@ -581,6 +658,17 @@ export default function Messenger({ currentUserId, standalone = false }) {
     async ({ roomId, before = '', prepend = false, silent = false }) => {
       if (!roomId) return;
 
+      const scrollElement = messageScrollRef.current;
+      const distanceFromBottom = scrollElement
+        ? scrollElement.scrollHeight -
+          scrollElement.scrollTop -
+          scrollElement.clientHeight
+        : 0;
+      const wasNearBottom =
+        !scrollElement || distanceFromBottom <= 140;
+      const shouldPinAfterLoad =
+        !prepend && (!silent || wasNearBottom);
+
       if (prepend) setOlderLoading(true);
       else if (!silent) setMessagesLoading(true);
 
@@ -640,7 +728,10 @@ export default function Messenger({ currentUserId, standalone = false }) {
         } else {
           setMessages(pageRows);
           setAttachmentsByMessage(pageAttachmentMap);
-          scrollToBottom('auto');
+
+          if (shouldPinAfterLoad) {
+            pinBottomForMedia(roomId, 'auto');
+          }
         }
 
         setHasOlderMessages(descendingRows.length === MESSAGE_PAGE_SIZE);
@@ -656,7 +747,7 @@ export default function Messenger({ currentUserId, standalone = false }) {
         else if (!silent) setMessagesLoading(false);
       }
     },
-    [createSignedUrlMap, scrollToBottom, showToast],
+    [createSignedUrlMap, pinBottomForMedia, showToast],
   );
 
   const markRoomRead = useCallback(
@@ -1404,6 +1495,8 @@ export default function Messenger({ currentUserId, standalone = false }) {
     if (!selectedRoomId || olderLoading || !hasOlderMessages || messages.length === 0) {
       return;
     }
+
+    releaseBottomPin();
 
     const scrollElement = messageScrollRef.current;
     const previousHeight = scrollElement?.scrollHeight || 0;
@@ -2360,10 +2453,13 @@ export default function Messenger({ currentUserId, standalone = false }) {
 
           <Box
             ref={messageScrollRef}
+            onWheel={releaseBottomPin}
+            onTouchStart={releaseBottomPin}
             sx={{
               flexGrow: 1,
               minHeight: 0,
               overflowY: 'auto',
+              overflowAnchor: 'none',
               px: { xs: 1.1, sm: 1.7 },
               py: 1.4,
               bgcolor: '#e2e8f0',
@@ -2408,6 +2504,9 @@ export default function Messenger({ currentUserId, standalone = false }) {
                   const showDateDivider = dateLabel !== previousDateLabel;
                   const isMine = message.sender_id === currentUserId;
                   const attachment = attachmentsByMessage[message.id];
+                  const imageLayout = attachment
+                    ? getMessengerImageLayout(attachment)
+                    : null;
                   const deleted = Boolean(message.deleted_at);
                   const readStatus =
                     isMine && !deleted ? getOwnMessageReadStatus(message) : '';
@@ -2493,20 +2592,35 @@ export default function Messenger({ currentUserId, standalone = false }) {
                                 <Box sx={{ minWidth: 0 }}>
                                   {attachment.signedUrl ? (
                                     <Box
-                                      component="img"
-                                      src={attachment.signedUrl}
-                                      alt={attachment.file_name || '메신저 이미지'}
                                       onClick={() => handlePreviewImage(attachment)}
                                       sx={{
-                                        display: 'block',
-                                        maxWidth: 'min(320px, 62vw)',
+                                        width: `min(${imageLayout?.width || 320}px, 62vw)`,
+                                        aspectRatio: `${imageLayout?.width || 320} / ${imageLayout?.height || 240}`,
+                                        maxWidth: '100%',
                                         maxHeight: 360,
-                                        objectFit: 'contain',
+                                        display: 'grid',
+                                        placeItems: 'center',
+                                        overflow: 'hidden',
                                         borderRadius: 1,
                                         cursor: 'zoom-in',
                                         bgcolor: '#ffffff',
                                       }}
-                                    />
+                                    >
+                                      <Box
+                                        component="img"
+                                        src={attachment.signedUrl}
+                                        alt={attachment.file_name || '메신저 이미지'}
+                                        onLoad={() =>
+                                          handleMessageImageLoad(message.room_id)
+                                        }
+                                        sx={{
+                                          width: '100%',
+                                          height: '100%',
+                                          display: 'block',
+                                          objectFit: 'contain',
+                                        }}
+                                      />
+                                    </Box>
                                   ) : (
                                     <Button
                                       size="small"

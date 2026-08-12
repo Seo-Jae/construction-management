@@ -136,6 +136,9 @@ export default function App() {
   const [loginNotice, setLoginNotice] = useState('');
   const logoutInProgressRef = useRef(false);
   const accessSessionIdRef = useRef('');
+  // v52.19: 이미 정상 로딩된 프로필이 있으면 인증 토큰 갱신이나
+  // 포커스 복귀 중 프로필 재조회가 업무화면 전체를 내리지 않도록 보존합니다.
+  const userProfileRef = useRef(null);
   const requestedPublicView = new URLSearchParams(
     window.location.search,
   ).get('view');
@@ -145,17 +148,26 @@ export default function App() {
   ).toLowerCase();
 
   const fetchProfile = useCallback(async (user, options = {}) => {
-    const silent = options.silent === true;
+    const hasExistingProfile = Boolean(userProfileRef.current);
+    const silent = options.silent === true || hasExistingProfile;
 
     if (!user?.email) {
+      userProfileRef.current = null;
       setUserProfile(null);
       setProfileError('');
       setProfileLoading(false);
       return;
     }
 
-    if (!silent) setProfileLoading(true);
-    setProfileError('');
+    /*
+      최초 로그인/새로고침으로 아직 프로필이 없을 때만 전체 로딩 화면을 사용합니다.
+      이미 정상 업무화면이 열린 뒤의 30초 갱신, 창 focus, TOKEN_REFRESHED 등은
+      화면을 유지한 채 백그라운드에서 프로필만 교체합니다.
+    */
+    if (!silent) {
+      setProfileLoading(true);
+      setProfileError('');
+    }
 
     const { data, error } = await supabase
       .from('user_profiles')
@@ -165,6 +177,14 @@ export default function App() {
 
     if (error) {
       console.error('사용자 프로필 조회 오류:', error);
+
+      // 일시적인 네트워크/포커스 복귀 오류 때문에 현재 업무화면을
+      // 로그인/상태화면으로 바꾸지 않습니다. 기존 정상 프로필을 유지합니다.
+      if (silent && userProfileRef.current) {
+        return;
+      }
+
+      userProfileRef.current = null;
       setUserProfile(null);
       setProfileError(
         '계정 정보를 확인하지 못했습니다. SQL 적용 여부를 확인해주세요.',
@@ -174,6 +194,7 @@ export default function App() {
     }
 
     if (!data) {
+      userProfileRef.current = null;
       setUserProfile(null);
       setProfileError(
         '가입 정보가 생성되지 않았습니다. 최고관리자에게 문의해주세요.',
@@ -182,7 +203,9 @@ export default function App() {
       return;
     }
 
+    userProfileRef.current = data;
     setUserProfile(data);
+    setProfileError('');
     setProfileLoading(false);
   }, []);
 
@@ -193,6 +216,7 @@ export default function App() {
     window.sessionStorage.removeItem(ACCESS_SESSION_ID_STORAGE_KEY);
     window.sessionStorage.removeItem(SUPABASE_AUTH_STORAGE_KEY);
     accessSessionIdRef.current = '';
+    userProfileRef.current = null;
     setSession(null);
     setUserProfile(null);
     setProfileError('');
@@ -268,13 +292,34 @@ export default function App() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((authEvent, nextSession) => {
       if (!active) return;
       setSession(nextSession);
 
       if (nextSession) {
-        window.setTimeout(() => fetchProfile(nextSession.user), 0);
+        const hasExistingProfile = Boolean(userProfileRef.current);
+
+        /*
+          Supabase는 토큰 자동갱신이나 탭/창 복귀 시 인증 이벤트를 다시 발생시킬 수 있습니다.
+          기존 코드가 이때마다 profileLoading=true로 만들면서 Dashboard를 통째로
+          LoadingScreen으로 교체했고, 그 결과 모든 하위 업무 state가 초기화됐습니다.
+
+          TOKEN_REFRESHED는 권한 프로필과 무관하므로 기존 프로필이 있으면 재조회조차 하지 않고,
+          다른 인증 이벤트도 기존 프로필이 있으면 silent 조회만 수행합니다.
+        */
+        if (authEvent === 'TOKEN_REFRESHED' && hasExistingProfile) {
+          return;
+        }
+
+        window.setTimeout(
+          () =>
+            fetchProfile(nextSession.user, {
+              silent: hasExistingProfile,
+            }),
+          0,
+        );
       } else {
+        userProfileRef.current = null;
         setUserProfile(null);
         setProfileError('');
         setProfileLoading(false);
@@ -562,7 +607,12 @@ export default function App() {
     );
   }
 
-  if (profileLoading) {
+  /*
+    이미 정상 프로필이 있는 상태에서는 향후 어떤 백그라운드 갱신 코드가
+    profileLoading을 잠시 true로 만들더라도 Dashboard를 unmount하지 않습니다.
+    전체 LoadingScreen은 "아직 최초 프로필이 없는 경우"에만 사용합니다.
+  */
+  if (profileLoading && !userProfile) {
     return <LoadingScreen />;
   }
 
