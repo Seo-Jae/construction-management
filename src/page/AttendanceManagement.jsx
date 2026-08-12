@@ -934,7 +934,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
               <Box>
                 <Typography sx={{ fontWeight: 900 }}>공지사항 관리</Typography>
                 <Typography sx={{ color: '#64748b', fontSize: '0.72rem', lineHeight: 1.6 }}>
-                  표시 순번을 지정할 수 있으며 게시기간 동안 로그인한 근로자 앱 상단에 순번대로 계속 표시됩니다. 근로자는 공지를 끌 수 없습니다.
+                  체크박스로 공지를 선택한 뒤 위·아래 버튼으로 표시 순서를 변경할 수 있습니다. 게시기간 동안 로그인한 근로자 앱 상단에 순번대로 계속 표시되며 근로자는 공지를 끌 수 없습니다.
                 </Typography>
               </Box>
               <IconButton
@@ -1106,11 +1106,25 @@ export default function AttendanceManagement({ projectName, canManage = false, o
                             }}
                           />
                         </TableCell>
-                        <TableCell align="center" sx={{ fontWeight: 900 }}>
+                        <TableCell
+                          align="center"
+                          sx={{
+                            fontWeight: 400,
+                            fontFamily: 'inherit',
+                          }}
+                        >
                           {Number(row.sort_order) || index + 1}
                         </TableCell>
                         <TableCell sx={{ minWidth: 280, maxWidth: 520 }}>
-                          <Typography sx={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: '0.76rem', fontWeight: 700 }}>
+                          <Typography
+                            sx={{
+                              whiteSpace: 'pre-wrap',
+                              overflowWrap: 'anywhere',
+                              fontSize: 'inherit',
+                              fontWeight: 400,
+                              fontFamily: 'inherit',
+                            }}
+                          >
                             {row.content}
                           </Typography>
                         </TableCell>

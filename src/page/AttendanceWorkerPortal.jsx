@@ -1244,11 +1244,19 @@ export default function AttendanceWorkerPortal() {
         </Dialog>
 
         <Dialog open={!appMode && installHelpOpen} onClose={() => setInstallHelpOpen(false)} fullWidth maxWidth="xs">
-          <DialogTitle sx={{ fontWeight: 900 }}>휴대폰에 앱 추가</DialogTitle>
+          <DialogTitle sx={{ fontWeight: 900 }}>근태앱 설치</DialogTitle>
           <DialogContent>
-            <Typography sx={{ fontSize: '0.84rem', lineHeight: 1.8 }}>
-              아이폰은 Safari 하단의 공유 버튼을 누른 뒤 <b>홈 화면에 추가</b>를 선택하세요. 안드로이드는 브라우저 메뉴의 <b>앱 설치</b> 또는 <b>홈 화면에 추가</b>를 선택하면 됩니다.
-            </Typography>
+            <Stack spacing={1}>
+              <Typography sx={{ fontSize: '0.84rem', lineHeight: 1.8 }}>
+                아이폰은 Safari 하단의 공유 버튼을 누른 뒤 <b>홈 화면에 추가</b>를 선택하세요.
+              </Typography>
+              <Typography sx={{ fontSize: '0.84rem', lineHeight: 1.8 }}>
+                안드로이드는 Chrome 메뉴의 <b>앱 설치</b>를 선택하세요. <b>홈 화면에 추가</b> 방식은 사용하지 않는 것을 권장합니다.
+              </Typography>
+              <Alert severity="info" sx={{ fontSize: '0.74rem' }}>
+                기존에 홈 화면 바로가기 방식으로 설치한 경우 Chrome이 “이 앱의 URL 복사하기” 시스템 알림을 표시할 수 있습니다. 기존 아이콘을 제거한 뒤 Chrome의 “앱 설치” 방식으로 다시 설치해주세요.
+              </Alert>
+            </Stack>
           </DialogContent>
         </Dialog>
       </MobileShell>
@@ -1329,7 +1337,7 @@ export default function AttendanceWorkerPortal() {
           </Stack>
         )}
       </Paper>
-      {!appMode && <Button fullWidth variant="text" startIcon={<AddToHomeScreenRoundedIcon />} onClick={handleInstall} sx={{ mt: 1.5 }}>휴대폰 홈 화면에 앱 추가</Button>}
+      {!appMode && <Button fullWidth variant="text" startIcon={<AddToHomeScreenRoundedIcon />} onClick={handleInstall} sx={{ mt: 1.5 }}>근태앱 설치</Button>}
     </MobileShell>
   );
 }
