@@ -30,6 +30,9 @@ import {
   Tooltip,
   Typography,
 } from '@mui/material';
+import AddCircleOutlineRoundedIcon from '@mui/icons-material/AddCircleOutlineRounded';
+import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded';
+import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import CampaignRoundedIcon from '@mui/icons-material/CampaignRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
@@ -42,6 +45,7 @@ import ManageAccountsRoundedIcon from '@mui/icons-material/ManageAccountsRounded
 import PrintRoundedIcon from '@mui/icons-material/PrintRounded';
 import QrCode2RoundedIcon from '@mui/icons-material/QrCode2Rounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
+import RemoveCircleOutlineRoundedIcon from '@mui/icons-material/RemoveCircleOutlineRounded';
 import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
 import QrCode from 'qrcode';
 import { supabase } from '../supabaseClient';
@@ -117,6 +121,8 @@ export default function AttendanceManagement({ projectName, canManage = false, o
   const [workersLoading, setWorkersLoading] = useState(false);
   const [notices, setNotices] = useState([]);
   const [noticesLoading, setNoticesLoading] = useState(false);
+  const [selectedNoticeIds, setSelectedNoticeIds] = useState(() => new Set());
+  const [noticeDeleteOpen, setNoticeDeleteOpen] = useState(false);
   const [noticeEditorOpen, setNoticeEditorOpen] = useState(false);
   const [noticeDraft, setNoticeDraft] = useState(emptyNoticeDraft);
   const [noticeSaving, setNoticeSaving] = useState(false);
@@ -186,7 +192,14 @@ export default function AttendanceManagement({ projectName, canManage = false, o
       return;
     }
 
-    setNotices(Array.isArray(data) ? data : []);
+    const nextNotices = Array.isArray(data) ? data : [];
+    setNotices(nextNotices);
+    setSelectedNoticeIds((previous) => {
+      const validIds = new Set(nextNotices.map((notice) => notice.id));
+      return new Set(
+        [...previous].filter((noticeId) => validIds.has(noticeId)),
+      );
+    });
     if (!silent) setNoticesLoading(false);
   }, [projectName]);
 
@@ -207,6 +220,11 @@ export default function AttendanceManagement({ projectName, canManage = false, o
     const timer = window.setTimeout(() => loadNotices(), 0);
     return () => window.clearTimeout(timer);
   }, [loadNotices, tab]);
+
+  useEffect(() => {
+    setSelectedNoticeIds(new Set());
+    setNoticeDeleteOpen(false);
+  }, [projectName]);
 
   useEffect(() => {
     let active = true;
@@ -336,11 +354,9 @@ export default function AttendanceManagement({ projectName, canManage = false, o
       return;
     }
 
-    const sortOrder = Math.trunc(Number(noticeDraft.sortOrder));
-    if (!Number.isFinite(sortOrder) || sortOrder < 1) {
-      setMessage({ severity: 'warning', text: '표시 순번은 1 이상의 숫자로 입력해주세요.' });
-      return;
-    }
+    const sortOrder = noticeDraft.id
+      ? Math.max(1, Math.trunc(Number(noticeDraft.sortOrder)) || 1)
+      : notices.length + 1;
 
     if (!noticeDraft.startsOn || !noticeDraft.endsOn) {
       setMessage({ severity: 'warning', text: '게시 시작일과 종료일을 선택해주세요.' });
@@ -370,6 +386,173 @@ export default function AttendanceManagement({ projectName, canManage = false, o
 
     setNoticeEditorOpen(false);
     setMessage({ severity: 'success', text: noticeDraft.id ? '공지사항을 수정했습니다.' : '공지사항을 등록했습니다.' });
+    await loadNotices(true);
+  };
+
+  const noticeIds = notices
+    .map((notice) => notice?.id)
+    .filter(Boolean);
+  const allNoticesSelected =
+    noticeIds.length > 0 &&
+    noticeIds.every((noticeId) =>
+      selectedNoticeIds.has(noticeId),
+    );
+  const someNoticesSelected =
+    selectedNoticeIds.size > 0 &&
+    !allNoticesSelected;
+
+  const toggleNoticeSelection = (noticeId) => {
+    if (!noticeId) return;
+    setSelectedNoticeIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(noticeId)) next.delete(noticeId);
+      else next.add(noticeId);
+      return next;
+    });
+  };
+
+  const toggleAllNotices = () => {
+    setSelectedNoticeIds(
+      allNoticesSelected
+        ? new Set()
+        : new Set(noticeIds),
+    );
+  };
+
+  const handleMoveNotices = async (direction) => {
+    if (
+      !canManage ||
+      noticeSaving ||
+      noticesLoading ||
+      selectedNoticeIds.size === 0
+    ) {
+      return;
+    }
+
+    const nextOrder = [...noticeIds];
+    let changed = false;
+
+    if (direction === 'up') {
+      for (let index = 1; index < nextOrder.length; index += 1) {
+        const currentSelected = selectedNoticeIds.has(
+          nextOrder[index],
+        );
+        const previousSelected = selectedNoticeIds.has(
+          nextOrder[index - 1],
+        );
+
+        if (currentSelected && !previousSelected) {
+          [nextOrder[index - 1], nextOrder[index]] = [
+            nextOrder[index],
+            nextOrder[index - 1],
+          ];
+          changed = true;
+        }
+      }
+    } else {
+      for (
+        let index = nextOrder.length - 2;
+        index >= 0;
+        index -= 1
+      ) {
+        const currentSelected = selectedNoticeIds.has(
+          nextOrder[index],
+        );
+        const nextSelected = selectedNoticeIds.has(
+          nextOrder[index + 1],
+        );
+
+        if (currentSelected && !nextSelected) {
+          [nextOrder[index], nextOrder[index + 1]] = [
+            nextOrder[index + 1],
+            nextOrder[index],
+          ];
+          changed = true;
+        }
+      }
+    }
+
+    if (!changed) return;
+
+    setNoticeSaving(true);
+    const { error } = await supabase.rpc(
+      'attendance_manager_reorder_notices_v52_22',
+      {
+        p_project_name: projectName,
+        p_notice_ids: nextOrder,
+      },
+    );
+    setNoticeSaving(false);
+
+    if (error) {
+      setMessage({
+        severity: 'error',
+        text:
+          error.message ||
+          '공지 순서를 변경하지 못했습니다.',
+      });
+      return;
+    }
+
+    setMessage({
+      severity: 'success',
+      text:
+        direction === 'up'
+          ? '선택 공지를 위로 이동했습니다.'
+          : '선택 공지를 아래로 이동했습니다.',
+    });
+    await loadNotices(true);
+  };
+
+  const openDeleteSelectedNotices = () => {
+    if (
+      !canManage ||
+      selectedNoticeIds.size === 0
+    ) {
+      return;
+    }
+    setNoticeDeleteOpen(true);
+  };
+
+  const handleDeleteSelectedNotices = async () => {
+    if (
+      !canManage ||
+      noticeSaving ||
+      selectedNoticeIds.size === 0
+    ) {
+      return;
+    }
+
+    setNoticeSaving(true);
+    const { data, error } = await supabase.rpc(
+      'attendance_manager_delete_notices_v52_22',
+      {
+        p_project_name: projectName,
+        p_notice_ids: [...selectedNoticeIds],
+      },
+    );
+    setNoticeSaving(false);
+
+    if (error) {
+      setMessage({
+        severity: 'error',
+        text:
+          error.message ||
+          '선택 공지를 삭제하지 못했습니다.',
+      });
+      return;
+    }
+
+    const deletedCount =
+      Number(data?.deleted_count) ||
+      selectedNoticeIds.size;
+
+    setNoticeDeleteOpen(false);
+    setSelectedNoticeIds(new Set());
+    setMessage({
+      severity: 'success',
+      text: `${deletedCount}개 공지사항을 삭제했습니다.`,
+    });
     await loadNotices(true);
   };
 
@@ -754,16 +937,118 @@ export default function AttendanceManagement({ projectName, canManage = false, o
                   표시 순번을 지정할 수 있으며 게시기간 동안 로그인한 근로자 앱 상단에 순번대로 계속 표시됩니다. 근로자는 공지를 끌 수 없습니다.
                 </Typography>
               </Box>
-              <Stack direction="row" spacing={0.7}>
-                <IconButton onClick={() => loadNotices()} aria-label="공지사항 새로고침">
-                  <RefreshRoundedIcon />
-                </IconButton>
-                <Button variant="contained" disabled={!canManage} onClick={openNewNotice} sx={{ bgcolor: '#0f6fae', fontWeight: 900 }}>
-                  공지 등록
-                </Button>
-              </Stack>
+              <IconButton
+                onClick={() => loadNotices()}
+                aria-label="공지사항 새로고침"
+              >
+                <RefreshRoundedIcon />
+              </IconButton>
             </Box>
             <Divider />
+
+            <Paper
+              variant="outlined"
+              sx={{
+                m: 1.5,
+                mb: 0,
+                px: 1,
+                py: 0.55,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.25,
+                borderColor: '#cbd5e1',
+                bgcolor: '#ffffff',
+              }}
+            >
+              <Tooltip title="공지 등록" arrow>
+                <span>
+                  <IconButton
+                    size="small"
+                    aria-label="공지 등록"
+                    onClick={openNewNotice}
+                    disabled={!canManage || noticeSaving}
+                  >
+                    <AddCircleOutlineRoundedIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+
+              <Tooltip title="선택 공지 삭제" arrow>
+                <span>
+                  <IconButton
+                    size="small"
+                    aria-label="선택 공지 삭제"
+                    onClick={openDeleteSelectedNotices}
+                    disabled={
+                      !canManage ||
+                      noticeSaving ||
+                      selectedNoticeIds.size === 0
+                    }
+                  >
+                    <RemoveCircleOutlineRoundedIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+
+              <Divider
+                orientation="vertical"
+                flexItem
+                sx={{ mx: 0.35 }}
+              />
+
+              <Tooltip title="공지 위로 이동" arrow>
+                <span>
+                  <IconButton
+                    size="small"
+                    aria-label="공지 위로 이동"
+                    onClick={() => handleMoveNotices('up')}
+                    disabled={
+                      !canManage ||
+                      noticeSaving ||
+                      noticesLoading ||
+                      selectedNoticeIds.size === 0
+                    }
+                  >
+                    <ArrowUpwardRoundedIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+
+              <Tooltip title="공지 아래로 이동" arrow>
+                <span>
+                  <IconButton
+                    size="small"
+                    aria-label="공지 아래로 이동"
+                    onClick={() => handleMoveNotices('down')}
+                    disabled={
+                      !canManage ||
+                      noticeSaving ||
+                      noticesLoading ||
+                      selectedNoticeIds.size === 0
+                    }
+                  >
+                    <ArrowDownwardRoundedIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+
+              <Divider
+                orientation="vertical"
+                flexItem
+                sx={{ mx: 0.35 }}
+              />
+
+              <Typography
+                sx={{
+                  fontSize: '0.68rem',
+                  color: '#64748b',
+                  fontWeight: 700,
+                }}
+              >
+                선택 {selectedNoticeIds.size.toLocaleString()}개
+              </Typography>
+            </Paper>
+
             {!canManage && (
               <Alert severity="info" sx={{ m: 1.5, mb: 0 }}>
                 조회 권한으로 접속했습니다. 공지 등록·수정·사용중지는 근태관리 수정 권한이 있는 담당자만 가능합니다.
@@ -776,6 +1061,21 @@ export default function AttendanceManagement({ projectName, canManage = false, o
                 <Table size="small">
                   <TableHead>
                     <TableRow>
+                      <TableCell
+                        padding="checkbox"
+                        sx={{ width: 46 }}
+                      >
+                        <Checkbox
+                          size="small"
+                          checked={allNoticesSelected}
+                          indeterminate={someNoticesSelected}
+                          onChange={toggleAllNotices}
+                          disabled={!canManage || notices.length === 0}
+                          inputProps={{
+                            'aria-label': '공지 전체 선택',
+                          }}
+                        />
+                      </TableCell>
                       <TableCell align="center" sx={{ width: 72 }}>순번</TableCell>
                       <TableCell>공지내용</TableCell>
                       <TableCell>게시 시작일</TableCell>
@@ -788,7 +1088,24 @@ export default function AttendanceManagement({ projectName, canManage = false, o
                   </TableHead>
                   <TableBody>
                     {notices.map((row, index) => (
-                      <TableRow key={row.id} hover>
+                      <TableRow
+                        key={row.id}
+                        hover
+                        selected={selectedNoticeIds.has(row.id)}
+                      >
+                        <TableCell padding="checkbox">
+                          <Checkbox
+                            size="small"
+                            checked={selectedNoticeIds.has(row.id)}
+                            onChange={() =>
+                              toggleNoticeSelection(row.id)
+                            }
+                            disabled={!canManage}
+                            inputProps={{
+                              'aria-label': `${index + 1}번 공지 선택`,
+                            }}
+                          />
+                        </TableCell>
                         <TableCell align="center" sx={{ fontWeight: 900 }}>
                           {Number(row.sort_order) || index + 1}
                         </TableCell>
@@ -821,7 +1138,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
                       </TableRow>
                     ))}
                     {notices.length === 0 && (
-                      <TableRow><TableCell colSpan={8} align="center" sx={{ py: 8, color: '#94a3b8' }}>등록된 공지사항이 없습니다.</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={9} align="center" sx={{ py: 8, color: '#94a3b8' }}>등록된 공지사항이 없습니다.</TableCell></TableRow>
                     )}
                   </TableBody>
                 </Table>
@@ -840,21 +1157,6 @@ export default function AttendanceManagement({ projectName, canManage = false, o
         <DialogTitle sx={{ fontWeight: 900 }}>{noticeDraft.id ? '공지사항 수정' : '공지사항 등록'}</DialogTitle>
         <DialogContent dividers>
           <Stack spacing={1.5}>
-            <TextField
-              fullWidth
-              type="number"
-              label="표시 순번"
-              value={noticeDraft.sortOrder}
-              disabled={noticeSaving}
-              inputProps={{ min: 1, step: 1 }}
-              onChange={(event) =>
-                setNoticeDraft((previous) => ({
-                  ...previous,
-                  sortOrder: event.target.value,
-                }))
-              }
-              helperText="1번이 가장 먼저 표시됩니다. 저장하면 같은 현장의 공지 순서를 1, 2, 3…으로 자동 정리합니다."
-            />
             <TextField
               fullWidth
               multiline
@@ -905,6 +1207,66 @@ export default function AttendanceManagement({ projectName, canManage = false, o
           <Button disabled={noticeSaving} onClick={() => setNoticeEditorOpen(false)}>취소</Button>
           <Button variant="contained" disabled={noticeSaving} onClick={saveNotice} sx={{ bgcolor: '#0f6fae' }}>
             {noticeSaving ? '저장 중...' : '저장'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={noticeDeleteOpen}
+        onClose={() =>
+          !noticeSaving && setNoticeDeleteOpen(false)
+        }
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle sx={{ fontWeight: 900 }}>
+          선택 공지 삭제
+        </DialogTitle>
+        <DialogContent dividers>
+          <Alert severity="warning" sx={{ mb: 1.2 }}>
+            삭제 후에는 되돌릴 수 없습니다.
+          </Alert>
+          <Typography
+            sx={{
+              fontSize: '0.82rem',
+              lineHeight: 1.65,
+            }}
+          >
+            선택한{' '}
+            <strong>
+              {selectedNoticeIds.size.toLocaleString()}개 공지사항
+            </strong>
+            을 삭제하시겠습니까?
+          </Typography>
+          <Typography
+            sx={{
+              mt: 1,
+              fontSize: '0.72rem',
+              color: '#64748b',
+              lineHeight: 1.6,
+            }}
+          >
+            삭제 후 남은 공지는 자동으로 1, 2, 3… 순번으로
+            다시 정리됩니다.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button
+            disabled={noticeSaving}
+            onClick={() => setNoticeDeleteOpen(false)}
+          >
+            취소
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            disabled={
+              noticeSaving ||
+              selectedNoticeIds.size === 0
+            }
+            onClick={handleDeleteSelectedNotices}
+          >
+            {noticeSaving ? '삭제 중...' : '선택 삭제'}
           </Button>
         </DialogActions>
       </Dialog>
