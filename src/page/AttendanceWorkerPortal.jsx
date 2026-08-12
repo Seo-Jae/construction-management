@@ -599,6 +599,23 @@ export default function AttendanceWorkerPortal() {
     }
   }, []);
 
+  /*
+    v52.20:
+    작업자 앱의 로그인 토큰은 이미 localStorage에 저장됩니다.
+    따라서 앱 종료/재실행 자체로는 로그아웃시키지 않습니다.
+
+    세션을 실제로 버려야 하는 경우와 일시적인 통신 장애를 구분하여,
+    네트워크/RPC 오류 한 번 때문에 작업자에게 다시 로그인을 요구하지 않습니다.
+  */
+  const isAttendanceSessionInvalidError = useCallback((error) => {
+    const text = String(error?.message || '').trim();
+
+    return [
+      '로그인이 필요합니다.',
+      '로그인 정보가 만료되었거나 등록된 휴대폰이 아닙니다.',
+    ].some((messageText) => text.includes(messageText));
+  }, []);
+
   const loadMe = useCallback(async (token = sessionToken, silent = false) => {
     if (!token) {
       setWorker(null);
@@ -618,15 +635,37 @@ export default function AttendanceWorkerPortal() {
 
     if (error) {
       console.warn('근로자 세션 확인 실패:', error);
-      saveSession('');
-      setWorker(null);
-      setTodayEvents([]);
-      setMonthEvents([]);
-      setRiskBroadcasts([]);
-      setAttendanceNotices([]);
-      setMessage({ severity: 'warning', text: error.message || '다시 로그인해주세요.' });
+
+      if (isAttendanceSessionInvalidError(error)) {
+        /*
+          명시적으로 세션 토큰/등록기기가 유효하지 않은 경우에만
+          저장된 로그인 정보를 제거합니다.
+        */
+        saveSession('');
+        setWorker(null);
+        setTodayEvents([]);
+        setMonthEvents([]);
+        setRiskBroadcasts([]);
+        setAttendanceNotices([]);
+        setMessage({
+          severity: 'warning',
+          text: error.message || '로그인 정보가 유효하지 않습니다. 다시 로그인해주세요.',
+        });
+      } else {
+        /*
+          인터넷 끊김, Supabase 일시 장애, 포커스 복귀 순간의 통신 실패 등은
+          기존 로그인과 현재 화면을 그대로 유지합니다.
+        */
+        if (!silent) {
+          setMessage({
+            severity: 'warning',
+            text: '서버 연결이 잠시 불안정합니다. 로그인 상태는 유지되며 자동으로 다시 연결합니다.',
+          });
+        }
+      }
+
       setLoading(false);
-      return null;
+      return worker;
     }
 
     const nextWorker = data?.worker || null;
@@ -637,7 +676,13 @@ export default function AttendanceWorkerPortal() {
     setAttendanceNotices(Array.isArray(data?.announcements) ? data.announcements : []);
     setLoading(false);
     return nextWorker;
-  }, [deviceKey, saveSession, sessionToken]);
+  }, [
+    deviceKey,
+    isAttendanceSessionInvalidError,
+    saveSession,
+    sessionToken,
+    worker,
+  ]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => loadMe(), 0);
@@ -646,19 +691,26 @@ export default function AttendanceWorkerPortal() {
 
 
   useEffect(() => {
-    if (!sessionToken || !worker?.id) return undefined;
+    /*
+      앱을 다시 열었을 때 첫 세션 확인이 일시적으로 실패해도
+      localStorage의 토큰이 남아 있으면 계속 재연결을 시도합니다.
+    */
+    if (!sessionToken) return undefined;
 
     const refresh = () => {
       void loadMe(sessionToken, true);
     };
+
     const timer = window.setInterval(refresh, 60 * 1000);
     window.addEventListener('focus', refresh);
+    window.addEventListener('online', refresh);
 
     return () => {
       window.clearInterval(timer);
       window.removeEventListener('focus', refresh);
+      window.removeEventListener('online', refresh);
     };
-  }, [loadMe, sessionToken, worker?.id]);
+  }, [loadMe, sessionToken]);
 
   useEffect(() => {
     const standaloneMedia = window.matchMedia('(display-mode: standalone)');
