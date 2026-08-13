@@ -652,8 +652,8 @@ function MobileShell({
               : 2,
           pt: cleanLogin
             ? {
-                xs: 'calc(28px + env(safe-area-inset-top))',
-                sm: 5,
+                xs: 'calc(18px + env(safe-area-inset-top))',
+                sm: 4,
               }
             : appMode
               ? 2.5
@@ -1596,6 +1596,11 @@ export default function AttendanceWorkerPortal() {
             ? 'v52.48.2.1'
             : undefined
         }
+        data-attendance-login-visual-scale={
+          mode === 'login' && appMode
+            ? 'v52.48.3'
+            : undefined
+        }
         variant={
           mode === 'login'
             ? undefined
@@ -1621,12 +1626,22 @@ export default function AttendanceWorkerPortal() {
               : undefined,
           bgcolor: '#ffffff',
           boxShadow: 'none',
+          width:
+            mode === 'login' && appMode
+              ? '74.074%'
+              : '100%',
+          mx: 'auto',
+          transform:
+            mode === 'login' && appMode
+              ? 'scale(1.35)'
+              : 'none',
+          transformOrigin: 'top center',
         }}
       >
         {mode === 'login' ? (
           <Box
             sx={{
-              mb: appMode ? 4.7 : 4.2,
+              mb: appMode ? 3.6 : 4.2,
             }}
           >
             <Stack
@@ -1670,7 +1685,7 @@ export default function AttendanceWorkerPortal() {
                 mt: 0.85,
                 color: '#64748b',
                 fontSize: appMode
-                  ? '1.02rem'
+                  ? '0.86rem'
                   : '0.92rem',
                 fontWeight: 700,
               }}
