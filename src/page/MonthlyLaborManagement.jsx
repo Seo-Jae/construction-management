@@ -2590,6 +2590,8 @@ export default function MonthlyLaborManagement({
                 }}
               >
                 <Autocomplete
+                  freeSolo
+                  autoSelect
                   size="small"
                   options={
                     BIRTH_YEAR_OPTIONS
@@ -2604,8 +2606,17 @@ export default function MonthlyLaborManagement({
                   ) =>
                     setNewWorker(
                       (previous) => {
+                        const rawYear =
+                          String(
+                            value || '',
+                          ).trim();
+
                         const nextYear =
-                          value || '';
+                          BIRTH_YEAR_OPTIONS.includes(
+                            rawYear,
+                          )
+                            ? rawYear
+                            : '';
 
                         const validDays =
                           getBirthDayOptions(
@@ -2635,6 +2646,12 @@ export default function MonthlyLaborManagement({
                       required
                       label="생년"
                       placeholder="예: 1992"
+                      inputProps={{
+                        ...params.inputProps,
+                        inputMode:
+                          'numeric',
+                        maxLength: 4,
+                      }}
                     />
                   )}
                 />

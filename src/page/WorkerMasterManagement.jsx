@@ -1082,12 +1082,17 @@ export default function WorkerMasterManagement({
                 }}
               >
                 <Autocomplete
+                  freeSolo
+                  autoSelect
                   size="small"
                   options={BIRTH_YEAR_OPTIONS}
                   value={draft.birthYear || null}
                   onChange={(_event, value) =>
                     setDraft((previous) => {
-                      const nextYear = value || '';
+                      const rawYear = String(value || '').trim();
+                      const nextYear = BIRTH_YEAR_OPTIONS.includes(rawYear)
+                        ? rawYear
+                        : '';
                       const validDays = getBirthDayOptions(
                         nextYear,
                         previous.birthMonth,
@@ -1102,7 +1107,16 @@ export default function WorkerMasterManagement({
                     })
                   }
                   renderInput={(params) => (
-                    <TextField {...params} label="생년" placeholder="예: 1992" />
+                    <TextField
+                      {...params}
+                      label="생년"
+                      placeholder="예: 1992"
+                      inputProps={{
+                        ...params.inputProps,
+                        inputMode: 'numeric',
+                        maxLength: 4,
+                      }}
+                    />
                   )}
                 />
 
