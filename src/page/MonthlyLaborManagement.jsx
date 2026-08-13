@@ -110,6 +110,23 @@ const normalizeWorkerOption = (worker) => ({
   rosterItemId: String(
     worker?.roster_item_id || '',
   ).trim(),
+  workEntries:
+    worker?.work_entries &&
+    typeof worker.work_entries === 'object'
+      ? worker.work_entries
+      : {},
+  dailyWage: Number(
+    worker?.daily_wage || 0,
+  ),
+  additionalPay: Number(
+    worker?.additional_pay || 0,
+  ),
+  manualDeduction: Number(
+    worker?.manual_deduction || 0,
+  ),
+  payNote: String(
+    worker?.pay_note || '',
+  ).trim(),
 });
 
 const formatLookupBirthDate = (value) => {
@@ -142,6 +159,153 @@ const formatLookupPhone = (value) => {
   }
 
   return '-';
+};
+
+const moneyFormatter =
+  new Intl.NumberFormat('ko-KR', {
+    maximumFractionDigits: 0,
+  });
+
+const toSafeNumber = (value) => {
+  const number = Number(
+    String(value ?? '')
+      .replace(/,/g, ''),
+  );
+
+  return Number.isFinite(number)
+    ? number
+    : 0;
+};
+
+const normalizeMoneyInput = (
+  value,
+) =>
+  String(value ?? '')
+    .replace(/,/g, '')
+    .replace(/[^\d]/g, '');
+
+const formatMoney = (value) =>
+  moneyFormatter.format(
+    Math.max(
+      0,
+      toSafeNumber(value),
+    ),
+  );
+
+const getDaysInMonth = (
+  monthKey,
+) => {
+  const matched =
+    /^(\d{4})-(\d{2})$/.exec(
+      String(monthKey || ''),
+    );
+
+  if (!matched) {
+    return 31;
+  }
+
+  return new Date(
+    Number(matched[1]),
+    Number(matched[2]),
+    0,
+  ).getDate();
+};
+
+const normalizeWorkEntries = (
+  value,
+) => {
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value)
+  ) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([day, units]) => [
+        String(day),
+        Math.max(
+          0,
+          Math.min(
+            2,
+            toSafeNumber(units),
+          ),
+        ),
+      ])
+      .filter(
+        ([day, units]) =>
+          /^\d{1,2}$/.test(day) &&
+          units > 0,
+      ),
+  );
+};
+
+const getTotalWorkUnits = (
+  workEntries,
+) =>
+  Object.values(
+    normalizeWorkEntries(
+      workEntries,
+    ),
+  ).reduce(
+    (sum, units) =>
+      sum + toSafeNumber(units),
+    0,
+  );
+
+const getPayrollSummary = (
+  row,
+) => {
+  const totalWorkUnits =
+    getTotalWorkUnits(
+      row?.workEntries,
+    );
+
+  const dailyWage = Math.max(
+    0,
+    toSafeNumber(
+      row?.dailyWage,
+    ),
+  );
+
+  const additionalPay = Math.max(
+    0,
+    toSafeNumber(
+      row?.additionalPay,
+    ),
+  );
+
+  const manualDeduction =
+    Math.max(
+      0,
+      toSafeNumber(
+        row?.manualDeduction,
+      ),
+    );
+
+  const basePay =
+    totalWorkUnits * dailyWage;
+
+  const grossPay =
+    basePay + additionalPay;
+
+  const netPay = Math.max(
+    0,
+    grossPay -
+      manualDeduction,
+  );
+
+  return {
+    totalWorkUnits,
+    dailyWage,
+    additionalPay,
+    manualDeduction,
+    basePay,
+    grossPay,
+    netPay,
+  };
 };
 
 const moveRowsOneStep = (
@@ -313,6 +477,11 @@ export default function MonthlyLaborManagement({
   const [message, setMessage] =
     useState(null);
 
+  const [
+    payrollEditor,
+    setPayrollEditor,
+  ] = useState(null);
+
   const selectedSet = useMemo(
     () => new Set(selectedIds),
     [selectedIds],
@@ -327,6 +496,35 @@ export default function MonthlyLaborManagement({
     selectedIds.length > 0 &&
     selectedIds.length <
       rows.length;
+
+  const payrollTotals =
+    useMemo(() => {
+      return rows.reduce(
+        (result, row) => {
+          const summary =
+            getPayrollSummary(
+              row,
+            );
+
+          result.workUnits +=
+            summary.totalWorkUnits;
+          result.grossPay +=
+            summary.grossPay;
+          result.manualDeduction +=
+            summary.manualDeduction;
+          result.netPay +=
+            summary.netPay;
+
+          return result;
+        },
+        {
+          workUnits: 0,
+          grossPay: 0,
+          manualDeduction: 0,
+          netPay: 0,
+        },
+      );
+    }, [rows]);
 
   useEffect(() => {
     if (!dirty) {
@@ -379,7 +577,7 @@ export default function MonthlyLaborManagement({
 
       const { data, error } =
         await supabase.rpc(
-          'labor_monthly_roster_get_v52_35',
+          'labor_monthly_roster_get_v52_36',
           {
             p_project_name:
               projectName,
@@ -426,6 +624,10 @@ export default function MonthlyLaborManagement({
 
             return {
               ...normalized,
+              workEntries:
+                normalizeWorkEntries(
+                  normalized.workEntries,
+                ),
               id:
                 normalized
                   .rosterItemId ||
@@ -581,6 +783,11 @@ export default function MonthlyLaborManagement({
               worker.phoneMasked,
             note: '',
             rosterItemId: '',
+            workEntries: {},
+            dailyWage: 0,
+            additionalPay: 0,
+            manualDeduction: 0,
+            payNote: '',
           },
         ];
       },
@@ -855,6 +1062,128 @@ export default function MonthlyLaborManagement({
       );
     };
 
+  const openPayrollEditor = (
+    row,
+  ) => {
+    const summary =
+      getPayrollSummary(row);
+
+    setPayrollEditor({
+      rowId: row.id,
+      name: row.name,
+      workEntries:
+        normalizeWorkEntries(
+          row.workEntries,
+        ),
+      dailyWage:
+        summary.dailyWage,
+      additionalPay:
+        summary.additionalPay,
+      manualDeduction:
+        summary.manualDeduction,
+      payNote:
+        String(
+          row.payNote || '',
+        ),
+    });
+  };
+
+  const updatePayrollEntry = (
+    day,
+    value,
+  ) => {
+    setPayrollEditor(
+      (previous) => {
+        if (!previous) {
+          return previous;
+        }
+
+        const units =
+          Math.max(
+            0,
+            Math.min(
+              2,
+              toSafeNumber(
+                value,
+              ),
+            ),
+          );
+
+        const nextEntries = {
+          ...previous.workEntries,
+        };
+
+        if (units > 0) {
+          nextEntries[
+            String(day)
+          ] = units;
+        } else {
+          delete nextEntries[
+            String(day)
+          ];
+        }
+
+        return {
+          ...previous,
+          workEntries:
+            nextEntries,
+        };
+      },
+    );
+  };
+
+  const applyPayrollEditor =
+    () => {
+      if (!payrollEditor) {
+        return;
+      }
+
+      markChanged(
+        (previous) =>
+          previous.map(
+            (row) =>
+              row.id ===
+              payrollEditor.rowId
+                ? {
+                    ...row,
+                    workEntries:
+                      normalizeWorkEntries(
+                        payrollEditor.workEntries,
+                      ),
+                    dailyWage:
+                      Math.max(
+                        0,
+                        toSafeNumber(
+                          payrollEditor.dailyWage,
+                        ),
+                      ),
+                    additionalPay:
+                      Math.max(
+                        0,
+                        toSafeNumber(
+                          payrollEditor.additionalPay,
+                        ),
+                      ),
+                    manualDeduction:
+                      Math.max(
+                        0,
+                        toSafeNumber(
+                          payrollEditor.manualDeduction,
+                        ),
+                      ),
+                    payNote:
+                      String(
+                        payrollEditor.payNote ||
+                          '',
+                      ).trim(),
+                  }
+                : row,
+          ),
+      );
+
+      setPayrollEditor(null);
+    };
+
   const handleMonthChange = (
     nextMonth,
   ) => {
@@ -939,6 +1268,36 @@ export default function MonthlyLaborManagement({
                 row.note ||
                   '',
               ).trim(),
+            work_entries:
+              normalizeWorkEntries(
+                row.workEntries,
+              ),
+            daily_wage:
+              Math.max(
+                0,
+                toSafeNumber(
+                  row.dailyWage,
+                ),
+              ),
+            additional_pay:
+              Math.max(
+                0,
+                toSafeNumber(
+                  row.additionalPay,
+                ),
+              ),
+            manual_deduction:
+              Math.max(
+                0,
+                toSafeNumber(
+                  row.manualDeduction,
+                ),
+              ),
+            pay_note:
+              String(
+                row.payNote ||
+                  '',
+              ).trim(),
             sort_order:
               index + 1,
           }),
@@ -946,7 +1305,7 @@ export default function MonthlyLaborManagement({
 
       const { data, error } =
         await supabase.rpc(
-          'labor_monthly_roster_save_v52_35',
+          'labor_monthly_roster_save_v52_36',
           {
             p_project_name:
               projectName,
@@ -1116,12 +1475,11 @@ export default function MonthlyLaborManagement({
             },
         }}
       >
-        현장과 작성월별로 명단을
-        저장합니다. 근로자 순서,
-        이번 달 공종, 비고가 함께
-        저장되며 개인정보는 이
-        명단에 중복 저장하지 않고
-        근로자 마스터와 연결합니다.
+        현장과 작성월별로 명단·출역·노임을
+        저장합니다. 일자별 출역, 일급,
+        추가지급, 수동공제는 월별 스냅샷으로
+        보존하며 주민번호·계좌 등 개인정보는
+        이 화면에서 복제하지 않습니다.
       </Alert>
 
       <Paper
@@ -1319,6 +1677,75 @@ export default function MonthlyLaborManagement({
           </Typography>
         </Box>
 
+        <Box
+          sx={{
+            px: 1.1,
+            py: 0.65,
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 1.5,
+            alignItems: 'center',
+            bgcolor: '#ffffff',
+            borderTop:
+              '1px solid #e2e8f0',
+          }}
+        >
+          <Typography
+            sx={{
+              fontSize: '0.69rem',
+              color: '#475569',
+              fontWeight: 800,
+            }}
+          >
+            총 출역{' '}
+            {payrollTotals.workUnits.toLocaleString(
+              'ko-KR',
+              {
+                maximumFractionDigits: 2,
+              },
+            )}일
+          </Typography>
+
+          <Typography
+            sx={{
+              fontSize: '0.69rem',
+              color: '#475569',
+              fontWeight: 800,
+            }}
+          >
+            총 지급{' '}
+            {formatMoney(
+              payrollTotals.grossPay,
+            )}원
+          </Typography>
+
+          <Typography
+            sx={{
+              fontSize: '0.69rem',
+              color: '#475569',
+              fontWeight: 800,
+            }}
+          >
+            수동 공제{' '}
+            {formatMoney(
+              payrollTotals.manualDeduction,
+            )}원
+          </Typography>
+
+          <Typography
+            sx={{
+              fontSize: '0.69rem',
+              color: '#0f172a',
+              fontWeight: 900,
+            }}
+          >
+            실지급 예상{' '}
+            {formatMoney(
+              payrollTotals.netPay,
+            )}원
+          </Typography>
+        </Box>
+
         <Divider />
 
         <TableContainer
@@ -1331,7 +1758,7 @@ export default function MonthlyLaborManagement({
             stickyHeader
             size="small"
             sx={{
-              minWidth: 920,
+              minWidth: 1450,
               tableLayout:
                 'fixed',
             }}
@@ -1415,6 +1842,67 @@ export default function MonthlyLaborManagement({
                 <TableCell
                   align="center"
                   sx={{
+                    width: 90,
+                    fontWeight: 900,
+                  }}
+                >
+                  출역
+                </TableCell>
+
+                <TableCell
+                  align="center"
+                  sx={{
+                    width: 120,
+                    fontWeight: 900,
+                  }}
+                >
+                  일급
+                </TableCell>
+
+                <TableCell
+                  align="center"
+                  sx={{
+                    width: 120,
+                    fontWeight: 900,
+                  }}
+                >
+                  총지급
+                </TableCell>
+
+                <TableCell
+                  align="center"
+                  sx={{
+                    width: 115,
+                    fontWeight: 900,
+                  }}
+                >
+                  수동공제
+                </TableCell>
+
+                <TableCell
+                  align="center"
+                  sx={{
+                    width: 120,
+                    fontWeight: 900,
+                  }}
+                >
+                  실지급
+                </TableCell>
+
+                <TableCell
+                  align="center"
+                  sx={{
+                    width: 90,
+                    fontWeight: 900,
+                  }}
+                >
+                  노임입력
+                </TableCell>
+
+                <TableCell
+                  align="center"
+                  sx={{
+                    minWidth: 150,
                     fontWeight: 900,
                   }}
                 >
@@ -1427,7 +1915,7 @@ export default function MonthlyLaborManagement({
               {rosterLoading ? (
                 <TableRow>
                   <TableCell
-                    colSpan={7}
+                    colSpan={13}
                     align="center"
                     sx={{ py: 10 }}
                   >
@@ -1440,7 +1928,7 @@ export default function MonthlyLaborManagement({
                 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={7}
+                    colSpan={13}
                     align="center"
                     sx={{
                       py: 10,
@@ -1555,6 +2043,77 @@ export default function MonthlyLaborManagement({
                         )}
                       </TableCell>
 
+                      <TableCell align="center">
+                        {getPayrollSummary(
+                          row,
+                        ).totalWorkUnits.toLocaleString(
+                          'ko-KR',
+                          {
+                            maximumFractionDigits: 2,
+                          },
+                        )}
+                      </TableCell>
+
+                      <TableCell align="right">
+                        {formatMoney(
+                          getPayrollSummary(
+                            row,
+                          ).dailyWage,
+                        )}
+                      </TableCell>
+
+                      <TableCell align="right">
+                        {formatMoney(
+                          getPayrollSummary(
+                            row,
+                          ).grossPay,
+                        )}
+                      </TableCell>
+
+                      <TableCell align="right">
+                        {formatMoney(
+                          getPayrollSummary(
+                            row,
+                          ).manualDeduction,
+                        )}
+                      </TableCell>
+
+                      <TableCell align="right">
+                        <Typography
+                          sx={{
+                            fontSize:
+                              '0.74rem',
+                            fontWeight: 900,
+                          }}
+                        >
+                          {formatMoney(
+                            getPayrollSummary(
+                              row,
+                            ).netPay,
+                          )}
+                        </Typography>
+                      </TableCell>
+
+                      <TableCell align="center">
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={() =>
+                            openPayrollEditor(
+                              row,
+                            )
+                          }
+                          sx={{
+                            minWidth: 0,
+                            px: 0.8,
+                            fontSize:
+                              '0.68rem',
+                          }}
+                        >
+                          입력
+                        </Button>
+                      </TableCell>
+
                       <TableCell>
                         <TextField
                           fullWidth
@@ -1583,6 +2142,308 @@ export default function MonthlyLaborManagement({
           </Table>
         </TableContainer>
       </Paper>
+
+      <Dialog
+        open={Boolean(
+          payrollEditor,
+        )}
+        onClose={() =>
+          setPayrollEditor(null)
+        }
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle
+          sx={{ fontWeight: 900 }}
+        >
+          출역·노임 입력
+          {payrollEditor?.name
+            ? ` · ${payrollEditor.name}`
+            : ''}
+        </DialogTitle>
+
+        <DialogContent dividers>
+          {payrollEditor && (
+            <Stack spacing={1.5}>
+              <Alert
+                severity="info"
+                sx={{
+                  '& .MuiAlert-message':
+                    {
+                      fontSize:
+                        '0.7rem',
+                    },
+                }}
+              >
+                일자별 출역은 0~2 사이 숫자로 입력할 수 있습니다.
+                일반 출역은 1, 반일은 0.5로 입력하면 됩니다.
+                법정 세금·4대보험 자동계산은 회사 Excel 기준 확인 후
+                별도 단계에서 연결합니다.
+              </Alert>
+
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns:
+                    'repeat(7, minmax(70px, 1fr))',
+                  gap: 0.65,
+                }}
+              >
+                {Array.from(
+                  {
+                    length:
+                      getDaysInMonth(
+                        yearMonth,
+                      ),
+                  },
+                  (
+                    _unused,
+                    index,
+                  ) =>
+                    index + 1,
+                ).map((day) => (
+                  <TextField
+                    key={day}
+                    size="small"
+                    label={`${day}일`}
+                    type="number"
+                    value={
+                      payrollEditor
+                        .workEntries?.[
+                        String(day)
+                      ] ?? ''
+                    }
+                    onChange={(
+                      event,
+                    ) =>
+                      updatePayrollEntry(
+                        day,
+                        event.target
+                          .value,
+                      )
+                    }
+                    inputProps={{
+                      min: 0,
+                      max: 2,
+                      step: 0.5,
+                      inputMode:
+                        'decimal',
+                    }}
+                  />
+                ))}
+              </Box>
+
+              <Divider />
+
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: {
+                    xs: '1fr',
+                    md: 'repeat(4, minmax(0, 1fr))',
+                  },
+                  gap: 1,
+                }}
+              >
+                <TextField
+                  size="small"
+                  label="일급"
+                  value={
+                    payrollEditor.dailyWage
+                      ? formatMoney(
+                          payrollEditor.dailyWage,
+                        )
+                      : ''
+                  }
+                  onChange={(
+                    event,
+                  ) =>
+                    setPayrollEditor(
+                      (previous) => ({
+                        ...previous,
+                        dailyWage:
+                          normalizeMoneyInput(
+                            event.target
+                              .value,
+                          ),
+                      }),
+                    )
+                  }
+                  inputProps={{
+                    inputMode:
+                      'numeric',
+                  }}
+                />
+
+                <TextField
+                  size="small"
+                  label="추가지급"
+                  value={
+                    payrollEditor.additionalPay
+                      ? formatMoney(
+                          payrollEditor.additionalPay,
+                        )
+                      : ''
+                  }
+                  onChange={(
+                    event,
+                  ) =>
+                    setPayrollEditor(
+                      (previous) => ({
+                        ...previous,
+                        additionalPay:
+                          normalizeMoneyInput(
+                            event.target
+                              .value,
+                          ),
+                      }),
+                    )
+                  }
+                  inputProps={{
+                    inputMode:
+                      'numeric',
+                  }}
+                />
+
+                <TextField
+                  size="small"
+                  label="수동공제"
+                  value={
+                    payrollEditor.manualDeduction
+                      ? formatMoney(
+                          payrollEditor.manualDeduction,
+                        )
+                      : ''
+                  }
+                  onChange={(
+                    event,
+                  ) =>
+                    setPayrollEditor(
+                      (previous) => ({
+                        ...previous,
+                        manualDeduction:
+                          normalizeMoneyInput(
+                            event.target
+                              .value,
+                          ),
+                      }),
+                    )
+                  }
+                  inputProps={{
+                    inputMode:
+                      'numeric',
+                  }}
+                />
+
+                <TextField
+                  size="small"
+                  label="실지급 예상"
+                  value={formatMoney(
+                    getPayrollSummary({
+                      workEntries:
+                        payrollEditor.workEntries,
+                      dailyWage:
+                        payrollEditor.dailyWage,
+                      additionalPay:
+                        payrollEditor.additionalPay,
+                      manualDeduction:
+                        payrollEditor.manualDeduction,
+                    }).netPay,
+                  )}
+                  InputProps={{
+                    readOnly: true,
+                  }}
+                />
+              </Box>
+
+              <TextField
+                fullWidth
+                multiline
+                minRows={2}
+                size="small"
+                label="노임 메모"
+                value={
+                  payrollEditor.payNote
+                }
+                onChange={(
+                  event,
+                ) =>
+                  setPayrollEditor(
+                    (previous) => ({
+                      ...previous,
+                      payNote:
+                        event.target
+                          .value,
+                    }),
+                  )
+                }
+              />
+
+              <Typography
+                sx={{
+                  color: '#475569',
+                  fontSize:
+                    '0.72rem',
+                  fontWeight: 800,
+                }}
+              >
+                출역{' '}
+                {getPayrollSummary({
+                  workEntries:
+                    payrollEditor.workEntries,
+                  dailyWage:
+                    payrollEditor.dailyWage,
+                  additionalPay:
+                    payrollEditor.additionalPay,
+                  manualDeduction:
+                    payrollEditor.manualDeduction,
+                }).totalWorkUnits.toLocaleString(
+                  'ko-KR',
+                  {
+                    maximumFractionDigits: 2,
+                  },
+                )}일
+                {' · '}
+                총지급{' '}
+                {formatMoney(
+                  getPayrollSummary({
+                    workEntries:
+                      payrollEditor.workEntries,
+                    dailyWage:
+                      payrollEditor.dailyWage,
+                    additionalPay:
+                      payrollEditor.additionalPay,
+                    manualDeduction:
+                      payrollEditor.manualDeduction,
+                  }).grossPay,
+                )}원
+              </Typography>
+            </Stack>
+          )}
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={() =>
+              setPayrollEditor(null)
+            }
+          >
+            취소
+          </Button>
+
+          <Button
+            variant="contained"
+            onClick={
+              applyPayrollEditor
+            }
+            sx={{
+              boxShadow: 'none',
+            }}
+          >
+            적용
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={lookupOpen}
