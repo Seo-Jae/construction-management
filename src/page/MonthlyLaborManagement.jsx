@@ -56,6 +56,29 @@ const TRADE_OPTIONS = [
   '용역',
 ];
 
+const EXPORT_FIELD_LABELS = Object.freeze({
+  identity: '주민/외국인번호',
+  phone: '전체 연락처',
+  address: '주소',
+  account: '계좌번호',
+  bank: '은행',
+  trade: '공종',
+  daily_wage: '일급',
+  work_entries: '출역',
+});
+
+const formatExportMissingFields = (fields) => {
+  const items = Array.isArray(fields) ? fields : [];
+
+  if (items.length === 0) {
+    return '-';
+  }
+
+  return items
+    .map((field) => EXPORT_FIELD_LABELS[field] || field)
+    .join(' · ');
+};
+
 const getKoreaYearMonth = () => {
   const parts = new Intl.DateTimeFormat(
     'en-CA',
@@ -480,6 +503,19 @@ export default function MonthlyLaborManagement({
   const [
     payrollEditor,
     setPayrollEditor,
+  ] = useState(null);
+
+  const [
+    exportCheckOpen,
+    setExportCheckOpen,
+  ] = useState(false);
+  const [
+    exportCheckLoading,
+    setExportCheckLoading,
+  ] = useState(false);
+  const [
+    exportCheck,
+    setExportCheck,
   ] = useState(null);
 
   const selectedSet = useMemo(
@@ -1341,6 +1377,59 @@ export default function MonthlyLaborManagement({
       });
     };
 
+  const runExportReadiness = async () => {
+    if (!projectName || !yearMonth) {
+      setMessage({
+        severity: 'warning',
+        text: '현장과 작성월을 확인해주세요.',
+      });
+      return;
+    }
+
+    if (dirty) {
+      setMessage({
+        severity: 'warning',
+        text: 'Excel 생성 준비 확인 전에 현재 변경사항을 먼저 저장해주세요.',
+      });
+      return;
+    }
+
+    if (rows.length === 0) {
+      setMessage({
+        severity: 'warning',
+        text: 'Excel 생성 준비를 확인할 근로자 명단이 없습니다.',
+      });
+      return;
+    }
+
+    setExportCheckOpen(true);
+    setExportCheckLoading(true);
+    setExportCheck(null);
+
+    const { data, error } = await supabase.rpc(
+      'labor_monthly_export_readiness_v52_37',
+      {
+        p_project_name: projectName,
+        p_month_key: yearMonth,
+      },
+    );
+
+    setExportCheckLoading(false);
+
+    if (error) {
+      setMessage({
+        severity: 'error',
+        text:
+          error.message ||
+          '노임 Excel 생성 준비상태를 확인하지 못했습니다.',
+      });
+      setExportCheckOpen(false);
+      return;
+    }
+
+    setExportCheck(data || null);
+  };
+
   return (
     <Box
       sx={{
@@ -1459,6 +1548,27 @@ export default function MonthlyLaborManagement({
             }}
           >
             저장
+          </Button>
+
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() =>
+              void runExportReadiness()
+            }
+            disabled={
+              rosterSaving ||
+              rosterLoading ||
+              exportCheckLoading ||
+              !projectName ||
+              rows.length === 0
+            }
+            sx={{
+              minWidth: 126,
+              fontWeight: 900,
+            }}
+          >
+            Excel 생성 준비
           </Button>
         </Stack>
       </Paper>
@@ -2908,6 +3018,219 @@ export default function MonthlyLaborManagement({
             {newWorkerSaving
               ? '등록 중...'
               : '등록 후 명단 추가'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+
+      <Dialog
+        open={exportCheckOpen}
+        onClose={() => {
+          if (!exportCheckLoading) {
+            setExportCheckOpen(false);
+          }
+        }}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle sx={{ fontWeight: 900 }}>
+          노임 Excel 생성 준비
+        </DialogTitle>
+
+        <DialogContent dividers>
+          {exportCheckLoading ? (
+            <Box
+              sx={{
+                py: 8,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <CircularProgress size={28} />
+            </Box>
+          ) : exportCheck ? (
+            <Stack spacing={1.2}>
+              <Alert
+                severity={
+                  exportCheck.ready
+                    ? 'success'
+                    : 'warning'
+                }
+              >
+                {exportCheck.message ||
+                  (exportCheck.ready
+                    ? '기본 Excel 생성 데이터가 준비되었습니다.'
+                    : '보완이 필요한 항목이 있습니다.')}
+              </Alert>
+
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: {
+                    xs: '1fr 1fr',
+                    md: 'repeat(4, minmax(0, 1fr))',
+                  },
+                  gap: 0.8,
+                }}
+              >
+                {[
+                  ['전체 근로자', exportCheck.worker_count || 0],
+                  ['준비 완료', exportCheck.ready_worker_count || 0],
+                  ['보완 필요', exportCheck.issue_worker_count || 0],
+                  ['누락 항목', exportCheck.issue_count || 0],
+                ].map(([label, value]) => (
+                  <Paper
+                    key={label}
+                    variant="outlined"
+                    sx={{
+                      p: 1,
+                      textAlign: 'center',
+                      borderColor: '#cbd5e1',
+                    }}
+                  >
+                    <Typography
+                      sx={{
+                        color: '#64748b',
+                        fontSize: '0.66rem',
+                        fontWeight: 800,
+                      }}
+                    >
+                      {label}
+                    </Typography>
+                    <Typography
+                      sx={{
+                        mt: 0.25,
+                        color: '#0f172a',
+                        fontSize: '1rem',
+                        fontWeight: 900,
+                      }}
+                    >
+                      {Number(value).toLocaleString('ko-KR')}
+                    </Typography>
+                  </Paper>
+                ))}
+              </Box>
+
+              {Array.isArray(exportCheck.workers) &&
+              exportCheck.workers.length > 0 ? (
+                <TableContainer
+                  sx={{
+                    maxHeight: 360,
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 1,
+                  }}
+                >
+                  <Table size="small" stickyHeader>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell
+                          align="center"
+                          sx={{ width: 60, fontWeight: 900 }}
+                        >
+                          순번
+                        </TableCell>
+                        <TableCell sx={{ width: 120, fontWeight: 900 }}>
+                          성명
+                        </TableCell>
+                        <TableCell
+                          align="center"
+                          sx={{ width: 120, fontWeight: 900 }}
+                        >
+                          생년월일
+                        </TableCell>
+                        <TableCell
+                          align="center"
+                          sx={{ width: 120, fontWeight: 900 }}
+                        >
+                          휴대폰
+                        </TableCell>
+                        <TableCell sx={{ fontWeight: 900 }}>
+                          보완 필요
+                        </TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {exportCheck.workers.map((worker) => (
+                        <TableRow
+                          key={
+                            worker.worker_master_id ||
+                            `${worker.sort_order}-${worker.name_ko}`
+                          }
+                          hover
+                        >
+                          <TableCell align="center">
+                            {worker.sort_order || '-'}
+                          </TableCell>
+                          <TableCell>
+                            {worker.name_ko || '-'}
+                          </TableCell>
+                          <TableCell align="center">
+                            {worker.birth_date || '-'}
+                          </TableCell>
+                          <TableCell align="center">
+                            {worker.phone_masked || '-'}
+                          </TableCell>
+                          <TableCell>
+                            <Typography
+                              sx={{
+                                color: '#b45309',
+                                fontSize: '0.7rem',
+                                fontWeight: 800,
+                              }}
+                            >
+                              {formatExportMissingFields(
+                                worker.missing_fields,
+                              )}
+                            </Typography>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              ) : null}
+
+              {exportCheck.ready ? (
+                <Alert severity="info">
+                  기본 데이터 준비는 완료되었습니다. 실제 회사 노임 Excel
+                  원본을 연결하면 다음 단계에서 시트·셀·수식 매핑과
+                  SMS 인증 다운로드를 붙일 수 있습니다.
+                </Alert>
+              ) : (
+                <Typography
+                  sx={{
+                    color: '#64748b',
+                    fontSize: '0.68rem',
+                    lineHeight: 1.55,
+                  }}
+                >
+                  주민번호·계좌번호 같은 원문은 이 검사에서 복호화하거나
+                  화면으로 전송하지 않습니다. 등록 여부와 노임 입력
+                  상태만 검사합니다.
+                </Typography>
+              )}
+            </Stack>
+          ) : (
+            <Typography
+              sx={{
+                py: 4,
+                textAlign: 'center',
+                color: '#94a3b8',
+                fontSize: '0.75rem',
+              }}
+            >
+              확인 결과가 없습니다.
+            </Typography>
+          )}
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={() => setExportCheckOpen(false)}
+            disabled={exportCheckLoading}
+          >
+            닫기
           </Button>
         </DialogActions>
       </Dialog>
