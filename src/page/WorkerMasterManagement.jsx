@@ -1390,6 +1390,8 @@ export default function WorkerMasterManagement({
               />
 
               <Autocomplete
+                autoHighlight
+                autoSelect
                 size="small"
                 options={NATIONALITY_OPTIONS}
                 filterOptions={filterNationalityOptions}
