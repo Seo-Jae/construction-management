@@ -16,6 +16,7 @@ import {
   DialogTitle,
   Divider,
   IconButton,
+  MenuItem,
   Paper,
   Snackbar,
   Stack,
@@ -60,6 +61,78 @@ const TRADE_OPTIONS = [
   '기타',
   '용역',
 ];
+
+const CURRENT_YEAR =
+  new Date().getFullYear();
+
+const BIRTH_YEAR_OPTIONS =
+  Array.from(
+    {
+      length:
+        CURRENT_YEAR - 1920 + 1,
+    },
+    (_unused, index) =>
+      String(
+        CURRENT_YEAR - index,
+      ),
+  );
+
+const BIRTH_MONTH_OPTIONS =
+  Array.from(
+    { length: 12 },
+    (_unused, index) =>
+      String(index + 1).padStart(
+        2,
+        '0',
+      ),
+  );
+
+const getBirthDayOptions = (
+  year,
+  month,
+) => {
+  if (!year || !month) {
+    return [];
+  }
+
+  const lastDay =
+    new Date(
+      Number(year),
+      Number(month),
+      0,
+    ).getDate();
+
+  return Array.from(
+    { length: lastDay },
+    (_unused, index) =>
+      String(index + 1).padStart(
+        2,
+        '0',
+      ),
+  );
+};
+
+const buildBirthDate = (
+  year,
+  month,
+  day,
+) => {
+  if (!year || !month || !day) {
+    return '';
+  }
+
+  const validDays =
+    getBirthDayOptions(
+      year,
+      month,
+    );
+
+  if (!validDays.includes(day)) {
+    return '';
+  }
+
+  return `${year}-${month}-${day}`;
+};
 
 const EXPORT_FIELD_LABELS = Object.freeze({
   resident_no: '주민등록번호',
@@ -402,7 +475,9 @@ const newWorkerDraft = (
   name = '',
 ) => ({
   name: String(name || '').trim(),
-  birthDate: '',
+  birthYear: '',
+  birthMonth: '',
+  birthDay: '',
   phoneLast4: '',
   trade: '',
 });
@@ -863,6 +938,13 @@ export default function MonthlyLaborManagement({
           .replace(/\D/g, '')
           .slice(0, 4);
 
+      const birthDate =
+        buildBirthDate(
+          newWorker.birthYear,
+          newWorker.birthMonth,
+          newWorker.birthDay,
+        );
+
       if (
         name.length < 2
       ) {
@@ -874,13 +956,11 @@ export default function MonthlyLaborManagement({
         return;
       }
 
-      if (
-        !newWorker.birthDate
-      ) {
+      if (!birthDate) {
         setMessage({
           severity: 'warning',
           text:
-            '동명이인 구분을 위해 생년월일을 입력해주세요.',
+            '동명이인 구분을 위해 생년·월·일을 모두 선택해주세요.',
         });
         return;
       }
@@ -922,7 +1002,7 @@ export default function MonthlyLaborManagement({
               projectName,
             p_name_ko: name,
             p_birth_date:
-              newWorker.birthDate,
+              birthDate,
             p_phone_last4:
               phoneLast4,
             p_recent_trade:
@@ -2487,31 +2567,172 @@ export default function MonthlyLaborManagement({
               }
             />
 
-            <TextField
-              fullWidth
-              required
-              type="date"
-              size="small"
-              label="생년월일"
-              value={
-                newWorker.birthDate
-              }
-              onChange={(
-                event,
-              ) =>
-                setNewWorker(
-                  (previous) => ({
-                    ...previous,
-                    birthDate:
-                      event.target
-                        .value,
-                  }),
-                )
-              }
-              InputLabelProps={{
-                shrink: true,
-              }}
-            />
+            <Box>
+              <Typography
+                sx={{
+                  mb: 0.55,
+                  color: '#475569',
+                  fontSize: '0.7rem',
+                  fontWeight: 800,
+                }}
+              >
+                생년월일 *
+              </Typography>
+
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: {
+                    xs: '1fr',
+                    sm: '1.35fr 0.8fr 0.8fr',
+                  },
+                  gap: 0.7,
+                }}
+              >
+                <Autocomplete
+                  size="small"
+                  options={
+                    BIRTH_YEAR_OPTIONS
+                  }
+                  value={
+                    newWorker.birthYear ||
+                    null
+                  }
+                  onChange={(
+                    _event,
+                    value,
+                  ) =>
+                    setNewWorker(
+                      (previous) => {
+                        const nextYear =
+                          value || '';
+
+                        const validDays =
+                          getBirthDayOptions(
+                            nextYear,
+                            previous.birthMonth,
+                          );
+
+                        return {
+                          ...previous,
+                          birthYear:
+                            nextYear,
+                          birthDay:
+                            validDays.includes(
+                              previous.birthDay,
+                            )
+                              ? previous.birthDay
+                              : '',
+                        };
+                      },
+                    )
+                  }
+                  renderInput={(
+                    params,
+                  ) => (
+                    <TextField
+                      {...params}
+                      required
+                      label="생년"
+                      placeholder="예: 1992"
+                    />
+                  )}
+                />
+
+                <TextField
+                  fullWidth
+                  required
+                  select
+                  size="small"
+                  label="월"
+                  value={
+                    newWorker.birthMonth
+                  }
+                  onChange={(event) =>
+                    setNewWorker(
+                      (previous) => {
+                        const nextMonth =
+                          event.target.value;
+
+                        const validDays =
+                          getBirthDayOptions(
+                            previous.birthYear,
+                            nextMonth,
+                          );
+
+                        return {
+                          ...previous,
+                          birthMonth:
+                            nextMonth,
+                          birthDay:
+                            validDays.includes(
+                              previous.birthDay,
+                            )
+                              ? previous.birthDay
+                              : '',
+                        };
+                      },
+                    )
+                  }
+                >
+                  <MenuItem value="">
+                    선택
+                  </MenuItem>
+
+                  {BIRTH_MONTH_OPTIONS.map(
+                    (month) => (
+                      <MenuItem
+                        key={month}
+                        value={month}
+                      >
+                        {Number(month)}월
+                      </MenuItem>
+                    ),
+                  )}
+                </TextField>
+
+                <TextField
+                  fullWidth
+                  required
+                  select
+                  size="small"
+                  label="일"
+                  value={
+                    newWorker.birthDay
+                  }
+                  disabled={
+                    !newWorker.birthYear ||
+                    !newWorker.birthMonth
+                  }
+                  onChange={(event) =>
+                    setNewWorker(
+                      (previous) => ({
+                        ...previous,
+                        birthDay:
+                          event.target
+                            .value,
+                      }),
+                    )
+                  }
+                >
+                  <MenuItem value="">
+                    선택
+                  </MenuItem>
+
+                  {getBirthDayOptions(
+                    newWorker.birthYear,
+                    newWorker.birthMonth,
+                  ).map((day) => (
+                    <MenuItem
+                      key={day}
+                      value={day}
+                    >
+                      {Number(day)}일
+                    </MenuItem>
+                  ))}
+                </TextField>
+              </Box>
+            </Box>
 
             <TextField
               fullWidth
