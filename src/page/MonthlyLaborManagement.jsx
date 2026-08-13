@@ -32,7 +32,10 @@ import {
 import AddCircleOutlineRoundedIcon from '@mui/icons-material/AddCircleOutlineRounded';
 import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
-import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import CheckBoxOutlineBlankRoundedIcon from '@mui/icons-material/CheckBoxOutlineBlankRounded';
+import CheckBoxRoundedIcon from '@mui/icons-material/CheckBoxRounded';
+import IndeterminateCheckBoxRoundedIcon from '@mui/icons-material/IndeterminateCheckBoxRounded';
+import RemoveCircleOutlineRoundedIcon from '@mui/icons-material/RemoveCircleOutlineRounded';
 import PersonSearchRoundedIcon from '@mui/icons-material/PersonSearchRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
@@ -65,8 +68,6 @@ const EXPORT_FIELD_LABELS = Object.freeze({
   account: '계좌번호',
   bank: '은행',
   trade: '공종',
-  daily_wage: '일급',
-  work_entries: '출역',
 });
 
 const formatExportMissingFields = (fields) => {
@@ -1632,11 +1633,10 @@ export default function MonthlyLaborManagement({
             },
         }}
       >
-        현장과 작성월별로 명단·출역·노임을
-        저장합니다. 일자별 출역, 일급,
-        추가지급, 수동공제는 월별 스냅샷으로
-        보존하며 주민번호·계좌 등 개인정보는
-        이 화면에서 복제하지 않습니다.
+        현장과 작성월별로 필요한 근로자를 조회·선별하고
+        개인정보를 모아 Excel 다운로드 준비를 합니다.
+        실제 출역일자·일급·노임금액 입력과 노임 계산은
+        다운로드한 Excel에서 진행합니다.
       </Alert>
 
       <Paper
@@ -1680,81 +1680,93 @@ export default function MonthlyLaborManagement({
             근로자 조회
           </Button>
 
-          <Tooltip title="신규 근로자 등록">
-            <IconButton
-              size="small"
-              onClick={() =>
-                openNewWorker()
-              }
-              aria-label="신규 근로자 등록"
-            >
-              <AddCircleOutlineRoundedIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
+          <Paper
+            variant="outlined"
+            sx={{
+              minHeight: 34,
+              px: 0.75,
+              py: 0.35,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.45,
+              borderColor: '#94a3b8',
+              boxShadow: 'none',
+            }}
+          >
+            <Tooltip title="근로자 추가" arrow>
+              <span>
+                <IconButton
+                  size="small"
+                  color="primary"
+                  aria-label="근로자 추가"
+                  onClick={() =>
+                    openNewWorker()
+                  }
+                >
+                  <AddCircleOutlineRoundedIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
 
-          <Tooltip title="선택 삭제">
-            <span>
-              <IconButton
-                size="small"
-                disabled={
-                  selectedIds.length ===
-                  0
-                }
-                onClick={
-                  deleteSelected
-                }
-                aria-label="선택 근로자 삭제"
-              >
-                <DeleteOutlineRoundedIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
+            <Tooltip title="근로자 삭제" arrow>
+              <span>
+                <IconButton
+                  size="small"
+                  color="error"
+                  aria-label="근로자 삭제"
+                  onClick={
+                    deleteSelected
+                  }
+                  disabled={
+                    selectedIds.length ===
+                    0
+                  }
+                >
+                  <RemoveCircleOutlineRoundedIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
 
-          <Divider
-            orientation="vertical"
-            flexItem
-            sx={{ mx: 0.25 }}
-          />
+            <Tooltip title="근로자 위로 이동" arrow>
+              <span>
+                <IconButton
+                  size="small"
+                  aria-label="근로자 위로 이동"
+                  onClick={() =>
+                    moveSelected(
+                      'up',
+                    )
+                  }
+                  disabled={
+                    selectedIds.length ===
+                    0
+                  }
+                >
+                  <ArrowUpwardRoundedIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
 
-          <Tooltip title="선택 근로자 위로">
-            <span>
-              <IconButton
-                size="small"
-                disabled={
-                  selectedIds.length ===
-                  0
-                }
-                onClick={() =>
-                  moveSelected(
-                    'up',
-                  )
-                }
-                aria-label="선택 근로자 위로"
-              >
-                <ArrowUpwardRoundedIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
-
-          <Tooltip title="선택 근로자 아래로">
-            <span>
-              <IconButton
-                size="small"
-                disabled={
-                  selectedIds.length ===
-                  0
-                }
-                onClick={() =>
-                  moveSelected(
-                    'down',
-                  )
-                }
-                aria-label="선택 근로자 아래로"
-              >
-                <ArrowDownwardRoundedIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Tooltip>
+            <Tooltip title="근로자 아래로 이동" arrow>
+              <span>
+                <IconButton
+                  size="small"
+                  aria-label="근로자 아래로 이동"
+                  onClick={() =>
+                    moveSelected(
+                      'down',
+                    )
+                  }
+                  disabled={
+                    selectedIds.length ===
+                    0
+                  }
+                >
+                  <ArrowDownwardRoundedIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Paper>
 
           <Divider
             orientation="vertical"
@@ -1834,74 +1846,6 @@ export default function MonthlyLaborManagement({
           </Typography>
         </Box>
 
-        <Box
-          sx={{
-            px: 1.1,
-            py: 0.65,
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: 1.5,
-            alignItems: 'center',
-            bgcolor: '#ffffff',
-            borderTop:
-              '1px solid #e2e8f0',
-          }}
-        >
-          <Typography
-            sx={{
-              fontSize: '0.69rem',
-              color: '#475569',
-              fontWeight: 800,
-            }}
-          >
-            총 출역{' '}
-            {payrollTotals.workUnits.toLocaleString(
-              'ko-KR',
-              {
-                maximumFractionDigits: 2,
-              },
-            )}일
-          </Typography>
-
-          <Typography
-            sx={{
-              fontSize: '0.69rem',
-              color: '#475569',
-              fontWeight: 800,
-            }}
-          >
-            총 지급{' '}
-            {formatMoney(
-              payrollTotals.grossPay,
-            )}원
-          </Typography>
-
-          <Typography
-            sx={{
-              fontSize: '0.69rem',
-              color: '#475569',
-              fontWeight: 800,
-            }}
-          >
-            수동 공제{' '}
-            {formatMoney(
-              payrollTotals.manualDeduction,
-            )}원
-          </Typography>
-
-          <Typography
-            sx={{
-              fontSize: '0.69rem',
-              color: '#0f172a',
-              fontWeight: 900,
-            }}
-          >
-            실지급 예상{' '}
-            {formatMoney(
-              payrollTotals.netPay,
-            )}원
-          </Typography>
-        </Box>
 
         <Divider />
 
@@ -1915,7 +1859,7 @@ export default function MonthlyLaborManagement({
             stickyHeader
             size="small"
             sx={{
-              minWidth: 1450,
+              minWidth: 920,
               tableLayout:
                 'fixed',
             }}
@@ -1923,12 +1867,27 @@ export default function MonthlyLaborManagement({
             <TableHead>
               <TableRow>
                 <TableCell
-                  padding="checkbox"
                   align="center"
-                  sx={{ width: 46 }}
+                  sx={{
+                    width: 52,
+                    minWidth: 52,
+                    maxWidth: 52,
+                    px: 0.5,
+                    overflow: 'visible',
+                  }}
                 >
                   <Checkbox
                     size="small"
+                    disableRipple
+                    icon={
+                      <CheckBoxOutlineBlankRoundedIcon fontSize="small" />
+                    }
+                    checkedIcon={
+                      <CheckBoxRoundedIcon fontSize="small" />
+                    }
+                    indeterminateIcon={
+                      <IndeterminateCheckBoxRoundedIcon fontSize="small" />
+                    }
                     checked={
                       allSelected
                     }
@@ -1943,14 +1902,22 @@ export default function MonthlyLaborManagement({
                           .checked,
                       )
                     }
+                    sx={{
+                      p: 0.5,
+                      '& .MuiSvgIcon-root': {
+                        fontSize: 20,
+                      },
+                    }}
                   />
                 </TableCell>
 
                 <TableCell
                   align="center"
                   sx={{
-                    width: 54,
+                    width: 64,
+                    minWidth: 64,
                     fontWeight: 900,
+                    whiteSpace: 'nowrap',
                   }}
                 >
                   순번
@@ -1999,66 +1966,6 @@ export default function MonthlyLaborManagement({
                 <TableCell
                   align="center"
                   sx={{
-                    width: 90,
-                    fontWeight: 900,
-                  }}
-                >
-                  출역
-                </TableCell>
-
-                <TableCell
-                  align="center"
-                  sx={{
-                    width: 120,
-                    fontWeight: 900,
-                  }}
-                >
-                  일급
-                </TableCell>
-
-                <TableCell
-                  align="center"
-                  sx={{
-                    width: 120,
-                    fontWeight: 900,
-                  }}
-                >
-                  총지급
-                </TableCell>
-
-                <TableCell
-                  align="center"
-                  sx={{
-                    width: 115,
-                    fontWeight: 900,
-                  }}
-                >
-                  수동공제
-                </TableCell>
-
-                <TableCell
-                  align="center"
-                  sx={{
-                    width: 120,
-                    fontWeight: 900,
-                  }}
-                >
-                  실지급
-                </TableCell>
-
-                <TableCell
-                  align="center"
-                  sx={{
-                    width: 90,
-                    fontWeight: 900,
-                  }}
-                >
-                  노임입력
-                </TableCell>
-
-                <TableCell
-                  align="center"
-                  sx={{
                     minWidth: 150,
                     fontWeight: 900,
                   }}
@@ -2072,7 +1979,7 @@ export default function MonthlyLaborManagement({
               {rosterLoading ? (
                 <TableRow>
                   <TableCell
-                    colSpan={13}
+                    colSpan={7}
                     align="center"
                     sx={{ py: 10 }}
                   >
@@ -2085,7 +1992,7 @@ export default function MonthlyLaborManagement({
                 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={13}
+                    colSpan={7}
                     align="center"
                     sx={{
                       py: 10,
@@ -2112,11 +2019,24 @@ export default function MonthlyLaborManagement({
                       )}
                     >
                       <TableCell
-                        padding="checkbox"
                         align="center"
+                        sx={{
+                          width: 52,
+                          minWidth: 52,
+                          maxWidth: 52,
+                          px: 0.5,
+                          overflow: 'visible',
+                        }}
                       >
                         <Checkbox
                           size="small"
+                          disableRipple
+                          icon={
+                            <CheckBoxOutlineBlankRoundedIcon fontSize="small" />
+                          }
+                          checkedIcon={
+                            <CheckBoxRoundedIcon fontSize="small" />
+                          }
                           checked={selectedSet.has(
                             row.id,
                           )}
@@ -2125,12 +2045,22 @@ export default function MonthlyLaborManagement({
                               row.id,
                             )
                           }
+                          sx={{
+                            p: 0.5,
+                            '& .MuiSvgIcon-root': {
+                              fontSize: 20,
+                            },
+                          }}
                         />
                       </TableCell>
 
-                      <TableCell align="center">
-                        {index +
-                          1}
+                      <TableCell
+                        align="center"
+                        sx={{
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {index + 1}
                       </TableCell>
 
                       <TableCell align="center">
@@ -2200,77 +2130,6 @@ export default function MonthlyLaborManagement({
                         )}
                       </TableCell>
 
-                      <TableCell align="center">
-                        {getPayrollSummary(
-                          row,
-                        ).totalWorkUnits.toLocaleString(
-                          'ko-KR',
-                          {
-                            maximumFractionDigits: 2,
-                          },
-                        )}
-                      </TableCell>
-
-                      <TableCell align="right">
-                        {formatMoney(
-                          getPayrollSummary(
-                            row,
-                          ).dailyWage,
-                        )}
-                      </TableCell>
-
-                      <TableCell align="right">
-                        {formatMoney(
-                          getPayrollSummary(
-                            row,
-                          ).grossPay,
-                        )}
-                      </TableCell>
-
-                      <TableCell align="right">
-                        {formatMoney(
-                          getPayrollSummary(
-                            row,
-                          ).manualDeduction,
-                        )}
-                      </TableCell>
-
-                      <TableCell align="right">
-                        <Typography
-                          sx={{
-                            fontSize:
-                              '0.74rem',
-                            fontWeight: 900,
-                          }}
-                        >
-                          {formatMoney(
-                            getPayrollSummary(
-                              row,
-                            ).netPay,
-                          )}
-                        </Typography>
-                      </TableCell>
-
-                      <TableCell align="center">
-                        <Button
-                          size="small"
-                          variant="outlined"
-                          onClick={() =>
-                            openPayrollEditor(
-                              row,
-                            )
-                          }
-                          sx={{
-                            minWidth: 0,
-                            px: 0.8,
-                            fontSize:
-                              '0.68rem',
-                          }}
-                        >
-                          입력
-                        </Button>
-                      </TableCell>
-
                       <TableCell>
                         <TextField
                           fullWidth
@@ -2299,308 +2158,6 @@ export default function MonthlyLaborManagement({
           </Table>
         </TableContainer>
       </Paper>
-
-      <Dialog
-        open={Boolean(
-          payrollEditor,
-        )}
-        onClose={() =>
-          setPayrollEditor(null)
-        }
-        fullWidth
-        maxWidth="md"
-      >
-        <DialogTitle
-          sx={{ fontWeight: 900 }}
-        >
-          출역·노임 입력
-          {payrollEditor?.name
-            ? ` · ${payrollEditor.name}`
-            : ''}
-        </DialogTitle>
-
-        <DialogContent dividers>
-          {payrollEditor && (
-            <Stack spacing={1.5}>
-              <Alert
-                severity="info"
-                sx={{
-                  '& .MuiAlert-message':
-                    {
-                      fontSize:
-                        '0.7rem',
-                    },
-                }}
-              >
-                일자별 출역은 0~2 사이 숫자로 입력할 수 있습니다.
-                일반 출역은 1, 반일은 0.5로 입력하면 됩니다.
-                법정 세금·4대보험 자동계산은 회사 Excel 기준 확인 후
-                별도 단계에서 연결합니다.
-              </Alert>
-
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns:
-                    'repeat(7, minmax(70px, 1fr))',
-                  gap: 0.65,
-                }}
-              >
-                {Array.from(
-                  {
-                    length:
-                      getDaysInMonth(
-                        yearMonth,
-                      ),
-                  },
-                  (
-                    _unused,
-                    index,
-                  ) =>
-                    index + 1,
-                ).map((day) => (
-                  <TextField
-                    key={day}
-                    size="small"
-                    label={`${day}일`}
-                    type="number"
-                    value={
-                      payrollEditor
-                        .workEntries?.[
-                        String(day)
-                      ] ?? ''
-                    }
-                    onChange={(
-                      event,
-                    ) =>
-                      updatePayrollEntry(
-                        day,
-                        event.target
-                          .value,
-                      )
-                    }
-                    inputProps={{
-                      min: 0,
-                      max: 2,
-                      step: 0.5,
-                      inputMode:
-                        'decimal',
-                    }}
-                  />
-                ))}
-              </Box>
-
-              <Divider />
-
-              <Box
-                sx={{
-                  display: 'grid',
-                  gridTemplateColumns: {
-                    xs: '1fr',
-                    md: 'repeat(4, minmax(0, 1fr))',
-                  },
-                  gap: 1,
-                }}
-              >
-                <TextField
-                  size="small"
-                  label="일급"
-                  value={
-                    payrollEditor.dailyWage
-                      ? formatMoney(
-                          payrollEditor.dailyWage,
-                        )
-                      : ''
-                  }
-                  onChange={(
-                    event,
-                  ) =>
-                    setPayrollEditor(
-                      (previous) => ({
-                        ...previous,
-                        dailyWage:
-                          normalizeMoneyInput(
-                            event.target
-                              .value,
-                          ),
-                      }),
-                    )
-                  }
-                  inputProps={{
-                    inputMode:
-                      'numeric',
-                  }}
-                />
-
-                <TextField
-                  size="small"
-                  label="추가지급"
-                  value={
-                    payrollEditor.additionalPay
-                      ? formatMoney(
-                          payrollEditor.additionalPay,
-                        )
-                      : ''
-                  }
-                  onChange={(
-                    event,
-                  ) =>
-                    setPayrollEditor(
-                      (previous) => ({
-                        ...previous,
-                        additionalPay:
-                          normalizeMoneyInput(
-                            event.target
-                              .value,
-                          ),
-                      }),
-                    )
-                  }
-                  inputProps={{
-                    inputMode:
-                      'numeric',
-                  }}
-                />
-
-                <TextField
-                  size="small"
-                  label="수동공제"
-                  value={
-                    payrollEditor.manualDeduction
-                      ? formatMoney(
-                          payrollEditor.manualDeduction,
-                        )
-                      : ''
-                  }
-                  onChange={(
-                    event,
-                  ) =>
-                    setPayrollEditor(
-                      (previous) => ({
-                        ...previous,
-                        manualDeduction:
-                          normalizeMoneyInput(
-                            event.target
-                              .value,
-                          ),
-                      }),
-                    )
-                  }
-                  inputProps={{
-                    inputMode:
-                      'numeric',
-                  }}
-                />
-
-                <TextField
-                  size="small"
-                  label="실지급 예상"
-                  value={formatMoney(
-                    getPayrollSummary({
-                      workEntries:
-                        payrollEditor.workEntries,
-                      dailyWage:
-                        payrollEditor.dailyWage,
-                      additionalPay:
-                        payrollEditor.additionalPay,
-                      manualDeduction:
-                        payrollEditor.manualDeduction,
-                    }).netPay,
-                  )}
-                  InputProps={{
-                    readOnly: true,
-                  }}
-                />
-              </Box>
-
-              <TextField
-                fullWidth
-                multiline
-                minRows={2}
-                size="small"
-                label="노임 메모"
-                value={
-                  payrollEditor.payNote
-                }
-                onChange={(
-                  event,
-                ) =>
-                  setPayrollEditor(
-                    (previous) => ({
-                      ...previous,
-                      payNote:
-                        event.target
-                          .value,
-                    }),
-                  )
-                }
-              />
-
-              <Typography
-                sx={{
-                  color: '#475569',
-                  fontSize:
-                    '0.72rem',
-                  fontWeight: 800,
-                }}
-              >
-                출역{' '}
-                {getPayrollSummary({
-                  workEntries:
-                    payrollEditor.workEntries,
-                  dailyWage:
-                    payrollEditor.dailyWage,
-                  additionalPay:
-                    payrollEditor.additionalPay,
-                  manualDeduction:
-                    payrollEditor.manualDeduction,
-                }).totalWorkUnits.toLocaleString(
-                  'ko-KR',
-                  {
-                    maximumFractionDigits: 2,
-                  },
-                )}일
-                {' · '}
-                총지급{' '}
-                {formatMoney(
-                  getPayrollSummary({
-                    workEntries:
-                      payrollEditor.workEntries,
-                    dailyWage:
-                      payrollEditor.dailyWage,
-                    additionalPay:
-                      payrollEditor.additionalPay,
-                    manualDeduction:
-                      payrollEditor.manualDeduction,
-                  }).grossPay,
-                )}원
-              </Typography>
-            </Stack>
-          )}
-        </DialogContent>
-
-        <DialogActions>
-          <Button
-            onClick={() =>
-              setPayrollEditor(null)
-            }
-          >
-            취소
-          </Button>
-
-          <Button
-            variant="contained"
-            onClick={
-              applyPayrollEditor
-            }
-            sx={{
-              boxShadow: 'none',
-            }}
-          >
-            적용
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       <Dialog
         open={lookupOpen}
