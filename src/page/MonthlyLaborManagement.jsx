@@ -38,6 +38,7 @@ import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import { supabase } from '../supabaseClient';
 import LaborSecurityPhoneDialog from '../components/LaborSecurityPhoneDialog.jsx';
+import LaborDownloadAuthDialog from '../components/LaborDownloadAuthDialog.jsx';
 
 const TRADE_OPTIONS = [
   '소장',
@@ -522,6 +523,11 @@ export default function MonthlyLaborManagement({
   const [
     securityPhoneOpen,
     setSecurityPhoneOpen,
+  ] = useState(false);
+
+  const [
+    downloadAuthOpen,
+    setDownloadAuthOpen,
   ] = useState(false);
 
   const selectedSet = useMemo(
@@ -1589,6 +1595,27 @@ export default function MonthlyLaborManagement({
             }}
           >
             보안 휴대폰
+          </Button>
+
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() =>
+              setDownloadAuthOpen(true)
+            }
+            disabled={
+              rosterSaving ||
+              rosterLoading ||
+              dirty ||
+              !projectName ||
+              rows.length === 0
+            }
+            sx={{
+              minWidth: 142,
+              fontWeight: 900,
+            }}
+          >
+            다운로드 인증 준비
           </Button>
         </Stack>
       </Paper>
@@ -3254,6 +3281,15 @@ export default function MonthlyLaborManagement({
           </Button>
         </DialogActions>
       </Dialog>
+
+      <LaborDownloadAuthDialog
+        open={downloadAuthOpen}
+        onClose={() =>
+          setDownloadAuthOpen(false)
+        }
+        projectName={projectName}
+        monthKey={yearMonth}
+      />
 
       <LaborSecurityPhoneDialog
         open={securityPhoneOpen}
