@@ -62,11 +62,12 @@ const TRADE_OPTIONS = [
 ];
 
 const EXPORT_FIELD_LABELS = Object.freeze({
-  identity: '주민/외국인번호',
+  resident_no: '주민등록번호',
   phone: '전체 연락처',
-  address: '주소',
-  account: '계좌번호',
+  nationality: '국적',
   bank: '은행',
+  account: '계좌번호',
+  account_holder: '예금주',
   trade: '공종',
 });
 

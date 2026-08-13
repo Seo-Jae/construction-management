@@ -14,11 +14,11 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
-  FormControlLabel,
+  IconButton,
+  MenuItem,
   Paper,
   Snackbar,
   Stack,
-  Switch,
   Table,
   TableBody,
   TableCell,
@@ -26,6 +26,7 @@ import {
   TableHead,
   TableRow,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
@@ -52,17 +53,96 @@ const TRADE_OPTIONS = [
   '용역',
 ];
 
+const NATIONALITY_OPTIONS = [
+  '대한민국', '중국', '베트남', '필리핀', '태국', '인도네시아',
+  '몽골', '우즈베키스탄', '캄보디아', '네팔', '미얀마', '스리랑카',
+  '방글라데시', '파키스탄', '인도', '러시아', '카자흐스탄',
+  '키르기스스탄', '라오스', '동티모르', '기타',
+];
+
+const NATIONALITY_SEARCH_ALIASES = {
+  대한민국: ['대한민국', '한국', '남한', 'korea', 'south korea', 'republic of korea', 'rok', 'kor'],
+  중국: ['중국', 'china', 'prc', 'cn'],
+  베트남: ['베트남', 'vietnam', 'viet nam', 'vn'],
+  필리핀: ['필리핀', 'philippines', 'philippine', 'ph'],
+  태국: ['태국', 'thailand', 'thai', 'th'],
+  인도네시아: ['인도네시아', 'indonesia', 'id'],
+  몽골: ['몽골', 'mongolia', 'mn'],
+  우즈베키스탄: ['우즈베키스탄', 'uzbekistan', 'uz'],
+  캄보디아: ['캄보디아', 'cambodia', 'kh'],
+  네팔: ['네팔', 'nepal', 'np'],
+  미얀마: ['미얀마', 'myanmar', 'burma', 'mm'],
+  스리랑카: ['스리랑카', 'sri lanka', 'srilanka', 'lk'],
+  방글라데시: ['방글라데시', 'bangladesh', 'bd'],
+  파키스탄: ['파키스탄', 'pakistan', 'pk'],
+  인도: ['인도', 'india', 'in'],
+  러시아: ['러시아', 'russia', 'russian federation', 'ru'],
+  카자흐스탄: ['카자흐스탄', 'kazakhstan', 'kz'],
+  키르기스스탄: ['키르기스스탄', 'kyrgyzstan', 'kg'],
+  라오스: ['라오스', 'laos', 'lao', 'la'],
+  동티모르: ['동티모르', 'timor-leste', 'timorleste', 'east timor', 'tl'],
+  기타: ['기타', 'other', 'others'],
+};
+
+const normalizeSearchText = (value) =>
+  String(value || '').trim().toLowerCase().replace(/[\s._-]+/g, '');
+
+const filterNationalityOptions = (options, state) => {
+  const query = normalizeSearchText(state?.inputValue);
+  if (!query) return options;
+  return options.filter((option) =>
+    (NATIONALITY_SEARCH_ALIASES[option] || [option]).some((alias) =>
+      normalizeSearchText(alias).includes(query),
+    ),
+  );
+};
+
+const CURRENT_YEAR = new Date().getFullYear();
+const BIRTH_YEAR_OPTIONS = Array.from(
+  { length: CURRENT_YEAR - 1920 + 1 },
+  (_unused, index) => String(CURRENT_YEAR - index),
+);
+const BIRTH_MONTH_OPTIONS = Array.from(
+  { length: 12 },
+  (_unused, index) => String(index + 1).padStart(2, '0'),
+);
+
+const splitBirthDate = (value) => {
+  const matched = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
+  return matched
+    ? { year: matched[1], month: matched[2], day: matched[3] }
+    : { year: '', month: '', day: '' };
+};
+
+const getBirthDayOptions = (year, month) => {
+  if (!year || !month) return [];
+  const lastDay = new Date(Number(year), Number(month), 0).getDate();
+  return Array.from(
+    { length: lastDay },
+    (_unused, index) => String(index + 1).padStart(2, '0'),
+  );
+};
+
+const buildBirthDate = (year, month, day) => {
+  if (!year && !month && !day) return null;
+  if (!year || !month || !day) return '';
+  return getBirthDayOptions(year, month).includes(day)
+    ? `${year}-${month}-${day}`
+    : '';
+};
+
 const emptyDraft = () => ({
   id: '',
   nameKo: '',
-  birthDate: '',
+  birthYear: '',
+  birthMonth: '',
+  birthDay: '',
   phoneLast4: '',
   recentTrade: '',
   note: '',
   isActive: true,
 
   residentRegistrationNumber: '',
-  foreignRegistrationNumber: '',
   fullPhoneNumber: '',
   address: '',
   nationality: '',
@@ -72,10 +152,10 @@ const emptyDraft = () => ({
 
   hasPrivateData: false,
   hasResidentNo: false,
-  hasForeignNo: false,
   hasPrivatePhone: false,
   hasAddress: false,
   hasAccount: false,
+  hasAccountHolder: false,
   hasNationality: false,
   bankNameHint: '',
   accountLast4: '',
@@ -111,14 +191,14 @@ const normalizeWorker = (row) => ({
     row?.has_private_data === true,
   hasResidentNo:
     row?.has_resident_no === true,
-  hasForeignNo:
-    row?.has_foreign_no === true,
   hasPrivatePhone:
     row?.has_private_phone === true,
   hasAddress:
     row?.has_address === true,
   hasAccount:
     row?.has_account === true,
+  hasAccountHolder:
+    row?.has_account_holder === true,
   hasNationality:
     row?.has_nationality === true,
   bankNameHint: String(
@@ -162,10 +242,6 @@ const privateStatusText = (worker) => {
 
   if (worker.hasResidentNo) {
     labels.push('주민번호');
-  }
-
-  if (worker.hasForeignNo) {
-    labels.push('외국인번호');
   }
 
   if (worker.hasPrivatePhone) {
@@ -245,7 +321,7 @@ export default function WorkerMasterManagement({
 
       const { data, error } =
         await supabase.rpc(
-          'labor_worker_master_list_v52_34',
+          'labor_worker_master_list_v52_41',
           {
             p_query: String(
               searchQuery || '',
@@ -306,12 +382,16 @@ export default function WorkerMasterManagement({
   const openEdit = (worker) => {
     if (!canManage) return;
 
+    const birth = splitBirthDate(worker.birthDate);
+
     setDraft({
       ...emptyDraft(),
 
       id: worker.id,
       nameKo: worker.nameKo,
-      birthDate: worker.birthDate,
+      birthYear: birth.year,
+      birthMonth: birth.month,
+      birthDay: birth.day,
       phoneLast4: worker.phoneLast4,
       recentTrade:
         worker.recentTrade,
@@ -322,14 +402,14 @@ export default function WorkerMasterManagement({
         worker.hasPrivateData,
       hasResidentNo:
         worker.hasResidentNo,
-      hasForeignNo:
-        worker.hasForeignNo,
       hasPrivatePhone:
         worker.hasPrivatePhone,
       hasAddress:
         worker.hasAddress,
       hasAccount:
         worker.hasAccount,
+      hasAccountHolder:
+        worker.hasAccountHolder,
       hasNationality:
         worker.hasNationality,
       bankNameHint:
@@ -362,11 +442,6 @@ export default function WorkerMasterManagement({
         draft.residentRegistrationNumber,
       );
 
-    const foreignNo =
-      digitsOnly(
-        draft.foreignRegistrationNumber,
-      );
-
     const fullPhone =
       digitsOnly(
         draft.fullPhoneNumber,
@@ -376,6 +451,15 @@ export default function WorkerMasterManagement({
       digitsOnly(
         draft.accountNumber,
       );
+
+    const nationality = String(draft.nationality || '').trim();
+    const bankName = String(draft.bankName || '').trim();
+    const accountHolder = String(draft.accountHolder || '').trim();
+    const birthDate = buildBirthDate(
+      draft.birthYear,
+      draft.birthMonth,
+      draft.birthDay,
+    );
 
     if (nameKo.length < 2) {
       setMessage({
@@ -414,29 +498,43 @@ export default function WorkerMasterManagement({
       return;
     }
 
-    if (
-      foreignNo &&
-      !/^\d{13}$/.test(
-        foreignNo,
-      )
-    ) {
-      setMessage({
-        severity: 'warning',
-        text:
-          '외국인등록번호는 13자리 전체를 입력해주세요.',
-      });
+    if (birthDate === '') {
+      setMessage({ severity: 'warning', text: '생년월일은 연·월·일을 모두 선택하거나 모두 비워주세요.' });
       return;
     }
 
-    if (
-      residentNo &&
-      foreignNo
-    ) {
-      setMessage({
-        severity: 'warning',
-        text:
-          '주민등록번호와 외국인등록번호는 동시에 입력할 수 없습니다.',
-      });
+    if (!residentNo && !draft.hasResidentNo) {
+      setMessage({ severity: 'warning', text: '주민등록번호는 필수정보입니다.' });
+      return;
+    }
+
+    if (!fullPhone && !draft.hasPrivatePhone) {
+      setMessage({ severity: 'warning', text: '전체 휴대폰번호는 필수정보입니다.' });
+      return;
+    }
+
+    if (!nationality && !draft.hasNationality) {
+      setMessage({ severity: 'warning', text: '국적은 필수정보입니다.' });
+      return;
+    }
+
+    if (nationality && !NATIONALITY_OPTIONS.includes(nationality)) {
+      setMessage({ severity: 'warning', text: '국적은 목록에서 선택해주세요.' });
+      return;
+    }
+
+    if (!bankName && !draft.bankNameHint) {
+      setMessage({ severity: 'warning', text: '은행은 필수정보입니다.' });
+      return;
+    }
+
+    if (!accountNumber && !draft.hasAccount) {
+      setMessage({ severity: 'warning', text: '계좌번호는 필수정보입니다.' });
+      return;
+    }
+
+    if (!accountHolder && !draft.hasAccountHolder) {
+      setMessage({ severity: 'warning', text: '예금주는 필수정보입니다.' });
       return;
     }
 
@@ -470,14 +568,13 @@ export default function WorkerMasterManagement({
 
     const { data, error } =
       await supabase.rpc(
-        'labor_worker_master_secure_upsert_v52_34',
+        'labor_worker_master_secure_upsert_v52_41',
         {
           p_worker_id:
             draft.id || null,
           p_name_ko: nameKo,
           p_birth_date:
-            draft.birthDate ||
-            null,
+            birthDate || null,
           p_phone_last4:
             phoneLast4 || null,
           p_recent_trade:
@@ -495,8 +592,6 @@ export default function WorkerMasterManagement({
 
           p_resident_registration_number:
             residentNo || null,
-          p_foreign_registration_number:
-            foreignNo || null,
           p_phone_number:
             fullPhone || null,
           p_address:
@@ -504,21 +599,13 @@ export default function WorkerMasterManagement({
               draft.address || '',
             ).trim() || null,
           p_nationality:
-            String(
-              draft.nationality ||
-                '',
-            ).trim() || null,
+            nationality || null,
           p_bank_name:
-            String(
-              draft.bankName || '',
-            ).trim() || null,
+            bankName || null,
           p_account_number:
             accountNumber || null,
           p_account_holder:
-            String(
-              draft.accountHolder ||
-                '',
-            ).trim() || null,
+            accountHolder || null,
         },
       );
 
@@ -571,8 +658,8 @@ export default function WorkerMasterManagement({
           },
         }}
       >
-        주민등록번호·외국인등록번호·전체
-        연락처·주소·국적·은행·계좌번호·예금주는
+        주민등록번호·전체 연락처·주소·국적·은행·
+        계좌번호·예금주는
         보호정보로 암호화 저장합니다. 목록과
         수정화면에는 기존 원문을 다시 표시하지
         않습니다.
@@ -711,7 +798,7 @@ export default function WorkerMasterManagement({
             stickyHeader
             size="small"
             sx={{
-              minWidth: 1120,
+              minWidth: 1040,
             }}
           >
             <TableHead>
@@ -785,16 +872,6 @@ export default function WorkerMasterManagement({
                 <TableCell
                   align="center"
                   sx={{
-                    width: 82,
-                    fontWeight: 900,
-                  }}
-                >
-                  상태
-                </TableCell>
-
-                <TableCell
-                  align="center"
-                  sx={{
                     width: 140,
                     fontWeight: 900,
                   }}
@@ -818,7 +895,7 @@ export default function WorkerMasterManagement({
               {loading ? (
                 <TableRow>
                   <TableCell
-                    colSpan={10}
+                    colSpan={9}
                     align="center"
                     sx={{ py: 8 }}
                   >
@@ -831,7 +908,7 @@ export default function WorkerMasterManagement({
                 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={10}
+                    colSpan={9}
                     align="center"
                     sx={{
                       py: 8,
@@ -907,38 +984,28 @@ export default function WorkerMasterManagement({
                       </TableCell>
 
                       <TableCell align="center">
-                        {worker.isActive
-                          ? '사용중'
-                          : '비활성'}
-                      </TableCell>
-
-                      <TableCell align="center">
                         {formatKoreaDateTime(
                           worker.updatedAt,
                         )}
                       </TableCell>
 
-                      <TableCell align="center">
-                        <Button
-                          size="small"
-                          onClick={() =>
-                            openEdit(
-                              worker,
-                            )
-                          }
-                          disabled={
-                            !canManage
-                          }
-                          startIcon={
-                            <EditRoundedIcon />
-                          }
-                          sx={{
-                            minWidth: 0,
-                            px: 0.75,
-                          }}
-                        >
-                          수정
-                        </Button>
+                      <TableCell
+                        align="center"
+                        sx={{ width: 54, minWidth: 54, whiteSpace: 'nowrap' }}
+                      >
+                        <Tooltip title="수정" arrow>
+                          <span>
+                            <IconButton
+                              size="small"
+                              aria-label="근로자 정보 수정"
+                              onClick={() => openEdit(worker)}
+                              disabled={!canManage}
+                              color="primary"
+                            >
+                              <EditRoundedIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
                       </TableCell>
                     </TableRow>
                   ),
@@ -1007,28 +1074,93 @@ export default function WorkerMasterManagement({
                 }
               />
 
-              <TextField
-                fullWidth
-                size="small"
-                type="date"
-                label="생년월일"
-                value={
-                  draft.birthDate
-                }
-                onChange={(event) =>
-                  setDraft(
-                    (previous) => ({
-                      ...previous,
-                      birthDate:
-                        event.target
-                          .value,
-                    }),
-                  )
-                }
-                InputLabelProps={{
-                  shrink: true,
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: '1.35fr 0.8fr 0.8fr',
+                  gap: 0.65,
                 }}
-              />
+              >
+                <Autocomplete
+                  size="small"
+                  options={BIRTH_YEAR_OPTIONS}
+                  value={draft.birthYear || null}
+                  onChange={(_event, value) =>
+                    setDraft((previous) => {
+                      const nextYear = value || '';
+                      const validDays = getBirthDayOptions(
+                        nextYear,
+                        previous.birthMonth,
+                      );
+                      return {
+                        ...previous,
+                        birthYear: nextYear,
+                        birthDay: validDays.includes(previous.birthDay)
+                          ? previous.birthDay
+                          : '',
+                      };
+                    })
+                  }
+                  renderInput={(params) => (
+                    <TextField {...params} label="생년" placeholder="예: 1992" />
+                  )}
+                />
+
+                <TextField
+                  fullWidth
+                  select
+                  size="small"
+                  label="월"
+                  value={draft.birthMonth}
+                  onChange={(event) =>
+                    setDraft((previous) => {
+                      const nextMonth = event.target.value;
+                      const validDays = getBirthDayOptions(
+                        previous.birthYear,
+                        nextMonth,
+                      );
+                      return {
+                        ...previous,
+                        birthMonth: nextMonth,
+                        birthDay: validDays.includes(previous.birthDay)
+                          ? previous.birthDay
+                          : '',
+                      };
+                    })
+                  }
+                >
+                  <MenuItem value="">선택</MenuItem>
+                  {BIRTH_MONTH_OPTIONS.map((month) => (
+                    <MenuItem key={month} value={month}>
+                      {Number(month)}월
+                    </MenuItem>
+                  ))}
+                </TextField>
+
+                <TextField
+                  fullWidth
+                  select
+                  size="small"
+                  label="일"
+                  value={draft.birthDay}
+                  disabled={!draft.birthYear || !draft.birthMonth}
+                  onChange={(event) =>
+                    setDraft((previous) => ({
+                      ...previous,
+                      birthDay: event.target.value,
+                    }))
+                  }
+                >
+                  <MenuItem value="">선택</MenuItem>
+                  {getBirthDayOptions(draft.birthYear, draft.birthMonth).map(
+                    (day) => (
+                      <MenuItem key={day} value={day}>
+                        {Number(day)}일
+                      </MenuItem>
+                    ),
+                  )}
+                </TextField>
+              </Box>
 
               <TextField
                 fullWidth
@@ -1123,30 +1255,6 @@ export default function WorkerMasterManagement({
               }
             />
 
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={
-                    draft.isActive
-                  }
-                  onChange={(
-                    event,
-                  ) =>
-                    setDraft(
-                      (previous) => ({
-                        ...previous,
-                        isActive:
-                          event
-                            .target
-                            .checked,
-                      }),
-                    )
-                  }
-                />
-              }
-              label="사용중"
-            />
-
             <Divider />
 
             <Box>
@@ -1173,7 +1281,8 @@ export default function WorkerMasterManagement({
                 기존 보호정보의 원문은 웹 화면에
                 다시 표시하지 않습니다. 수정하지
                 않을 항목은 빈칸으로 두면 기존
-                암호화 값이 유지됩니다.
+                암호화 값이 유지됩니다. * 표시는
+                필수정보입니다.
               </Typography>
             </Box>
 
@@ -1189,6 +1298,7 @@ export default function WorkerMasterManagement({
             >
               <TextField
                 fullWidth
+                required
                 size="small"
                 label="주민등록번호"
                 value={
@@ -1226,43 +1336,7 @@ export default function WorkerMasterManagement({
 
               <TextField
                 fullWidth
-                size="small"
-                label="외국인등록번호"
-                value={
-                  draft.foreignRegistrationNumber
-                }
-                onChange={(event) =>
-                  setDraft(
-                    (previous) => ({
-                      ...previous,
-                      foreignRegistrationNumber:
-                        digitsOnly(
-                          event.target
-                            .value,
-                        ).slice(
-                          0,
-                          13,
-                        ),
-                    }),
-                  )
-                }
-                inputProps={{
-                  inputMode:
-                    'numeric',
-                  maxLength: 13,
-                }}
-                placeholder={
-                  draft.hasForeignNo
-                    ? '기존값 유지'
-                    : '13자리'
-                }
-                helperText={privateHelper(
-                  draft.hasForeignNo,
-                )}
-              />
-
-              <TextField
-                fullWidth
+                required
                 size="small"
                 label="전체 휴대폰번호"
                 value={
@@ -1301,35 +1375,35 @@ export default function WorkerMasterManagement({
                 )}
               />
 
-              <TextField
-                fullWidth
+              <Autocomplete
                 size="small"
-                label="국적"
-                value={
-                  draft.nationality
+                options={NATIONALITY_OPTIONS}
+                filterOptions={filterNationalityOptions}
+                value={draft.nationality || null}
+                onChange={(_event, value) =>
+                  setDraft((previous) => ({
+                    ...previous,
+                    nationality: value || '',
+                  }))
                 }
-                onChange={(event) =>
-                  setDraft(
-                    (previous) => ({
-                      ...previous,
-                      nationality:
-                        event.target
-                          .value,
-                    }),
-                  )
-                }
-                placeholder={
-                  draft.hasNationality
-                    ? '기존값 유지'
-                    : '예: 대한민국'
-                }
-                helperText={privateHelper(
-                  draft.hasNationality,
+                renderInput={(params) => (
+                  <TextField
+                    {...params}
+                    required
+                    label="국적"
+                    placeholder={
+                      draft.hasNationality
+                        ? '기존값 유지 · 변경 시 검색'
+                        : '예: 한국, Korea, 중국, China'
+                    }
+                    helperText={privateHelper(draft.hasNationality)}
+                  />
                 )}
               />
 
               <TextField
                 fullWidth
+                required
                 size="small"
                 label="은행"
                 value={
@@ -1351,13 +1425,14 @@ export default function WorkerMasterManagement({
                     : '예: 국민은행'
                 }
                 helperText={privateHelper(
-                  draft.hasAccount,
+                  Boolean(draft.bankNameHint),
                   draft.bankNameHint,
                 )}
               />
 
               <TextField
                 fullWidth
+                required
                 size="small"
                 label="계좌번호"
                 value={
@@ -1398,6 +1473,7 @@ export default function WorkerMasterManagement({
 
               <TextField
                 fullWidth
+                required
                 size="small"
                 label="예금주"
                 value={
@@ -1419,7 +1495,7 @@ export default function WorkerMasterManagement({
                     : '예금주'
                 }
                 helperText={privateHelper(
-                  draft.hasAccount,
+                  draft.hasAccountHolder,
                 )}
               />
 
