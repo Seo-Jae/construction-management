@@ -17,6 +17,7 @@ import {
   Divider,
   IconButton,
   Paper,
+  Snackbar,
   Stack,
   Table,
   TableBody,
@@ -33,6 +34,7 @@ import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import PersonSearchRoundedIcon from '@mui/icons-material/PersonSearchRounded';
+import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import { supabase } from '../supabaseClient';
 
@@ -55,13 +57,17 @@ const TRADE_OPTIONS = [
 ];
 
 const getKoreaYearMonth = () => {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Seoul',
-    year: 'numeric',
-    month: '2-digit',
-  }).formatToParts(new Date());
+  const parts = new Intl.DateTimeFormat(
+    'en-CA',
+    {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+    },
+  ).formatToParts(new Date());
 
   const values = {};
+
   parts.forEach((part) => {
     if (part.type !== 'literal') {
       values[part.type] = part.value;
@@ -70,16 +76,6 @@ const getKoreaYearMonth = () => {
 
   return `${values.year}-${values.month}`;
 };
-
-const createTemporaryWorker = () => ({
-  id: `temporary-${Date.now()}-${Math.random()}`,
-  workerMasterId: '',
-  name: '',
-  trade: '',
-  birthDate: '',
-  phoneMasked: '',
-  note: '',
-});
 
 const normalizeWorkerOption = (worker) => ({
   id: String(
@@ -93,7 +89,8 @@ const normalizeWorkerOption = (worker) => ({
       '',
   ).trim(),
   trade: String(
-    worker?.recent_trade ||
+    worker?.monthly_trade ||
+      worker?.recent_trade ||
       worker?.trade ||
       '',
   ).trim(),
@@ -107,6 +104,12 @@ const normalizeWorkerOption = (worker) => ({
       worker?.phone_last4 ||
       '',
   ).trim(),
+  note: String(
+    worker?.note || '',
+  ).trim(),
+  rosterItemId: String(
+    worker?.roster_item_id || '',
+  ).trim(),
 });
 
 const formatLookupBirthDate = (value) => {
@@ -117,7 +120,8 @@ const formatLookupBirthDate = (value) => {
 const formatLookupPhone = (value) => {
   if (!value) return '-';
 
-  const normalized = String(value).trim();
+  const normalized =
+    String(value).trim();
 
   if (/^\d{4}$/.test(normalized)) {
     return `****${normalized}`;
@@ -130,7 +134,9 @@ const formatLookupPhone = (value) => {
     return normalized;
   }
 
-  const digits = normalized.replace(/\D/g, '');
+  const digits =
+    normalized.replace(/\D/g, '');
+
   if (digits.length >= 4) {
     return `****${digits.slice(-4)}`;
   }
@@ -143,7 +149,8 @@ const moveRowsOneStep = (
   selectedIds,
   direction,
 ) => {
-  const selectedSet = new Set(selectedIds);
+  const selectedSet =
+    new Set(selectedIds);
   const next = [...rows];
 
   if (direction === 'up') {
@@ -153,10 +160,17 @@ const moveRowsOneStep = (
       index += 1
     ) {
       if (
-        selectedSet.has(next[index].id) &&
-        !selectedSet.has(next[index - 1].id)
+        selectedSet.has(
+          next[index].id,
+        ) &&
+        !selectedSet.has(
+          next[index - 1].id,
+        )
       ) {
-        [next[index - 1], next[index]] = [
+        [
+          next[index - 1],
+          next[index],
+        ] = [
           next[index],
           next[index - 1],
         ];
@@ -167,15 +181,23 @@ const moveRowsOneStep = (
   }
 
   for (
-    let index = next.length - 2;
+    let index =
+      next.length - 2;
     index >= 0;
     index -= 1
   ) {
     if (
-      selectedSet.has(next[index].id) &&
-      !selectedSet.has(next[index + 1].id)
+      selectedSet.has(
+        next[index].id,
+      ) &&
+      !selectedSet.has(
+        next[index + 1].id,
+      )
     ) {
-      [next[index], next[index + 1]] = [
+      [
+        next[index],
+        next[index + 1],
+      ] = [
         next[index + 1],
         next[index],
       ];
@@ -185,35 +207,111 @@ const moveRowsOneStep = (
   return next;
 };
 
+const newWorkerDraft = (
+  name = '',
+) => ({
+  name: String(name || '').trim(),
+  birthDate: '',
+  phoneLast4: '',
+  trade: '',
+});
+
+const formatSavedAt = (value) => {
+  if (!value) return '';
+
+  const date = new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime(),
+    )
+  ) {
+    return '';
+  }
+
+  return new Intl.DateTimeFormat(
+    'ko-KR',
+    {
+      timeZone: 'Asia/Seoul',
+      year: '2-digit',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    },
+  ).format(date);
+};
+
 export default function MonthlyLaborManagement({
   projectName,
 }) {
   const [yearMonth, setYearMonth] =
     useState(getKoreaYearMonth);
-  const [rows, setRows] = useState([]);
-  const [selectedIds, setSelectedIds] =
+  const [rows, setRows] =
     useState([]);
-  const [lookupOpen, setLookupOpen] =
-    useState(false);
-  const [lookupQuery, setLookupQuery] =
-    useState('');
-  const [lookupResults, setLookupResults] =
-    useState([]);
-  const [lookupLoading, setLookupLoading] =
-    useState(false);
-  const [lookupMessage, setLookupMessage] =
-    useState('');
-  const [bulkTrade, setBulkTrade] =
-    useState('');
+  const [
+    selectedIds,
+    setSelectedIds,
+  ] = useState([]);
 
-  useEffect(() => {
-    setRows([]);
-    setSelectedIds([]);
-    setLookupQuery('');
-    setLookupResults([]);
-    setLookupMessage('');
-    setLookupOpen(false);
-  }, [projectName]);
+  const [
+    lookupOpen,
+    setLookupOpen,
+  ] = useState(false);
+  const [
+    lookupQuery,
+    setLookupQuery,
+  ] = useState('');
+  const [
+    lookupResults,
+    setLookupResults,
+  ] = useState([]);
+  const [
+    lookupLoading,
+    setLookupLoading,
+  ] = useState(false);
+  const [
+    lookupMessage,
+    setLookupMessage,
+  ] = useState('');
+
+  const [
+    newWorkerOpen,
+    setNewWorkerOpen,
+  ] = useState(false);
+  const [
+    newWorker,
+    setNewWorker,
+  ] = useState(
+    newWorkerDraft(),
+  );
+  const [
+    newWorkerSaving,
+    setNewWorkerSaving,
+  ] = useState(false);
+
+  const [
+    bulkTrade,
+    setBulkTrade,
+  ] = useState('');
+
+  const [
+    rosterLoading,
+    setRosterLoading,
+  ] = useState(false);
+  const [
+    rosterSaving,
+    setRosterSaving,
+  ] = useState(false);
+  const [
+    lastSavedAt,
+    setLastSavedAt,
+  ] = useState('');
+  const [dirty, setDirty] =
+    useState(false);
+  const [message, setMessage] =
+    useState(null);
 
   const selectedSet = useMemo(
     () => new Set(selectedIds),
@@ -222,65 +320,214 @@ export default function MonthlyLaborManagement({
 
   const allSelected =
     rows.length > 0 &&
-    selectedIds.length === rows.length;
+    selectedIds.length ===
+      rows.length;
 
   const partiallySelected =
     selectedIds.length > 0 &&
-    selectedIds.length < rows.length;
+    selectedIds.length <
+      rows.length;
 
-  const searchWorkers = async () => {
-    const query = lookupQuery.trim();
-
-    if (query.length < 2) {
-      setLookupResults([]);
-      setLookupMessage(
-        '성명을 2자 이상 입력해주세요.',
-      );
-      return;
+  useEffect(() => {
+    if (!dirty) {
+      return undefined;
     }
 
-    if (!projectName) {
-      setLookupResults([]);
-      setLookupMessage(
-        '현장을 먼저 선택해주세요.',
-      );
-      return;
-    }
+    const handleBeforeUnload = (
+      event,
+    ) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
 
-    setLookupLoading(true);
-    setLookupMessage('');
-
-    const { data, error } = await supabase.rpc(
-      'labor_worker_master_search_v52_33',
-      {
-        p_query: query,
-        p_project_name: projectName,
-      },
+    window.addEventListener(
+      'beforeunload',
+      handleBeforeUnload,
     );
 
-    setLookupLoading(false);
+    return () => {
+      window.removeEventListener(
+        'beforeunload',
+        handleBeforeUnload,
+      );
+    };
+  }, [dirty]);
 
-    if (error) {
+  useEffect(() => {
+    let active = true;
+
+    const loadRoster = async () => {
+      setRosterLoading(true);
+      setSelectedIds([]);
+      setLookupOpen(false);
+      setLookupQuery('');
       setLookupResults([]);
-      setLookupMessage(
-        error.message ||
-          '근로자 조회에 실패했습니다.',
+      setLookupMessage('');
+
+      if (
+        !projectName ||
+        !yearMonth
+      ) {
+        if (active) {
+          setRows([]);
+          setLastSavedAt('');
+          setDirty(false);
+          setRosterLoading(false);
+        }
+        return;
+      }
+
+      const { data, error } =
+        await supabase.rpc(
+          'labor_monthly_roster_get_v52_35',
+          {
+            p_project_name:
+              projectName,
+            p_month_key:
+              yearMonth,
+          },
+        );
+
+      if (!active) {
+        return;
+      }
+
+      if (error) {
+        setRows([]);
+        setLastSavedAt('');
+        setDirty(false);
+        setRosterLoading(false);
+        setMessage({
+          severity: 'error',
+          text:
+            error.message ||
+            '월별 노임 명단을 불러오지 못했습니다.',
+        });
+        return;
+      }
+
+      const items =
+        Array.isArray(
+          data?.items,
+        )
+          ? data.items
+          : [];
+
+      setRows(
+        items.map(
+          (
+            worker,
+            index,
+          ) => {
+            const normalized =
+              normalizeWorkerOption(
+                worker,
+              );
+
+            return {
+              ...normalized,
+              id:
+                normalized
+                  .rosterItemId ||
+                `roster-${normalized.id}-${index}`,
+              workerMasterId:
+                normalized.id,
+            };
+          },
+        ),
       );
-      return;
-    }
 
-    const next = (
-      Array.isArray(data) ? data : []
-    ).map(normalizeWorkerOption);
-
-    setLookupResults(next);
-
-    if (next.length === 0) {
-      setLookupMessage(
-        '검색된 기존 근로자가 없습니다.',
+      setLastSavedAt(
+        data?.updated_at || '',
       );
-    }
+      setDirty(false);
+      setRosterLoading(false);
+    };
+
+    void loadRoster();
+
+    return () => {
+      active = false;
+    };
+  }, [
+    projectName,
+    yearMonth,
+  ]);
+
+  const markChanged = (
+    updater,
+  ) => {
+    setRows((previous) =>
+      updater(previous),
+    );
+    setDirty(true);
   };
+
+  const searchWorkers =
+    async () => {
+      const query =
+        lookupQuery.trim();
+
+      if (
+        query.length < 2
+      ) {
+        setLookupResults([]);
+        setLookupMessage(
+          '성명을 2자 이상 입력해주세요.',
+        );
+        return;
+      }
+
+      if (!projectName) {
+        setLookupResults([]);
+        setLookupMessage(
+          '현장을 먼저 선택해주세요.',
+        );
+        return;
+      }
+
+      setLookupLoading(true);
+      setLookupMessage('');
+
+      const { data, error } =
+        await supabase.rpc(
+          'labor_worker_master_search_v52_33',
+          {
+            p_query: query,
+            p_project_name:
+              projectName,
+          },
+        );
+
+      setLookupLoading(false);
+
+      if (error) {
+        setLookupResults([]);
+        setLookupMessage(
+          error.message ||
+            '근로자 조회에 실패했습니다.',
+        );
+        return;
+      }
+
+      const next = (
+        Array.isArray(data)
+          ? data
+          : []
+      ).map(
+        normalizeWorkerOption,
+      );
+
+      setLookupResults(next);
+
+      if (
+        next.length === 0
+      ) {
+        setLookupMessage(
+          '검색된 기존 근로자가 없습니다.',
+        );
+      }
+    };
 
   const openLookup = () => {
     setLookupOpen(true);
@@ -289,123 +536,451 @@ export default function MonthlyLaborManagement({
     setLookupMessage('');
   };
 
-  const addTemporaryWorker = () => {
-    setRows((previous) => [
-      ...previous,
-      createTemporaryWorker(),
-    ]);
+  const openNewWorker = (
+    initialName = '',
+  ) => {
+    setNewWorker(
+      newWorkerDraft(
+        initialName,
+      ),
+    );
+    setNewWorkerOpen(true);
   };
 
-  const addWorkerFromMaster = (worker) => {
-    if (!worker?.id) return;
+  const addWorkerFromMaster = (
+    worker,
+  ) => {
+    if (!worker?.id) {
+      return;
+    }
 
-    setRows((previous) => {
+    markChanged(
+      (previous) => {
+        if (
+          previous.some(
+            (row) =>
+              row.workerMasterId ===
+              worker.id,
+          )
+        ) {
+          return previous;
+        }
+
+        return [
+          ...previous,
+          {
+            id: `master-${worker.id}-${Date.now()}`,
+            workerMasterId:
+              worker.id,
+            name: worker.name,
+            trade:
+              worker.trade,
+            birthDate:
+              worker.birthDate,
+            phoneMasked:
+              worker.phoneMasked,
+            note: '',
+            rosterItemId: '',
+          },
+        ];
+      },
+    );
+  };
+
+  const createNewWorker =
+    async () => {
       if (
-        previous.some(
-          (row) =>
-            row.workerMasterId === worker.id,
-        )
+        newWorkerSaving
       ) {
-        return previous;
+        return;
       }
 
-      return [
-        ...previous,
-        {
-          id: `master-${worker.id}-${Date.now()}`,
-          workerMasterId: worker.id,
-          name: worker.name,
-          trade: worker.trade,
-          birthDate: worker.birthDate,
-          phoneMasked: worker.phoneMasked,
-          note: '',
-        },
-      ];
-    });
-  };
+      const name =
+        newWorker.name.trim();
+
+      const phoneLast4 =
+        String(
+          newWorker.phoneLast4 ||
+            '',
+        )
+          .replace(/\D/g, '')
+          .slice(0, 4);
+
+      if (
+        name.length < 2
+      ) {
+        setMessage({
+          severity: 'warning',
+          text:
+            '성명을 2자 이상 입력해주세요.',
+        });
+        return;
+      }
+
+      if (
+        !newWorker.birthDate
+      ) {
+        setMessage({
+          severity: 'warning',
+          text:
+            '동명이인 구분을 위해 생년월일을 입력해주세요.',
+        });
+        return;
+      }
+
+      if (
+        !/^\d{4}$/.test(
+          phoneLast4,
+        )
+      ) {
+        setMessage({
+          severity: 'warning',
+          text:
+            '동명이인 구분을 위해 휴대폰 뒤 4자리를 입력해주세요.',
+        });
+        return;
+      }
+
+      if (
+        !String(
+          newWorker.trade ||
+            '',
+        ).trim()
+      ) {
+        setMessage({
+          severity: 'warning',
+          text:
+            '공종을 입력해주세요.',
+        });
+        return;
+      }
+
+      setNewWorkerSaving(true);
+
+      const { data, error } =
+        await supabase.rpc(
+          'labor_monthly_worker_create_v52_35',
+          {
+            p_project_name:
+              projectName,
+            p_name_ko: name,
+            p_birth_date:
+              newWorker.birthDate,
+            p_phone_last4:
+              phoneLast4,
+            p_recent_trade:
+              String(
+                newWorker.trade ||
+                  '',
+              ).trim(),
+          },
+        );
+
+      setNewWorkerSaving(false);
+
+      if (error) {
+        setMessage({
+          severity: 'error',
+          text:
+            error.message ||
+            '신규 근로자 등록에 실패했습니다.',
+        });
+        return;
+      }
+
+      const worker =
+        normalizeWorkerOption(
+          data || {},
+        );
+
+      if (!worker.id) {
+        setMessage({
+          severity: 'error',
+          text:
+            '등록된 근로자 정보를 확인하지 못했습니다.',
+        });
+        return;
+      }
+
+      addWorkerFromMaster(
+        worker,
+      );
+
+      setNewWorkerOpen(
+        false,
+      );
+
+      setMessage({
+        severity:
+          data?.reused === true
+            ? 'info'
+            : 'success',
+        text:
+          data?.reused === true
+            ? '동일한 기존 근로자를 찾아 이번 달 명단에 추가했습니다.'
+            : '신규 근로자를 마스터에 등록하고 이번 달 명단에 추가했습니다.',
+      });
+
+      if (lookupOpen) {
+        setLookupQuery(name);
+        setLookupResults([]);
+        setLookupMessage(
+          '신규 등록한 근로자를 명단에 추가했습니다.',
+        );
+      }
+    };
 
   const updateRow = (
     rowId,
     field,
     value,
   ) => {
-    setRows((previous) =>
-      previous.map((row) =>
-        row.id === rowId
-          ? {
-              ...row,
-              [field]: value,
-            }
-          : row,
-      ),
+    markChanged(
+      (previous) =>
+        previous.map(
+          (row) =>
+            row.id === rowId
+              ? {
+                  ...row,
+                  [field]:
+                    value,
+                }
+              : row,
+        ),
     );
   };
 
-  const toggleRow = (rowId) => {
-    setSelectedIds((previous) =>
-      previous.includes(rowId)
-        ? previous.filter(
-            (id) => id !== rowId,
-          )
-        : [...previous, rowId],
+  const toggleRow = (
+    rowId,
+  ) => {
+    setSelectedIds(
+      (previous) =>
+        previous.includes(
+          rowId,
+        )
+          ? previous.filter(
+              (id) =>
+                id !== rowId,
+            )
+          : [
+              ...previous,
+              rowId,
+            ],
     );
   };
 
-  const toggleAll = (checked) => {
+  const toggleAll = (
+    checked,
+  ) => {
     setSelectedIds(
       checked
-        ? rows.map((row) => row.id)
+        ? rows.map(
+            (row) =>
+              row.id,
+          )
         : [],
     );
   };
 
   const deleteSelected = () => {
-    if (selectedIds.length === 0) return;
+    if (
+      selectedIds.length ===
+      0
+    ) {
+      return;
+    }
 
-    setRows((previous) =>
-      previous.filter(
-        (row) =>
-          !selectedSet.has(row.id),
-      ),
+    markChanged(
+      (previous) =>
+        previous.filter(
+          (row) =>
+            !selectedSet.has(
+              row.id,
+            ),
+        ),
     );
 
     setSelectedIds([]);
   };
 
-  const moveSelected = (direction) => {
-    if (selectedIds.length === 0) return;
-
-    setRows((previous) =>
-      moveRowsOneStep(
-        previous,
-        selectedIds,
-        direction,
-      ),
-    );
-  };
-
-  const applyBulkTrade = () => {
-    const nextTrade =
-      String(bulkTrade || '').trim();
-
+  const moveSelected = (
+    direction,
+  ) => {
     if (
-      !nextTrade ||
-      selectedIds.length === 0
+      selectedIds.length ===
+      0
     ) {
       return;
     }
 
-    setRows((previous) =>
-      previous.map((row) =>
-        selectedSet.has(row.id)
-          ? {
-              ...row,
-              trade: nextTrade,
-            }
-          : row,
-      ),
+    markChanged(
+      (previous) =>
+        moveRowsOneStep(
+          previous,
+          selectedIds,
+          direction,
+        ),
     );
   };
+
+  const applyBulkTrade =
+    () => {
+      const nextTrade =
+        String(
+          bulkTrade || '',
+        ).trim();
+
+      if (
+        !nextTrade ||
+        selectedIds.length ===
+          0
+      ) {
+        return;
+      }
+
+      markChanged(
+        (previous) =>
+          previous.map(
+            (row) =>
+              selectedSet.has(
+                row.id,
+              )
+                ? {
+                    ...row,
+                    trade:
+                      nextTrade,
+                  }
+                : row,
+          ),
+      );
+    };
+
+  const handleMonthChange = (
+    nextMonth,
+  ) => {
+    if (
+      nextMonth ===
+      yearMonth
+    ) {
+      return;
+    }
+
+    if (
+      dirty &&
+      !window.confirm(
+        '저장하지 않은 변경사항이 있습니다. 작성월을 변경하시겠습니까?',
+      )
+    ) {
+      return;
+    }
+
+    setYearMonth(
+      nextMonth,
+    );
+  };
+
+  const saveRoster =
+    async () => {
+      if (
+        rosterSaving ||
+        rosterLoading
+      ) {
+        return;
+      }
+
+      if (
+        !projectName ||
+        !yearMonth
+      ) {
+        setMessage({
+          severity: 'warning',
+          text:
+            '현장과 작성월을 확인해주세요.',
+        });
+        return;
+      }
+
+      const invalid =
+        rows.find(
+          (row) =>
+            !row.workerMasterId ||
+            !String(
+              row.trade ||
+                '',
+            ).trim(),
+        );
+
+      if (invalid) {
+        setMessage({
+          severity: 'warning',
+          text:
+            `${invalid.name || '근로자'}의 공종 또는 근로자 연결정보를 확인해주세요.`,
+        });
+        return;
+      }
+
+      setRosterSaving(true);
+
+      const payload =
+        rows.map(
+          (
+            row,
+            index,
+          ) => ({
+            worker_master_id:
+              row.workerMasterId,
+            trade:
+              String(
+                row.trade ||
+                  '',
+              ).trim(),
+            note:
+              String(
+                row.note ||
+                  '',
+              ).trim(),
+            sort_order:
+              index + 1,
+          }),
+        );
+
+      const { data, error } =
+        await supabase.rpc(
+          'labor_monthly_roster_save_v52_35',
+          {
+            p_project_name:
+              projectName,
+            p_month_key:
+              yearMonth,
+            p_items:
+              payload,
+          },
+        );
+
+      setRosterSaving(false);
+
+      if (error) {
+        setMessage({
+          severity: 'error',
+          text:
+            error.message ||
+            '월별 노임 명단 저장에 실패했습니다.',
+        });
+        return;
+      }
+
+      setLastSavedAt(
+        data?.updated_at ||
+          new Date().toISOString(),
+      );
+      setDirty(false);
+
+      setMessage({
+        severity: 'success',
+        text:
+          `${yearMonth} 노임 명단 ${rows.length}명을 저장했습니다.`,
+      });
+    };
 
   return (
     <Box
@@ -413,7 +988,8 @@ export default function MonthlyLaborManagement({
         height: '100%',
         minHeight: 0,
         display: 'flex',
-        flexDirection: 'column',
+        flexDirection:
+          'column',
         gap: 1,
       }}
     >
@@ -422,7 +998,8 @@ export default function MonthlyLaborManagement({
         sx={{
           px: 1.5,
           py: 1.25,
-          borderColor: '#cbd5e1',
+          borderColor:
+            '#cbd5e1',
         }}
       >
         <Stack
@@ -444,9 +1021,11 @@ export default function MonthlyLaborManagement({
           >
             <Typography
               sx={{
-                fontSize: '0.95rem',
+                fontSize:
+                  '0.95rem',
                 fontWeight: 900,
-                color: '#0f172a',
+                color:
+                  '#0f172a',
               }}
             >
               월별 노임작성
@@ -455,14 +1034,20 @@ export default function MonthlyLaborManagement({
             <Typography
               sx={{
                 mt: 0.2,
-                color: '#64748b',
-                fontSize: '0.72rem',
+                color:
+                  '#64748b',
+                fontSize:
+                  '0.72rem',
               }}
             >
               {projectName ||
                 '현장 미선택'}
               {' · '}
-              근로자 명단 구성
+              {dirty
+                ? '저장되지 않은 변경사항 있음'
+                : lastSavedAt
+                  ? `저장됨 ${formatSavedAt(lastSavedAt)}`
+                  : '신규 명단'}
             </Typography>
           </Box>
 
@@ -470,10 +1055,15 @@ export default function MonthlyLaborManagement({
             type="month"
             size="small"
             label="작성월"
-            value={yearMonth}
-            onChange={(event) =>
-              setYearMonth(
-                event.target.value,
+            value={
+              yearMonth
+            }
+            onChange={(
+              event,
+            ) =>
+              handleMonthChange(
+                event.target
+                  .value,
               )
             }
             InputLabelProps={{
@@ -481,6 +1071,36 @@ export default function MonthlyLaborManagement({
             }}
             sx={{ width: 170 }}
           />
+
+          <Button
+            variant="contained"
+            size="small"
+            startIcon={
+              rosterSaving ? (
+                <CircularProgress
+                  size={15}
+                  color="inherit"
+                />
+              ) : (
+                <SaveRoundedIcon />
+              )
+            }
+            onClick={() =>
+              void saveRoster()
+            }
+            disabled={
+              rosterSaving ||
+              rosterLoading ||
+              !projectName
+            }
+            sx={{
+              minWidth: 104,
+              boxShadow: 'none',
+              fontWeight: 900,
+            }}
+          >
+            저장
+          </Button>
         </Stack>
       </Paper>
 
@@ -488,25 +1108,31 @@ export default function MonthlyLaborManagement({
         severity="info"
         sx={{
           py: 0.2,
-          '& .MuiAlert-message': {
-            py: 0.45,
-            fontSize: '0.72rem',
-          },
+          '& .MuiAlert-message':
+            {
+              py: 0.45,
+              fontSize:
+                '0.72rem',
+            },
         }}
       >
-        기존 근로자는 회사 공통 근로자
-        마스터에서 성명으로 조회합니다.
-        검색 결과에는 생년월일·휴대폰
-        뒤 4자리·최근 공종만 표시됩니다.
+        현장과 작성월별로 명단을
+        저장합니다. 근로자 순서,
+        이번 달 공종, 비고가 함께
+        저장되며 개인정보는 이
+        명단에 중복 저장하지 않고
+        근로자 마스터와 연결합니다.
       </Alert>
 
       <Paper
         variant="outlined"
         sx={{
-          borderColor: '#cbd5e1',
+          borderColor:
+            '#cbd5e1',
           overflow: 'hidden',
           display: 'flex',
-          flexDirection: 'column',
+          flexDirection:
+            'column',
           minHeight: 0,
           flexGrow: 1,
         }}
@@ -517,9 +1143,11 @@ export default function MonthlyLaborManagement({
             py: 0.75,
             display: 'flex',
             flexWrap: 'wrap',
-            alignItems: 'center',
+            alignItems:
+              'center',
             gap: 0.5,
-            bgcolor: '#f8fafc',
+            bgcolor:
+              '#f8fafc',
           }}
         >
           <Button
@@ -537,11 +1165,13 @@ export default function MonthlyLaborManagement({
             근로자 조회
           </Button>
 
-          <Tooltip title="신규 근로자 행 추가">
+          <Tooltip title="신규 근로자 등록">
             <IconButton
               size="small"
-              onClick={addTemporaryWorker}
-              aria-label="신규 근로자 추가"
+              onClick={() =>
+                openNewWorker()
+              }
+              aria-label="신규 근로자 등록"
             >
               <AddCircleOutlineRoundedIcon fontSize="small" />
             </IconButton>
@@ -552,9 +1182,12 @@ export default function MonthlyLaborManagement({
               <IconButton
                 size="small"
                 disabled={
-                  selectedIds.length === 0
+                  selectedIds.length ===
+                  0
                 }
-                onClick={deleteSelected}
+                onClick={
+                  deleteSelected
+                }
                 aria-label="선택 근로자 삭제"
               >
                 <DeleteOutlineRoundedIcon fontSize="small" />
@@ -573,10 +1206,13 @@ export default function MonthlyLaborManagement({
               <IconButton
                 size="small"
                 disabled={
-                  selectedIds.length === 0
+                  selectedIds.length ===
+                  0
                 }
                 onClick={() =>
-                  moveSelected('up')
+                  moveSelected(
+                    'up',
+                  )
                 }
                 aria-label="선택 근로자 위로"
               >
@@ -590,10 +1226,13 @@ export default function MonthlyLaborManagement({
               <IconButton
                 size="small"
                 disabled={
-                  selectedIds.length === 0
+                  selectedIds.length ===
+                  0
                 }
                 onClick={() =>
-                  moveSelected('down')
+                  moveSelected(
+                    'down',
+                  )
                 }
                 aria-label="선택 근로자 아래로"
               >
@@ -611,21 +1250,31 @@ export default function MonthlyLaborManagement({
           <Autocomplete
             freeSolo
             size="small"
-            options={TRADE_OPTIONS}
-            value={bulkTrade}
+            options={
+              TRADE_OPTIONS
+            }
+            value={
+              bulkTrade
+            }
             onChange={(
               _event,
               value,
             ) =>
-              setBulkTrade(value || '')
+              setBulkTrade(
+                value || '',
+              )
             }
             onInputChange={(
               _event,
               value,
             ) =>
-              setBulkTrade(value || '')
+              setBulkTrade(
+                value || '',
+              )
             }
-            renderInput={(params) => (
+            renderInput={(
+              params,
+            ) => (
               <TextField
                 {...params}
                 placeholder="공종 일괄변경"
@@ -638,13 +1287,18 @@ export default function MonthlyLaborManagement({
             size="small"
             variant="outlined"
             disabled={
-              selectedIds.length === 0 ||
+              selectedIds.length ===
+                0 ||
               !String(
                 bulkTrade || '',
               ).trim()
             }
-            onClick={applyBulkTrade}
-            sx={{ fontWeight: 800 }}
+            onClick={
+              applyBulkTrade
+            }
+            sx={{
+              fontWeight: 800,
+            }}
           >
             적용
           </Button>
@@ -652,12 +1306,15 @@ export default function MonthlyLaborManagement({
           <Typography
             sx={{
               ml: 'auto',
-              color: '#64748b',
-              fontSize: '0.72rem',
+              color:
+                '#64748b',
+              fontSize:
+                '0.72rem',
               fontWeight: 800,
             }}
           >
-            총 {rows.length}명 · 선택{' '}
+            총 {rows.length}명 ·
+            선택{' '}
             {selectedIds.length}명
           </Typography>
         </Box>
@@ -675,7 +1332,8 @@ export default function MonthlyLaborManagement({
             size="small"
             sx={{
               minWidth: 920,
-              tableLayout: 'fixed',
+              tableLayout:
+                'fixed',
             }}
           >
             <TableHead>
@@ -687,11 +1345,15 @@ export default function MonthlyLaborManagement({
                 >
                   <Checkbox
                     size="small"
-                    checked={allSelected}
+                    checked={
+                      allSelected
+                    }
                     indeterminate={
                       partiallySelected
                     }
-                    onChange={(event) =>
+                    onChange={(
+                      event,
+                    ) =>
                       toggleAll(
                         event.target
                           .checked,
@@ -762,26 +1424,43 @@ export default function MonthlyLaborManagement({
             </TableHead>
 
             <TableBody>
-              {rows.length === 0 ? (
+              {rosterLoading ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={7}
+                    align="center"
+                    sx={{ py: 10 }}
+                  >
+                    <CircularProgress
+                      size={26}
+                    />
+                  </TableCell>
+                </TableRow>
+              ) : rows.length ===
+                0 ? (
                 <TableRow>
                   <TableCell
                     colSpan={7}
                     align="center"
                     sx={{
                       py: 10,
-                      color: '#94a3b8',
+                      color:
+                        '#94a3b8',
                     }}
                   >
-                    근로자 조회 또는 신규
-                    추가로 명단을
-                    구성해주세요.
+                    근로자 조회 또는 신규 등록으로 명단을 구성해주세요.
                   </TableCell>
                 </TableRow>
               ) : (
                 rows.map(
-                  (row, index) => (
+                  (
+                    row,
+                    index,
+                  ) => (
                     <TableRow
-                      key={row.id}
+                      key={
+                        row.id
+                      }
                       hover
                       selected={selectedSet.has(
                         row.id,
@@ -805,26 +1484,20 @@ export default function MonthlyLaborManagement({
                       </TableCell>
 
                       <TableCell align="center">
-                        {index + 1}
+                        {index +
+                          1}
                       </TableCell>
 
-                      <TableCell>
-                        <TextField
-                          fullWidth
-                          size="small"
-                          value={row.name}
-                          placeholder="성명"
-                          onChange={(
-                            event,
-                          ) =>
-                            updateRow(
-                              row.id,
-                              'name',
-                              event.target
-                                .value,
-                            )
-                          }
-                        />
+                      <TableCell align="center">
+                        <Typography
+                          sx={{
+                            fontSize:
+                              '0.78rem',
+                            fontWeight: 800,
+                          }}
+                        >
+                          {row.name}
+                        </Typography>
                       </TableCell>
 
                       <TableCell>
@@ -845,7 +1518,8 @@ export default function MonthlyLaborManagement({
                             updateRow(
                               row.id,
                               'trade',
-                              value || '',
+                              value ||
+                                '',
                             )
                           }
                           onInputChange={(
@@ -855,7 +1529,8 @@ export default function MonthlyLaborManagement({
                             updateRow(
                               row.id,
                               'trade',
-                              value || '',
+                              value ||
+                                '',
                             )
                           }
                           renderInput={(
@@ -884,7 +1559,9 @@ export default function MonthlyLaborManagement({
                         <TextField
                           fullWidth
                           size="small"
-                          value={row.note}
+                          value={
+                            row.note
+                          }
                           placeholder="비고"
                           onChange={(
                             event,
@@ -925,13 +1602,16 @@ export default function MonthlyLaborManagement({
           <Typography
             sx={{
               mb: 1.25,
-              color: '#64748b',
-              fontSize: '0.75rem',
+              color:
+                '#64748b',
+              fontSize:
+                '0.75rem',
             }}
           >
             성명을 검색하고 추가한 뒤
-            창을 닫지 않고 다음 근로자를
-            계속 검색·추가할 수 있습니다.
+            창을 닫지 않고 다음
+            근로자를 계속 검색·추가할
+            수 있습니다.
           </Typography>
 
           <Stack
@@ -943,17 +1623,26 @@ export default function MonthlyLaborManagement({
               autoFocus
               size="small"
               label="성명 검색"
-              value={lookupQuery}
-              onChange={(event) =>
+              value={
+                lookupQuery
+              }
+              onChange={(
+                event,
+              ) =>
                 setLookupQuery(
-                  event.target.value,
+                  event.target
+                    .value,
                 )
               }
-              onKeyDown={(event) => {
+              onKeyDown={(
+                event,
+              ) => {
                 if (
-                  event.key === 'Enter'
+                  event.key ===
+                  'Enter'
                 ) {
                   event.preventDefault();
+
                   void searchWorkers();
                 }
               }}
@@ -965,7 +1654,9 @@ export default function MonthlyLaborManagement({
               onClick={() =>
                 void searchWorkers()
               }
-              disabled={lookupLoading}
+              disabled={
+                lookupLoading
+              }
               startIcon={
                 lookupLoading ? (
                   <CircularProgress
@@ -992,13 +1683,43 @@ export default function MonthlyLaborManagement({
             {lookupMessage && (
               <Box
                 sx={{
-                  py: 3,
-                  textAlign: 'center',
-                  color: '#64748b',
-                  fontSize: '0.76rem',
+                  py: 2.5,
+                  textAlign:
+                    'center',
                 }}
               >
-                {lookupMessage}
+                <Typography
+                  sx={{
+                    color:
+                      '#64748b',
+                    fontSize:
+                      '0.76rem',
+                  }}
+                >
+                  {lookupMessage}
+                </Typography>
+
+                {lookupResults.length ===
+                  0 &&
+                  lookupQuery
+                    .trim()
+                    .length >=
+                    2 && (
+                    <Button
+                      size="small"
+                      sx={{ mt: 1 }}
+                      startIcon={
+                        <AddCircleOutlineRoundedIcon />
+                      }
+                      onClick={() =>
+                        openNewWorker(
+                          lookupQuery,
+                        )
+                      }
+                    >
+                      신규 근로자로 등록
+                    </Button>
+                  )}
               </Box>
             )}
 
@@ -1014,11 +1735,14 @@ export default function MonthlyLaborManagement({
 
                   return (
                     <Paper
-                      key={worker.id}
+                      key={
+                        worker.id
+                      }
                       variant="outlined"
                       sx={{
                         p: 1,
-                        display: 'flex',
+                        display:
+                          'flex',
                         alignItems:
                           'center',
                         gap: 1,
@@ -1098,14 +1822,16 @@ export default function MonthlyLaborManagement({
 
         <DialogActions>
           <Button
-            onClick={
-              addTemporaryWorker
+            onClick={() =>
+              openNewWorker(
+                lookupQuery,
+              )
             }
             startIcon={
               <AddCircleOutlineRoundedIcon />
             }
           >
-            신규 근로자 추가
+            신규 근로자 등록
           </Button>
 
           <Button
@@ -1121,6 +1847,235 @@ export default function MonthlyLaborManagement({
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Dialog
+        open={newWorkerOpen}
+        onClose={() => {
+          if (
+            !newWorkerSaving
+          ) {
+            setNewWorkerOpen(
+              false,
+            );
+          }
+        }}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle
+          sx={{ fontWeight: 900 }}
+        >
+          신규 근로자 등록
+        </DialogTitle>
+
+        <DialogContent dividers>
+          <Alert
+            severity="info"
+            sx={{
+              mb: 1.25,
+              '& .MuiAlert-message':
+                {
+                  fontSize:
+                    '0.7rem',
+                },
+            }}
+          >
+            담당자도 자기 현장 월별 노임작성
+            과정에서 신규 근로자를 등록할 수
+            있습니다. 이 단계에서는 동명이인
+            식별용 최소정보만 등록하며,
+            주민번호·계좌 등 보호정보는 별도
+            보안 입력 단계에서 관리합니다.
+          </Alert>
+
+          <Stack spacing={1.15}>
+            <TextField
+              fullWidth
+              required
+              size="small"
+              label="성명"
+              value={
+                newWorker.name
+              }
+              onChange={(
+                event,
+              ) =>
+                setNewWorker(
+                  (previous) => ({
+                    ...previous,
+                    name:
+                      event.target
+                        .value,
+                  }),
+                )
+              }
+            />
+
+            <TextField
+              fullWidth
+              required
+              type="date"
+              size="small"
+              label="생년월일"
+              value={
+                newWorker.birthDate
+              }
+              onChange={(
+                event,
+              ) =>
+                setNewWorker(
+                  (previous) => ({
+                    ...previous,
+                    birthDate:
+                      event.target
+                        .value,
+                  }),
+                )
+              }
+              InputLabelProps={{
+                shrink: true,
+              }}
+            />
+
+            <TextField
+              fullWidth
+              required
+              size="small"
+              label="휴대폰 뒤 4자리"
+              value={
+                newWorker.phoneLast4
+              }
+              onChange={(
+                event,
+              ) =>
+                setNewWorker(
+                  (previous) => ({
+                    ...previous,
+                    phoneLast4:
+                      event.target
+                        .value
+                        .replace(
+                          /\D/g,
+                          '',
+                        )
+                        .slice(
+                          0,
+                          4,
+                        ),
+                  }),
+                )
+              }
+              inputProps={{
+                inputMode:
+                  'numeric',
+                maxLength: 4,
+              }}
+            />
+
+            <Autocomplete
+              freeSolo
+              size="small"
+              options={
+                TRADE_OPTIONS
+              }
+              value={
+                newWorker.trade
+              }
+              onChange={(
+                _event,
+                value,
+              ) =>
+                setNewWorker(
+                  (previous) => ({
+                    ...previous,
+                    trade:
+                      value || '',
+                  }),
+                )
+              }
+              onInputChange={(
+                _event,
+                value,
+              ) =>
+                setNewWorker(
+                  (previous) => ({
+                    ...previous,
+                    trade:
+                      value || '',
+                  }),
+                )
+              }
+              renderInput={(
+                params,
+              ) => (
+                <TextField
+                  {...params}
+                  required
+                  label="공종"
+                />
+              )}
+            />
+          </Stack>
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={() =>
+              setNewWorkerOpen(
+                false,
+              )
+            }
+            disabled={
+              newWorkerSaving
+            }
+          >
+            취소
+          </Button>
+
+          <Button
+            variant="contained"
+            onClick={() =>
+              void createNewWorker()
+            }
+            disabled={
+              newWorkerSaving
+            }
+            sx={{
+              boxShadow: 'none',
+            }}
+          >
+            {newWorkerSaving
+              ? '등록 중...'
+              : '등록 후 명단 추가'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Snackbar
+        open={Boolean(message)}
+        autoHideDuration={3500}
+        onClose={() =>
+          setMessage(null)
+        }
+        anchorOrigin={{
+          vertical: 'top',
+          horizontal:
+            'center',
+        }}
+      >
+        <Alert
+          severity={
+            message?.severity ||
+            'info'
+          }
+          variant="filled"
+          onClose={() =>
+            setMessage(null)
+          }
+        >
+          {message?.text || ''}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }
