@@ -554,13 +554,24 @@ function MobileShell({
   topBanner = null,
   headerAction = null,
   contentMaxWidth = null,
+  cleanLogin = false,
 }) {
   return (
-    <Box sx={{ minHeight: '100dvh', bgcolor: appMode ? '#f5f7f6' : '#eef3f8' }}>
+    <Box
+      sx={{
+        minHeight: '100dvh',
+        bgcolor: cleanLogin
+          ? '#ffffff'
+          : appMode
+            ? '#f5f7f6'
+            : '#eef3f8',
+      }}
+    >
       <AppBar
         position="sticky"
         elevation={0}
         sx={{
+          display: cleanLogin ? 'none' : 'flex',
           bgcolor: appMode ? APP_BRAND_GREEN : '#0f4c81',
           pt: appMode ? 'env(safe-area-inset-top)' : 0,
         }}
@@ -634,9 +645,24 @@ function MobileShell({
             contentMaxWidth ||
             (appMode ? 'none' : 520),
           mx: 'auto',
-          px: appMode ? 0.75 : 2,
-          pt: appMode ? 2.5 : 2,
-          pb: appMode ? 'calc(24px + env(safe-area-inset-bottom))' : 2,
+          px: cleanLogin
+            ? { xs: 4, sm: 5 }
+            : appMode
+              ? 0.75
+              : 2,
+          pt: cleanLogin
+            ? {
+                xs: 'calc(56px + env(safe-area-inset-top))',
+                sm: 7,
+              }
+            : appMode
+              ? 2.5
+              : 2,
+          pb: cleanLogin
+            ? 'calc(36px + env(safe-area-inset-bottom))'
+            : appMode
+              ? 'calc(24px + env(safe-area-inset-bottom))'
+              : 2,
           ...(appMode && {
             '& .MuiInputBase-root': { minHeight: 56, fontSize: '1rem' },
             '& .MuiInputLabel-root': { fontSize: '1rem' },
@@ -1549,6 +1575,7 @@ export default function AttendanceWorkerPortal() {
   return (
     <MobileShell
       appMode={appMode}
+      cleanLogin={mode === 'login'}
       contentMaxWidth={
         appMode
           ? 'none'
@@ -1558,29 +1585,312 @@ export default function AttendanceWorkerPortal() {
       }
     >
       <AttendanceToast message={message} onClose={() => setMessage(null)} appMode={appMode} />
-      <Paper variant="outlined" sx={{ p: appMode ? 3 : 2.25, borderRadius: appMode ? 3.5 : 3 }}>
-        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
-          {mode === 'signup' && <IconButton size="small" onClick={() => setMode('login')}><ArrowBackRoundedIcon /></IconButton>}
-          <Box>
-            <Typography sx={{ fontSize: appMode ? '1.4rem' : '1.15rem', fontWeight: 900 }}>{mode === 'signup' ? '근로자 가입 신청' : '근로자 로그인'}</Typography>
-            <Typography sx={{ mt: appMode ? 0.45 : 0, color: '#64748b', fontSize: appMode ? '0.92rem' : '0.74rem' }}>별도의 사내 ERP 계정 없이 이용합니다.</Typography>
+      <Paper
+        data-attendance-login-ui={
+          mode === 'login'
+            ? 'v52.48.1'
+            : undefined
+        }
+        variant={
+          mode === 'login'
+            ? undefined
+            : 'outlined'
+        }
+        elevation={0}
+        sx={{
+          p:
+            mode === 'login'
+              ? 0
+              : appMode
+                ? 3
+                : 2.25,
+          borderRadius:
+            mode === 'login'
+              ? 0
+              : appMode
+                ? 3.5
+                : 3,
+          border:
+            mode === 'login'
+              ? 'none'
+              : undefined,
+          bgcolor: '#ffffff',
+          boxShadow: 'none',
+        }}
+      >
+        {mode === 'login' ? (
+          <Box sx={{ mb: appMode ? 6 : 5 }}>
+            <Stack
+              direction="row"
+              alignItems="center"
+              spacing={1.3}
+            >
+              <Box
+                aria-hidden="true"
+                sx={{
+                  color: APP_BRAND_GREEN,
+                  fontSize: appMode
+                    ? '3rem'
+                    : '2.7rem',
+                  lineHeight: 1,
+                  fontWeight: 1000,
+                  letterSpacing: '-0.14em',
+                  pr: '0.14em',
+                }}
+              >
+                W
+              </Box>
+
+              <Typography
+                sx={{
+                  color: '#111827',
+                  fontSize: appMode
+                    ? '2.15rem'
+                    : '2rem',
+                  lineHeight: 1.1,
+                  fontWeight: 1000,
+                  letterSpacing: '-0.04em',
+                }}
+              >
+                로그인
+              </Typography>
+            </Stack>
+
+            <Typography
+              sx={{
+                mt: 1.1,
+                color: '#64748b',
+                fontSize: appMode
+                  ? '0.95rem'
+                  : '0.86rem',
+                fontWeight: 700,
+              }}
+            >
+              욱림건설 근태시스템
+            </Typography>
           </Box>
-        </Stack>
+        ) : (
+          <Stack
+            direction="row"
+            alignItems="center"
+            spacing={1}
+            sx={{ mb: 2 }}
+          >
+            <IconButton
+              size="small"
+              onClick={() => setMode('login')}
+            >
+              <ArrowBackRoundedIcon />
+            </IconButton>
+
+            <Box>
+              <Typography
+                sx={{
+                  fontSize: appMode
+                    ? '1.4rem'
+                    : '1.15rem',
+                  fontWeight: 900,
+                }}
+              >
+                근로자 가입 신청
+              </Typography>
+
+              <Typography
+                sx={{
+                  mt: appMode ? 0.45 : 0,
+                  color: '#64748b',
+                  fontSize: appMode
+                    ? '0.92rem'
+                    : '0.74rem',
+                }}
+              >
+                별도의 사내 ERP 계정 없이 이용합니다.
+              </Typography>
+            </Box>
+          </Stack>
+        )}
 
         {mode === 'login' ? (
-          <Stack spacing={1.5}>
-            <TextField label="휴대폰번호" value={formatPhone(login.phone)} onChange={(event) => setLogin((prev) => ({ ...prev, phone: normalizePhone(event.target.value) }))} inputMode="tel" autoComplete="tel" />
-            <TextField label="비밀번호" type="password" value={login.password} onChange={(event) => setLogin((prev) => ({ ...prev, password: event.target.value }))} autoComplete="current-password" onKeyDown={(event) => { if (event.key === 'Enter') handleLogin(); }} />
-            <Button variant="contained" size="large" startIcon={<LoginRoundedIcon />} onClick={handleLogin} disabled={loading} sx={{ minHeight: appMode ? 60 : 50, bgcolor: primaryActionColor, fontWeight: 900, '&:hover': { bgcolor: primaryActionColor } }}>로그인</Button>
-            <Button variant="outlined" startIcon={<HowToRegRoundedIcon />} onClick={() => setMode('signup')}>처음 이용하시나요? 가입 신청</Button>
-            <Button
-              variant="outlined"
-              color="inherit"
-              startIcon={<AdminPanelSettingsRoundedIcon />}
-              onClick={() => setMode('admin')}
+          <Stack
+            spacing={0}
+            sx={{
+              width: '100%',
+            }}
+          >
+            <TextField
+              fullWidth
+              variant="standard"
+              placeholder="휴대폰번호"
+              value={formatPhone(login.phone)}
+              onChange={(event) =>
+                setLogin((prev) => ({
+                  ...prev,
+                  phone: normalizePhone(
+                    event.target.value,
+                  ),
+                }))
+              }
+              inputMode="tel"
+              autoComplete="tel"
+              InputProps={{
+                disableUnderline: false,
+              }}
+              inputProps={{
+                'aria-label': '휴대폰번호',
+              }}
               sx={{
-                borderColor: '#94a3b8',
-                color: '#334155',
+                '& .MuiInputBase-root': {
+                  minHeight: appMode
+                    ? 70
+                    : 66,
+                  px: 1,
+                  fontSize: appMode
+                    ? '1.18rem'
+                    : '1.08rem',
+                },
+                '& .MuiInputBase-input::placeholder': {
+                  color: '#6b7280',
+                  opacity: 1,
+                },
+                '& .MuiInput-underline:before': {
+                  borderBottomColor: '#e5e7eb',
+                },
+                '& .MuiInput-underline:hover:not(.Mui-disabled):before': {
+                  borderBottomColor: '#cbd5e1',
+                },
+                '& .MuiInput-underline:after': {
+                  borderBottomColor: APP_BRAND_GREEN,
+                },
+              }}
+            />
+
+            <TextField
+              fullWidth
+              variant="standard"
+              type="password"
+              placeholder="비밀번호"
+              value={login.password}
+              onChange={(event) =>
+                setLogin((prev) => ({
+                  ...prev,
+                  password:
+                    event.target.value,
+                }))
+              }
+              autoComplete="current-password"
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  handleLogin();
+                }
+              }}
+              InputProps={{
+                disableUnderline: false,
+              }}
+              inputProps={{
+                'aria-label': '비밀번호',
+              }}
+              sx={{
+                mt: appMode ? 2.4 : 2,
+                '& .MuiInputBase-root': {
+                  minHeight: appMode
+                    ? 70
+                    : 66,
+                  px: 1,
+                  fontSize: appMode
+                    ? '1.18rem'
+                    : '1.08rem',
+                },
+                '& .MuiInputBase-input::placeholder': {
+                  color: '#6b7280',
+                  opacity: 1,
+                },
+                '& .MuiInput-underline:before': {
+                  borderBottomColor: '#e5e7eb',
+                },
+                '& .MuiInput-underline:hover:not(.Mui-disabled):before': {
+                  borderBottomColor: '#cbd5e1',
+                },
+                '& .MuiInput-underline:after': {
+                  borderBottomColor: APP_BRAND_GREEN,
+                },
+              }}
+            />
+
+            <Button
+              fullWidth
+              variant="contained"
+              size="large"
+              onClick={handleLogin}
+              disabled={loading}
+              sx={{
+                mt: appMode ? 5.2 : 4.5,
+                minHeight: appMode
+                  ? 64
+                  : 60,
+                borderRadius: 2.2,
+                bgcolor: APP_BRAND_GREEN,
+                color: '#ffffff',
+                fontSize: appMode
+                  ? '1.15rem'
+                  : '1.05rem',
+                fontWeight: 1000,
+                boxShadow: 'none',
+                '&:hover': {
+                  bgcolor: '#02b853',
+                  boxShadow: 'none',
+                },
+              }}
+            >
+              로그인
+            </Button>
+
+            <Button
+              fullWidth
+              variant="outlined"
+              startIcon={<HowToRegRoundedIcon />}
+              onClick={() =>
+                setMode('signup')
+              }
+              sx={{
+                mt: 1.5,
+                minHeight: appMode
+                  ? 58
+                  : 54,
+                borderRadius: 2.2,
+                borderColor: '#e5e7eb',
+                bgcolor: '#f8fafc',
+                color: '#1f2937',
+                fontSize: appMode
+                  ? '1rem'
+                  : '0.94rem',
+                fontWeight: 900,
+                '&:hover': {
+                  borderColor: '#d1d5db',
+                  bgcolor: '#f3f4f6',
+                },
+              }}
+            >
+              처음 이용하시나요? 가입 신청
+            </Button>
+
+            <Button
+              fullWidth
+              variant="text"
+              startIcon={
+                <AdminPanelSettingsRoundedIcon />
+              }
+              onClick={() =>
+                setMode('admin')
+              }
+              sx={{
+                mt: 1.15,
+                minHeight: appMode
+                  ? 54
+                  : 50,
+                color: '#475569',
+                fontSize: appMode
+                  ? '0.98rem'
+                  : '0.92rem',
                 fontWeight: 900,
               }}
             >
@@ -1642,7 +1952,22 @@ export default function AttendanceWorkerPortal() {
           </Stack>
         )}
       </Paper>
-      {!appMode && <Button fullWidth variant="text" startIcon={<AddToHomeScreenRoundedIcon />} onClick={handleInstall} sx={{ mt: 1.5 }}>근태앱 설치</Button>}
+      {!appMode && (
+        <Button
+          fullWidth
+          variant="text"
+          startIcon={<AddToHomeScreenRoundedIcon />}
+          onClick={handleInstall}
+          sx={{
+            mt: mode === 'login'
+              ? 3
+              : 1.5,
+            color: '#64748b',
+          }}
+        >
+          근태앱 설치
+        </Button>
+      )}
     </MobileShell>
   );
 }
