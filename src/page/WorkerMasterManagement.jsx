@@ -31,6 +31,7 @@ import {
 } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import { supabase } from '../supabaseClient';
@@ -306,6 +307,10 @@ export default function WorkerMasterManagement({
   const [draft, setDraft] =
     useState(emptyDraft);
   const [saving, setSaving] =
+    useState(false);
+  const [deleteTarget, setDeleteTarget] =
+    useState(null);
+  const [deleting, setDeleting] =
     useState(false);
   const [message, setMessage] =
     useState(null);
@@ -640,6 +645,55 @@ export default function WorkerMasterManagement({
     });
   };
 
+  const deleteWorker = async () => {
+    if (
+      !canManage ||
+      deleting ||
+      !deleteTarget?.id
+    ) {
+      return;
+    }
+
+    setDeleting(true);
+
+    const { data, error } =
+      await supabase.rpc(
+        'labor_worker_master_delete_v52_46',
+        {
+          p_worker_id:
+            deleteTarget.id,
+        },
+      );
+
+    setDeleting(false);
+
+    if (error) {
+      setMessage({
+        severity: 'error',
+        text:
+          error.message ||
+          '근로자 삭제에 실패했습니다.',
+      });
+      return;
+    }
+
+    const deletedName =
+      data?.worker_name ||
+      deleteTarget.nameKo ||
+      '근로자';
+
+    setDeleteTarget(null);
+    setMessage({
+      severity: 'success',
+      text: deletedName + ' 근로자를 삭제했습니다.',
+    });
+
+    await loadWorkers({
+      silent: true,
+      searchQuery: query,
+    });
+  };
+
   return (
     <Box
       sx={{
@@ -882,8 +936,10 @@ export default function WorkerMasterManagement({
                 <TableCell
                   align="center"
                   sx={{
-                    width: 74,
+                    width: 90,
+                    minWidth: 90,
                     fontWeight: 900,
+                    whiteSpace: 'nowrap',
                   }}
                 >
                   관리
@@ -991,7 +1047,12 @@ export default function WorkerMasterManagement({
 
                       <TableCell
                         align="center"
-                        sx={{ width: 54, minWidth: 54, whiteSpace: 'nowrap' }}
+                        sx={{
+                          width: 86,
+                          minWidth: 86,
+                          whiteSpace: 'nowrap',
+                          px: 0.5,
+                        }}
                       >
                         <Tooltip title="수정" arrow>
                           <span>
@@ -1003,6 +1064,20 @@ export default function WorkerMasterManagement({
                               color="primary"
                             >
                               <EditRoundedIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+
+                        <Tooltip title="삭제" arrow>
+                          <span>
+                            <IconButton
+                              size="small"
+                              aria-label="근로자 삭제"
+                              onClick={() => setDeleteTarget(worker)}
+                              disabled={!canManage}
+                              color="error"
+                            >
+                              <DeleteOutlineRoundedIcon fontSize="small" />
                             </IconButton>
                           </span>
                         </Tooltip>
@@ -1570,6 +1645,67 @@ export default function WorkerMasterManagement({
             {saving
               ? '암호화 저장 중...'
               : '저장'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={Boolean(deleteTarget)}
+        onClose={() => {
+          if (!deleting) {
+            setDeleteTarget(null);
+          }
+        }}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle sx={{ fontWeight: 900 }}>
+          근로자 삭제
+        </DialogTitle>
+
+        <DialogContent dividers>
+          <Alert severity="warning" sx={{ mb: 1.2 }}>
+            삭제된 근로자 정보는 복구할 수 없습니다.
+          </Alert>
+
+          <Typography
+            sx={{
+              color: '#0f172a',
+              fontSize: '0.86rem',
+              fontWeight: 900,
+            }}
+          >
+            {deleteTarget?.nameKo || '선택한 근로자'}를 정말로 삭제하시겠습니까?
+          </Typography>
+
+          <Typography
+            sx={{
+              mt: 0.75,
+              color: '#64748b',
+              fontSize: '0.7rem',
+              lineHeight: 1.55,
+            }}
+          >
+            월별 노임 명단에 사용된 이력이 있는 근로자는 이력 보호를 위해 삭제가 차단됩니다.
+          </Typography>
+        </DialogContent>
+
+        <DialogActions>
+          <Button
+            onClick={() => setDeleteTarget(null)}
+            disabled={deleting}
+          >
+            아니오
+          </Button>
+
+          <Button
+            variant="contained"
+            color="error"
+            onClick={() => void deleteWorker()}
+            disabled={deleting}
+            sx={{ boxShadow: 'none' }}
+          >
+            {deleting ? '삭제 중...' : '예, 삭제'}
           </Button>
         </DialogActions>
       </Dialog>

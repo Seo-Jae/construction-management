@@ -89,6 +89,14 @@ const BIRTH_MONTH_OPTIONS =
       ),
   );
 
+const LOOKUP_VISIBLE_ROW_COUNT = 10;
+const LOOKUP_HEADER_HEIGHT = 38;
+const LOOKUP_ROW_HEIGHT = 40;
+const LOOKUP_LIST_HEIGHT =
+  LOOKUP_HEADER_HEIGHT +
+  LOOKUP_VISIBLE_ROW_COUNT *
+    LOOKUP_ROW_HEIGHT;
+
 const getBirthDayOptions = (
   year,
   month,
@@ -2503,8 +2511,11 @@ export default function MonthlyLaborManagement({
             variant="outlined"
             sx={{
               mt: 0.6,
-              maxHeight: 410,
-              overflow: 'auto',
+              height: LOOKUP_LIST_HEIGHT,
+              minHeight: LOOKUP_LIST_HEIGHT,
+              maxHeight: LOOKUP_LIST_HEIGHT,
+              overflowY: 'auto',
+              overflowX: 'auto',
               borderColor:
                 '#cbd5e1',
               boxShadow: 'none',
@@ -2573,7 +2584,11 @@ export default function MonthlyLaborManagement({
                 }}
               >
                 <TableHead>
-                  <TableRow>
+                  <TableRow
+                    sx={{
+                      height: LOOKUP_HEADER_HEIGHT,
+                    }}
+                  >
                     <TableCell
                       sx={{
                         width: 150,
@@ -2649,6 +2664,7 @@ export default function MonthlyLaborManagement({
                             }
                           }}
                           sx={{
+                            height: LOOKUP_ROW_HEIGHT,
                             cursor:
                               alreadyAdded
                                 ? 'default'
@@ -2657,6 +2673,9 @@ export default function MonthlyLaborManagement({
                               alreadyAdded
                                 ? 0.62
                                 : 1,
+                            '& > td': {
+                              py: 0.45,
+                            },
                           }}
                         >
                           <TableCell>
