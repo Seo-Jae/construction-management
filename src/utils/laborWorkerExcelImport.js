@@ -155,6 +155,18 @@ export async function parseLaborWorkerExcelFile(file) {
       continue;
     }
 
+    const normalizedName =
+      normalizeText(nameKo)
+        .replace(/\s+/g, '');
+
+    if (
+      ['소계', '합계', '총계', '계'].includes(
+        normalizedName,
+      )
+    ) {
+      continue;
+    }
+
     const domesticForeign =
       normalizeDomesticForeign(
         getCellText(
@@ -163,6 +175,16 @@ export async function parseLaborWorkerExcelFile(file) {
           4,
         ),
       );
+
+    // 실제 근로자 행은 D열이 반드시 '내국인' 또는 '외국인'입니다.
+    // 소계/합계/총계처럼 A:H가 병합된 요약행은 ExcelJS에서
+    // 병합영역의 값이 C/D열에도 보일 수 있으므로 이 단계에서 제외합니다.
+    if (
+      domesticForeign !== '내국인' &&
+      domesticForeign !== '외국인'
+    ) {
+      continue;
+    }
 
     const residentNo = digitsOnly(
       getCellText(
