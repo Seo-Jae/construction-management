@@ -37,6 +37,7 @@ import PersonSearchRoundedIcon from '@mui/icons-material/PersonSearchRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import { supabase } from '../supabaseClient';
+import LaborSecurityPhoneDialog from '../components/LaborSecurityPhoneDialog.jsx';
 
 const TRADE_OPTIONS = [
   '소장',
@@ -517,6 +518,11 @@ export default function MonthlyLaborManagement({
     exportCheck,
     setExportCheck,
   ] = useState(null);
+
+  const [
+    securityPhoneOpen,
+    setSecurityPhoneOpen,
+  ] = useState(false);
 
   const selectedSet = useMemo(
     () => new Set(selectedIds),
@@ -1569,6 +1575,20 @@ export default function MonthlyLaborManagement({
             }}
           >
             Excel 생성 준비
+          </Button>
+
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={() =>
+              setSecurityPhoneOpen(true)
+            }
+            sx={{
+              minWidth: 118,
+              fontWeight: 900,
+            }}
+          >
+            보안 휴대폰
           </Button>
         </Stack>
       </Paper>
@@ -3234,6 +3254,13 @@ export default function MonthlyLaborManagement({
           </Button>
         </DialogActions>
       </Dialog>
+
+      <LaborSecurityPhoneDialog
+        open={securityPhoneOpen}
+        onClose={() =>
+          setSecurityPhoneOpen(false)
+        }
+      />
 
       <Snackbar
         open={Boolean(message)}
