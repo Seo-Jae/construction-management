@@ -646,15 +646,12 @@ function MobileShell({
             (appMode ? 'none' : 520),
           mx: 'auto',
           px: cleanLogin
-            ? { xs: 2.5, sm: 4 }
+            ? 0
             : appMode
               ? 0.75
               : 2,
           pt: cleanLogin
-            ? {
-                xs: 'calc(26px + env(safe-area-inset-top))',
-                sm: 4.5,
-              }
+            ? 0
             : appMode
               ? 2.5
               : 2,
@@ -663,7 +660,7 @@ function MobileShell({
             : appMode
               ? 'calc(24px + env(safe-area-inset-bottom))'
               : 2,
-          ...(appMode && {
+          ...(appMode && !cleanLogin && {
             '& .MuiInputBase-root': { minHeight: 56, fontSize: '1rem' },
             '& .MuiInputLabel-root': { fontSize: '1rem' },
             '& .MuiButton-root': { minHeight: 52, fontSize: '0.96rem' },
@@ -720,6 +717,29 @@ export default function AttendanceWorkerPortal() {
   const handledDeepLinkRef = useRef('');
   const deviceKey = useRef(getAttendanceDeviceKey()).current;
   const primaryActionColor = appMode ? APP_BRAND_GREEN : '#0f6fae';
+
+  useEffect(() => {
+    const metaTheme = document.querySelector('meta[name="theme-color"]');
+    if (!metaTheme) return undefined;
+
+    const previousColor =
+      metaTheme.getAttribute('content') ||
+      APP_BRAND_GREEN;
+
+    metaTheme.setAttribute(
+      'content',
+      appMode && mode === 'login'
+        ? '#ffffff'
+        : APP_BRAND_GREEN,
+    );
+
+    return () => {
+      metaTheme.setAttribute(
+        'content',
+        previousColor,
+      );
+    };
+  }, [appMode, mode]);
 
   const handleScannerVideoRef = useCallback((node) => {
     videoRef.current = node;
@@ -1606,6 +1626,11 @@ export default function AttendanceWorkerPortal() {
             ? 'v52.48.4'
             : undefined
         }
+        data-attendance-login-reference-layout={
+          mode === 'login' && appMode
+            ? 'v52.48.5.2'
+            : undefined
+        }
         variant={
           mode === 'login'
             ? undefined
@@ -1633,33 +1658,58 @@ export default function AttendanceWorkerPortal() {
           boxShadow: 'none',
           width:
             mode === 'login' && appMode
-              ? '67.5%'
+              ? 'calc(100% - 32px)'
               : '100%',
-          mx: 'auto',
-          transform:
+          maxWidth:
             mode === 'login' && appMode
-              ? 'scale(1.36)'
+              ? 520
               : 'none',
+          minHeight:
+            mode === 'login' && appMode
+              ? 'calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom))'
+              : 'auto',
+          mx: 'auto',
+          position: 'relative',
+          transform: 'none',
           transformOrigin: 'top center',
         }}
       >
         {mode === 'login' ? (
-          <Box
-            sx={{
-              mb: appMode ? 4.4 : 4.2,
-            }}
-          >
+          <Box>
+            {appMode ? (
+              <IconButton
+                aria-label="뒤로가기"
+                onClick={() => window.history.back()}
+                sx={{
+                  mt: 1.25,
+                  ml: -0.75,
+                  width: 46,
+                  height: 46,
+                  color: '#111827',
+                }}
+              >
+                <ArrowBackRoundedIcon
+                  sx={{ fontSize: 34 }}
+                />
+              </IconButton>
+            ) : null}
+
             <Stack
               direction="row"
               alignItems="center"
-              spacing={1.3}
+              spacing={1.1}
+              sx={{
+                mt: appMode ? 4.4 : 3,
+                mb: appMode ? 7.2 : 4.2,
+                pl: appMode ? 0.5 : 0,
+              }}
             >
               <Box
                 aria-hidden="true"
                 sx={{
                   color: APP_BRAND_GREEN,
                   fontSize: appMode
-                    ? '3.35rem'
+                    ? '3.2rem'
                     : '3rem',
                   lineHeight: 1,
                   fontWeight: 1000,
@@ -1674,29 +1724,16 @@ export default function AttendanceWorkerPortal() {
                 sx={{
                   color: '#111827',
                   fontSize: appMode
-                    ? '2.4rem'
+                    ? '2.45rem'
                     : '2.2rem',
-                  lineHeight: 1.1,
+                  lineHeight: 1.05,
                   fontWeight: 1000,
-                  letterSpacing: '-0.04em',
+                  letterSpacing: '-0.045em',
                 }}
               >
                 로그인
               </Typography>
             </Stack>
-
-            <Typography
-              sx={{
-                mt: 0.85,
-                color: '#64748b',
-                fontSize: appMode
-                  ? '0.82rem'
-                  : '0.92rem',
-                fontWeight: 700,
-              }}
-            >
-              욱림건설 근태시스템
-            </Typography>
           </Box>
         ) : (
           <Stack
@@ -1770,11 +1807,11 @@ export default function AttendanceWorkerPortal() {
               sx={{
                 '& .MuiInputBase-root': {
                   minHeight: appMode
-                    ? 78
+                    ? 72
                     : 74,
-                  px: 0.75,
+                  px: 0.5,
                   fontSize: appMode
-                    ? '1.3rem'
+                    ? '1.28rem'
                     : '1.2rem',
                 },
                 '& .MuiInputBase-input::placeholder': {
@@ -1819,14 +1856,14 @@ export default function AttendanceWorkerPortal() {
                 'aria-label': '비밀번호',
               }}
               sx={{
-                mt: appMode ? 2.05 : 1.8,
+                mt: appMode ? 2.6 : 1.8,
                 '& .MuiInputBase-root': {
                   minHeight: appMode
-                    ? 78
+                    ? 72
                     : 74,
-                  px: 0.75,
+                  px: 0.5,
                   fontSize: appMode
-                    ? '1.3rem'
+                    ? '1.28rem'
                     : '1.2rem',
                 },
                 '& .MuiInputBase-input::placeholder': {
@@ -1852,15 +1889,17 @@ export default function AttendanceWorkerPortal() {
               onClick={handleLogin}
               disabled={loading}
               sx={{
-                mt: appMode ? 4.6 : 4,
+                mt: appMode ? 6.4 : 4,
                 minHeight: appMode
-                  ? 72
+                  ? 58
                   : 68,
-                borderRadius: 2.1,
+                borderRadius: appMode
+                  ? 2.3
+                  : 2.1,
                 bgcolor: APP_BRAND_GREEN,
                 color: '#ffffff',
                 fontSize: appMode
-                  ? '1.28rem'
+                  ? '1.18rem'
                   : '1.16rem',
                 fontWeight: 1000,
                 boxShadow: 'none',
@@ -1881,16 +1920,18 @@ export default function AttendanceWorkerPortal() {
                 setMode('signup')
               }
               sx={{
-                mt: 1.35,
+                mt: appMode ? 1.4 : 1.35,
                 minHeight: appMode
-                  ? 66
+                  ? 58
                   : 62,
-                borderRadius: 2.1,
-                borderColor: '#e5e7eb',
-                bgcolor: '#f8fafc',
+                borderRadius: appMode
+                  ? 2.3
+                  : 2.1,
+                borderColor: '#eeeeee',
+                bgcolor: '#f7f7f7',
                 color: '#1f2937',
                 fontSize: appMode
-                  ? '1.1rem'
+                  ? '1.08rem'
                   : '1rem',
                 fontWeight: 900,
                 '&:hover': {
@@ -1912,13 +1953,13 @@ export default function AttendanceWorkerPortal() {
                 setMode('admin')
               }
               sx={{
-                mt: 1,
+                mt: appMode ? 3.6 : 1,
                 minHeight: appMode
-                  ? 60
+                  ? 44
                   : 56,
-                color: '#475569',
+                color: '#334155',
                 fontSize: appMode
-                  ? '1.06rem'
+                  ? '1.02rem'
                   : '0.98rem',
                 fontWeight: 900,
               }}
