@@ -646,14 +646,14 @@ function MobileShell({
             (appMode ? 'none' : 520),
           mx: 'auto',
           px: cleanLogin
-            ? { xs: 4, sm: 5 }
+            ? { xs: 2.5, sm: 4 }
             : appMode
               ? 0.75
               : 2,
           pt: cleanLogin
             ? {
-                xs: 'calc(56px + env(safe-area-inset-top))',
-                sm: 7,
+                xs: 'calc(28px + env(safe-area-inset-top))',
+                sm: 5,
               }
             : appMode
               ? 2.5
@@ -1591,6 +1591,11 @@ export default function AttendanceWorkerPortal() {
             ? 'v52.48.1'
             : undefined
         }
+        data-attendance-login-scale={
+          mode === 'login'
+            ? 'v52.48.2.1'
+            : undefined
+        }
         variant={
           mode === 'login'
             ? undefined
@@ -1619,7 +1624,11 @@ export default function AttendanceWorkerPortal() {
         }}
       >
         {mode === 'login' ? (
-          <Box sx={{ mb: appMode ? 6 : 5 }}>
+          <Box
+            sx={{
+              mb: appMode ? 4.7 : 4.2,
+            }}
+          >
             <Stack
               direction="row"
               alignItems="center"
@@ -1630,8 +1639,8 @@ export default function AttendanceWorkerPortal() {
                 sx={{
                   color: APP_BRAND_GREEN,
                   fontSize: appMode
-                    ? '3rem'
-                    : '2.7rem',
+                    ? '3.35rem'
+                    : '3rem',
                   lineHeight: 1,
                   fontWeight: 1000,
                   letterSpacing: '-0.14em',
@@ -1645,8 +1654,8 @@ export default function AttendanceWorkerPortal() {
                 sx={{
                   color: '#111827',
                   fontSize: appMode
-                    ? '2.15rem'
-                    : '2rem',
+                    ? '2.4rem'
+                    : '2.2rem',
                   lineHeight: 1.1,
                   fontWeight: 1000,
                   letterSpacing: '-0.04em',
@@ -1658,11 +1667,11 @@ export default function AttendanceWorkerPortal() {
 
             <Typography
               sx={{
-                mt: 1.1,
+                mt: 0.85,
                 color: '#64748b',
                 fontSize: appMode
-                  ? '0.95rem'
-                  : '0.86rem',
+                  ? '1.02rem'
+                  : '0.92rem',
                 fontWeight: 700,
               }}
             >
@@ -1741,12 +1750,12 @@ export default function AttendanceWorkerPortal() {
               sx={{
                 '& .MuiInputBase-root': {
                   minHeight: appMode
-                    ? 70
-                    : 66,
-                  px: 1,
+                    ? 78
+                    : 74,
+                  px: 0.75,
                   fontSize: appMode
-                    ? '1.18rem'
-                    : '1.08rem',
+                    ? '1.3rem'
+                    : '1.2rem',
                 },
                 '& .MuiInputBase-input::placeholder': {
                   color: '#6b7280',
@@ -1790,15 +1799,15 @@ export default function AttendanceWorkerPortal() {
                 'aria-label': '비밀번호',
               }}
               sx={{
-                mt: appMode ? 2.4 : 2,
+                mt: appMode ? 2.05 : 1.8,
                 '& .MuiInputBase-root': {
                   minHeight: appMode
-                    ? 70
-                    : 66,
-                  px: 1,
+                    ? 78
+                    : 74,
+                  px: 0.75,
                   fontSize: appMode
-                    ? '1.18rem'
-                    : '1.08rem',
+                    ? '1.3rem'
+                    : '1.2rem',
                 },
                 '& .MuiInputBase-input::placeholder': {
                   color: '#6b7280',
@@ -1823,16 +1832,16 @@ export default function AttendanceWorkerPortal() {
               onClick={handleLogin}
               disabled={loading}
               sx={{
-                mt: appMode ? 5.2 : 4.5,
+                mt: appMode ? 4.6 : 4,
                 minHeight: appMode
-                  ? 64
-                  : 60,
-                borderRadius: 2.2,
+                  ? 72
+                  : 68,
+                borderRadius: 2.1,
                 bgcolor: APP_BRAND_GREEN,
                 color: '#ffffff',
                 fontSize: appMode
-                  ? '1.15rem'
-                  : '1.05rem',
+                  ? '1.28rem'
+                  : '1.16rem',
                 fontWeight: 1000,
                 boxShadow: 'none',
                 '&:hover': {
@@ -1852,17 +1861,17 @@ export default function AttendanceWorkerPortal() {
                 setMode('signup')
               }
               sx={{
-                mt: 1.5,
+                mt: 1.35,
                 minHeight: appMode
-                  ? 58
-                  : 54,
-                borderRadius: 2.2,
+                  ? 66
+                  : 62,
+                borderRadius: 2.1,
                 borderColor: '#e5e7eb',
                 bgcolor: '#f8fafc',
                 color: '#1f2937',
                 fontSize: appMode
-                  ? '1rem'
-                  : '0.94rem',
+                  ? '1.1rem'
+                  : '1rem',
                 fontWeight: 900,
                 '&:hover': {
                   borderColor: '#d1d5db',
@@ -1883,14 +1892,14 @@ export default function AttendanceWorkerPortal() {
                 setMode('admin')
               }
               sx={{
-                mt: 1.15,
+                mt: 1,
                 minHeight: appMode
-                  ? 54
-                  : 50,
+                  ? 60
+                  : 56,
                 color: '#475569',
                 fontSize: appMode
-                  ? '0.98rem'
-                  : '0.92rem',
+                  ? '1.06rem'
+                  : '0.98rem',
                 fontWeight: 900,
               }}
             >
