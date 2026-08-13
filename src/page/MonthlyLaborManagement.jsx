@@ -35,6 +35,8 @@ import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import CheckBoxOutlineBlankRoundedIcon from '@mui/icons-material/CheckBoxOutlineBlankRounded';
 import CheckBoxRoundedIcon from '@mui/icons-material/CheckBoxRounded';
+import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded';
+import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import IndeterminateCheckBoxRoundedIcon from '@mui/icons-material/IndeterminateCheckBoxRounded';
 import RemoveCircleOutlineRoundedIcon from '@mui/icons-material/RemoveCircleOutlineRounded';
 import PersonSearchRoundedIcon from '@mui/icons-material/PersonSearchRounded';
@@ -560,11 +562,6 @@ export default function MonthlyLaborManagement({
     newWorkerSaving,
     setNewWorkerSaving,
   ] = useState(false);
-
-  const [
-    bulkTrade,
-    setBulkTrade,
-  ] = useState('');
 
   const [
     rosterLoading,
@@ -1207,38 +1204,6 @@ export default function MonthlyLaborManagement({
     );
   };
 
-  const applyBulkTrade =
-    () => {
-      const nextTrade =
-        String(
-          bulkTrade || '',
-        ).trim();
-
-      if (
-        !nextTrade ||
-        selectedIds.length ===
-          0
-      ) {
-        return;
-      }
-
-      markChanged(
-        (previous) =>
-          previous.map(
-            (row) =>
-              selectedSet.has(
-                row.id,
-              )
-                ? {
-                    ...row,
-                    trade:
-                      nextTrade,
-                  }
-                : row,
-          ),
-      );
-    };
-
   const openPayrollEditor = (
     row,
   ) => {
@@ -1382,6 +1347,57 @@ export default function MonthlyLaborManagement({
 
     setYearMonth(
       nextMonth,
+    );
+  };
+
+  const changeMonthBy = (
+    offset,
+  ) => {
+    const matched =
+      /^(\d{4})-(\d{2})$/.exec(
+        String(
+          yearMonth || '',
+        ),
+      );
+
+    if (!matched) {
+      return;
+    }
+
+    const year =
+      Number(matched[1]);
+
+    const month =
+      Number(matched[2]);
+
+    if (
+      !Number.isInteger(year) ||
+      !Number.isInteger(month) ||
+      month < 1 ||
+      month > 12
+    ) {
+      return;
+    }
+
+    const totalMonths =
+      year * 12 +
+      (month - 1) +
+      Number(offset || 0);
+
+    const nextYear =
+      Math.floor(
+        totalMonths / 12,
+      );
+
+    const nextMonth =
+      ((totalMonths % 12) + 12) %
+        12 +
+      1;
+
+    handleMonthChange(
+      `${nextYear}-${String(
+        nextMonth,
+      ).padStart(2, '0')}`,
     );
   };
 
@@ -1640,26 +1656,84 @@ export default function MonthlyLaborManagement({
             </Typography>
           </Box>
 
-          <TextField
-            type="month"
-            size="small"
-            label="작성월"
-            value={
-              yearMonth
-            }
-            onChange={(
-              event,
-            ) =>
-              handleMonthChange(
-                event.target
-                  .value,
-              )
-            }
-            InputLabelProps={{
-              shrink: true,
-            }}
-            sx={{ width: 170 }}
-          />
+          <Stack
+            direction="row"
+            spacing={0.35}
+            alignItems="center"
+          >
+            <Tooltip
+              title="이전월"
+              arrow
+            >
+              <span>
+                <IconButton
+                  size="small"
+                  aria-label="이전월"
+                  disabled={
+                    rosterSaving ||
+                    rosterLoading
+                  }
+                  onClick={() =>
+                    changeMonthBy(-1)
+                  }
+                  sx={{
+                    border:
+                      '1px solid #cbd5e1',
+                    borderRadius: 1,
+                  }}
+                >
+                  <ChevronLeftRoundedIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+
+            <TextField
+              type="month"
+              size="small"
+              label="작성월"
+              value={
+                yearMonth
+              }
+              onChange={(
+                event,
+              ) =>
+                handleMonthChange(
+                  event.target
+                    .value,
+                )
+              }
+              InputLabelProps={{
+                shrink: true,
+              }}
+              sx={{ width: 170 }}
+            />
+
+            <Tooltip
+              title="다음월"
+              arrow
+            >
+              <span>
+                <IconButton
+                  size="small"
+                  aria-label="다음월"
+                  disabled={
+                    rosterSaving ||
+                    rosterLoading
+                  }
+                  onClick={() =>
+                    changeMonthBy(1)
+                  }
+                  sx={{
+                    border:
+                      '1px solid #cbd5e1',
+                    borderRadius: 1,
+                  }}
+                >
+                  <ChevronRightRoundedIcon fontSize="small" />
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Stack>
 
           <Button
             variant="contained"
@@ -1895,68 +1969,6 @@ export default function MonthlyLaborManagement({
               </span>
             </Tooltip>
           </Paper>
-
-          <Divider
-            orientation="vertical"
-            flexItem
-            sx={{ mx: 0.25 }}
-          />
-
-          <Autocomplete
-            freeSolo
-            size="small"
-            options={
-              TRADE_OPTIONS
-            }
-            value={
-              bulkTrade
-            }
-            onChange={(
-              _event,
-              value,
-            ) =>
-              setBulkTrade(
-                value || '',
-              )
-            }
-            onInputChange={(
-              _event,
-              value,
-            ) =>
-              setBulkTrade(
-                value || '',
-              )
-            }
-            renderInput={(
-              params,
-            ) => (
-              <TextField
-                {...params}
-                placeholder="공종 일괄변경"
-              />
-            )}
-            sx={{ width: 155 }}
-          />
-
-          <Button
-            size="small"
-            variant="outlined"
-            disabled={
-              selectedIds.length ===
-                0 ||
-              !String(
-                bulkTrade || '',
-              ).trim()
-            }
-            onClick={
-              applyBulkTrade
-            }
-            sx={{
-              fontWeight: 800,
-            }}
-          >
-            적용
-          </Button>
 
           <Typography
             sx={{
