@@ -30,11 +30,13 @@ import {
   Typography,
 } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
+import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import { supabase } from '../supabaseClient';
+import LaborWorkerExcelImportDialog from '../components/LaborWorkerExcelImportDialog.jsx';
 
 const TRADE_OPTIONS = [
   '소장',
@@ -150,6 +152,10 @@ const emptyDraft = () => ({
   bankName: '',
   accountNumber: '',
   accountHolder: '',
+  englishName: '',
+  stayStatus: '',
+  englishAccountHolder: '',
+  isForeign: false,
 
   hasPrivateData: false,
   hasResidentNo: false,
@@ -158,6 +164,9 @@ const emptyDraft = () => ({
   hasAccount: false,
   hasAccountHolder: false,
   hasNationality: false,
+  hasEnglishName: false,
+  hasStayStatus: false,
+  hasEnglishAccountHolder: false,
   bankNameHint: '',
   accountLast4: '',
 });
@@ -202,6 +211,14 @@ const normalizeWorker = (row) => ({
     row?.has_account_holder === true,
   hasNationality:
     row?.has_nationality === true,
+  isForeign:
+    row?.is_foreign === true,
+  hasEnglishName:
+    row?.has_english_name === true,
+  hasStayStatus:
+    row?.has_stay_status === true,
+  hasEnglishAccountHolder:
+    row?.has_english_account_holder === true,
   bankNameHint: String(
     row?.bank_name_hint || '',
   ).trim(),
@@ -274,6 +291,14 @@ const privateStatusText = (worker) => {
     labels.push('국적');
   }
 
+  if (worker.hasEnglishName) {
+    labels.push('영문성명');
+  }
+
+  if (worker.hasStayStatus) {
+    labels.push('체류자격');
+  }
+
   return labels.length > 0
     ? labels.join(' · ')
     : '미등록';
@@ -304,6 +329,8 @@ export default function WorkerMasterManagement({
     useState(true);
   const [editorOpen, setEditorOpen] =
     useState(false);
+  const [excelUploadOpen, setExcelUploadOpen] =
+    useState(false);
   const [draft, setDraft] =
     useState(emptyDraft);
   const [saving, setSaving] =
@@ -326,7 +353,7 @@ export default function WorkerMasterManagement({
 
       const { data, error } =
         await supabase.rpc(
-          'labor_worker_master_list_v52_41',
+          'labor_worker_master_list_v52_47',
           {
             p_query: String(
               searchQuery || '',
@@ -417,6 +444,14 @@ export default function WorkerMasterManagement({
         worker.hasAccountHolder,
       hasNationality:
         worker.hasNationality,
+      isForeign:
+        worker.isForeign,
+      hasEnglishName:
+        worker.hasEnglishName,
+      hasStayStatus:
+        worker.hasStayStatus,
+      hasEnglishAccountHolder:
+        worker.hasEnglishAccountHolder,
       bankNameHint:
         worker.bankNameHint,
       accountLast4:
@@ -460,6 +495,12 @@ export default function WorkerMasterManagement({
     const nationality = String(draft.nationality || '').trim();
     const bankName = String(draft.bankName || '').trim();
     const accountHolder = String(draft.accountHolder || '').trim();
+    const englishName = String(draft.englishName || '').trim();
+    const stayStatus = String(draft.stayStatus || '').trim();
+    const englishAccountHolder = String(draft.englishAccountHolder || '').trim();
+    const finalIsForeign = nationality
+      ? nationality !== '대한민국'
+      : draft.isForeign === true;
     const birthDate = buildBirthDate(
       draft.birthYear,
       draft.birthMonth,
@@ -543,6 +584,16 @@ export default function WorkerMasterManagement({
       return;
     }
 
+    if (finalIsForeign && !englishName && !draft.hasEnglishName) {
+      setMessage({ severity: 'warning', text: '외국인 근로자는 영문 성명이 필요합니다.' });
+      return;
+    }
+
+    if (finalIsForeign && !stayStatus && !draft.hasStayStatus) {
+      setMessage({ severity: 'warning', text: '외국인 근로자는 체류자격이 필요합니다.' });
+      return;
+    }
+
     if (
       fullPhone &&
       !/^\d{10,11}$/.test(
@@ -573,7 +624,7 @@ export default function WorkerMasterManagement({
 
     const { data, error } =
       await supabase.rpc(
-        'labor_worker_master_secure_upsert_v52_41',
+        'labor_worker_master_secure_upsert_v52_47',
         {
           p_worker_id:
             draft.id || null,
@@ -611,6 +662,12 @@ export default function WorkerMasterManagement({
             accountNumber || null,
           p_account_holder:
             accountHolder || null,
+          p_english_name:
+            englishName || null,
+          p_stay_status:
+            stayStatus || null,
+          p_english_account_holder:
+            englishAccountHolder || null,
         },
       );
 
@@ -827,6 +884,19 @@ export default function WorkerMasterManagement({
 
           <Button
             size="small"
+            variant="outlined"
+            startIcon={
+              <UploadFileRoundedIcon />
+            }
+            onClick={() => setExcelUploadOpen(true)}
+            disabled={!canManage}
+            sx={{ ml: 'auto' }}
+          >
+            EXCEL 업로드
+          </Button>
+
+          <Button
+            size="small"
             variant="contained"
             startIcon={
               <AddRoundedIcon />
@@ -834,7 +904,6 @@ export default function WorkerMasterManagement({
             onClick={openNew}
             disabled={!canManage}
             sx={{
-              ml: 'auto',
               boxShadow: 'none',
             }}
           >
@@ -1475,6 +1544,9 @@ export default function WorkerMasterManagement({
                   setDraft((previous) => ({
                     ...previous,
                     nationality: value || '',
+                    isForeign: value
+                      ? value !== '대한민국'
+                      : previous.isForeign,
                   }))
                 }
                 renderInput={(params) => (
@@ -1491,6 +1563,73 @@ export default function WorkerMasterManagement({
                   />
                 )}
               />
+
+              {(
+                draft.isForeign ||
+                (draft.nationality &&
+                  draft.nationality !== '대한민국')
+              ) ? (
+                <>
+                  <TextField
+                    fullWidth
+                    required
+                    size="small"
+                    label="영문 성명"
+                    value={draft.englishName}
+                    onChange={(event) =>
+                      setDraft((previous) => ({
+                        ...previous,
+                        englishName: event.target.value,
+                      }))
+                    }
+                    placeholder={
+                      draft.hasEnglishName
+                        ? '기존값 유지'
+                        : '예: HONG GILDONG'
+                    }
+                    helperText={privateHelper(draft.hasEnglishName)}
+                  />
+
+                  <TextField
+                    fullWidth
+                    required
+                    size="small"
+                    label="체류자격"
+                    value={draft.stayStatus}
+                    onChange={(event) =>
+                      setDraft((previous) => ({
+                        ...previous,
+                        stayStatus: event.target.value,
+                      }))
+                    }
+                    placeholder={
+                      draft.hasStayStatus
+                        ? '기존값 유지'
+                        : '예: F-5'
+                    }
+                    helperText={privateHelper(draft.hasStayStatus)}
+                  />
+
+                  <TextField
+                    fullWidth
+                    size="small"
+                    label="영문 예금주"
+                    value={draft.englishAccountHolder}
+                    onChange={(event) =>
+                      setDraft((previous) => ({
+                        ...previous,
+                        englishAccountHolder: event.target.value,
+                      }))
+                    }
+                    placeholder={
+                      draft.hasEnglishAccountHolder
+                        ? '기존값 유지'
+                        : '예: HONG GILDONG'
+                    }
+                    helperText={privateHelper(draft.hasEnglishAccountHolder)}
+                  />
+                </>
+              ) : null}
 
               <TextField
                 fullWidth
@@ -1648,6 +1787,23 @@ export default function WorkerMasterManagement({
           </Button>
         </DialogActions>
       </Dialog>
+
+      <LaborWorkerExcelImportDialog
+        open={excelUploadOpen}
+        canManage={canManage}
+        onClose={() => setExcelUploadOpen(false)}
+        onImported={async (result) => {
+          setExcelUploadOpen(false);
+          setMessage({
+            severity: 'success',
+            text: 'Excel 이관 완료 · 신규 ' + result.created + '명 · 업데이트 ' + result.updated + '명 · 제외 ' + result.skipped + '명',
+          });
+          await loadWorkers({
+            silent: true,
+            searchQuery: query,
+          });
+        }}
+      />
 
       <Dialog
         open={Boolean(deleteTarget)}
