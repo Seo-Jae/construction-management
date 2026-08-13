@@ -28,6 +28,7 @@ import {
   Typography,
 } from '@mui/material';
 import AddToHomeScreenRoundedIcon from '@mui/icons-material/AddToHomeScreenRounded';
+import AdminPanelSettingsRoundedIcon from '@mui/icons-material/AdminPanelSettingsRounded';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import CameraAltRoundedIcon from '@mui/icons-material/CameraAltRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
@@ -36,6 +37,7 @@ import LoginRoundedIcon from '@mui/icons-material/LoginRounded';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import { BrowserQRCodeReader } from '@zxing/browser';
+import AttendanceMobileAdminQr from '../components/AttendanceMobileAdminQr.jsx';
 import { supabase } from '../supabaseClient';
 import {
   ATTENDANCE_PROJECTS,
@@ -551,6 +553,7 @@ function MobileShell({
   appMode = false,
   topBanner = null,
   headerAction = null,
+  contentMaxWidth = null,
 }) {
   return (
     <Box sx={{ minHeight: '100dvh', bgcolor: appMode ? '#f5f7f6' : '#eef3f8' }}>
@@ -627,7 +630,9 @@ function MobileShell({
       <Box
         sx={{
           width: '100%',
-          maxWidth: appMode ? 'none' : 520,
+          maxWidth:
+            contentMaxWidth ||
+            (appMode ? 'none' : 520),
           mx: 'auto',
           px: appMode ? 0.75 : 2,
           pt: appMode ? 2.5 : 2,
@@ -1523,8 +1528,35 @@ export default function AttendanceWorkerPortal() {
     );
   }
 
+  if (mode === 'admin') {
+    return (
+      <MobileShell
+        appMode={appMode}
+        contentMaxWidth={
+          appMode
+            ? 'none'
+            : 1040
+        }
+      >
+        <AttendanceMobileAdminQr
+          appMode={appMode}
+          onBack={() => setMode('login')}
+        />
+      </MobileShell>
+    );
+  }
+
   return (
-    <MobileShell appMode={appMode}>
+    <MobileShell
+      appMode={appMode}
+      contentMaxWidth={
+        appMode
+          ? 'none'
+          : mode === 'login'
+            ? 1040
+            : 720
+      }
+    >
       <AttendanceToast message={message} onClose={() => setMessage(null)} appMode={appMode} />
       <Paper variant="outlined" sx={{ p: appMode ? 3 : 2.25, borderRadius: appMode ? 3.5 : 3 }}>
         <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
@@ -1541,6 +1573,19 @@ export default function AttendanceWorkerPortal() {
             <TextField label="비밀번호" type="password" value={login.password} onChange={(event) => setLogin((prev) => ({ ...prev, password: event.target.value }))} autoComplete="current-password" onKeyDown={(event) => { if (event.key === 'Enter') handleLogin(); }} />
             <Button variant="contained" size="large" startIcon={<LoginRoundedIcon />} onClick={handleLogin} disabled={loading} sx={{ minHeight: appMode ? 60 : 50, bgcolor: primaryActionColor, fontWeight: 900, '&:hover': { bgcolor: primaryActionColor } }}>로그인</Button>
             <Button variant="outlined" startIcon={<HowToRegRoundedIcon />} onClick={() => setMode('signup')}>처음 이용하시나요? 가입 신청</Button>
+            <Button
+              variant="outlined"
+              color="inherit"
+              startIcon={<AdminPanelSettingsRoundedIcon />}
+              onClick={() => setMode('admin')}
+              sx={{
+                borderColor: '#94a3b8',
+                color: '#334155',
+                fontWeight: 900,
+              }}
+            >
+              관리자 모드
+            </Button>
           </Stack>
         ) : (
           <Stack spacing={1.5}>
