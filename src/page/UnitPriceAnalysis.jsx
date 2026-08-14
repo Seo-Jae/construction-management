@@ -38,17 +38,18 @@ import {
   Typography,
 } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
+import AddCircleOutlineRoundedIcon from '@mui/icons-material/AddCircleOutlineRounded';
+import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded';
+import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
-import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import EditNoteRoundedIcon from '@mui/icons-material/EditNoteRounded';
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
-import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
-import KeyboardArrowUpRoundedIcon from '@mui/icons-material/KeyboardArrowUpRounded';
 import PostAddRoundedIcon from '@mui/icons-material/PostAddRounded';
 import PrintRoundedIcon from '@mui/icons-material/PrintRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
+import RemoveCircleOutlineRoundedIcon from '@mui/icons-material/RemoveCircleOutlineRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import TableViewRoundedIcon from '@mui/icons-material/TableViewRounded';
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
@@ -202,6 +203,38 @@ const compactBodyCellSx = {
   px: 0.32,
   fontSize: '0.67rem',
   lineHeight: 1.1,
+};
+
+const compactFilterFieldSx = {
+  '& .MuiInputLabel-root': {
+    fontSize: '0.68rem',
+    transform: 'translate(10px, 7px) scale(1)',
+  },
+  '& .MuiInputLabel-shrink': {
+    transform: 'translate(10px, -7px) scale(0.78)',
+  },
+  '& .MuiInputBase-root': {
+    height: 32,
+    minHeight: 32,
+    fontSize: '0.72rem',
+  },
+  '& .MuiInputBase-input': {
+    px: 1,
+    py: 0.55,
+    fontSize: '0.72rem',
+  },
+  '& .MuiSelect-select': {
+    minWidth: '0 !important',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    whiteSpace: 'nowrap',
+    px: '10px !important',
+    py: '6px !important',
+    fontSize: '0.72rem',
+  },
+  '& .MuiSelect-icon': {
+    fontSize: '1rem',
+  },
 };
 
 function CompactNumberField({ value, onChange, min, step = '0.0001', disabled = false }) {
@@ -1184,9 +1217,9 @@ export default function UnitPriceAnalysis({
                 sx={{ p: 0.25 }}
               />
             </TableCell>
-            <TableCell sx={{ ...compactHeaderCellSx, width: 82 }}>구분</TableCell>
-            <TableCell sx={{ ...compactHeaderCellSx, minWidth: 145 }}>품명</TableCell>
-            <TableCell sx={{ ...compactHeaderCellSx, minWidth: 125 }}>규격</TableCell>
+            <TableCell align="center" sx={{ ...compactHeaderCellSx, width: 82 }}>구분</TableCell>
+            <TableCell align="center" sx={{ ...compactHeaderCellSx, minWidth: 145 }}>품명</TableCell>
+            <TableCell align="center" sx={{ ...compactHeaderCellSx, minWidth: 125 }}>규격</TableCell>
             <TableCell sx={{ ...compactHeaderCellSx, width: 56 }}>단위</TableCell>
             <TableCell sx={{ ...compactHeaderCellSx, width: 84 }}>정미수량</TableCell>
             <TableCell sx={{ ...compactHeaderCellSx, width: 84 }}>단가</TableCell>
@@ -1385,12 +1418,13 @@ export default function UnitPriceAnalysis({
       `}</style>
 
       <Paper sx={{ mb: 1.2, px: 2, py: 1.2, border: '1px solid #dbe3ec' }}>
-        <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', lg: 'center' }} gap={1}>
+        <Box sx={{ width: '100%', display: 'flex', alignItems: 'center', gap: 1, flexWrap: { xs: 'wrap', md: 'nowrap' } }}>
           <Stack direction="row" spacing={1.2} alignItems="center">
             <Typography sx={{ fontSize: '1.22rem', fontWeight: 950, color: '#0f172a', whiteSpace: 'nowrap' }}>일위대가작성</Typography>
             <Chip label={`현재 현장 · ${projectName || '미선택'}`} color="primary" variant="outlined" />
           </Stack>
-          <Stack direction="row" spacing={0.45} alignItems="center" justifyContent="flex-end">
+          <Box sx={{ flex: 1, minWidth: 12 }} />
+          <Stack direction="row" spacing={0.45} alignItems="center" justifyContent="flex-end" sx={{ ml: 'auto', flexShrink: 0 }}>
             <Tooltip title="새 일위대가 작성">
               <IconButton size="small" onClick={resetDocument} sx={{ border: '1px solid #cbd5e1', borderRadius: 1 }}>
                 <PostAddRoundedIcon fontSize="small" />
@@ -1421,7 +1455,7 @@ export default function UnitPriceAnalysis({
               </span>
             </Tooltip>
           </Stack>
-        </Stack>
+        </Box>
         {loadError && <Alert severity="error" sx={{ mt: 1.5 }}>{loadError}</Alert>}
       </Paper>
 
@@ -1436,10 +1470,11 @@ export default function UnitPriceAnalysis({
           <Box sx={{ p: 1.5 }}>
             <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', xl: 'minmax(0, 1fr) 300px' }, gap: 1.5 }}>
               <Box sx={{ minWidth: 0 }}>
-                <Paper variant="outlined" sx={{ p: 1.4, mb: 1.3, bgcolor: '#f8fafc' }}>
-                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(160px, 1fr)) 1.4fr 130px' }, gap: 1 }}>
+                <Paper variant="outlined" sx={{ px: 0.9, py: 0.75, mb: 1.3, bgcolor: '#f8fafc' }}>
+                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '150px 190px 210px minmax(150px, 1fr) 105px' }, gap: 0.7 }}>
                     <TextField
                       select label="대분류" value={selectedMajor} size="small"
+                      sx={compactFilterFieldSx}
                       onChange={(event) => {
                         const major = event.target.value;
                         const middle = specs.find((item) => item.major_category === major)?.middle_category || '';
@@ -1449,43 +1484,82 @@ export default function UnitPriceAnalysis({
                     >{majorOptions.map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}</TextField>
                     <TextField
                       select label="중분류" value={selectedMiddle} size="small"
+                      sx={compactFilterFieldSx}
                       onChange={(event) => {
                         const middle = event.target.value;
                         const detail = specs.find((item) => item.major_category === selectedMajor && item.middle_category === middle)?.detail_category || '';
                         handleSpecChange(detail, selectedMajor, middle);
                       }}
                     >{middleOptions.map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}</TextField>
-                    <TextField select label="세부규격" value={selectedDetail} size="small" onChange={(event) => handleSpecChange(event.target.value)}>
+                    <TextField select label="세부규격" value={selectedDetail} size="small" sx={compactFilterFieldSx} onChange={(event) => handleSpecChange(event.target.value)}>
                       {detailOptions.map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}
                     </TextField>
                     <TextField
                       label="문서명" size="small" value={documentState.documentName}
+                      sx={compactFilterFieldSx}
                       placeholder={`${selectedMiddle || '공정'} ${selectedDetail || '규격'} 일위대가`}
                       onChange={(event) => setDocumentState((previous) => ({ ...previous, documentName: event.target.value }))}
                     />
-                    <TextField select label="저장상태" size="small" value={documentState.status} onChange={(event) => setDocumentState((previous) => ({ ...previous, status: event.target.value }))}>
+                    <TextField select label="저장상태" size="small" value={documentState.status} sx={compactFilterFieldSx} onChange={(event) => setDocumentState((previous) => ({ ...previous, status: event.target.value }))}>
                       <MenuItem value="draft">작성중</MenuItem><MenuItem value="submitted">제출본</MenuItem><MenuItem value="archived">보관</MenuItem>
                     </TextField>
                   </Box>
                 </Paper>
 
-                <Paper variant="outlined" sx={{ mb: 1.3, overflow: 'hidden' }}>
-                  <Box sx={{ px: 1, py: 0.45, minHeight: 34, display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: '#f8fafc', borderBottom: '1px solid #dbe3ec' }}>
-                    <Stack direction="row" spacing={0.7} alignItems="center">
-                      <Typography sx={{ fontWeight: 900, fontSize: '0.76rem' }}>1㎡당 구성 항목</Typography>
-                      <Chip size="small" label={`${draftRows.length}개`} sx={{ height: 20, fontSize: '0.62rem' }} />
-                      {selectedRowIds.size > 0 && <Chip size="small" color="primary" variant="outlined" label={`${selectedRowIds.size}개 선택`} sx={{ height: 20, fontSize: '0.62rem' }} />}
-                    </Stack>
-                    <Stack direction="row" spacing={0.25} alignItems="center">
-                      <Button size="small" variant="outlined" onClick={() => setMaterialPicker({ open: true, search: '' })} sx={{ minHeight: 27, py: 0.2, fontSize: '0.66rem' }}>자재 마스터에서 추가</Button>
-                      <Tooltip title="빈 항목 추가"><IconButton size="small" onClick={addBlankDraftRow} sx={{ p: 0.35 }}><AddRoundedIcon fontSize="small" /></IconButton></Tooltip>
-                      <Tooltip title="선택 항목 삭제"><span><IconButton size="small" color="error" disabled={selectedRowIds.size === 0} onClick={removeSelectedDraftRows} sx={{ p: 0.35 }}><RemoveRoundedIcon fontSize="small" /></IconButton></span></Tooltip>
-                      <Tooltip title="선택 항목 위로"><span><IconButton size="small" disabled={selectedRowIds.size === 0} onClick={() => moveSelectedDraftRows(-1)} sx={{ p: 0.35 }}><KeyboardArrowUpRoundedIcon fontSize="small" /></IconButton></span></Tooltip>
-                      <Tooltip title="선택 항목 아래로"><span><IconButton size="small" disabled={selectedRowIds.size === 0} onClick={() => moveSelectedDraftRows(1)} sx={{ p: 0.35 }}><KeyboardArrowDownRoundedIcon fontSize="small" /></IconButton></span></Tooltip>
-                    </Stack>
-                  </Box>
-                  {renderAuthoringTable()}
-                </Paper>
+                <Box sx={{ mb: 1.3 }}>
+                  <Paper
+                    variant="outlined"
+                    sx={{
+                      minHeight: 34,
+                      px: 0.75,
+                      py: 0.35,
+                      mb: 0.8,
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 0.45,
+                      borderColor: '#94a3b8',
+                      boxShadow: 'none',
+                    }}
+                  >
+                    <Tooltip title="빈 항목 추가" arrow>
+                      <IconButton size="small" color="primary" aria-label="빈 항목 추가" onClick={addBlankDraftRow}>
+                        <AddCircleOutlineRoundedIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="선택 항목 삭제" arrow>
+                      <span>
+                        <IconButton size="small" color="error" aria-label="선택 항목 삭제" disabled={selectedRowIds.size === 0} onClick={removeSelectedDraftRows}>
+                          <RemoveCircleOutlineRoundedIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                    <Tooltip title="선택 항목 위로 이동" arrow>
+                      <span>
+                        <IconButton size="small" aria-label="선택 항목 위로 이동" disabled={selectedRowIds.size === 0} onClick={() => moveSelectedDraftRows(-1)}>
+                          <ArrowUpwardRoundedIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                    <Tooltip title="선택 항목 아래로 이동" arrow>
+                      <span>
+                        <IconButton size="small" aria-label="선택 항목 아래로 이동" disabled={selectedRowIds.size === 0} onClick={() => moveSelectedDraftRows(1)}>
+                          <ArrowDownwardRoundedIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                    <Divider orientation="vertical" flexItem sx={{ mx: 0.35 }} />
+                    <Typography sx={{ fontSize: '0.65rem', color: '#64748b' }}>
+                      선택 {selectedRowIds.size.toLocaleString()}개
+                    </Typography>
+                    <Box sx={{ flex: 1 }} />
+                    <Button size="small" variant="outlined" onClick={() => setMaterialPicker({ open: true, search: '' })} sx={{ minHeight: 27, py: 0.2, fontSize: '0.66rem' }}>
+                      자재 마스터에서 추가
+                    </Button>
+                  </Paper>
+                  <Paper variant="outlined" sx={{ overflow: 'hidden', borderColor: '#cbd5e1', boxShadow: 'none' }}>
+                    {renderAuthoringTable()}
+                  </Paper>
+                </Box>
 
                 <Paper variant="outlined" sx={{ p: 1.3 }}>
                   <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(130px, 1fr)) 2fr' }, gap: 1 }}>
