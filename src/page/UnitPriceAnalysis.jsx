@@ -274,6 +274,39 @@ function CompactNumberField({ value, onChange, min, step = '0.0001', disabled = 
   );
 }
 
+function CompactMoneyField({ value, onChange, disabled = false }) {
+  const displayValue = value === '' || value === null || value === undefined
+    ? ''
+    : formatMoney(value);
+
+  return (
+    <TextField
+      type="text"
+      value={displayValue}
+      disabled={disabled}
+      onChange={(event) => {
+        const digits = event.target.value.replace(/[^0-9]/g, '');
+        onChange(digits === '' ? '' : digits.replace(/^0+(?=\d)/, ''));
+      }}
+      size="small"
+      inputProps={{ inputMode: 'numeric' }}
+      sx={{
+        minWidth: 68,
+        '& .MuiInputBase-root': {
+          height: 28,
+          minHeight: 28,
+        },
+        '& .MuiInputBase-input': {
+          px: 0.55,
+          py: 0.35,
+          fontSize: '0.67rem',
+          textAlign: 'right',
+        },
+      }}
+    />
+  );
+}
+
 export default function UnitPriceAnalysis({
   projectName,
   projectOptions = [],
@@ -506,6 +539,12 @@ export default function UnitPriceAnalysis({
         ? {
           ...row,
           [field]: value,
+          ...(field === 'costType' && value === 'labor'
+            ? { unit: '인' }
+            : {}),
+          ...(field === 'costType' && value === 'material' && row.unit === '인'
+            ? { unit: 'M' }
+            : {}),
           ...(field === 'costType' && value !== 'material'
             ? { isOwnerSupplied: false }
             : {}),
@@ -1299,15 +1338,15 @@ export default function UnitPriceAnalysis({
                   <TextField value={row.specification} onChange={(event) => updateDraftRow(row.clientId, 'specification', event.target.value)} size="small" fullWidth />
                 </TableCell>
                 <TableCell sx={compactBodyCellSx}>
-                  <TextField value={row.unit} onChange={(event) => updateDraftRow(row.clientId, 'unit', event.target.value)} size="small" fullWidth />
+                  <TextField value={row.unit} onChange={(event) => updateDraftRow(row.clientId, 'unit', event.target.value)} size="small" fullWidth sx={{ '& .MuiInputBase-input': { textAlign: 'center' } }} />
                 </TableCell>
                 <TableCell sx={compactBodyCellSx}>
                   <CompactNumberField value={row.netQuantity} onChange={(value) => updateDraftRow(row.clientId, 'netQuantity', value)} min="0" />
                 </TableCell>
                 <TableCell sx={compactBodyCellSx}>
-                  <CompactNumberField value={row.unitPrice} onChange={(value) => updateDraftRow(row.clientId, 'unitPrice', value)} min="0" step="1" />
+                  <CompactMoneyField value={row.unitPrice} onChange={(value) => updateDraftRow(row.clientId, 'unitPrice', value)} />
                 </TableCell>
-                <TableCell align="right" sx={{ ...compactBodyCellSx, fontWeight: 700 }}>{formatMoney(netAmount)}</TableCell>
+                <TableCell align="right" sx={{ ...compactBodyCellSx, pr: 0.85, fontWeight: 700 }}>{formatMoney(netAmount)}</TableCell>
                 <TableCell sx={compactBodyCellSx}>
                   <TextField
                     type="number"
@@ -1332,7 +1371,7 @@ export default function UnitPriceAnalysis({
                     sx={{ '& .MuiInputBase-input': { textAlign: 'right' } }}
                   />
                 </TableCell>
-                <TableCell align="right" sx={{ ...compactBodyCellSx, color: '#b91c1c', fontWeight: 800 }}>{formatMoney(submittedAmount)}</TableCell>
+                <TableCell align="right" sx={{ ...compactBodyCellSx, pr: 0.85, color: '#b91c1c', fontWeight: 800 }}>{formatMoney(submittedAmount)}</TableCell>
                 <TableCell align="center" sx={{ ...compactBodyCellSx, px: 0 }}>
                   <Tooltip title={row.costType === 'material' ? '체크하면 재료비 금액에서 제외됩니다.' : '재료비 항목에서만 선택할 수 있습니다.'} arrow>
                     <span>
@@ -1624,19 +1663,27 @@ export default function UnitPriceAnalysis({
               </Box>
 
               <Stack spacing={1.2}>
-                <Paper variant="outlined" sx={{ p: 1.5 }}>
-                  <Typography sx={{ fontWeight: 900, mb: 1 }}>금액 요약</Typography>
+                <Paper variant="outlined" sx={{ p: 1.2 }}>
+                  <Typography sx={{ fontSize: '0.88rem', fontWeight: 900, mb: 0.45 }}>금액 요약</Typography>
                   {COST_TYPES.map((type) => (
-                    <Box key={type.value} sx={{ py: 0.8, borderBottom: '1px dashed #cbd5e1' }}>
-                      <Typography sx={{ fontSize: '0.72rem', color: type.color, fontWeight: 900 }}>{type.label}</Typography>
-                      <Stack direction="row" justifyContent="space-between"><Typography sx={{ fontSize: '0.76rem' }}>정미</Typography><Typography sx={{ fontWeight: 800 }}>{formatMoney(totals[type.value].net)}원</Typography></Stack>
-                      <Stack direction="row" justifyContent="space-between"><Typography sx={{ fontSize: '0.76rem' }}>제출</Typography><Typography sx={{ color: '#b91c1c', fontWeight: 900 }}>{formatMoney(totals[type.value].submitted)}원</Typography></Stack>
+                    <Box key={type.value} sx={{ py: 0.65, borderBottom: '1px dashed #cbd5e1' }}>
+                      <Typography sx={{ mb: 0.2, fontSize: '0.66rem', color: type.color, fontWeight: 900 }}>{type.label}</Typography>
+                      <Box sx={{ display: 'grid', gridTemplateColumns: '34px minmax(0, 1fr)', columnGap: 1, alignItems: 'center' }}>
+                        <Typography sx={{ fontSize: '0.68rem', color: '#475569' }}>정미</Typography>
+                        <Typography sx={{ textAlign: 'right', fontSize: '0.76rem', fontWeight: 800 }}>{formatMoney(totals[type.value].net)}원</Typography>
+                        <Typography sx={{ fontSize: '0.68rem', color: '#475569' }}>제출</Typography>
+                        <Typography sx={{ textAlign: 'right', fontSize: '0.76rem', color: '#b91c1c', fontWeight: 900 }}>{formatMoney(totals[type.value].submitted)}원</Typography>
+                      </Box>
                     </Box>
                   ))}
-                  <Box sx={{ mt: 1.2, p: 1.2, borderRadius: 1, bgcolor: '#0f172a', color: '#fff' }}>
-                    <Typography sx={{ fontSize: '0.72rem', opacity: 0.75 }}>1㎡당 총 일위대가</Typography>
-                    <Typography sx={{ fontSize: '0.8rem' }}>정미 {formatMoney(grandNet)}원</Typography>
-                    <Typography sx={{ mt: 0.3, fontSize: '1.15rem', fontWeight: 950 }}>제출 {formatMoney(grandSubmitted)}원</Typography>
+                  <Box sx={{ mt: 0.9, p: 1, borderRadius: 1, bgcolor: '#0f172a', color: '#fff' }}>
+                    <Typography sx={{ mb: 0.35, fontSize: '0.65rem', opacity: 0.72 }}>1㎡당 총 일위대가</Typography>
+                    <Box sx={{ display: 'grid', gridTemplateColumns: '34px minmax(0, 1fr)', columnGap: 1, rowGap: 0.15, alignItems: 'center' }}>
+                      <Typography sx={{ fontSize: '0.68rem', opacity: 0.8 }}>정미</Typography>
+                      <Typography sx={{ textAlign: 'right', fontSize: '0.78rem', fontWeight: 800 }}>{formatMoney(grandNet)}원</Typography>
+                      <Typography sx={{ fontSize: '0.7rem', fontWeight: 800 }}>제출</Typography>
+                      <Typography sx={{ textAlign: 'right', fontSize: '0.92rem', fontWeight: 950 }}>{formatMoney(grandSubmitted)}원</Typography>
+                    </Box>
                   </Box>
                 </Paper>
 
@@ -1737,12 +1784,12 @@ export default function UnitPriceAnalysis({
                     {['구분', '품명', '규격', '단위', '기본 정미수량', '기준단가', '지급자재 여부', '비고', '관리'].map((label) => <TableCell key={label} align="center" sx={headerCellSx}>{label}</TableCell>)}
                   </TableRow></TableHead><TableBody>
                     {templateRows.map((row) => <TableRow key={row.clientId}>
-                      <TableCell sx={bodyCellSx}><Select disabled={!canManage} size="small" value={row.costType} onChange={(event) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, costType: event.target.value, ...(event.target.value !== 'material' ? { isOwnerSupplied: false } : {}) } : item))}>{COST_TYPES.map((type) => <MenuItem key={type.value} value={type.value}>{type.label}</MenuItem>)}</Select></TableCell>
+                      <TableCell sx={bodyCellSx}><Select disabled={!canManage} size="small" value={row.costType} onChange={(event) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, costType: event.target.value, ...(event.target.value === 'labor' ? { unit: '인' } : {}), ...(event.target.value === 'material' && item.unit === '인' ? { unit: 'M' } : {}), ...(event.target.value !== 'material' ? { isOwnerSupplied: false } : {}) } : item))}>{COST_TYPES.map((type) => <MenuItem key={type.value} value={type.value}>{type.label}</MenuItem>)}</Select></TableCell>
                       <TableCell sx={bodyCellSx}><TextField disabled={!canManage} size="small" value={row.itemName} onChange={(event) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, itemName: event.target.value } : item))} /></TableCell>
                       <TableCell sx={bodyCellSx}><TextField disabled={!canManage} size="small" value={row.specification} onChange={(event) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, specification: event.target.value } : item))} /></TableCell>
-                      <TableCell sx={bodyCellSx}><TextField disabled={!canManage} size="small" value={row.unit} onChange={(event) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, unit: event.target.value } : item))} /></TableCell>
+                      <TableCell sx={bodyCellSx}><TextField disabled={!canManage} size="small" value={row.unit} onChange={(event) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, unit: event.target.value } : item))} sx={{ '& .MuiInputBase-input': { textAlign: 'center' } }} /></TableCell>
                       <TableCell sx={bodyCellSx}><CompactNumberField disabled={!canManage} value={row.netQuantity} onChange={(value) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, netQuantity: value } : item))} /></TableCell>
-                      <TableCell sx={bodyCellSx}><CompactNumberField disabled={!canManage || Boolean(row.materialId)} value={row.unitPrice} onChange={(value) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, unitPrice: value } : item))} min="0" step="1" /></TableCell>
+                      <TableCell sx={bodyCellSx}><CompactMoneyField disabled={!canManage || Boolean(row.materialId)} value={row.unitPrice} onChange={(value) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, unitPrice: value } : item))} /></TableCell>
                       <TableCell align="center" sx={bodyCellSx}><Checkbox disabled={!canManage || row.costType !== 'material'} size="small" checked={Boolean(row.isOwnerSupplied)} onChange={(event) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, isOwnerSupplied: event.target.checked } : item))} /></TableCell>
                       <TableCell sx={bodyCellSx}><TextField disabled={!canManage} size="small" value={row.remarks} onChange={(event) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, remarks: event.target.value } : item))} /></TableCell>
                       <TableCell sx={bodyCellSx}>{canManage && <IconButton color="error" size="small" onClick={() => setTemplateRows((previous) => previous.filter((item) => item.clientId !== row.clientId))}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton>}</TableCell>
