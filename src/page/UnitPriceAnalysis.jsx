@@ -108,6 +108,7 @@ const makeBlankRow = (sortOrder = 0) => ({
   unitPrice: 0,
   itemMarkupPercent: '',
   submittedQuantityOverride: '',
+  isOwnerSupplied: false,
   remarks: '',
   sortOrder,
 });
@@ -136,6 +137,16 @@ const getSubmittedQuantity = (row, document) => {
     1 + getEffectiveMarkup(row, document) / 100
   );
 };
+
+const isOwnerSuppliedMaterial = (row) => (
+  row.costType === 'material' && Boolean(row.isOwnerSupplied)
+);
+
+const getChargeableAmount = (row, quantity) => (
+  isOwnerSuppliedMaterial(row)
+    ? 0
+    : toNumber(quantity) * toNumber(row.unitPrice)
+);
 
 const getToday = () => {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -428,6 +439,7 @@ export default function UnitPriceAnalysis({
       unitPrice: toNumber(item.unit_price_override ?? item.material?.current_unit_price),
       itemMarkupPercent: '',
       submittedQuantityOverride: '',
+      isOwnerSupplied: Boolean(item.is_owner_supplied),
       remarks: item.remarks || '',
       sortOrder: item.sort_order ?? index,
     }));
@@ -490,7 +502,15 @@ export default function UnitPriceAnalysis({
 
   const updateDraftRow = (clientId, field, value) => {
     setDraftRows((previous) => previous.map((row) => (
-      row.clientId === clientId ? { ...row, [field]: value } : row
+      row.clientId === clientId
+        ? {
+          ...row,
+          [field]: value,
+          ...(field === 'costType' && value !== 'material'
+            ? { isOwnerSupplied: false }
+            : {}),
+        }
+        : row
     )));
   };
 
@@ -573,8 +593,11 @@ export default function UnitPriceAnalysis({
       const key = COST_TYPES.some((item) => item.value === row.costType)
         ? row.costType
         : 'material';
-      result[key].net += toNumber(row.netQuantity) * toNumber(row.unitPrice);
-      result[key].submitted += getSubmittedQuantity(row, documentState) * toNumber(row.unitPrice);
+      result[key].net += getChargeableAmount(row, row.netQuantity);
+      result[key].submitted += getChargeableAmount(
+        row,
+        getSubmittedQuantity(row, documentState),
+      );
       return result;
     }, initial);
   }, [documentState, draftRows]);
@@ -660,6 +683,7 @@ export default function UnitPriceAnalysis({
           markup_override_percent:
             row.itemMarkupPercent === '' ? null : toNumber(row.itemMarkupPercent),
           submitted_quantity: getSubmittedQuantity(row, documentState),
+          is_owner_supplied: isOwnerSuppliedMaterial(row),
           remarks: row.remarks || '',
           sort_order: index,
         }));
@@ -735,6 +759,7 @@ export default function UnitPriceAnalysis({
           itemMarkupPercent:
             item.markup_override_percent === null ? '' : toNumber(item.markup_override_percent),
           submittedQuantityOverride: '',
+          isOwnerSupplied: Boolean(item.is_owner_supplied),
           remarks: item.remarks || '',
           sortOrder: item.sort_order ?? index,
         };
@@ -1067,6 +1092,7 @@ export default function UnitPriceAnalysis({
             net_quantity: toNumber(row.netQuantity),
             unit_price_override: row.materialId ? null : toNumber(row.unitPrice),
             sort_order: index,
+            is_owner_supplied: isOwnerSuppliedMaterial(row),
             remarks: row.remarks || '',
           })),
       });
@@ -1108,8 +1134,10 @@ export default function UnitPriceAnalysis({
       draftRows.forEach((row) => {
         const quantity = mode === 'net' ? toNumber(row.netQuantity) : getSubmittedQuantity(row, documentState);
         const price = toNumber(row.unitPrice);
-        const amount = quantity * price;
-        const materialPrice = row.costType === 'material' ? price : 0;
+        const ownerSupplied = isOwnerSuppliedMaterial(row);
+        const amount = getChargeableAmount(row, quantity);
+        const chargeablePrice = ownerSupplied ? 0 : price;
+        const materialPrice = row.costType === 'material' ? chargeablePrice : 0;
         const laborPrice = row.costType === 'labor' ? price : 0;
         const expensePrice = row.costType === 'expense' ? price : 0;
         sheet.addRow([
@@ -1123,9 +1151,9 @@ export default function UnitPriceAnalysis({
           row.costType === 'labor' ? amount : 0,
           expensePrice,
           row.costType === 'expense' ? amount : 0,
-          price,
+          chargeablePrice,
           amount,
-          row.remarks,
+          [ownerSupplied ? '지급자재' : '', row.remarks].filter(Boolean).join(' · '),
         ]);
       });
       const start = 6;
@@ -1181,7 +1209,7 @@ export default function UnitPriceAnalysis({
         stickyHeader
         size="small"
         sx={{
-          minWidth: 1200,
+          minWidth: 1250,
           '& .MuiTableRow-root': { height: 35 },
           '& .MuiInputBase-root': {
             minHeight: 28,
@@ -1220,21 +1248,22 @@ export default function UnitPriceAnalysis({
             <TableCell align="center" sx={{ ...compactHeaderCellSx, width: 82 }}>구분</TableCell>
             <TableCell align="center" sx={{ ...compactHeaderCellSx, minWidth: 145 }}>품명</TableCell>
             <TableCell align="center" sx={{ ...compactHeaderCellSx, minWidth: 125 }}>규격</TableCell>
-            <TableCell sx={{ ...compactHeaderCellSx, width: 56 }}>단위</TableCell>
-            <TableCell sx={{ ...compactHeaderCellSx, width: 84 }}>정미수량</TableCell>
-            <TableCell sx={{ ...compactHeaderCellSx, width: 84 }}>단가</TableCell>
-            <TableCell sx={{ ...compactHeaderCellSx, width: 90 }}>정미금액</TableCell>
-            <TableCell sx={{ ...compactHeaderCellSx, width: 92 }}>항목할증률</TableCell>
-            <TableCell sx={{ ...compactHeaderCellSx, width: 94 }}>제출수량</TableCell>
-            <TableCell sx={{ ...compactHeaderCellSx, width: 94 }}>제출금액</TableCell>
-            <TableCell sx={{ ...compactHeaderCellSx, minWidth: 120 }}>비고</TableCell>
+            <TableCell align="center" sx={{ ...compactHeaderCellSx, width: 56 }}>단위</TableCell>
+            <TableCell align="center" sx={{ ...compactHeaderCellSx, width: 84 }}>정미수량</TableCell>
+            <TableCell align="center" sx={{ ...compactHeaderCellSx, width: 84 }}>단가</TableCell>
+            <TableCell align="center" sx={{ ...compactHeaderCellSx, width: 90 }}>정미금액</TableCell>
+            <TableCell align="center" sx={{ ...compactHeaderCellSx, width: 92 }}>항목할증률</TableCell>
+            <TableCell align="center" sx={{ ...compactHeaderCellSx, width: 94 }}>제출수량</TableCell>
+            <TableCell align="center" sx={{ ...compactHeaderCellSx, width: 94 }}>제출금액</TableCell>
+            <TableCell align="center" sx={{ ...compactHeaderCellSx, width: 90 }}>지급자재 여부</TableCell>
+            <TableCell align="center" sx={{ ...compactHeaderCellSx, minWidth: 90 }}>비고</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
           {draftRows.map((row) => {
-            const netAmount = toNumber(row.netQuantity) * toNumber(row.unitPrice);
+            const netAmount = getChargeableAmount(row, row.netQuantity);
             const submittedQuantity = getSubmittedQuantity(row, documentState);
-            const submittedAmount = submittedQuantity * toNumber(row.unitPrice);
+            const submittedAmount = getChargeableAmount(row, submittedQuantity);
             const categoryMarkup = getMarkupForType(documentState, row.costType);
             return (
               <TableRow
@@ -1304,6 +1333,19 @@ export default function UnitPriceAnalysis({
                   />
                 </TableCell>
                 <TableCell align="right" sx={{ ...compactBodyCellSx, color: '#b91c1c', fontWeight: 800 }}>{formatMoney(submittedAmount)}</TableCell>
+                <TableCell align="center" sx={{ ...compactBodyCellSx, px: 0 }}>
+                  <Tooltip title={row.costType === 'material' ? '체크하면 재료비 금액에서 제외됩니다.' : '재료비 항목에서만 선택할 수 있습니다.'} arrow>
+                    <span>
+                      <Checkbox
+                        size="small"
+                        checked={Boolean(row.isOwnerSupplied)}
+                        disabled={row.costType !== 'material'}
+                        onChange={(event) => updateDraftRow(row.clientId, 'isOwnerSupplied', event.target.checked)}
+                        sx={{ p: 0.25 }}
+                      />
+                    </span>
+                  </Tooltip>
+                </TableCell>
                 <TableCell sx={compactBodyCellSx}>
                   <TextField value={row.remarks} onChange={(event) => updateDraftRow(row.clientId, 'remarks', event.target.value)} size="small" fullWidth />
                 </TableCell>
@@ -1312,7 +1354,7 @@ export default function UnitPriceAnalysis({
           })}
           {draftRows.length === 0 && (
             <TableRow>
-              <TableCell colSpan={12} align="center" sx={{ py: 6, color: '#64748b', fontSize: '0.7rem' }}>
+              <TableCell colSpan={13} align="center" sx={{ py: 6, color: '#64748b', fontSize: '0.7rem' }}>
                 규격을 선택하거나 항목을 추가해주세요.
               </TableCell>
             </TableRow>
@@ -1352,14 +1394,16 @@ export default function UnitPriceAnalysis({
                 <TableRow key={`${type.value}-title`} className="print-section-row"><TableCell colSpan={13}>■ {type.label}</TableCell></TableRow>,
                 ...rows.map((row) => {
                   const quantity = isNet ? toNumber(row.netQuantity) : getSubmittedQuantity(row, documentState);
-                  const amount = quantity * toNumber(row.unitPrice);
+                  const ownerSupplied = isOwnerSuppliedMaterial(row);
+                  const amount = getChargeableAmount(row, quantity);
+                  const chargeablePrice = ownerSupplied ? 0 : toNumber(row.unitPrice);
                   return (
                     <TableRow key={row.clientId}>
                       <TableCell>{row.itemName}</TableCell><TableCell>{row.specification}</TableCell><TableCell>{row.unit}</TableCell><TableCell>{formatQuantity(quantity)}</TableCell>
-                      <TableCell>{row.costType === 'material' ? formatMoney(row.unitPrice) : ''}</TableCell><TableCell>{row.costType === 'material' ? formatMoney(amount) : ''}</TableCell>
+                      <TableCell>{row.costType === 'material' ? formatMoney(chargeablePrice) : ''}</TableCell><TableCell>{row.costType === 'material' ? formatMoney(amount) : ''}</TableCell>
                       <TableCell>{row.costType === 'labor' ? formatMoney(row.unitPrice) : ''}</TableCell><TableCell>{row.costType === 'labor' ? formatMoney(amount) : ''}</TableCell>
                       <TableCell>{row.costType === 'expense' ? formatMoney(row.unitPrice) : ''}</TableCell><TableCell>{row.costType === 'expense' ? formatMoney(amount) : ''}</TableCell>
-                      <TableCell>{formatMoney(row.unitPrice)}</TableCell><TableCell>{formatMoney(amount)}</TableCell><TableCell>{row.remarks}</TableCell>
+                      <TableCell>{formatMoney(chargeablePrice)}</TableCell><TableCell>{formatMoney(amount)}</TableCell><TableCell>{[ownerSupplied ? '지급자재' : '', row.remarks].filter(Boolean).join(' · ')}</TableCell>
                     </TableRow>
                   );
                 }),
@@ -1690,15 +1734,16 @@ export default function UnitPriceAnalysis({
                 </Stack>
                 <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 'calc(100vh - 350px)' }}>
                   <Table stickyHeader size="small"><TableHead><TableRow>
-                    {['구분', '품명', '규격', '단위', '기본 정미수량', '기준단가', '비고', ''].map((label) => <TableCell key={label} sx={headerCellSx}>{label}</TableCell>)}
+                    {['구분', '품명', '규격', '단위', '기본 정미수량', '기준단가', '지급자재 여부', '비고', '관리'].map((label) => <TableCell key={label} align="center" sx={headerCellSx}>{label}</TableCell>)}
                   </TableRow></TableHead><TableBody>
                     {templateRows.map((row) => <TableRow key={row.clientId}>
-                      <TableCell sx={bodyCellSx}><Select disabled={!canManage} size="small" value={row.costType} onChange={(event) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, costType: event.target.value } : item))}>{COST_TYPES.map((type) => <MenuItem key={type.value} value={type.value}>{type.label}</MenuItem>)}</Select></TableCell>
+                      <TableCell sx={bodyCellSx}><Select disabled={!canManage} size="small" value={row.costType} onChange={(event) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, costType: event.target.value, ...(event.target.value !== 'material' ? { isOwnerSupplied: false } : {}) } : item))}>{COST_TYPES.map((type) => <MenuItem key={type.value} value={type.value}>{type.label}</MenuItem>)}</Select></TableCell>
                       <TableCell sx={bodyCellSx}><TextField disabled={!canManage} size="small" value={row.itemName} onChange={(event) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, itemName: event.target.value } : item))} /></TableCell>
                       <TableCell sx={bodyCellSx}><TextField disabled={!canManage} size="small" value={row.specification} onChange={(event) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, specification: event.target.value } : item))} /></TableCell>
                       <TableCell sx={bodyCellSx}><TextField disabled={!canManage} size="small" value={row.unit} onChange={(event) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, unit: event.target.value } : item))} /></TableCell>
                       <TableCell sx={bodyCellSx}><CompactNumberField disabled={!canManage} value={row.netQuantity} onChange={(value) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, netQuantity: value } : item))} /></TableCell>
                       <TableCell sx={bodyCellSx}><CompactNumberField disabled={!canManage || Boolean(row.materialId)} value={row.unitPrice} onChange={(value) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, unitPrice: value } : item))} min="0" step="1" /></TableCell>
+                      <TableCell align="center" sx={bodyCellSx}><Checkbox disabled={!canManage || row.costType !== 'material'} size="small" checked={Boolean(row.isOwnerSupplied)} onChange={(event) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, isOwnerSupplied: event.target.checked } : item))} /></TableCell>
                       <TableCell sx={bodyCellSx}><TextField disabled={!canManage} size="small" value={row.remarks} onChange={(event) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, remarks: event.target.value } : item))} /></TableCell>
                       <TableCell sx={bodyCellSx}>{canManage && <IconButton color="error" size="small" onClick={() => setTemplateRows((previous) => previous.filter((item) => item.clientId !== row.clientId))}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton>}</TableCell>
                     </TableRow>)}
