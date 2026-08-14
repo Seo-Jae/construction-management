@@ -965,7 +965,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
 
     setProgressReviewingId(submission.id);
     const { data, error } = await supabase.rpc(
-      'attendance_manager_review_progress_group_v52_48_5_12',
+      'attendance_manager_review_progress_group_v52_48_5_13',
       {
         p_submission_ids: Array.isArray(submission.submission_ids)
           ? submission.submission_ids
@@ -1032,7 +1032,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
     const resetKey = `${record.worker_id}-${workDate}`;
     setAttendanceResettingKey(resetKey);
     const { data, error } = await supabase.rpc(
-      'attendance_manager_reset_test_attendance_v52_48_5_12',
+      'attendance_manager_reset_test_attendance_v52_48_5_13',
       {
         p_project_name: projectName,
         p_worker_id: record.worker_id,

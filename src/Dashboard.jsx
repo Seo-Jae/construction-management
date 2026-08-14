@@ -132,7 +132,7 @@ const fetchAllProgressRows = async ({
   while (true) {
     const { data, error } = await supabase
       .from('unit_progress')
-      .select('building, unit, status, completion_date')
+      .select('building, unit, status, completion_date, completion_worker_names')
       .eq('project_name', projectName)
       .eq('process_type', processType)
       .neq('status', '작업전')
@@ -1523,6 +1523,9 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           mapped[`${row.building}-${row.unit}`] = {
             status: row.status,
             date: row.completion_date,
+            workerNames: Array.isArray(row.completion_worker_names)
+              ? row.completion_worker_names
+              : [],
           };
         });
 
@@ -3330,6 +3333,10 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           process_type: selectedProcess,
           status: selectedStatusAction,
           completion_date: progressDate,
+          completion_worker_ids: [],
+          completion_worker_names: [],
+          completion_source: 'manual',
+          completion_approval_group_id: null,
         };
       });
 
@@ -3364,6 +3371,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           next[cellKey] = {
             status: selectedStatusAction,
             date: progressDate,
+            workerNames: [],
           };
         });
 

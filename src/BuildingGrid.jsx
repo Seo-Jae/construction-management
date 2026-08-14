@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { Box, Typography } from '@mui/material';
+import { Box, Tooltip, Typography } from '@mui/material';
 import {
   buildFloorVisualCells,
   countUniqueUnits,
@@ -435,87 +435,154 @@ export default function BuildingGrid({
                     progress?.status === '작업완료'
                       ? formatCompletionMonthDay(progress?.date)
                       : '';
+                  const completionWorkerNames = Array.from(
+                    new Set(
+                      (
+                        Array.isArray(progress?.workerNames)
+                          ? progress.workerNames
+                          : Array.isArray(progress?.worker_names)
+                            ? progress.worker_names
+                            : []
+                      )
+                        .map((workerName) =>
+                          String(workerName || '').trim(),
+                        )
+                        .filter(Boolean),
+                    ),
+                  );
                   const displayText =
                     completionDate || cell.unitCode;
 
                   return (
-                    <Box
+                    <Tooltip
                       key={visualKey}
-                      component="button"
-                      type="button"
-                      disabled={
-                        targetEditMode ||
-                        isProtectedCompleted
-                      }
+                      arrow
+                      placement="top"
+                      enterTouchDelay={0}
+                      leaveTouchDelay={4000}
+                      disableInteractive
                       title={
-                        targetEditMode
-                          ? '목표 라인 설정 중에는 층 번호를 클릭하세요.'
-                          : isProtectedCompleted
-                            ? '완료 처리에서는 기존 완료 세대의 완료일을 유지합니다.'
-                            : isCompleted
-                              ? '작업전 또는 작업중으로 변경할 수 있습니다.'
-                              : ''
+                        isCompleted && completionWorkerNames.length > 0
+                          ? (
+                            <Box sx={{ py: 0.25 }}>
+                              <Typography
+                                sx={{
+                                  color: 'inherit',
+                                  fontSize: '0.72rem',
+                                  fontWeight: 900,
+                                  lineHeight: 1.35,
+                                }}
+                              >
+                                {buildingName} {cell.unitCode}호
+                              </Typography>
+                              <Typography
+                                sx={{
+                                  mt: 0.25,
+                                  color: 'inherit',
+                                  fontSize: '0.7rem',
+                                  fontWeight: 700,
+                                  lineHeight: 1.4,
+                                }}
+                              >
+                                작업자: {completionWorkerNames.join(', ')}
+                              </Typography>
+                            </Box>
+                          )
+                          : ''
                       }
-                      onClick={() => {
-                        if (
-                          targetEditMode ||
-                          isProtectedCompleted
-                        ) {
-                          return;
-                        }
-
-                        onCellClick?.(
-                          cellKey,
-                        );
-                      }}
-                      sx={{
-                        width,
-                        height: CELL_HEIGHT,
-                        flex: `0 0 ${width}px`,
-                        p: 0,
-                        border: '1px solid',
-                        boxSizing: 'border-box',
-                        cursor:
-                          targetEditMode ||
-                          isProtectedCompleted
-                            ? 'not-allowed'
-                            : 'pointer',
-                        fontFamily: 'inherit',
-                        fontSize: completionDate
-                          ? '0.53rem'
-                          : '0.57rem',
-                        letterSpacing: completionDate
-                          ? '-0.02em'
-                          : 'normal',
-                        lineHeight: 1,
-                        fontWeight: 800,
-                        userSelect: 'none',
-                        transition: 'filter 120ms ease, transform 120ms ease',
-                        ...statusStyle,
-                        '&:disabled': {
-                          opacity:
-                            targetEditMode
-                              ? 0.72
-                              : 1,
-                          WebkitTextFillColor:
-                            'currentColor',
-                        },
-                        '&:hover': {
-                          filter:
-                            isProtectedCompleted
-                              ? 'none'
-                              : 'brightness(0.96)',
-                        },
-                        '&:active': {
-                          transform:
-                            isProtectedCompleted
-                              ? 'none'
-                              : 'scale(0.98)',
-                        },
-                      }}
                     >
-                      {displayText}
-                    </Box>
+                      <Box
+                        component="span"
+                        sx={{
+                          width,
+                          height: CELL_HEIGHT,
+                          flex: `0 0 ${width}px`,
+                          display: 'inline-flex',
+                        }}
+                      >
+                        <Box
+                          component="button"
+                          type="button"
+                          disabled={
+                            targetEditMode ||
+                            isProtectedCompleted
+                          }
+                          aria-label={
+                            isCompleted && completionWorkerNames.length > 0
+                              ? `${buildingName} ${cell.unitCode}호, 작업자 ${completionWorkerNames.join(', ')}`
+                              : `${buildingName} ${cell.unitCode}호`
+                          }
+                          title={
+                            targetEditMode
+                              ? '목표 라인 설정 중에는 층 번호를 클릭하세요.'
+                              : isProtectedCompleted
+                                ? '완료 처리에서는 기존 완료 세대의 완료일을 유지합니다.'
+                                : isCompleted
+                                  ? '작업전 또는 작업중으로 변경할 수 있습니다.'
+                                  : ''
+                          }
+                          onClick={() => {
+                            if (
+                              targetEditMode ||
+                              isProtectedCompleted
+                            ) {
+                              return;
+                            }
+
+                            onCellClick?.(
+                              cellKey,
+                            );
+                          }}
+                          sx={{
+                            width: '100%',
+                            height: '100%',
+                            flex: '0 0 100%',
+                            p: 0,
+                            border: '1px solid',
+                            boxSizing: 'border-box',
+                            cursor:
+                              targetEditMode ||
+                              isProtectedCompleted
+                                ? 'not-allowed'
+                                : 'pointer',
+                            fontFamily: 'inherit',
+                            fontSize: completionDate
+                              ? '0.53rem'
+                              : '0.57rem',
+                            letterSpacing: completionDate
+                              ? '-0.02em'
+                              : 'normal',
+                            lineHeight: 1,
+                            fontWeight: 800,
+                            userSelect: 'none',
+                            transition: 'filter 120ms ease, transform 120ms ease',
+                            ...statusStyle,
+                            '&:disabled': {
+                              opacity:
+                                targetEditMode
+                                  ? 0.72
+                                  : 1,
+                              WebkitTextFillColor:
+                                'currentColor',
+                            },
+                            '&:hover': {
+                              filter:
+                                isProtectedCompleted
+                                  ? 'none'
+                                  : 'brightness(0.96)',
+                            },
+                            '&:active': {
+                              transform:
+                                isProtectedCompleted
+                                  ? 'none'
+                                  : 'scale(0.98)',
+                            },
+                          }}
+                        >
+                          {displayText}
+                        </Box>
+                      </Box>
+                    </Tooltip>
                   );
                 })}
               </Box>
