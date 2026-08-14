@@ -107,6 +107,20 @@ const workerStatusColor = (status) => ({
   disabled: 'default',
 }[status] || 'default');
 
+const formatAttendanceWorkLocation = (row) => {
+  if (!row?.check_in_at) return '-';
+
+  if (row.work_location_mode === 'other') {
+    return String(row.work_location_text || '').trim() || '미입력';
+  }
+
+  const building = String(row.work_building || '').trim();
+  const floor = String(row.work_floor ?? '').trim();
+  if (!building || !floor) return '미입력';
+
+  return `${building.endsWith('동') ? building : `${building}동`} ${floor}층`;
+};
+
 export default function AttendanceManagement({ projectName, canManage = false, onLogout }) {
   const [tab, setTab] = useState('approval');
   const [workDate, setWorkDate] = useState(getKoreaDateValue());
@@ -140,7 +154,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
   const loadDashboard = useCallback(async (silent = false) => {
     if (!projectName) return;
     if (!silent) setLoading(true);
-    const { data, error } = await supabase.rpc('attendance_manager_dashboard_v52_14', {
+    const { data, error } = await supabase.rpc('attendance_manager_dashboard_v52_48_5_6', {
       p_project_name: projectName,
       p_work_date: workDate,
     });
@@ -824,18 +838,31 @@ export default function AttendanceManagement({ projectName, canManage = false, o
             <Divider />
             {loading ? <Box sx={{ py: 10, textAlign: 'center' }}><CircularProgress /></Box> : (
               <TableContainer>
-                <Table size="small">
-                  <TableHead><TableRow><TableCell>성명</TableCell><TableCell>직종</TableCell><TableCell>출근</TableCell><TableCell>퇴근</TableCell><TableCell>상태</TableCell></TableRow></TableHead>
+                <Table size="small" sx={{ minWidth: 940 }}>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>성명</TableCell>
+                      <TableCell>가입 공정</TableCell>
+                      <TableCell>작업위치</TableCell>
+                      <TableCell>당일 공정</TableCell>
+                      <TableCell>출근</TableCell>
+                      <TableCell>퇴근</TableCell>
+                      <TableCell>상태</TableCell>
+                    </TableRow>
+                  </TableHead>
                   <TableBody>
                     {dashboard.daily_records.map((row) => (
                       <TableRow key={row.worker_id} hover>
-                        <TableCell><b>{row.name_ko}</b></TableCell><TableCell>{row.trade_name}</TableCell>
+                        <TableCell><b>{row.name_ko}</b></TableCell>
+                        <TableCell>{row.trade_name || '-'}</TableCell>
+                        <TableCell sx={{ minWidth: 150 }}>{formatAttendanceWorkLocation(row)}</TableCell>
+                        <TableCell>{row.check_in_at ? row.work_trade_name || '미입력' : '-'}</TableCell>
                         <TableCell><Stack direction="row" alignItems="center" spacing={0.5}><span>{formatKoreaDateTime(row.check_in_at, { timeOnly: true })}</span>{canManage && <Tooltip title="출근 수정"><IconButton size="small" onClick={() => openCorrection(row, 'check_in')}><EditCalendarRoundedIcon sx={{ fontSize: 16 }} /></IconButton></Tooltip>}</Stack></TableCell>
                         <TableCell><Stack direction="row" alignItems="center" spacing={0.5}><span>{formatKoreaDateTime(row.check_out_at, { timeOnly: true })}</span>{canManage && <Tooltip title="퇴근 수정"><IconButton size="small" onClick={() => openCorrection(row, 'check_out')}><EditCalendarRoundedIcon sx={{ fontSize: 16 }} /></IconButton></Tooltip>}</Stack></TableCell>
                         <TableCell><Chip size="small" color={row.check_in_at && row.check_out_at ? 'success' : row.check_in_at ? 'warning' : 'default'} label={row.check_in_at && row.check_out_at ? '완료' : row.check_in_at ? '근무중' : '미출근'} /></TableCell>
                       </TableRow>
                     ))}
-                    {dashboard.daily_records.length === 0 && <TableRow><TableCell colSpan={5} align="center" sx={{ py: 8, color: '#94a3b8' }}>승인된 근로자가 없습니다.</TableCell></TableRow>}
+                    {dashboard.daily_records.length === 0 && <TableRow><TableCell colSpan={7} align="center" sx={{ py: 8, color: '#94a3b8' }}>승인된 근로자가 없습니다.</TableCell></TableRow>}
                   </TableBody>
                 </Table>
               </TableContainer>

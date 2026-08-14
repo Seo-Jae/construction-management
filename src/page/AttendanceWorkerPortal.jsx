@@ -166,17 +166,17 @@ const buildAttendanceByDate = (monthEvents, todayEvents) => {
   return grouped;
 };
 
-function MonthlyAttendanceCalendar({ monthEvents, todayEvents, selectedDate, onSelectDate, t, locale }) {
+function MonthlyAttendanceCalendar({ monthEvents, todayEvents, selectedDate, onSelectDate, appMode = false, t, locale }) {
   const calendar = getCurrentMonthCalendar();
   const attendanceByDate = buildAttendanceByDate(monthEvents, todayEvents);
   const selectedEvents = attendanceByDate[selectedDate] || {};
   const selectedDay = Number(String(selectedDate || '').slice(-2));
 
   return (
-    <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
-      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.25 }}>
-        <Typography sx={{ fontSize: '0.84rem', fontWeight: 900 }}>{t('monthlyAttendance')}</Typography>
-        <Typography sx={{ fontSize: '0.76rem', color: '#64748b', fontWeight: 800 }}>
+    <Paper variant="outlined" sx={{ p: appMode ? 3.5 : 2, borderRadius: appMode ? 4 : 3 }}>
+      <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: appMode ? 2.2 : 1.25 }}>
+        <Typography sx={{ fontSize: appMode ? '1.3rem' : '0.84rem', fontWeight: 900 }}>{t('monthlyAttendance')}</Typography>
+        <Typography sx={{ fontSize: appMode ? '1.05rem' : '0.76rem', color: '#64748b', fontWeight: 800 }}>
           {t('yearMonth', { year: calendar.year, month: String(calendar.month).padStart(2, '0') })}
         </Typography>
       </Stack>
@@ -186,9 +186,9 @@ function MonthlyAttendanceCalendar({ monthEvents, todayEvents, selectedDate, onS
           <Typography
             key={weekday}
             sx={{
-              py: 0.35,
+              py: appMode ? 0.65 : 0.35,
               textAlign: 'center',
-              fontSize: '0.64rem',
+              fontSize: appMode ? '0.94rem' : '0.64rem',
               fontWeight: 800,
               color: index === 0 ? '#dc2626' : index === 6 ? '#2563eb' : '#64748b',
             }}
@@ -198,7 +198,7 @@ function MonthlyAttendanceCalendar({ monthEvents, todayEvents, selectedDate, onS
         ))}
 
         {calendar.cells.map((day, index) => {
-          if (!day) return <Box key={`empty-${index}`} sx={{ minHeight: 43 }} />;
+          if (!day) return <Box key={`empty-${index}`} sx={{ minHeight: appMode ? 64 : 43 }} />;
           const dateKey = calendar.toDateKey(day);
           const dayEvents = attendanceByDate[dateKey] || {};
           const hasCheckIn = Boolean(dayEvents.check_in);
@@ -215,9 +215,9 @@ function MonthlyAttendanceCalendar({ monthEvents, todayEvents, selectedDate, onS
               aria-label={t('dateAttendanceAria', { month: calendar.month, day })}
               sx={{
                 minWidth: 0,
-                minHeight: 43,
-                p: 0.35,
-                borderRadius: 1.5,
+                minHeight: appMode ? 64 : 43,
+                p: appMode ? 0.65 : 0.35,
+                borderRadius: appMode ? 2.2 : 1.5,
                 border: '1px solid',
                 borderColor: isSelected ? APP_BRAND_GREEN : isToday ? '#86efac' : 'transparent',
                 bgcolor: isSelected ? '#ecfdf5' : '#fff',
@@ -226,17 +226,17 @@ function MonthlyAttendanceCalendar({ monthEvents, todayEvents, selectedDate, onS
                 cursor: 'pointer',
               }}
             >
-              <Typography sx={{ fontSize: '0.68rem', lineHeight: 1, fontWeight: isToday ? 900 : 700 }}>
+              <Typography sx={{ fontSize: appMode ? '1rem' : '0.68rem', lineHeight: 1, fontWeight: isToday ? 900 : 700 }}>
                 {day}
               </Typography>
               <Stack direction="row" spacing={0.25} justifyContent="center" sx={{ mt: 0.55, minHeight: 15 }}>
                 {hasCheckIn && (
-                  <Box sx={{ px: 0.45, py: 0.1, borderRadius: 2, bgcolor: '#d1fae5', color: '#047857', fontSize: '0.52rem', fontWeight: 900 }}>
+                  <Box sx={{ px: appMode ? 0.65 : 0.45, py: 0.1, borderRadius: 2, bgcolor: '#d1fae5', color: '#047857', fontSize: appMode ? '0.7rem' : '0.52rem', fontWeight: 900 }}>
                     {t('checkInShort')}
                   </Box>
                 )}
                 {hasCheckOut && (
-                  <Box sx={{ px: 0.45, py: 0.1, borderRadius: 2, bgcolor: '#dbeafe', color: '#1d4ed8', fontSize: '0.52rem', fontWeight: 900 }}>
+                  <Box sx={{ px: appMode ? 0.65 : 0.45, py: 0.1, borderRadius: 2, bgcolor: '#dbeafe', color: '#1d4ed8', fontSize: appMode ? '0.7rem' : '0.52rem', fontWeight: 900 }}>
                     {t('checkOutShort')}
                   </Box>
                 )}
@@ -246,15 +246,15 @@ function MonthlyAttendanceCalendar({ monthEvents, todayEvents, selectedDate, onS
         })}
       </Box>
 
-      <Box sx={{ mt: 1.25, px: 1.25, py: 1, borderRadius: 1.75, bgcolor: '#f8fafc' }}>
-        <Typography sx={{ fontSize: '0.68rem', color: '#64748b', fontWeight: 800 }}>
+      <Box sx={{ mt: appMode ? 2 : 1.25, px: appMode ? 2 : 1.25, py: appMode ? 1.6 : 1, borderRadius: appMode ? 2.5 : 1.75, bgcolor: '#f8fafc' }}>
+        <Typography sx={{ fontSize: appMode ? '0.98rem' : '0.68rem', color: '#64748b', fontWeight: 800 }}>
           {t('dayAttendance', { month: calendar.month, day: selectedDay || Number(calendar.todayKey.slice(-2)) })}
         </Typography>
         <Stack direction="row" spacing={1.5} sx={{ mt: 0.45 }}>
-          <Typography sx={{ fontSize: '0.74rem', fontWeight: 900, color: selectedEvents.check_in ? '#047857' : '#94a3b8' }}>
+          <Typography sx={{ fontSize: appMode ? '1.08rem' : '0.74rem', fontWeight: 900, color: selectedEvents.check_in ? '#047857' : '#94a3b8' }}>
             {t('checkIn')} {selectedEvents.check_in ? formatKoreaDateTime(selectedEvents.check_in.event_at, { timeOnly: true, locale }) : t('unprocessed')}
           </Typography>
-          <Typography sx={{ fontSize: '0.74rem', fontWeight: 900, color: selectedEvents.check_out ? '#1d4ed8' : '#94a3b8' }}>
+          <Typography sx={{ fontSize: appMode ? '1.08rem' : '0.74rem', fontWeight: 900, color: selectedEvents.check_out ? '#1d4ed8' : '#94a3b8' }}>
             {t('checkOut')} {selectedEvents.check_out ? formatKoreaDateTime(selectedEvents.check_out.event_at, { timeOnly: true, locale }) : t('unprocessed')}
           </Typography>
         </Stack>
@@ -263,24 +263,24 @@ function MonthlyAttendanceCalendar({ monthEvents, todayEvents, selectedDate, onS
   );
 }
 
-function RiskBroadcastPanel({ broadcasts, t, locale }) {
+function RiskBroadcastPanel({ broadcasts, appMode = false, t, locale }) {
   const activeBroadcasts = Array.isArray(broadcasts) ? broadcasts : [];
 
   return (
-    <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 3, borderColor: '#fecaca', bgcolor: '#fffafa' }}>
+    <Paper variant="outlined" sx={{ p: appMode ? 3.5 : 2, mb: appMode ? 3 : 2, borderRadius: appMode ? 4 : 3, borderColor: '#fecaca', bgcolor: '#fffafa' }}>
       <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
-        <Typography sx={{ fontSize: '0.86rem', fontWeight: 900, color: '#991b1b' }}>
+        <Typography sx={{ fontSize: appMode ? '1.34rem' : '0.86rem', fontWeight: 900, color: '#991b1b' }}>
           {t('riskTitle')}
         </Typography>
         <Chip
           label={activeBroadcasts.length ? t('itemCount', { count: activeBroadcasts.length }) : t('noneRegistered')}
           size="small"
-          sx={{ height: 22, fontSize: '0.62rem', fontWeight: 800, bgcolor: '#fee2e2', color: '#991b1b' }}
+          sx={{ height: appMode ? 34 : 22, fontSize: appMode ? '0.9rem' : '0.62rem', fontWeight: 800, bgcolor: '#fee2e2', color: '#991b1b' }}
         />
       </Stack>
 
       {activeBroadcasts.length === 0 ? (
-        <Typography sx={{ mt: 1, fontSize: '0.74rem', color: '#64748b' }}>
+        <Typography sx={{ mt: 1, fontSize: appMode ? '1.08rem' : '0.74rem', color: '#64748b' }}>
           {t('noRisk')}
         </Typography>
       ) : (
@@ -295,24 +295,24 @@ function RiskBroadcastPanel({ broadcasts, t, locale }) {
                 sx={{
                   display: 'flex',
                   alignItems: 'flex-start',
-                  gap: 1.15,
-                  p: 1.15,
-                  borderRadius: 2,
+                  gap: appMode ? 1.7 : 1.15,
+                  p: appMode ? 1.8 : 1.15,
+                  borderRadius: appMode ? 2.8 : 2,
                   bgcolor: '#fff',
                   border: '1px solid #fee2e2',
                 }}
               >
                 <Box
                   sx={{
-                    width: 42,
-                    height: 42,
-                    flex: '0 0 42px',
+                    width: appMode ? 56 : 42,
+                    height: appMode ? 56 : 42,
+                    flex: appMode ? '0 0 56px' : '0 0 42px',
                     borderRadius: '50%',
                     display: 'grid',
                     placeItems: 'center',
                     bgcolor: badgeBackground,
                     color: badgeColor,
-                    fontSize: '0.7rem',
+                    fontSize: appMode ? '0.9rem' : '0.7rem',
                     fontWeight: 900,
                     border: `1px solid ${badgeColor}33`,
                   }}
@@ -320,10 +320,10 @@ function RiskBroadcastPanel({ broadcasts, t, locale }) {
                   {isCommon ? t('common') : t('assigned')}
                 </Box>
                 <Box sx={{ minWidth: 0, flex: 1 }}>
-                  <Typography sx={{ whiteSpace: 'pre-wrap', color: '#1e293b', fontSize: '0.78rem', fontWeight: 800, lineHeight: 1.65 }}>
+                  <Typography sx={{ whiteSpace: 'pre-wrap', color: '#1e293b', fontSize: appMode ? '1.08rem' : '0.78rem', fontWeight: 800, lineHeight: 1.65 }}>
                     {broadcast.content}
                   </Typography>
-                  <Typography sx={{ mt: 0.55, color: '#64748b', fontSize: '0.64rem', lineHeight: 1.5 }}>
+                  <Typography sx={{ mt: 0.55, color: '#64748b', fontSize: appMode ? '0.88rem' : '0.64rem', lineHeight: 1.5 }}>
                     {formatKoreaDateTime(broadcast.created_at, { locale })} · {broadcast.author_position || broadcast.author_role || t('author')} {broadcast.author_name || ''}
                   </Typography>
                 </Box>
@@ -597,7 +597,7 @@ function MobileShell({
         <Toolbar
           sx={{
             minHeight: appMode ? '72px !important' : '58px !important',
-            px: appMode ? 0.75 : 2,
+            px: appMode ? '5%' : 2,
             display: 'flex',
             justifyContent: 'space-between',
             gap: 1,
@@ -739,6 +739,7 @@ export default function AttendanceWorkerPortal() {
   const handledDeepLinkRef = useRef('');
   const deviceKey = useRef(getAttendanceDeviceKey()).current;
   const primaryActionColor = appMode ? APP_BRAND_GREEN : '#0f6fae';
+  const cleanAuthLayout = appMode && ['login', 'signup'].includes(mode);
   const t = useMemo(
     () => createAttendanceTranslator(language),
     [language],
@@ -767,7 +768,7 @@ export default function AttendanceWorkerPortal() {
 
     metaTheme.setAttribute(
       'content',
-      appMode && ['login', 'admin'].includes(mode)
+      appMode && ['login', 'signup', 'admin'].includes(mode)
         ? '#ffffff'
         : APP_BRAND_GREEN,
     );
@@ -1517,6 +1518,7 @@ export default function AttendanceWorkerPortal() {
       <MobileShell
         appMode={appMode}
         appTitle={t('appTitle')}
+        contentMaxWidth={appMode ? '90%' : 520}
         topBanner={<AttendanceNoticeTicker notices={attendanceNotices} appMode={appMode} t={t} />}
         headerAction={
           <IconButton
@@ -1539,7 +1541,7 @@ export default function AttendanceWorkerPortal() {
         }
       >
         <AttendanceToast message={message} onClose={() => setMessage(null)} appMode={appMode} />
-        <RiskBroadcastPanel broadcasts={riskBroadcasts} t={t} locale={locale} />
+        <RiskBroadcastPanel broadcasts={riskBroadcasts} appMode={appMode} t={t} locale={locale} />
 
         <Box sx={{ mb: 2 }}>
           <MonthlyAttendanceCalendar
@@ -1547,6 +1549,7 @@ export default function AttendanceWorkerPortal() {
             todayEvents={todayEvents}
             selectedDate={selectedAttendanceDate}
             onSelectDate={setSelectedAttendanceDate}
+            appMode={appMode}
             t={t}
             locale={locale}
           />
@@ -1555,37 +1558,37 @@ export default function AttendanceWorkerPortal() {
         <Paper
           variant="outlined"
           sx={{
-            p: appMode ? 3 : 2.25,
-            borderRadius: appMode ? 3.5 : 3,
+            p: appMode ? 4 : 2.25,
+            borderRadius: appMode ? 4 : 3,
           }}
         >
           <Stack direction="row" justifyContent="space-between" alignItems="flex-start" gap={1}>
             <Box>
-              <Typography sx={{ fontSize: appMode ? '1.4rem' : '1.15rem', fontWeight: 900 }}>{worker.name_ko}</Typography>
-              <Typography sx={{ mt: 0.5, color: '#64748b', fontSize: appMode ? '0.98rem' : '0.78rem', lineHeight: 1.45 }}>{worker.project_name}</Typography>
-              <Typography sx={{ mt: appMode ? 0.35 : 0, color: '#64748b', fontSize: appMode ? '0.92rem' : '0.74rem' }}>{getAttendanceTradeLabel(language, worker.trade_name)}</Typography>
+              <Typography sx={{ fontSize: appMode ? '2rem' : '1.15rem', fontWeight: 900 }}>{worker.name_ko}</Typography>
+              <Typography sx={{ mt: 0.7, color: '#64748b', fontSize: appMode ? '1.28rem' : '0.78rem', lineHeight: 1.45 }}>{worker.project_name}</Typography>
+              <Typography sx={{ mt: appMode ? 0.5 : 0, color: '#64748b', fontSize: appMode ? '1.18rem' : '0.74rem' }}>{getAttendanceTradeLabel(language, worker.trade_name)}</Typography>
             </Box>
-            <Chip label={meta.label} color={meta.color} size="small" />
+            <Chip label={meta.label} color={meta.color} size="small" sx={{ height: appMode ? 40 : undefined, fontSize: appMode ? '1rem' : undefined, fontWeight: 900 }} />
           </Stack>
           <Divider sx={{ my: 2 }} />
-          <Typography sx={{ color: '#64748b', fontSize: appMode ? '0.98rem' : '0.78rem', lineHeight: 1.7 }}>{meta.description}</Typography>
+          <Typography sx={{ color: '#64748b', fontSize: appMode ? '1.2rem' : '0.78rem', lineHeight: 1.7 }}>{meta.description}</Typography>
         </Paper>
 
         {worker.status === 'active' ? (
           <>
-            <Card variant="outlined" sx={{ mt: 2, borderRadius: appMode ? 3.5 : 3 }}>
-              <CardContent sx={{ p: appMode ? 3 : undefined, '&:last-child': { pb: appMode ? 3 : undefined } }}>
-                <Typography sx={{ fontSize: appMode ? '1rem' : '0.78rem', color: '#64748b', fontWeight: 800 }}>{t('todayAttendance')}</Typography>
+            <Card variant="outlined" sx={{ mt: appMode ? 3 : 2, borderRadius: appMode ? 4 : 3 }}>
+              <CardContent sx={{ p: appMode ? 4 : undefined, '&:last-child': { pb: appMode ? 4 : undefined } }}>
+                <Typography sx={{ fontSize: appMode ? '1.3rem' : '0.78rem', color: '#64748b', fontWeight: 800 }}>{t('todayAttendance')}</Typography>
                 <Stack direction="row" spacing={appMode ? 2 : 1.5} sx={{ mt: appMode ? 2 : 1.5 }}>
                   <Paper variant="outlined" sx={{ flex: 1, p: appMode ? 2.25 : 1.5, textAlign: 'center', bgcolor: checkIn ? '#ecfdf5' : '#f8fafc', borderRadius: appMode ? 3 : undefined }}>
-                    <Typography sx={{ fontSize: appMode ? '0.95rem' : '0.7rem', color: '#64748b' }}>{t('checkIn')}</Typography>
-                    <Typography sx={{ mt: 0.65, fontSize: appMode ? '1.35rem' : undefined, fontWeight: 900, color: checkIn ? '#047857' : '#94a3b8' }}>
+                    <Typography sx={{ fontSize: appMode ? '1.2rem' : '0.7rem', color: '#64748b' }}>{t('checkIn')}</Typography>
+                    <Typography sx={{ mt: 0.8, fontSize: appMode ? '1.72rem' : undefined, fontWeight: 900, color: checkIn ? '#047857' : '#94a3b8' }}>
                       {checkIn ? formatKoreaDateTime(checkIn.event_at, { timeOnly: true, locale }) : t('unprocessed')}
                     </Typography>
                   </Paper>
                   <Paper variant="outlined" sx={{ flex: 1, p: appMode ? 2.25 : 1.5, textAlign: 'center', bgcolor: checkOut ? '#ecfdf5' : '#f8fafc', borderRadius: appMode ? 3 : undefined }}>
-                    <Typography sx={{ fontSize: appMode ? '0.95rem' : '0.7rem', color: '#64748b' }}>{t('checkOut')}</Typography>
-                    <Typography sx={{ mt: 0.65, fontSize: appMode ? '1.35rem' : undefined, fontWeight: 900, color: checkOut ? '#047857' : '#94a3b8' }}>
+                    <Typography sx={{ fontSize: appMode ? '1.2rem' : '0.7rem', color: '#64748b' }}>{t('checkOut')}</Typography>
+                    <Typography sx={{ mt: 0.8, fontSize: appMode ? '1.72rem' : undefined, fontWeight: 900, color: checkOut ? '#047857' : '#94a3b8' }}>
                       {checkOut ? formatKoreaDateTime(checkOut.event_at, { timeOnly: true, locale }) : t('unprocessed')}
                     </Typography>
                   </Paper>
@@ -1600,7 +1603,7 @@ export default function AttendanceWorkerPortal() {
               startIcon={processingScan ? <CircularProgress size={20} color="inherit" /> : <CameraAltRoundedIcon />}
               onClick={handleOpenScanner}
               disabled={processingScan || scannerStarting || Boolean(checkIn && checkOut)}
-              sx={{ mt: 2, minHeight: appMode ? 66 : 58, borderRadius: appMode ? 3 : 2.5, bgcolor: primaryActionColor, fontWeight: 900, fontSize: appMode ? '1.08rem' : '1rem', '&:hover': { bgcolor: primaryActionColor } }}
+              sx={{ mt: appMode ? 3 : 2, minHeight: appMode ? 92 : 58, borderRadius: appMode ? 3 : 2.5, bgcolor: primaryActionColor, fontWeight: 900, fontSize: appMode ? '1.45rem' : '1rem', '&:hover': { bgcolor: primaryActionColor } }}
             >
               {checkIn && checkOut ? t('attendanceComplete') : processingScan ? t('processing') : scannerStarting ? t('cameraPreparing') : t('scanAttendanceQr')}
             </Button>
@@ -1794,7 +1797,7 @@ export default function AttendanceWorkerPortal() {
   return (
     <MobileShell
       appMode={appMode}
-      cleanLogin={mode === 'login'}
+      cleanLogin={cleanAuthLayout}
       appTitle={t('appTitle')}
       contentMaxWidth={
         appMode
@@ -1827,37 +1830,37 @@ export default function AttendanceWorkerPortal() {
             : undefined
         }
         data-attendance-login-reference-layout={
-          mode === 'login' && appMode
-            ? 'v52.48.5.5'
+            mode === 'login' && appMode
+            ? 'v52.48.5.6'
             : undefined
         }
         variant={
-          mode === 'login'
+          cleanAuthLayout
             ? undefined
             : 'outlined'
         }
         elevation={0}
         sx={{
           p:
-            mode === 'login'
+            cleanAuthLayout
               ? 0
               : appMode
                 ? 3
                 : 2.25,
           borderRadius:
-            mode === 'login'
+            cleanAuthLayout
               ? 0
               : appMode
                 ? 3.5
                 : 3,
           border:
-            mode === 'login'
+            cleanAuthLayout
               ? 'none'
               : undefined,
           bgcolor: '#ffffff',
           boxShadow: 'none',
           width:
-            mode === 'login' && appMode
+            cleanAuthLayout
               ? '90%'
               : '100%',
           maxWidth:
@@ -1865,7 +1868,7 @@ export default function AttendanceWorkerPortal() {
               ? 'none'
               : 'none',
           minHeight:
-            mode === 'login' && appMode
+            cleanAuthLayout
               ? 'calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom))'
               : 'auto',
           mx: 'auto',
@@ -1875,7 +1878,7 @@ export default function AttendanceWorkerPortal() {
           transformOrigin: 'top center',
         }}
       >
-        {mode === 'login' ? (
+        {['login', 'signup'].includes(mode) ? (
           <FormControl
             size="small"
             sx={{
@@ -1958,36 +1961,64 @@ export default function AttendanceWorkerPortal() {
         ) : (
           <Stack
             direction="row"
-            alignItems="center"
-            spacing={1}
-            sx={{ mb: 2 }}
+            alignItems="flex-start"
+            spacing={appMode ? 2 : 1}
+            sx={{ mt: appMode ? 14 : 2, mb: appMode ? 7 : 2 }}
           >
             <IconButton
-              size="small"
               onClick={() => setMode('login')}
+              aria-label={t('loginTitle')}
+              sx={{
+                width: appMode ? 58 : 40,
+                height: appMode ? 58 : 40,
+                mt: appMode ? 0.4 : 0,
+                color: '#111827',
+                '& .MuiSvgIcon-root': {
+                  fontSize: appMode ? '2.35rem' : '1.5rem',
+                },
+              }}
             >
               <ArrowBackRoundedIcon />
             </IconButton>
 
-            <Box>
-              <Typography
-                sx={{
-                  fontSize: appMode
-                    ? '1.4rem'
-                    : '1.15rem',
-                  fontWeight: 900,
-                }}
-              >
-                {t('signupTitle')}
-              </Typography>
+            <Box sx={{ minWidth: 0 }}>
+              <Stack direction="row" alignItems="center" spacing={appMode ? 1.4 : 0.8}>
+                <Box
+                  aria-hidden="true"
+                  sx={{
+                    color: APP_BRAND_GREEN,
+                    fontSize: appMode ? '3.75rem' : '2.5rem',
+                    lineHeight: 1,
+                    fontWeight: 1000,
+                    letterSpacing: '-0.14em',
+                    pr: '0.14em',
+                  }}
+                >
+                  W
+                </Box>
+
+                <Typography
+                  sx={{
+                    fontSize: appMode
+                      ? '2.7rem'
+                      : '1.8rem',
+                    lineHeight: 1.1,
+                    fontWeight: 1000,
+                    letterSpacing: '-0.045em',
+                  }}
+                >
+                  {t('signupTitle')}
+                </Typography>
+              </Stack>
 
               <Typography
                 sx={{
-                  mt: appMode ? 0.45 : 0,
+                  mt: appMode ? 1.1 : 0.35,
                   color: '#64748b',
                   fontSize: appMode
-                    ? '0.92rem'
+                    ? '1.22rem'
                     : '0.74rem',
+                  lineHeight: 1.6,
                 }}
               >
                 {t('signupSubtitle')}
@@ -2188,7 +2219,32 @@ export default function AttendanceWorkerPortal() {
             </Button>
           </Stack>
         ) : (
-          <Stack spacing={1.5}>
+          <Stack
+            spacing={appMode ? 3 : 1.5}
+            sx={appMode ? {
+              pb: 4,
+              '& .MuiInputBase-root': {
+                minHeight: 82,
+                fontSize: '1.35rem',
+                borderRadius: 2.5,
+              },
+              '& .MuiInputLabel-root': {
+                fontSize: '1.18rem',
+              },
+              '& .MuiFormHelperText-root': {
+                mx: 0.5,
+                fontSize: '1rem',
+                lineHeight: 1.5,
+              },
+              '& .MuiFormControlLabel-label': {
+                fontSize: '1.18rem',
+                lineHeight: 1.55,
+              },
+              '& .MuiCheckbox-root .MuiSvgIcon-root': {
+                fontSize: '2.2rem',
+              },
+            } : undefined}
+          >
             <FormControl fullWidth>
               <InputLabel>{t('workSite')}</InputLabel>
               <Select label={t('workSite')} value={signup.projectName} onChange={(event) => setSignup((prev) => ({ ...prev, projectName: event.target.value }))}>
@@ -2222,7 +2278,7 @@ export default function AttendanceWorkerPortal() {
               label={t('testAccount')}
             />
             {signup.isTestAccount && (
-              <Alert severity="info" sx={{ fontSize: appMode ? '0.92rem' : '0.75rem' }}>
+              <Alert severity="info" sx={{ fontSize: appMode ? '1.08rem' : '0.75rem', lineHeight: 1.65 }}>
                 {t('testPasswordInfo')}
               </Alert>
             )}
@@ -2250,9 +2306,25 @@ export default function AttendanceWorkerPortal() {
             )}
             <FormControlLabel
               control={<Checkbox checked={signup.privacyAgreed} onChange={(event) => setSignup((prev) => ({ ...prev, privacyAgreed: event.target.checked }))} />}
-              label={<Typography sx={{ fontSize: appMode ? '0.92rem' : '0.75rem', lineHeight: 1.6 }}>{t('privacyAgreement')}</Typography>}
+              label={<Typography sx={{ fontSize: appMode ? '1.18rem' : '0.75rem', lineHeight: 1.6 }}>{t('privacyAgreement')}</Typography>}
             />
-            <Button variant="contained" size="large" onClick={handleSignup} disabled={loading} sx={{ minHeight: appMode ? 60 : 50, bgcolor: primaryActionColor, fontWeight: 900, '&:hover': { bgcolor: primaryActionColor } }}>{t('signup')}</Button>
+            <Button
+              variant="contained"
+              size="large"
+              onClick={handleSignup}
+              disabled={loading}
+              sx={{
+                minHeight: appMode ? 96 : 50,
+                borderRadius: appMode ? 2.5 : 2,
+                bgcolor: primaryActionColor,
+                fontSize: appMode ? '1.55rem' : undefined,
+                fontWeight: 1000,
+                boxShadow: 'none',
+                '&:hover': { bgcolor: primaryActionColor, boxShadow: 'none' },
+              }}
+            >
+              {t('signup')}
+            </Button>
           </Stack>
         )}
       </Paper>
