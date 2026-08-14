@@ -254,6 +254,29 @@ export default function MonthlyWorkerStatus({
     (_, index) => index + 1,
   );
 
+  const attendanceSubtotal = useMemo(() => {
+    const dailyTotals = Array.from(
+      { length: daysInMonth },
+      (_, index) => {
+        const day = index + 1;
+
+        return filteredWorkers.reduce(
+          (total, worker) =>
+            total + Number(worker.attendance[day] || 0),
+          0,
+        );
+      },
+    );
+
+    return {
+      dailyTotals,
+      grandTotal: dailyTotals.reduce(
+        (total, dailyTotal) => total + dailyTotal,
+        0,
+      ),
+    };
+  }, [daysInMonth, filteredWorkers]);
+
   const stickyHeaderStyle = {
     position: 'sticky',
     zIndex: 5,
@@ -663,13 +686,14 @@ export default function MonthlyWorkerStatus({
                 </TableCell>
               </TableRow>
             ) : (
-              filteredWorkers.map((worker, index) => {
-                const totalAttendance = dayColumns.reduce(
-                  (total, day) =>
-                    total +
-                    Number(worker.attendance[day] || 0),
-                  0,
-                );
+              <React.Fragment>
+                {filteredWorkers.map((worker, index) => {
+                  const totalAttendance = dayColumns.reduce(
+                    (total, day) =>
+                      total +
+                      Number(worker.attendance[day] || 0),
+                    0,
+                  );
 
                 return (
                   <TableRow
@@ -797,7 +821,77 @@ export default function MonthlyWorkerStatus({
                     </TableCell>
                   </TableRow>
                 );
-              })
+                })}
+
+                <TableRow>
+                  <TableCell
+                    colSpan={3}
+                    align="center"
+                    sx={{
+                      position: 'sticky',
+                      left: 0,
+                      zIndex: 4,
+                      px: 0.5,
+                      py: 0.72,
+                      bgcolor: '#e0f2fe',
+                      borderTop: '2px solid #0284c7',
+                      borderRight: '1px solid #94a3b8',
+                      boxShadow: '2px 0 0 #bae6fd',
+                      fontSize: '0.74rem',
+                      fontWeight: 900,
+                      color: '#075985',
+                    }}
+                  >
+                    소계
+                  </TableCell>
+
+                  {attendanceSubtotal.dailyTotals.map(
+                    (dailyTotal, index) => (
+                      <TableCell
+                        key={`subtotal-${index + 1}`}
+                        align="center"
+                        sx={{
+                          width: 34,
+                          minWidth: 34,
+                          maxWidth: 34,
+                          px: 0,
+                          py: 0.72,
+                          bgcolor: '#e0f2fe',
+                          borderTop: '2px solid #0284c7',
+                          borderRight: '1px dotted #7dd3fc',
+                          fontSize: '0.72rem',
+                          fontWeight: 900,
+                          color: '#075985',
+                        }}
+                      >
+                        {dailyTotal}
+                      </TableCell>
+                    ),
+                  )}
+
+                  <TableCell
+                    align="center"
+                    sx={{
+                      position: 'sticky',
+                      right: 0,
+                      zIndex: 4,
+                      width: 56,
+                      minWidth: 56,
+                      maxWidth: 56,
+                      px: 0.4,
+                      py: 0.72,
+                      bgcolor: '#bae6fd',
+                      borderTop: '2px solid #0284c7',
+                      borderLeft: '1px solid #0284c7',
+                      fontSize: '0.76rem',
+                      fontWeight: 900,
+                      color: '#075985',
+                    }}
+                  >
+                    {attendanceSubtotal.grandTotal}
+                  </TableCell>
+                </TableRow>
+              </React.Fragment>
             )}
           </TableBody>
         </Table>
