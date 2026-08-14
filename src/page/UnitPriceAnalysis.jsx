@@ -938,6 +938,10 @@ export default function UnitPriceAnalysis({
   const grandSubmitted = (
     totals.material.submitted + totals.labor.submitted + totals.expense.submitted
   );
+  const grandDifference = grandSubmitted - grandNet;
+  const grandMarkupRate = grandNet === 0
+    ? 0
+    : (grandDifference / grandNet) * 100;
 
   const resetDocument = async () => {
     const spec = selectedSpec || specs[0];
@@ -2024,6 +2028,14 @@ export default function UnitPriceAnalysis({
                       <Typography sx={{ textAlign: 'right', fontSize: '0.78rem', fontWeight: 800 }}>{formatMoney(grandNet)}원</Typography>
                       <Typography sx={{ fontSize: '0.7rem', fontWeight: 800 }}>제출</Typography>
                       <Typography sx={{ textAlign: 'right', fontSize: '0.92rem', fontWeight: 950 }}>{formatMoney(grandSubmitted)}원</Typography>
+                      <Typography sx={{ mt: 0.2, pt: 0.45, borderTop: '1px solid rgba(255,255,255,0.18)', fontSize: '0.66rem', opacity: 0.8 }}>차액</Typography>
+                      <Typography sx={{ mt: 0.2, pt: 0.45, borderTop: '1px solid rgba(255,255,255,0.18)', textAlign: 'right', fontSize: '0.76rem', fontWeight: 850, color: grandDifference > 0 ? '#fca5a5' : grandDifference < 0 ? '#93c5fd' : '#fff' }}>
+                        {grandDifference > 0 ? '+' : ''}{formatMoney(grandDifference)}원
+                      </Typography>
+                      <Typography sx={{ fontSize: '0.66rem', opacity: 0.8 }}>할증률</Typography>
+                      <Typography sx={{ textAlign: 'right', fontSize: '0.76rem', fontWeight: 850, color: grandMarkupRate > 0 ? '#fca5a5' : grandMarkupRate < 0 ? '#93c5fd' : '#fff' }}>
+                        {grandMarkupRate > 0 ? '+' : ''}{grandMarkupRate.toFixed(2)}%
+                      </Typography>
                     </Box>
                   </Box>
                 </Paper>
