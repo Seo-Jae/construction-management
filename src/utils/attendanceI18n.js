@@ -298,6 +298,186 @@ const workAssignmentDictionaries = {
   },
 };
 
+const checkoutProgressDictionaries = {
+  ko: {
+    checkoutProgressTitle: '오늘 작업완료 확인',
+    checkoutProgressSubtitle: '오전에 등록한 작업위치를 확인하고 완료한 세대를 선택해주세요.',
+    todayWorkSummary: '오늘 등록한 작업정보',
+    standardWorkLocationLabel: '{building}동 {floor}층',
+    completedUnitsQuestion: '오늘 완료한 세대가 있습니까?',
+    hasCompletedUnits: '완료한 세대 있음',
+    noCompletedUnits: '완료 세대 없음',
+    progressProcess: '진척 반영 공정',
+    progressFloorTitle: '{building}동 {floor}층 골구도',
+    selectedUnitCount: '{count}세대 선택',
+    selectedForCompletion: '완료 제출',
+    alreadyCompleted: '기존 완료',
+    noSelectableUnits: '이 층에는 선택할 수 있는 세대가 없습니다.',
+    progressUnavailableOtherLocation: '기타 작업위치는 세대 골구도와 연결할 수 없어 퇴근만 처리됩니다.',
+    progressUnavailableTrade: '오늘 선택한 공정은 세대별 진척 반영 대상이 아니므로 퇴근만 처리됩니다.',
+    progressUnavailableBuilding: '동·층 골구도 자료를 확인할 수 없어 퇴근만 처리됩니다.',
+    progressUnavailableGeneral: '진척 제출 대상이 아니므로 퇴근만 처리됩니다.',
+    progressApprovalGuide: '선택한 세대는 바로 진척도에 반영되지 않습니다. 담당자가 확인 후 승인해야 작업완료로 반영됩니다.',
+    completeCheckOut: '퇴근 완료',
+    checkoutContextFailed: '오늘 작업정보를 불러오지 못했습니다. 새 QR을 다시 촬영해주세요.',
+    selectCompletionAnswer: '오늘 완료한 세대가 있는지 선택해주세요.',
+    selectProgressProcess: '진척에 반영할 세부공정을 선택해주세요.',
+    selectCompletedUnits: '완료한 세대를 한 곳 이상 선택해주세요.',
+    checkoutProgressPendingSuccess: '퇴근 처리와 진척 승인 요청이 완료되었습니다. {time}',
+  },
+  en: {
+    checkoutProgressTitle: "Confirm today's completed work",
+    checkoutProgressSubtitle: 'Check the location registered this morning and select the units completed today.',
+    todayWorkSummary: "Today's registered work",
+    standardWorkLocationLabel: 'Building {building}, Floor {floor}',
+    completedUnitsQuestion: 'Did you complete any units today?',
+    hasCompletedUnits: 'Completed units',
+    noCompletedUnits: 'No completed units',
+    progressProcess: 'Progress work item',
+    progressFloorTitle: 'Building {building}, Floor {floor}',
+    selectedUnitCount: '{count} selected',
+    selectedForCompletion: 'Submit completion',
+    alreadyCompleted: 'Already completed',
+    noSelectableUnits: 'There are no selectable units on this floor.',
+    progressUnavailableOtherLocation: 'Other work locations cannot be linked to the unit grid. Only check-out will be recorded.',
+    progressUnavailableTrade: 'This work type is not tracked by unit. Only check-out will be recorded.',
+    progressUnavailableBuilding: 'The building grid could not be loaded. Only check-out will be recorded.',
+    progressUnavailableGeneral: 'Progress submission is not available. Only check-out will be recorded.',
+    progressApprovalGuide: 'Selected units are not added to progress immediately. They are recorded as completed only after manager approval.',
+    completeCheckOut: 'Complete check-out',
+    checkoutContextFailed: 'Could not load today’s work details. Please scan a new QR.',
+    selectCompletionAnswer: 'Choose whether you completed any units today.',
+    selectProgressProcess: 'Select the detailed work item to update.',
+    selectCompletedUnits: 'Select at least one completed unit.',
+    checkoutProgressPendingSuccess: 'Check-out completed and progress approval requested. {time}',
+  },
+  zh: {
+    checkoutProgressTitle: '确认今日完工内容',
+    checkoutProgressSubtitle: '请确认早上登记的作业位置，并选择今天完成的住户。',
+    todayWorkSummary: '今日登记的作业信息',
+    standardWorkLocationLabel: '{building}栋 {floor}层',
+    completedUnitsQuestion: '今天有完成的住户吗？',
+    hasCompletedUnits: '有完成住户',
+    noCompletedUnits: '无完成住户',
+    progressProcess: '进度反映工序',
+    progressFloorTitle: '{building}栋 {floor}层结构图',
+    selectedUnitCount: '已选择{count}户',
+    selectedForCompletion: '提交完工',
+    alreadyCompleted: '原已完成',
+    noSelectableUnits: '该楼层没有可选择的住户。',
+    progressUnavailableOtherLocation: '其他作业位置无法连接住户结构图，仅登记下班。',
+    progressUnavailableTrade: '今天的工种不属于住户进度项目，仅登记下班。',
+    progressUnavailableBuilding: '无法读取楼栋结构图，仅登记下班。',
+    progressUnavailableGeneral: '无法提交进度，仅登记下班。',
+    progressApprovalGuide: '所选住户不会立即计入进度。负责人确认批准后才反映为完工。',
+    completeCheckOut: '完成下班登记',
+    checkoutContextFailed: '无法读取今天的作业信息，请重新扫描新二维码。',
+    selectCompletionAnswer: '请选择今天是否有完成的住户。',
+    selectProgressProcess: '请选择要反映进度的详细工序。',
+    selectCompletedUnits: '请至少选择一个完成的住户。',
+    checkoutProgressPendingSuccess: '下班登记和进度批准申请已完成。{time}',
+  },
+  vi: {
+    checkoutProgressTitle: 'Xác nhận công việc hoàn thành hôm nay',
+    checkoutProgressSubtitle: 'Kiểm tra vị trí đã đăng ký buổi sáng và chọn các căn đã hoàn thành.',
+    todayWorkSummary: 'Thông tin công việc hôm nay',
+    standardWorkLocationLabel: 'Tòa {building}, tầng {floor}',
+    completedUnitsQuestion: 'Hôm nay có căn nào đã hoàn thành không?',
+    hasCompletedUnits: 'Có căn hoàn thành',
+    noCompletedUnits: 'Không có căn hoàn thành',
+    progressProcess: 'Hạng mục cập nhật tiến độ',
+    progressFloorTitle: 'Tòa {building}, tầng {floor}',
+    selectedUnitCount: 'Đã chọn {count} căn',
+    selectedForCompletion: 'Gửi hoàn thành',
+    alreadyCompleted: 'Đã hoàn thành trước',
+    noSelectableUnits: 'Không có căn nào có thể chọn ở tầng này.',
+    progressUnavailableOtherLocation: 'Vị trí khác không thể liên kết với sơ đồ căn hộ. Chỉ ghi nhận giờ ra ca.',
+    progressUnavailableTrade: 'Hạng mục hôm nay không theo dõi theo căn. Chỉ ghi nhận giờ ra ca.',
+    progressUnavailableBuilding: 'Không tải được sơ đồ tòa nhà. Chỉ ghi nhận giờ ra ca.',
+    progressUnavailableGeneral: 'Không thể gửi tiến độ. Chỉ ghi nhận giờ ra ca.',
+    progressApprovalGuide: 'Các căn đã chọn chưa được cập nhật ngay. Chỉ sau khi quản lý duyệt mới được ghi nhận hoàn thành.',
+    completeCheckOut: 'Hoàn tất ra ca',
+    checkoutContextFailed: 'Không tải được công việc hôm nay. Vui lòng quét mã QR mới.',
+    selectCompletionAnswer: 'Hãy chọn hôm nay có căn hoàn thành hay không.',
+    selectProgressProcess: 'Hãy chọn hạng mục chi tiết để cập nhật tiến độ.',
+    selectCompletedUnits: 'Hãy chọn ít nhất một căn đã hoàn thành.',
+    checkoutProgressPendingSuccess: 'Đã ra ca và gửi yêu cầu duyệt tiến độ. {time}',
+  },
+  ru: {
+    checkoutProgressTitle: 'Подтверждение выполненных работ',
+    checkoutProgressSubtitle: 'Проверьте место, указанное утром, и выберите завершённые квартиры.',
+    todayWorkSummary: 'Работа, зарегистрированная сегодня',
+    standardWorkLocationLabel: 'Корпус {building}, этаж {floor}',
+    completedUnitsQuestion: 'Есть ли сегодня завершённые квартиры?',
+    hasCompletedUnits: 'Есть завершённые',
+    noCompletedUnits: 'Нет завершённых',
+    progressProcess: 'Работа для учёта прогресса',
+    progressFloorTitle: 'Корпус {building}, этаж {floor}',
+    selectedUnitCount: 'Выбрано: {count}',
+    selectedForCompletion: 'Подать как завершённые',
+    alreadyCompleted: 'Уже завершено',
+    noSelectableUnits: 'На этом этаже нет доступных квартир.',
+    progressUnavailableOtherLocation: 'Другое место нельзя связать со схемой квартир. Будет записан только уход.',
+    progressUnavailableTrade: 'Этот вид работ не учитывается по квартирам. Будет записан только уход.',
+    progressUnavailableBuilding: 'Не удалось загрузить схему здания. Будет записан только уход.',
+    progressUnavailableGeneral: 'Подача прогресса недоступна. Будет записан только уход.',
+    progressApprovalGuide: 'Выбранные квартиры не добавляются сразу. Завершение отражается только после одобрения ответственного.',
+    completeCheckOut: 'Завершить уход',
+    checkoutContextFailed: 'Не удалось загрузить сегодняшнюю работу. Отсканируйте новый QR.',
+    selectCompletionAnswer: 'Укажите, есть ли сегодня завершённые квартиры.',
+    selectProgressProcess: 'Выберите детальный вид работ для прогресса.',
+    selectCompletedUnits: 'Выберите хотя бы одну завершённую квартиру.',
+    checkoutProgressPendingSuccess: 'Уход зарегистрирован, запрос на прогресс отправлен. {time}',
+  },
+  mn: {
+    checkoutProgressTitle: 'Өнөөдрийн дууссан ажлыг баталгаажуулах',
+    checkoutProgressSubtitle: 'Өглөө бүртгэсэн байрлалыг шалгаад дууссан айлуудыг сонгоно уу.',
+    todayWorkSummary: 'Өнөөдрийн бүртгэсэн ажил',
+    standardWorkLocationLabel: '{building}-р байр, {floor}-р давхар',
+    completedUnitsQuestion: 'Өнөөдөр дууссан айл байна уу?',
+    hasCompletedUnits: 'Дууссан айл байна',
+    noCompletedUnits: 'Дууссан айл байхгүй',
+    progressProcess: 'Явцад тусгах ажил',
+    progressFloorTitle: '{building}-р байр, {floor}-р давхар',
+    selectedUnitCount: '{count} айл сонгосон',
+    selectedForCompletion: 'Дууссанаар илгээх',
+    alreadyCompleted: 'Өмнө дууссан',
+    noSelectableUnits: 'Энэ давхарт сонгох айл байхгүй.',
+    progressUnavailableOtherLocation: 'Бусад байрлалыг айлын зурагтай холбох боломжгүй тул зөвхөн гарсан цаг бүртгэнэ.',
+    progressUnavailableTrade: 'Өнөөдрийн ажил айл тус бүрийн явцад хамаарахгүй тул зөвхөн гарсан цаг бүртгэнэ.',
+    progressUnavailableBuilding: 'Барилгын зураг ачаалж чадсангүй. Зөвхөн гарсан цаг бүртгэнэ.',
+    progressUnavailableGeneral: 'Явц илгээх боломжгүй. Зөвхөн гарсан цаг бүртгэнэ.',
+    progressApprovalGuide: 'Сонгосон айлууд шууд явцад орохгүй. Хариуцагч зөвшөөрсний дараа дууссанаар бүртгэгдэнэ.',
+    completeCheckOut: 'Гарсан цаг бүртгэх',
+    checkoutContextFailed: 'Өнөөдрийн ажлын мэдээлэл ачаалж чадсангүй. Шинэ QR дахин уншуулна уу.',
+    selectCompletionAnswer: 'Өнөөдөр дууссан айл байгаа эсэхийг сонгоно уу.',
+    selectProgressProcess: 'Явцад тусгах нарийвчилсан ажлыг сонгоно уу.',
+    selectCompletedUnits: 'Дор хаяж нэг дууссан айлыг сонгоно уу.',
+    checkoutProgressPendingSuccess: 'Гарсан цаг бүртгэж, явцын зөвшөөрөл хүссэн. {time}',
+  },
+};
+
+const attendanceProgressProcessLabels = {
+  ko: {
+    바닥먹: '바닥먹', 허리먹: '허리먹', 단열: '단열', 합지: '합지', 경량골조: '경량골조', 경량석고: '경량석고', 세대천정: '세대천정', '1차몰딩': '1차몰딩', '2차몰딩': '2차몰딩', '1차 걸레받이': '1차 걸레받이', '2차 걸레받이': '2차 걸레받이',
+  },
+  en: {
+    바닥먹: 'Floor marking', 허리먹: 'Wall level marking', 단열: 'Insulation', 합지: 'Board bonding', 경량골조: 'Light-gauge framing', 경량석고: 'Gypsum board', 세대천정: 'Unit ceiling', '1차몰딩': 'Molding - 1st', '2차몰딩': 'Molding - 2nd', '1차 걸레받이': 'Skirting - 1st', '2차 걸레받이': 'Skirting - 2nd',
+  },
+  zh: {
+    바닥먹: '地面放线', 허리먹: '腰线放线', 단열: '保温', 합지: '板材粘贴', 경량골조: '轻钢骨架', 경량석고: '石膏板', 세대천정: '户内吊顶', '1차몰딩': '装饰线第1次', '2차몰딩': '装饰线第2次', '1차 걸레받이': '踢脚线第1次', '2차 걸레받이': '踢脚线第2次',
+  },
+  vi: {
+    바닥먹: 'Định vị sàn', 허리먹: 'Định vị cao độ tường', 단열: 'Cách nhiệt', 합지: 'Dán tấm', 경량골조: 'Khung vách nhẹ', 경량석고: 'Tấm thạch cao', 세대천정: 'Trần căn hộ', '1차몰딩': 'Phào chỉ lần 1', '2차몰딩': 'Phào chỉ lần 2', '1차 걸레받이': 'Len chân tường lần 1', '2차 걸레받이': 'Len chân tường lần 2',
+  },
+  ru: {
+    바닥먹: 'Разметка пола', 허리먹: 'Высотная разметка стен', 단열: 'Теплоизоляция', 합지: 'Приклеивание листов', 경량골조: 'Лёгкий каркас', 경량석고: 'Гипсокартон', 세대천정: 'Потолок квартиры', '1차몰딩': 'Молдинг, этап 1', '2차몰딩': 'Молдинг, этап 2', '1차 걸레받이': 'Плинтус, этап 1', '2차 걸레받이': 'Плинтус, этап 2',
+  },
+  mn: {
+    바닥먹: 'Шалны тэмдэглэгээ', 허리먹: 'Ханын түвшний тэмдэглэгээ', 단열: 'Дулаалга', 합지: 'Хавтан наах', 경량골조: 'Хөнгөн каркас', 경량석고: 'Гипсэн хавтан', 세대천정: 'Айлын тааз', '1차몰딩': 'Хүрээ 1-р үе', '2차몰딩': 'Хүрээ 2-р үе', '1차 걸레받이': 'Хормой мод 1-р үе', '2차 걸레받이': 'Хормой мод 2-р үе',
+  },
+};
+
 const attendanceTradeLabels = {
   ko: {
     소장: '소장', 관리자: '관리자', 직영: '직영', 먹매김: '먹매김', 단열: '단열', 합지: '합지', 경량벽체: '경량벽체', 세대천정: '세대천정', 공용홀천정: '공용홀천정', 몰딩: '몰딩', 걸레받이: '걸레받이', 수장: '수장', 외주: '외주', 기타: '기타', 용역: '용역',
@@ -364,6 +544,12 @@ export const getAttendanceTradeLabel = (language, tradeName) => {
   return attendanceTradeLabels[normalized]?.[value] || value;
 };
 
+export const getAttendanceProgressProcessLabel = (language, processName) => {
+  const normalized = normalizeAttendanceLanguage(language);
+  const value = String(processName || '').trim();
+  return attendanceProgressProcessLabels[normalized]?.[value] || value;
+};
+
 export const createAttendanceTranslator = (language) => {
   const normalized = normalizeAttendanceLanguage(language);
   const dictionary = dictionaries[normalized] || ko;
@@ -371,10 +557,14 @@ export const createAttendanceTranslator = (language) => {
   return (key, variables = {}) => {
     const workDictionary = workAssignmentDictionaries[normalized] ||
       workAssignmentDictionaries.ko;
+    const checkoutDictionary = checkoutProgressDictionaries[normalized] ||
+      checkoutProgressDictionaries.ko;
     const raw = dictionary[key] ??
       workDictionary[key] ??
+      checkoutDictionary[key] ??
       ko[key] ??
       workAssignmentDictionaries.ko[key] ??
+      checkoutProgressDictionaries.ko[key] ??
       key;
     if (Array.isArray(raw)) return raw;
 

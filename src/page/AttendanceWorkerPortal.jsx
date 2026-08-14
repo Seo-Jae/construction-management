@@ -37,6 +37,7 @@ import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import { BrowserQRCodeReader } from '@zxing/browser';
 import AttendanceMobileAdminQr from '../components/AttendanceMobileAdminQr.jsx';
+import AttendanceCheckoutProgressDialog from '../components/AttendanceCheckoutProgressDialog.jsx';
 import AttendanceWorkAssignmentDialog from '../components/AttendanceWorkAssignmentDialog.jsx';
 import { supabase } from '../supabaseClient';
 import {
@@ -82,6 +83,12 @@ const initialWorkAssignment = {
   floor: '',
   locationText: '',
   tradeName: '',
+};
+
+const initialCheckoutProgress = {
+  completionState: '',
+  progressProcessType: '',
+  selectedUnits: new Set(),
 };
 
 const APP_BRAND_GREEN = '#03c75a';
@@ -723,6 +730,9 @@ export default function AttendanceWorkerPortal() {
   const [pendingCheckIn, setPendingCheckIn] = useState(null);
   const [workAssignment, setWorkAssignment] = useState(initialWorkAssignment);
   const [workAssignmentSubmitting, setWorkAssignmentSubmitting] = useState(false);
+  const [pendingCheckOut, setPendingCheckOut] = useState(null);
+  const [checkoutProgress, setCheckoutProgress] = useState(initialCheckoutProgress);
+  const [checkoutProgressSubmitting, setCheckoutProgressSubmitting] = useState(false);
   const [installPrompt, setInstallPrompt] = useState(null);
   const [installHelpOpen, setInstallHelpOpen] = useState(false);
   const [appMode, setAppMode] = useState(isInstalledApp);
@@ -1071,6 +1081,9 @@ export default function AttendanceWorkerPortal() {
     setPendingCheckIn(null);
     setWorkAssignment(initialWorkAssignment);
     setWorkAssignmentSubmitting(false);
+    setPendingCheckOut(null);
+    setCheckoutProgress(initialCheckoutProgress);
+    setCheckoutProgressSubmitting(false);
     setMessage(null);
     setMode('login');
   };
@@ -1260,42 +1273,47 @@ export default function AttendanceWorkerPortal() {
       return;
     }
 
-    const finalize = await supabase.rpc('attendance_finalize_scan_v52_48_5_5', {
-      p_session_token: sessionToken,
-      p_device_key: deviceKey,
-      p_processing_token: processingToken,
-      p_location_mode: null,
-      p_building: null,
-      p_floor: null,
-      p_location_text: null,
-      p_trade_name: null,
-    });
+    const prepared = await supabase.rpc(
+      'attendance_prepare_checkout_context_v52_48_5_9',
+      {
+        p_session_token: sessionToken,
+        p_device_key: deviceKey,
+        p_processing_token: processingToken,
+      },
+    );
 
-    if (finalize.error) {
-      setMessage({ severity: 'error', text: t('attendanceFailed') });
+    if (prepared.error) {
+      setMessage({ severity: 'error', text: t('checkoutContextFailed') });
       setProcessingScan(false);
       return;
     }
 
-    const label = finalize.data?.event_type === 'check_in' ? t('checkIn') : t('checkOut');
-    setMessage({
-      severity: 'success',
-      text: t('attendanceSuccess', {
-        type: label,
-        time: formatKoreaDateTime(finalize.data?.event_at, {
-          timeOnly: true,
-          withSeconds: true,
-          locale,
-        }),
-      }),
+    const processOptions = Array.isArray(
+      prepared.data?.progress_process_options,
+    )
+      ? prepared.data.progress_process_options
+      : [];
+    const canSubmitProgress = Boolean(
+      prepared.data?.can_submit_progress,
+    );
+
+    setCheckoutProgress({
+      completionState: canSubmitProgress ? '' : 'none',
+      progressProcessType: processOptions.length === 1
+        ? processOptions[0]
+        : '',
+      selectedUnits: new Set(),
+    });
+    setPendingCheckOut({
+      ...prepared.data,
+      processingToken,
     });
     setProcessingScan(false);
-    await loadMe(sessionToken, true);
 
     const url = new URL(window.location.href);
     url.searchParams.delete('attendanceQr');
     window.history.replaceState({}, '', url.toString());
-  }, [closeScanner, deviceKey, loadMe, locale, processingScan, sessionToken, t]);
+  }, [closeScanner, deviceKey, processingScan, sessionToken, t]);
 
   const handleWorkAssignmentChange = useCallback((changes) => {
     setWorkAssignment((previous) => ({
@@ -1385,6 +1403,120 @@ export default function AttendanceWorkerPortal() {
     t,
     workAssignment,
     workAssignmentSubmitting,
+  ]);
+
+  const handleCheckoutProgressChange = useCallback((changes) => {
+    setCheckoutProgress((previous) => ({
+      ...previous,
+      ...changes,
+    }));
+  }, []);
+
+  const handleToggleCheckoutUnit = useCallback((unit) => {
+    setCheckoutProgress((previous) => {
+      const nextUnits = new Set(previous.selectedUnits);
+      if (nextUnits.has(unit)) nextUnits.delete(unit);
+      else nextUnits.add(unit);
+
+      return {
+        ...previous,
+        selectedUnits: nextUnits,
+      };
+    });
+  }, []);
+
+  const handleCancelCheckoutProgress = useCallback(() => {
+    if (checkoutProgressSubmitting) return;
+    setPendingCheckOut(null);
+    setCheckoutProgress(initialCheckoutProgress);
+  }, [checkoutProgressSubmitting]);
+
+  const handleSubmitCheckoutProgress = useCallback(async () => {
+    if (!pendingCheckOut || checkoutProgressSubmitting) return;
+
+    const canSubmitProgress = Boolean(
+      pendingCheckOut.can_submit_progress,
+    );
+    const processOptions = Array.isArray(
+      pendingCheckOut.progress_process_options,
+    )
+      ? pendingCheckOut.progress_process_options
+      : [];
+    const completionState = canSubmitProgress
+      ? checkoutProgress.completionState
+      : 'none';
+
+    if (canSubmitProgress && !completionState) {
+      setMessage({ severity: 'warning', text: t('selectCompletionAnswer') });
+      return;
+    }
+    if (
+      completionState === 'submitted' &&
+      !processOptions.includes(checkoutProgress.progressProcessType)
+    ) {
+      setMessage({ severity: 'warning', text: t('selectProgressProcess') });
+      return;
+    }
+    if (
+      completionState === 'submitted' &&
+      checkoutProgress.selectedUnits.size === 0
+    ) {
+      setMessage({ severity: 'warning', text: t('selectCompletedUnits') });
+      return;
+    }
+
+    setCheckoutProgressSubmitting(true);
+    const finalize = await supabase.rpc(
+      'attendance_finalize_checkout_progress_v52_48_5_9',
+      {
+        p_session_token: sessionToken,
+        p_device_key: deviceKey,
+        p_processing_token: pendingCheckOut.processingToken,
+        p_completion_state: completionState,
+        p_progress_process_type: completionState === 'submitted'
+          ? checkoutProgress.progressProcessType
+          : null,
+        p_units: completionState === 'submitted'
+          ? Array.from(checkoutProgress.selectedUnits)
+          : [],
+      },
+    );
+    setCheckoutProgressSubmitting(false);
+
+    if (finalize.error) {
+      setMessage({ severity: 'error', text: t('attendanceFailed') });
+      return;
+    }
+
+    setPendingCheckOut(null);
+    setCheckoutProgress(initialCheckoutProgress);
+    const completedAt = formatKoreaDateTime(
+      finalize.data?.event_at,
+      {
+        timeOnly: true,
+        withSeconds: true,
+        locale,
+      },
+    );
+    setMessage({
+      severity: 'success',
+      text: finalize.data?.review_status === 'pending'
+        ? t('checkoutProgressPendingSuccess', { time: completedAt })
+        : t('attendanceSuccess', {
+            type: t('checkOut'),
+            time: completedAt,
+          }),
+    });
+    await loadMe(sessionToken, true);
+  }, [
+    checkoutProgress,
+    checkoutProgressSubmitting,
+    deviceKey,
+    loadMe,
+    locale,
+    pendingCheckOut,
+    sessionToken,
+    t,
   ]);
 
   useEffect(() => {
@@ -1702,6 +1834,19 @@ export default function AttendanceWorkerPortal() {
           onChange={handleWorkAssignmentChange}
           onCancel={handleCancelWorkAssignment}
           onSubmit={handleSubmitWorkAssignment}
+        />
+        <AttendanceCheckoutProgressDialog
+          open={Boolean(pendingCheckOut)}
+          appMode={appMode}
+          language={language}
+          context={pendingCheckOut}
+          draft={checkoutProgress}
+          submitting={checkoutProgressSubmitting}
+          t={t}
+          onChange={handleCheckoutProgressChange}
+          onToggleUnit={handleToggleCheckoutUnit}
+          onCancel={handleCancelCheckoutProgress}
+          onSubmit={handleSubmitCheckoutProgress}
         />
         <Dialog
           open={cameraPermissionOpen}

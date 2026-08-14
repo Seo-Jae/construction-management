@@ -49,6 +49,7 @@ import RemoveCircleOutlineRoundedIcon from '@mui/icons-material/RemoveCircleOutl
 import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
 import QrCode from 'qrcode';
 import { supabase } from '../supabaseClient';
+import AttendanceProgressFloorGrid from '../components/AttendanceProgressFloorGrid.jsx';
 import RiskBroadcastManagement from './RiskBroadcastManagement.jsx';
 import {
   buildAttendanceQrDisplayUrl,
@@ -61,6 +62,7 @@ import {
 const tabItems = [
   { value: 'approval', label: '가입 승인', icon: <FactCheckRoundedIcon fontSize="small" /> },
   { value: 'records', label: '근태 기록', icon: <EditCalendarRoundedIcon fontSize="small" /> },
+  { value: 'progress-review', label: '진척 승인', icon: <CheckCircleRoundedIcon fontSize="small" /> },
   { value: 'devices', label: '기기 변경', icon: <DevicesRoundedIcon fontSize="small" /> },
   { value: 'audit', label: '변경 이력', icon: <HistoryRoundedIcon fontSize="small" /> },
   { value: 'workers', label: '근로자 관리', icon: <ManageAccountsRoundedIcon fontSize="small" /> },
@@ -121,6 +123,31 @@ const formatAttendanceWorkLocation = (row) => {
   return `${building.endsWith('동') ? building : `${building}동`} ${floor}층`;
 };
 
+const formatProgressSubmissionLocation = (row) => {
+  const building = String(row?.building || '').trim();
+  const floor = String(row?.floor ?? '').trim();
+  if (!building || !floor) return '-';
+  return `${building.endsWith('동') ? building : `${building}동`} ${floor}층`;
+};
+
+const normalizeProgressBuildingValue = (value) =>
+  String(value || '').trim().replace(/동$/, '');
+
+const progressReviewStatusMeta = (status) => ({
+  pending: { label: '승인대기', color: 'warning' },
+  approved: { label: '승인완료', color: 'success' },
+  rejected: { label: '반려', color: 'error' },
+  not_required: { label: '제출 없음', color: 'default' },
+}[status] || { label: status || '-', color: 'default' });
+
+const adminProgressGridTranslator = (key, variables = {}) => ({
+  progressFloorTitle: `${normalizeProgressBuildingValue(variables.building)}동 ${variables.floor || ''}층 골구도`,
+  selectedUnitCount: `${Number(variables.count || 0).toLocaleString()}세대 제출`,
+  selectedForCompletion: '작업자 완료 제출',
+  alreadyCompleted: '기존 완료',
+  noSelectableUnits: '이 층에는 표시할 세대가 없습니다.',
+}[key] || key);
+
 export default function AttendanceManagement({ projectName, canManage = false, onLogout }) {
   const [tab, setTab] = useState('approval');
   const [workDate, setWorkDate] = useState(getKoreaDateValue());
@@ -136,6 +163,10 @@ export default function AttendanceManagement({ projectName, canManage = false, o
   const [workersLoading, setWorkersLoading] = useState(false);
   const [notices, setNotices] = useState([]);
   const [noticesLoading, setNoticesLoading] = useState(false);
+  const [progressSubmissions, setProgressSubmissions] = useState([]);
+  const [progressSubmissionsLoading, setProgressSubmissionsLoading] = useState(false);
+  const [progressPreview, setProgressPreview] = useState(null);
+  const [progressReviewingId, setProgressReviewingId] = useState('');
   const [selectedNoticeIds, setSelectedNoticeIds] = useState(() => new Set());
   const [noticeDeleteOpen, setNoticeDeleteOpen] = useState(false);
   const [noticeEditorOpen, setNoticeEditorOpen] = useState(false);
@@ -218,6 +249,28 @@ export default function AttendanceManagement({ projectName, canManage = false, o
     if (!silent) setNoticesLoading(false);
   }, [projectName]);
 
+  const loadProgressSubmissions = useCallback(async (silent = false) => {
+    if (!projectName) return;
+    if (!silent) setProgressSubmissionsLoading(true);
+
+    const { data, error } = await supabase.rpc(
+      'attendance_manager_progress_submissions_v52_48_5_9',
+      { p_project_name: projectName },
+    );
+
+    if (error) {
+      setMessage({
+        severity: 'error',
+        text: error.message || '진척 승인 요청을 불러오지 못했습니다.',
+      });
+      if (!silent) setProgressSubmissionsLoading(false);
+      return;
+    }
+
+    setProgressSubmissions(Array.isArray(data) ? data : []);
+    if (!silent) setProgressSubmissionsLoading(false);
+  }, [projectName]);
+
   useEffect(() => {
     const timer = window.setTimeout(() => loadDashboard(), 0);
     return () => window.clearTimeout(timer);
@@ -237,9 +290,18 @@ export default function AttendanceManagement({ projectName, canManage = false, o
   }, [loadNotices, tab]);
 
   useEffect(() => {
+    const timer = window.setTimeout(
+      () => loadProgressSubmissions(),
+      0,
+    );
+    return () => window.clearTimeout(timer);
+  }, [loadProgressSubmissions]);
+
+  useEffect(() => {
     setSelectedNoticeIds(new Set());
     setNoticeDeleteOpen(false);
     setAuditFilter('전체');
+    setProgressPreview(null);
   }, [projectName]);
 
   useEffect(() => {
@@ -646,6 +708,55 @@ export default function AttendanceManagement({ projectName, canManage = false, o
     await loadDashboard(true);
   };
 
+  const handleProgressReview = async (submission, approved) => {
+    if (!canManage || !submission?.id || progressReviewingId) return;
+
+    const unitCount = Number(submission.submitted_units_count) || 0;
+    let reason = '담당자 골구도 확인 후 승인';
+
+    if (approved) {
+      const confirmed = window.confirm(
+        `${submission.worker_name}님이 제출한 ${unitCount.toLocaleString()}세대를 작업완료로 승인할까요?\n\n` +
+        '승인하면 기존 진척관리에 작업일 기준으로 즉시 반영됩니다.',
+      );
+      if (!confirmed) return;
+    } else {
+      reason = window.prompt('반려 사유를 2자 이상 입력해주세요.')?.trim() || '';
+      if (reason.length < 2) return;
+    }
+
+    setProgressReviewingId(submission.id);
+    const { data, error } = await supabase.rpc(
+      'attendance_manager_review_progress_v52_48_5_9',
+      {
+        p_submission_id: submission.id,
+        p_approved: approved,
+        p_reason: reason,
+      },
+    );
+    setProgressReviewingId('');
+
+    if (error) {
+      setMessage({
+        severity: 'error',
+        text: error.message || '진척 승인 요청을 처리하지 못했습니다.',
+      });
+      return;
+    }
+
+    setProgressPreview(null);
+    setMessage({
+      severity: 'success',
+      text: approved
+        ? `${Number(data?.applied_units_count || 0).toLocaleString()}세대를 진척관리에 작업완료로 반영했습니다.${Number(data?.skipped_units_count || 0) > 0 ? ` 기존 완료 ${Number(data.skipped_units_count).toLocaleString()}세대는 완료일을 유지했습니다.` : ''}`
+        : '작업자의 진척 제출을 반려했습니다. 근태기록은 그대로 유지됩니다.',
+    });
+    await Promise.all([
+      loadProgressSubmissions(true),
+      loadDashboard(true),
+    ]);
+  };
+
   const openCorrection = (record, type) => {
     const current = type === 'check_in' ? record.check_in_at : record.check_out_at;
     const defaultValue = current
@@ -711,6 +822,12 @@ export default function AttendanceManagement({ projectName, canManage = false, o
 
   const pendingCount = dashboard.pending_workers.length;
   const deviceCount = dashboard.device_requests.length;
+  const visibleProgressSubmissions = progressSubmissions.filter(
+    (row) => row.completion_state === 'submitted',
+  );
+  const progressPendingCount = visibleProgressSubmissions.filter(
+    (row) => row.review_status === 'pending',
+  ).length;
 
   return (
     <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 1.5 }}>
@@ -749,7 +866,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
               value={item.value}
               icon={item.icon}
               iconPosition="start"
-              label={`${item.label}${item.value === 'approval' && pendingCount ? ` ${pendingCount}` : item.value === 'devices' && deviceCount ? ` ${deviceCount}` : ''}`}
+              label={`${item.label}${item.value === 'approval' && pendingCount ? ` ${pendingCount}` : item.value === 'devices' && deviceCount ? ` ${deviceCount}` : item.value === 'progress-review' && progressPendingCount ? ` ${progressPendingCount}` : ''}`}
               sx={{ minHeight: 52, fontWeight: 800 }}
             />
           ))}
@@ -863,6 +980,113 @@ export default function AttendanceManagement({ projectName, canManage = false, o
                       </TableRow>
                     ))}
                     {dashboard.daily_records.length === 0 && <TableRow><TableCell colSpan={7} align="center" sx={{ py: 8, color: '#94a3b8' }}>승인된 근로자가 없습니다.</TableCell></TableRow>}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </Paper>
+        )}
+
+        {tab === 'progress-review' && (
+          <Paper variant="outlined" sx={{ borderColor: '#cbd5e1' }}>
+            <Box sx={{ p: 2, display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', justifyContent: 'space-between' }}>
+              <Box>
+                <Typography sx={{ fontWeight: 900 }}>퇴근 진척 승인</Typography>
+                <Typography sx={{ color: '#64748b', fontSize: '0.72rem' }}>
+                  작업자가 퇴근할 때 제출한 완료 세대를 확인합니다. 승인 전에는 진척관리에 반영되지 않습니다.
+                </Typography>
+              </Box>
+              <Button
+                variant="outlined"
+                startIcon={<RefreshRoundedIcon />}
+                onClick={() => loadProgressSubmissions()}
+                disabled={progressSubmissionsLoading}
+              >
+                새로고침
+              </Button>
+            </Box>
+            <Divider />
+
+            {progressSubmissionsLoading ? (
+              <Box sx={{ py: 10, textAlign: 'center' }}><CircularProgress /></Box>
+            ) : (
+              <TableContainer>
+                <Table size="small" sx={{ minWidth: 1080 }}>
+                  <TableHead>
+                    <TableRow>
+                      <TableCell>작업일</TableCell>
+                      <TableCell>성명</TableCell>
+                      <TableCell>작업위치</TableCell>
+                      <TableCell>출근 공정</TableCell>
+                      <TableCell>진척 공정</TableCell>
+                      <TableCell>제출 세대</TableCell>
+                      <TableCell>상태</TableCell>
+                      <TableCell>처리정보</TableCell>
+                      <TableCell align="right">확인</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {visibleProgressSubmissions.map((row) => {
+                      const statusMeta = progressReviewStatusMeta(row.review_status);
+                      const reviewing = progressReviewingId === row.id;
+
+                      return (
+                        <TableRow key={row.id} hover>
+                          <TableCell>{row.work_date || '-'}</TableCell>
+                          <TableCell><b>{row.worker_name}</b></TableCell>
+                          <TableCell>{formatProgressSubmissionLocation(row)}</TableCell>
+                          <TableCell>{row.attendance_trade_name || '-'}</TableCell>
+                          <TableCell><b>{row.progress_process_type || '-'}</b></TableCell>
+                          <TableCell>{Number(row.submitted_units_count || 0).toLocaleString()}세대</TableCell>
+                          <TableCell>
+                            <Chip size="small" color={statusMeta.color} label={statusMeta.label} />
+                          </TableCell>
+                          <TableCell sx={{ minWidth: 170 }}>
+                            {row.review_status === 'approved'
+                              ? `${Number(row.applied_units_count || 0).toLocaleString()}세대 반영${Number(row.skipped_units_count || 0) ? ` · 기존완료 ${Number(row.skipped_units_count).toLocaleString()}` : ''}`
+                              : row.review_status === 'rejected'
+                                ? row.review_reason || '반려'
+                                : formatKoreaDateTime(row.submitted_at)}
+                          </TableCell>
+                          <TableCell align="right">
+                            <Stack direction="row" spacing={0.7} justifyContent="flex-end">
+                              <Button size="small" variant="outlined" onClick={() => setProgressPreview(row)}>
+                                골구도 확인
+                              </Button>
+                              {row.review_status === 'pending' && (
+                                <>
+                                  <Button
+                                    size="small"
+                                    variant="contained"
+                                    color="success"
+                                    disabled={!canManage || reviewing}
+                                    onClick={() => handleProgressReview(row, true)}
+                                  >
+                                    승인
+                                  </Button>
+                                  <Button
+                                    size="small"
+                                    variant="outlined"
+                                    color="error"
+                                    disabled={!canManage || reviewing}
+                                    onClick={() => handleProgressReview(row, false)}
+                                  >
+                                    반려
+                                  </Button>
+                                </>
+                              )}
+                            </Stack>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                    {visibleProgressSubmissions.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={9} align="center" sx={{ py: 8, color: '#94a3b8' }}>
+                          작업자가 제출한 완료 세대가 없습니다.
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </TableContainer>
@@ -1316,6 +1540,85 @@ export default function AttendanceManagement({ projectName, canManage = false, o
           </Paper>
         )}
       </Box>
+
+      <Dialog
+        open={Boolean(progressPreview)}
+        onClose={() => !progressReviewingId && setProgressPreview(null)}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle sx={{ fontWeight: 900 }}>
+          퇴근 진척 골구도 확인
+          <IconButton
+            onClick={() => setProgressPreview(null)}
+            disabled={Boolean(progressReviewingId)}
+            sx={{ position: 'absolute', right: 8, top: 8 }}
+          >
+            <CloseRoundedIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          {progressPreview && (
+            <Stack spacing={2}>
+              <Paper variant="outlined" sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 2.5 }}>
+                <Typography sx={{ fontSize: '1.05rem', fontWeight: 900 }}>
+                  {progressPreview.worker_name} · {progressPreview.work_date}
+                </Typography>
+                <Typography sx={{ mt: 0.5, color: '#475569', fontSize: '0.82rem' }}>
+                  {formatProgressSubmissionLocation(progressPreview)} · 출근 공정 {progressPreview.attendance_trade_name} · 진척 공정 {progressPreview.progress_process_type}
+                </Typography>
+              </Paper>
+
+              <Alert severity="info">
+                초록색 세대가 작업자가 퇴근할 때 완료로 제출한 세대입니다. 승인해야 기존 진척관리에 작업완료로 반영됩니다.
+              </Alert>
+
+              <AttendanceProgressFloorGrid
+                building={progressPreview.building || ''}
+                floor={progressPreview.floor || 0}
+                config={progressPreview.building_config || {}}
+                selectedUnits={progressPreview.units || []}
+                completedUnits={[]}
+                readOnly
+                t={adminProgressGridTranslator}
+              />
+
+              {progressPreview.review_status !== 'pending' && (
+                <Alert severity={progressPreview.review_status === 'approved' ? 'success' : 'error'}>
+                  {progressPreview.review_status === 'approved'
+                    ? `${Number(progressPreview.applied_units_count || 0).toLocaleString()}세대를 진척관리에 반영했습니다.${Number(progressPreview.skipped_units_count || 0) ? ` 기존 완료 ${Number(progressPreview.skipped_units_count).toLocaleString()}세대는 완료일을 유지했습니다.` : ''}`
+                    : `반려 사유: ${progressPreview.review_reason || '-'}`}
+                </Alert>
+              )}
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={Boolean(progressReviewingId)} onClick={() => setProgressPreview(null)}>
+            닫기
+          </Button>
+          {progressPreview?.review_status === 'pending' && (
+            <>
+              <Button
+                color="error"
+                variant="outlined"
+                disabled={!canManage || Boolean(progressReviewingId)}
+                onClick={() => handleProgressReview(progressPreview, false)}
+              >
+                반려
+              </Button>
+              <Button
+                color="success"
+                variant="contained"
+                disabled={!canManage || Boolean(progressReviewingId)}
+                onClick={() => handleProgressReview(progressPreview, true)}
+              >
+                {progressReviewingId ? '처리 중...' : '확인완료 승인'}
+              </Button>
+            </>
+          )}
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={noticeEditorOpen}
