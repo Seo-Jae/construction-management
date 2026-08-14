@@ -6,6 +6,24 @@ export const ATTENDANCE_PROJECTS = [
 
 export const ATTENDANCE_SESSION_STORAGE_KEY =
   'wooklim-attendance-worker-session';
+
+export const ATTENDANCE_TRADE_OPTIONS = [
+  '소장',
+  '관리자',
+  '직영',
+  '먹매김',
+  '단열',
+  '합지',
+  '경량벽체',
+  '세대천정',
+  '공용홀천정',
+  '몰딩',
+  '걸레받이',
+  '수장',
+  '외주',
+  '기타',
+  '용역',
+];
 export const ATTENDANCE_DEVICE_STORAGE_KEY =
   'wooklim-attendance-device-key';
 

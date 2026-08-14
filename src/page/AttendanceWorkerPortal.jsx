@@ -37,10 +37,12 @@ import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import { BrowserQRCodeReader } from '@zxing/browser';
 import AttendanceMobileAdminQr from '../components/AttendanceMobileAdminQr.jsx';
+import AttendanceWorkAssignmentDialog from '../components/AttendanceWorkAssignmentDialog.jsx';
 import { supabase } from '../supabaseClient';
 import {
   ATTENDANCE_PROJECTS,
   ATTENDANCE_SESSION_STORAGE_KEY,
+  ATTENDANCE_TRADE_OPTIONS,
   extractAttendanceQrToken,
   formatKoreaDateTime,
   formatPhone,
@@ -50,6 +52,7 @@ import {
 import {
   ATTENDANCE_LANGUAGES,
   createAttendanceTranslator,
+  getAttendanceTradeLabel,
   getAttendanceLocale,
   readAttendanceLanguage,
   saveAttendanceLanguage,
@@ -71,6 +74,14 @@ const initialSignup = {
 const initialLogin = {
   phone: '',
   password: '',
+};
+
+const initialWorkAssignment = {
+  locationMode: 'standard',
+  building: '',
+  floor: '',
+  locationText: '',
+  tradeName: '',
 };
 
 const APP_BRAND_GREEN = '#03c75a';
@@ -709,6 +720,9 @@ export default function AttendanceWorkerPortal() {
   const [cameraPermissionState, setCameraPermissionState] = useState('unknown');
   const [scannerVideoElement, setScannerVideoElement] = useState(null);
   const [processingScan, setProcessingScan] = useState(false);
+  const [pendingCheckIn, setPendingCheckIn] = useState(null);
+  const [workAssignment, setWorkAssignment] = useState(initialWorkAssignment);
+  const [workAssignmentSubmitting, setWorkAssignmentSubmitting] = useState(false);
   const [installPrompt, setInstallPrompt] = useState(null);
   const [installHelpOpen, setInstallHelpOpen] = useState(false);
   const [appMode, setAppMode] = useState(isInstalledApp);
@@ -977,7 +991,7 @@ export default function AttendanceWorkerPortal() {
     }
 
     setLoading(true);
-    const { data, error } = await supabase.rpc('attendance_worker_signup_v52_14_1', {
+    const { data, error } = await supabase.rpc('attendance_worker_signup_v52_48_5_5', {
       p_project_name: signup.projectName,
       p_name_ko: nameKo,
       p_is_foreigner: signup.isForeigner,
@@ -1053,6 +1067,9 @@ export default function AttendanceWorkerPortal() {
     setMonthEvents([]);
     setRiskBroadcasts([]);
     setAttendanceNotices([]);
+    setPendingCheckIn(null);
+    setWorkAssignment(initialWorkAssignment);
+    setWorkAssignmentSubmitting(false);
     setMessage(null);
     setMode('login');
   };
@@ -1200,10 +1217,57 @@ export default function AttendanceWorkerPortal() {
       return;
     }
 
-    const finalize = await supabase.rpc('attendance_finalize_scan_v52_14', {
+    const processingToken = exchange.data?.processing_token || '';
+
+    if (exchange.data?.event_type === 'check_in') {
+      const prepared = await supabase.rpc(
+        'attendance_prepare_work_context_v52_48_5_5',
+        {
+          p_session_token: sessionToken,
+          p_device_key: deviceKey,
+          p_processing_token: processingToken,
+        },
+      );
+
+      if (prepared.error) {
+        setMessage({ severity: 'error', text: t('workOptionsFailed') });
+        setProcessingScan(false);
+        return;
+      }
+
+      const defaultTrade = String(
+        prepared.data?.default_trade_name || '',
+      ).trim();
+
+      setWorkAssignment({
+        ...initialWorkAssignment,
+        tradeName: ATTENDANCE_TRADE_OPTIONS.includes(defaultTrade)
+          ? defaultTrade
+          : '',
+      });
+      setPendingCheckIn({
+        processingToken,
+        buildings: Array.isArray(prepared.data?.buildings)
+          ? prepared.data.buildings
+          : [],
+      });
+      setProcessingScan(false);
+
+      const url = new URL(window.location.href);
+      url.searchParams.delete('attendanceQr');
+      window.history.replaceState({}, '', url.toString());
+      return;
+    }
+
+    const finalize = await supabase.rpc('attendance_finalize_scan_v52_48_5_5', {
       p_session_token: sessionToken,
       p_device_key: deviceKey,
-      p_processing_token: exchange.data?.processing_token || '',
+      p_processing_token: processingToken,
+      p_location_mode: null,
+      p_building: null,
+      p_floor: null,
+      p_location_text: null,
+      p_trade_name: null,
     });
 
     if (finalize.error) {
@@ -1231,6 +1295,96 @@ export default function AttendanceWorkerPortal() {
     url.searchParams.delete('attendanceQr');
     window.history.replaceState({}, '', url.toString());
   }, [closeScanner, deviceKey, loadMe, locale, processingScan, sessionToken, t]);
+
+  const handleWorkAssignmentChange = useCallback((changes) => {
+    setWorkAssignment((previous) => ({
+      ...previous,
+      ...changes,
+    }));
+  }, []);
+
+  const handleCancelWorkAssignment = useCallback(() => {
+    if (workAssignmentSubmitting) return;
+    setPendingCheckIn(null);
+    setWorkAssignment(initialWorkAssignment);
+  }, [workAssignmentSubmitting]);
+
+  const handleSubmitWorkAssignment = useCallback(async () => {
+    if (!pendingCheckIn || workAssignmentSubmitting) return;
+
+    if (
+      workAssignment.locationMode === 'standard' &&
+      (!workAssignment.building || !workAssignment.floor)
+    ) {
+      setMessage({ severity: 'warning', text: t('selectBuildingFloor') });
+      return;
+    }
+
+    if (
+      workAssignment.locationMode === 'other' &&
+      workAssignment.locationText.trim().length < 2
+    ) {
+      setMessage({ severity: 'warning', text: t('enterOtherWorkLocation') });
+      return;
+    }
+
+    if (!ATTENDANCE_TRADE_OPTIONS.includes(workAssignment.tradeName)) {
+      setMessage({ severity: 'warning', text: t('selectWorkProcess') });
+      return;
+    }
+
+    setWorkAssignmentSubmitting(true);
+    const finalize = await supabase.rpc(
+      'attendance_finalize_scan_v52_48_5_5',
+      {
+        p_session_token: sessionToken,
+        p_device_key: deviceKey,
+        p_processing_token: pendingCheckIn.processingToken,
+        p_location_mode: workAssignment.locationMode,
+        p_building: workAssignment.locationMode === 'standard'
+          ? workAssignment.building
+          : null,
+        p_floor: workAssignment.locationMode === 'standard'
+          ? Number(workAssignment.floor)
+          : null,
+        p_location_text: workAssignment.locationMode === 'other'
+          ? workAssignment.locationText.trim()
+          : null,
+        p_trade_name: workAssignment.tradeName,
+      },
+    );
+
+    setWorkAssignmentSubmitting(false);
+    setPendingCheckIn(null);
+    setWorkAssignment(initialWorkAssignment);
+
+    if (finalize.error) {
+      setMessage({ severity: 'error', text: t('attendanceFailed') });
+      return;
+    }
+
+    setMessage({
+      severity: 'success',
+      text: t('attendanceSuccess', {
+        type: t('checkIn'),
+        time: formatKoreaDateTime(finalize.data?.event_at, {
+          timeOnly: true,
+          withSeconds: true,
+          locale,
+        }),
+      }),
+    });
+    await loadMe(sessionToken, true);
+  }, [
+    deviceKey,
+    loadMe,
+    locale,
+    pendingCheckIn,
+    sessionToken,
+    t,
+    workAssignment,
+    workAssignmentSubmitting,
+  ]);
 
   useEffect(() => {
     if (!worker || worker.status !== 'active' || !sessionToken) return;
@@ -1409,7 +1563,7 @@ export default function AttendanceWorkerPortal() {
             <Box>
               <Typography sx={{ fontSize: appMode ? '1.4rem' : '1.15rem', fontWeight: 900 }}>{worker.name_ko}</Typography>
               <Typography sx={{ mt: 0.5, color: '#64748b', fontSize: appMode ? '0.98rem' : '0.78rem', lineHeight: 1.45 }}>{worker.project_name}</Typography>
-              <Typography sx={{ mt: appMode ? 0.35 : 0, color: '#64748b', fontSize: appMode ? '0.92rem' : '0.74rem' }}>{worker.trade_name}</Typography>
+              <Typography sx={{ mt: appMode ? 0.35 : 0, color: '#64748b', fontSize: appMode ? '0.92rem' : '0.74rem' }}>{getAttendanceTradeLabel(language, worker.trade_name)}</Typography>
             </Box>
             <Chip label={meta.label} color={meta.color} size="small" />
           </Stack>
@@ -1468,6 +1622,18 @@ export default function AttendanceWorkerPortal() {
             {t('installAsApp')}
           </Button>
         )}
+        <AttendanceWorkAssignmentDialog
+          open={Boolean(pendingCheckIn)}
+          appMode={appMode}
+          language={language}
+          buildings={pendingCheckIn?.buildings || []}
+          draft={workAssignment}
+          submitting={workAssignmentSubmitting}
+          t={t}
+          onChange={handleWorkAssignmentChange}
+          onCancel={handleCancelWorkAssignment}
+          onSubmit={handleSubmitWorkAssignment}
+        />
         <Dialog
           open={cameraPermissionOpen}
           onClose={() => {
@@ -1662,7 +1828,7 @@ export default function AttendanceWorkerPortal() {
         }
         data-attendance-login-reference-layout={
           mode === 'login' && appMode
-            ? 'v52.48.5.4'
+            ? 'v52.48.5.5'
             : undefined
         }
         variant={
@@ -2061,7 +2227,21 @@ export default function AttendanceWorkerPortal() {
               </Alert>
             )}
             <TextField label={t('phone')} value={formatPhone(signup.phone)} onChange={(event) => setSignup((prev) => ({ ...prev, phone: normalizePhone(event.target.value) }))} inputMode="tel" />
-            <TextField label={t('trade')} value={signup.tradeName} onChange={(event) => setSignup((prev) => ({ ...prev, tradeName: event.target.value }))} placeholder={t('tradePlaceholder')} />
+            <FormControl fullWidth>
+              <InputLabel>{t('trade')}</InputLabel>
+              <Select
+                label={t('trade')}
+                value={signup.tradeName}
+                onChange={(event) => setSignup((prev) => ({ ...prev, tradeName: event.target.value }))}
+                displayEmpty={false}
+              >
+                {ATTENDANCE_TRADE_OPTIONS.map((trade) => (
+                  <MenuItem key={trade} value={trade}>
+                    {getAttendanceTradeLabel(language, trade)}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
             {!signup.isTestAccount && (
               <>
                 <TextField label={t('password')} type="password" value={signup.password} onChange={(event) => setSignup((prev) => ({ ...prev, password: event.target.value }))} helperText={t('passwordHelp')} autoComplete="new-password" />

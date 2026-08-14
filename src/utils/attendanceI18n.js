@@ -163,6 +163,162 @@ const dictionaries = {
   },
 };
 
+const workAssignmentDictionaries = {
+  ko: {
+    selectTrade: '직종·공종 선택',
+    workAssignmentTitle: '오늘 작업정보 입력',
+    workAssignmentSubtitle: '작업 위치와 공정을 확인한 뒤 출근을 완료해주세요.',
+    checkInAfterWorkAssignment: '작업정보를 모두 입력하고 완료해야 출근시간이 기록됩니다.',
+    otherWorkLocation: '기타 작업위치',
+    workLocation: '작업위치',
+    workLocationExample: '예: 101동 지하 1층',
+    workLocationHelp: '지하층이나 동·층으로 구분하기 어려운 장소를 한 줄로 입력해주세요.',
+    noBuildingDataUseOther: '등록된 동·층 자료가 없습니다. 기타 작업위치를 선택해주세요.',
+    building: '작업 동',
+    buildingSuffix: '동',
+    floor: '작업 층',
+    floorNumber: '{floor}층',
+    workProcess: '작업 공정',
+    defaultProcessGuide: '가입할 때 선택한 공정이 기본으로 표시되며 오늘 작업에 맞게 변경할 수 있습니다.',
+    completeCheckIn: '출근 완료',
+    workOptionsFailed: '작업 위치 정보를 불러오지 못했습니다. 새 QR을 다시 촬영해주세요.',
+    selectBuildingFloor: '작업할 동과 층을 선택해주세요.',
+    enterOtherWorkLocation: '기타 작업위치를 입력해주세요.',
+    selectWorkProcess: '오늘 작업할 공정을 선택해주세요.',
+  },
+  en: {
+    selectTrade: 'Select trade / work type',
+    workAssignmentTitle: "Enter today's work details",
+    workAssignmentSubtitle: 'Confirm the work location and trade to complete check-in.',
+    checkInAfterWorkAssignment: 'Your check-in time is recorded only after all work details are completed.',
+    otherWorkLocation: 'Other work location',
+    workLocation: 'Work location',
+    workLocationExample: 'Example: Building 101, Basement 1',
+    workLocationHelp: 'Enter a basement or another location that cannot be selected by building and floor.',
+    noBuildingDataUseOther: 'No building and floor data is registered. Select Other work location.',
+    building: 'Building',
+    buildingSuffix: '',
+    floor: 'Floor',
+    floorNumber: 'Floor {floor}',
+    workProcess: 'Work trade',
+    defaultProcessGuide: 'Your registered trade is selected by default. You can change it for today.',
+    completeCheckIn: 'Complete check-in',
+    workOptionsFailed: 'Could not load work locations. Please scan a new QR.',
+    selectBuildingFloor: 'Select the building and floor where you will work.',
+    enterOtherWorkLocation: 'Enter the other work location.',
+    selectWorkProcess: 'Select the trade you will perform today.',
+  },
+  zh: {
+    selectTrade: '选择工种·专业',
+    workAssignmentTitle: '填写今日作业信息',
+    workAssignmentSubtitle: '确认作业位置和工种后完成上班登记。',
+    checkInAfterWorkAssignment: '填写并完成全部作业信息后，才会记录上班时间。',
+    otherWorkLocation: '其他作业位置',
+    workLocation: '作业位置',
+    workLocationExample: '例：101栋 地下1层',
+    workLocationHelp: '地下层或无法按楼栋、楼层选择的位置请填写在一行内。',
+    noBuildingDataUseOther: '没有已登记的楼栋和楼层资料，请选择其他作业位置。',
+    building: '作业楼栋',
+    buildingSuffix: '栋',
+    floor: '作业楼层',
+    floorNumber: '{floor}层',
+    workProcess: '作业工种',
+    defaultProcessGuide: '默认显示注册时选择的工种，可根据今天的作业进行更改。',
+    completeCheckIn: '完成上班登记',
+    workOptionsFailed: '无法加载作业位置信息，请重新扫描新的二维码。',
+    selectBuildingFloor: '请选择作业楼栋和楼层。',
+    enterOtherWorkLocation: '请输入其他作业位置。',
+    selectWorkProcess: '请选择今天的作业工种。',
+  },
+  vi: {
+    selectTrade: 'Chọn nghề / hạng mục',
+    workAssignmentTitle: 'Nhập công việc hôm nay',
+    workAssignmentSubtitle: 'Xác nhận vị trí và hạng mục để hoàn tất vào ca.',
+    checkInAfterWorkAssignment: 'Giờ vào ca chỉ được ghi sau khi hoàn tất đầy đủ thông tin công việc.',
+    otherWorkLocation: 'Vị trí làm việc khác',
+    workLocation: 'Vị trí làm việc',
+    workLocationExample: 'Ví dụ: Tòa 101, tầng hầm B1',
+    workLocationHelp: 'Nhập tầng hầm hoặc vị trí không thể chọn theo tòa và tầng trên một dòng.',
+    noBuildingDataUseOther: 'Không có dữ liệu tòa và tầng. Hãy chọn Vị trí làm việc khác.',
+    building: 'Tòa làm việc',
+    buildingSuffix: '',
+    floor: 'Tầng làm việc',
+    floorNumber: 'Tầng {floor}',
+    workProcess: 'Hạng mục công việc',
+    defaultProcessGuide: 'Hạng mục đã chọn khi đăng ký được đặt mặc định và có thể thay đổi cho hôm nay.',
+    completeCheckIn: 'Hoàn tất vào ca',
+    workOptionsFailed: 'Không tải được vị trí làm việc. Vui lòng quét mã QR mới.',
+    selectBuildingFloor: 'Hãy chọn tòa và tầng làm việc.',
+    enterOtherWorkLocation: 'Hãy nhập vị trí làm việc khác.',
+    selectWorkProcess: 'Hãy chọn hạng mục làm việc hôm nay.',
+  },
+  ru: {
+    selectTrade: 'Выберите специальность / вид работ',
+    workAssignmentTitle: 'Укажите работу на сегодня',
+    workAssignmentSubtitle: 'Подтвердите место и вид работ, чтобы завершить отметку прихода.',
+    checkInAfterWorkAssignment: 'Время прихода будет записано только после заполнения всех данных о работе.',
+    otherWorkLocation: 'Другое место работы',
+    workLocation: 'Место работы',
+    workLocationExample: 'Пример: корпус 101, подвал 1',
+    workLocationHelp: 'Одной строкой укажите подвал или другое место, которое нельзя выбрать по корпусу и этажу.',
+    noBuildingDataUseOther: 'Данные по корпусам и этажам отсутствуют. Выберите Другое место работы.',
+    building: 'Корпус',
+    buildingSuffix: '',
+    floor: 'Этаж',
+    floorNumber: '{floor} этаж',
+    workProcess: 'Вид работ',
+    defaultProcessGuide: 'По умолчанию выбран вид работ из регистрации. На сегодня его можно изменить.',
+    completeCheckIn: 'Завершить приход',
+    workOptionsFailed: 'Не удалось загрузить места работы. Отсканируйте новый QR.',
+    selectBuildingFloor: 'Выберите корпус и этаж работы.',
+    enterOtherWorkLocation: 'Укажите другое место работы.',
+    selectWorkProcess: 'Выберите вид работ на сегодня.',
+  },
+  mn: {
+    selectTrade: 'Мэргэжил / ажлын төрлийг сонгох',
+    workAssignmentTitle: 'Өнөөдрийн ажлын мэдээлэл',
+    workAssignmentSubtitle: 'Ажлын байрлал, төрлийг баталгаажуулж ирцээ бүртгэнэ үү.',
+    checkInAfterWorkAssignment: 'Ажлын бүх мэдээллийг бөглөж дууссаны дараа ирсэн цаг бүртгэгдэнэ.',
+    otherWorkLocation: 'Бусад ажлын байрлал',
+    workLocation: 'Ажлын байрлал',
+    workLocationExample: 'Жишээ: 101-р байр, зоорийн 1-р давхар',
+    workLocationHelp: 'Байр, давхраар сонгох боломжгүй зоорь эсвэл бусад байрлалыг нэг мөрөөр бичнэ үү.',
+    noBuildingDataUseOther: 'Байр, давхрын мэдээлэл бүртгэгдээгүй. Бусад ажлын байрлалыг сонгоно уу.',
+    building: 'Ажиллах байр',
+    buildingSuffix: '',
+    floor: 'Ажиллах давхар',
+    floorNumber: '{floor}-р давхар',
+    workProcess: 'Ажлын төрөл',
+    defaultProcessGuide: 'Бүртгүүлэхдээ сонгосон ажил үндсэн утгаар харагдана. Өнөөдрийн ажилд тохируулан сольж болно.',
+    completeCheckIn: 'Ирц бүртгэх',
+    workOptionsFailed: 'Ажлын байрлалын мэдээллийг авч чадсангүй. Шинэ QR дахин уншуулна уу.',
+    selectBuildingFloor: 'Ажиллах байр болон давхраа сонгоно уу.',
+    enterOtherWorkLocation: 'Бусад ажлын байрлалыг оруулна уу.',
+    selectWorkProcess: 'Өнөөдөр хийх ажлын төрлөө сонгоно уу.',
+  },
+};
+
+const attendanceTradeLabels = {
+  ko: {
+    소장: '소장', 관리자: '관리자', 직영: '직영', 먹매김: '먹매김', 단열: '단열', 합지: '합지', 경량벽체: '경량벽체', 세대천정: '세대천정', 공용홀천정: '공용홀천정', 몰딩: '몰딩', 걸레받이: '걸레받이', 수장: '수장', 외주: '외주', 기타: '기타', 용역: '용역',
+  },
+  en: {
+    소장: 'Site manager', 관리자: 'Manager', 직영: 'Direct labor', 먹매김: 'Layout marking', 단열: 'Insulation', 합지: 'Board bonding', 경량벽체: 'Light-gauge partition', 세대천정: 'Unit ceiling', 공용홀천정: 'Common-area ceiling', 몰딩: 'Molding', 걸레받이: 'Skirting', 수장: 'Interior finishing', 외주: 'Subcontract', 기타: 'Other', 용역: 'Temporary labor',
+  },
+  zh: {
+    소장: '现场负责人', 관리자: '管理员', 직영: '直属施工', 먹매김: '放线定位', 단열: '保温', 합지: '粘贴板材', 경량벽체: '轻钢隔墙', 세대천정: '户内吊顶', 공용홀천정: '公共厅吊顶', 몰딩: '装饰线', 걸레받이: '踢脚线', 수장: '室内装修', 외주: '外包', 기타: '其他', 용역: '劳务',
+  },
+  vi: {
+    소장: 'Chỉ huy trưởng', 관리자: 'Quản lý', 직영: 'Nhân công trực tiếp', 먹매김: 'Định vị lấy dấu', 단열: 'Cách nhiệt', 합지: 'Dán tấm', 경량벽체: 'Vách khung nhẹ', 세대천정: 'Trần căn hộ', 공용홀천정: 'Trần sảnh chung', 몰딩: 'Phào chỉ', 걸레받이: 'Len chân tường', 수장: 'Hoàn thiện nội thất', 외주: 'Thầu phụ', 기타: 'Khác', 용역: 'Nhân công dịch vụ',
+  },
+  ru: {
+    소장: 'Начальник участка', 관리자: 'Руководитель', 직영: 'Штатные работы', 먹매김: 'Разметка', 단열: 'Теплоизоляция', 합지: 'Приклеивание листов', 경량벽체: 'Лёгкие перегородки', 세대천정: 'Потолок квартиры', 공용홀천정: 'Потолок общего холла', 몰딩: 'Молдинг', 걸레받이: 'Плинтус', 수장: 'Внутренняя отделка', 외주: 'Субподряд', 기타: 'Другое', 용역: 'Временные рабочие',
+  },
+  mn: {
+    소장: 'Талбайн дарга', 관리자: 'Менежер', 직영: 'Шууд ажилтан', 먹매김: 'Байршлын тэмдэглэгээ', 단열: 'Дулаалга', 합지: 'Хавтан наах', 경량벽체: 'Хөнгөн хана', 세대천정: 'Айлын тааз', 공용홀천정: 'Нийтийн хонгилын тааз', 몰딩: 'Хүрээ', 걸레받이: 'Хормой мод', 수장: 'Дотор заслын ажил', 외주: 'Туслан гүйцэтгэгч', 기타: 'Бусад', 용역: 'Түр ажилтан',
+  },
+};
+
 const supportedCodes = new Set(
   ATTENDANCE_LANGUAGES.map((item) => item.code),
 );
@@ -202,12 +358,24 @@ export const getAttendanceLocale = (language) =>
     (item) => item.code === normalizeAttendanceLanguage(language),
   )?.locale || 'ko-KR';
 
+export const getAttendanceTradeLabel = (language, tradeName) => {
+  const normalized = normalizeAttendanceLanguage(language);
+  const value = String(tradeName || '').trim();
+  return attendanceTradeLabels[normalized]?.[value] || value;
+};
+
 export const createAttendanceTranslator = (language) => {
   const normalized = normalizeAttendanceLanguage(language);
   const dictionary = dictionaries[normalized] || ko;
 
   return (key, variables = {}) => {
-    const raw = dictionary[key] ?? ko[key] ?? key;
+    const workDictionary = workAssignmentDictionaries[normalized] ||
+      workAssignmentDictionaries.ko;
+    const raw = dictionary[key] ??
+      workDictionary[key] ??
+      ko[key] ??
+      workAssignmentDictionaries.ko[key] ??
+      key;
     if (Array.isArray(raw)) return raw;
 
     return String(raw).replace(
