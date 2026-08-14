@@ -51,10 +51,23 @@ export default function AttendanceWorkAssignmentDialog({
     { length: floorCount },
     (_unused, index) => index + 1,
   );
+  const largeSelectMenuProps = appMode
+    ? {
+        PaperProps: {
+          sx: {
+            '& .MuiMenuItem-root': {
+              minHeight: 66,
+              fontSize: '1.45rem',
+            },
+          },
+        },
+      }
+    : undefined;
 
   return (
     <Dialog
       open={open}
+      data-attendance-work-assignment-scale="v52.48.5.7"
       fullScreen={appMode}
       fullWidth
       maxWidth="sm"
@@ -75,14 +88,14 @@ export default function AttendanceWorkAssignmentDialog({
           width: appMode ? '90%' : 'auto',
           mx: appMode ? 'auto' : 0,
           px: appMode ? 0 : 3,
-          pt: appMode ? 'calc(86px + env(safe-area-inset-top))' : 3,
-          pb: appMode ? 3 : 1.25,
+          pt: appMode ? 'calc(150px + env(safe-area-inset-top))' : 3,
+          pb: appMode ? 4.5 : 1.25,
         }}
       >
-        <Typography sx={{ fontSize: appMode ? '2.65rem' : '1.2rem', lineHeight: 1.15, fontWeight: 950 }}>
+        <Typography sx={{ fontSize: appMode ? '3.25rem' : '1.2rem', lineHeight: 1.1, fontWeight: 950, letterSpacing: appMode ? '-0.04em' : undefined }}>
           {t('workAssignmentTitle')}
         </Typography>
-        <Typography sx={{ mt: appMode ? 1.5 : 0.7, color: '#64748b', fontSize: appMode ? '1.22rem' : '0.82rem', lineHeight: 1.65 }}>
+        <Typography sx={{ mt: appMode ? 2 : 0.7, color: '#64748b', fontSize: appMode ? '1.42rem' : '0.82rem', lineHeight: 1.65 }}>
           {t('workAssignmentSubtitle')}
         </Typography>
       </DialogTitle>
@@ -92,35 +105,47 @@ export default function AttendanceWorkAssignmentDialog({
           width: appMode ? '90%' : 'auto',
           mx: appMode ? 'auto' : 0,
           px: appMode ? '0 !important' : 3,
-          pt: appMode ? '18px !important' : '12px !important',
+          pt: appMode ? '22px !important' : '12px !important',
           pb: appMode ? 3 : 2,
         }}
       >
         <Stack
-          spacing={appMode ? 3.2 : 2.1}
+          spacing={appMode ? 4.5 : 2.1}
           sx={appMode ? {
             '& .MuiInputBase-root': {
-              minHeight: 82,
-              fontSize: '1.35rem',
+              minHeight: 94,
+              fontSize: '1.85rem',
               borderRadius: 2.5,
             },
             '& .MuiInputLabel-root': {
-              fontSize: '1.18rem',
+              fontSize: '1.35rem',
             },
             '& .MuiFormHelperText-root': {
               mx: 0.5,
-              fontSize: '1rem',
+              fontSize: '1.15rem',
               lineHeight: 1.5,
             },
             '& .MuiFormControlLabel-label': {
-              fontSize: '1.22rem',
+              fontSize: '1.48rem',
+              fontWeight: 700,
             },
             '& .MuiCheckbox-root .MuiSvgIcon-root': {
-              fontSize: '2.2rem',
+              fontSize: '2.65rem',
             },
           } : undefined}
         >
-          <Alert severity="info" sx={{ fontSize: appMode ? '1.08rem' : undefined, lineHeight: 1.65 }}>
+          <Alert
+            severity="info"
+            sx={{
+              minHeight: appMode ? 76 : undefined,
+              alignItems: 'center',
+              fontSize: appMode ? '1.25rem' : undefined,
+              lineHeight: 1.65,
+              '& .MuiAlert-icon': {
+                fontSize: appMode ? '2rem' : undefined,
+              },
+            }}
+          >
             {t('checkInAfterWorkAssignment')}
           </Alert>
 
@@ -155,7 +180,7 @@ export default function AttendanceWorkAssignmentDialog({
           ) : (
             <>
               {buildings.length === 0 && (
-                <Alert severity="warning" sx={{ fontSize: appMode ? '1.08rem' : undefined, lineHeight: 1.65 }}>
+                <Alert severity="warning" sx={{ fontSize: appMode ? '1.25rem' : undefined, lineHeight: 1.65 }}>
                   {t('noBuildingDataUseOther')}
                 </Alert>
               )}
@@ -165,6 +190,7 @@ export default function AttendanceWorkAssignmentDialog({
                 <Select
                   label={t('building')}
                   value={draft.building}
+                  MenuProps={largeSelectMenuProps}
                   onChange={(event) => onChange({ building: event.target.value, floor: '' })}
                 >
                   {buildings.map((item) => (
@@ -180,6 +206,7 @@ export default function AttendanceWorkAssignmentDialog({
                 <Select
                   label={t('floor')}
                   value={draft.floor}
+                  MenuProps={largeSelectMenuProps}
                   onChange={(event) => onChange({ floor: event.target.value })}
                 >
                   {floors.map((floor) => (
@@ -197,6 +224,7 @@ export default function AttendanceWorkAssignmentDialog({
             <Select
               label={t('workProcess')}
               value={draft.tradeName}
+              MenuProps={largeSelectMenuProps}
               onChange={(event) => onChange({ tradeName: event.target.value })}
             >
               {ATTENDANCE_TRADE_OPTIONS.map((trade) => (
@@ -208,7 +236,7 @@ export default function AttendanceWorkAssignmentDialog({
           </FormControl>
 
           <Box sx={{ px: 0.25 }}>
-            <Typography sx={{ color: '#64748b', fontSize: appMode ? '1rem' : '0.78rem', lineHeight: 1.65 }}>
+            <Typography sx={{ color: '#64748b', fontSize: appMode ? '1.18rem' : '0.78rem', lineHeight: 1.65 }}>
               {t('defaultProcessGuide')}
             </Typography>
           </Box>
@@ -221,8 +249,8 @@ export default function AttendanceWorkAssignmentDialog({
           mx: appMode ? 'auto' : 0,
           px: appMode ? 0 : 3,
           pb: appMode ? 'calc(38px + env(safe-area-inset-bottom))' : 3,
-          pt: appMode ? 2.5 : 1.5,
-          gap: appMode ? 1.5 : 1,
+          pt: appMode ? 3 : 1.5,
+          gap: appMode ? 2 : 1,
         }}
       >
         <Button
@@ -231,10 +259,10 @@ export default function AttendanceWorkAssignmentDialog({
           disabled={submitting}
           onClick={onCancel}
           sx={{
-            minHeight: appMode ? 88 : 54,
-            minWidth: appMode ? 150 : 96,
+            minHeight: appMode ? 108 : 54,
+            minWidth: appMode ? 170 : 96,
             borderRadius: appMode ? 2.5 : undefined,
-            fontSize: appMode ? '1.25rem' : undefined,
+            fontSize: appMode ? '1.55rem' : undefined,
             fontWeight: 900,
           }}
         >
@@ -246,10 +274,10 @@ export default function AttendanceWorkAssignmentDialog({
           onClick={onSubmit}
           sx={{
             flex: 1,
-            minHeight: appMode ? 88 : 54,
+            minHeight: appMode ? 108 : 54,
             borderRadius: appMode ? 2.5 : undefined,
             bgcolor: '#03c75a',
-            fontSize: appMode ? '1.35rem' : undefined,
+            fontSize: appMode ? '1.7rem' : undefined,
             fontWeight: 950,
             boxShadow: 'none',
             '&:hover': { bgcolor: '#03b351' },
