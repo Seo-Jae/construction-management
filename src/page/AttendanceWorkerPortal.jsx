@@ -607,7 +607,7 @@ function MobileShell({
             direction="row"
             spacing={1.5}
             alignItems="center"
-            sx={{ minWidth: 0 }}
+            sx={{ minWidth: 0, flex: '1 1 auto' }}
           >
             {appMode && (
               <Box
@@ -631,11 +631,11 @@ function MobileShell({
                 W
               </Box>
             )}
-            <Box>
-            <Typography sx={{ fontSize: appMode ? '0.72rem' : '0.65rem', fontWeight: 900, letterSpacing: '0.12em', color: appMode ? 'rgba(255,255,255,0.86)' : '#bae6fd' }}>
+            <Box sx={{ minWidth: 0 }}>
+            <Typography noWrap sx={{ fontSize: appMode ? '0.72rem' : '0.65rem', fontWeight: 900, letterSpacing: '0.12em', color: appMode ? 'rgba(255,255,255,0.86)' : '#bae6fd' }}>
               WOOKLIM CONSTRUCTION
             </Typography>
-            <Typography sx={{ fontSize: appMode ? '1.18rem' : '1rem', fontWeight: 900 }}>
+            <Typography noWrap sx={{ fontSize: appMode ? '1.18rem' : '1rem', fontWeight: 900 }}>
               {appTitle}
             </Typography>
             </Box>
@@ -1521,23 +1521,89 @@ export default function AttendanceWorkerPortal() {
         contentMaxWidth={appMode ? '90%' : 520}
         topBanner={<AttendanceNoticeTicker notices={attendanceNotices} appMode={appMode} t={t} />}
         headerAction={
-          <IconButton
-            aria-label={t('logout')}
-            title={t('logout')}
-            onClick={handleLogout}
-            sx={{
-              width: appMode ? 44 : 40,
-              height: appMode ? 44 : 40,
-              color: '#ffffff',
-              bgcolor: 'rgba(255,255,255,0.12)',
-              border: '1px solid rgba(255,255,255,0.28)',
-              '&:hover': {
-                bgcolor: 'rgba(255,255,255,0.2)',
-              },
-            }}
+          <Stack
+            direction="row"
+            spacing={appMode ? 0.75 : 1}
+            alignItems="center"
+            data-attendance-worker-language="v52.48.5.8"
           >
-            <LogoutRoundedIcon />
-          </IconButton>
+            <FormControl
+              size="small"
+              sx={{
+                width: appMode ? 116 : 150,
+                flex: '0 0 auto',
+                '& .MuiInputLabel-root': {
+                  color: 'rgba(255,255,255,0.82)',
+                  fontSize: appMode ? '0.78rem' : '0.8rem',
+                  '&.Mui-focused': { color: '#ffffff' },
+                },
+                '& .MuiOutlinedInput-root': {
+                  height: appMode ? 44 : 40,
+                  color: '#ffffff',
+                  bgcolor: 'rgba(255,255,255,0.12)',
+                  borderRadius: 2,
+                  fontSize: appMode ? '0.94rem' : '0.84rem',
+                  fontWeight: 800,
+                  '& fieldset': {
+                    borderColor: 'rgba(255,255,255,0.4)',
+                  },
+                  '&:hover fieldset': {
+                    borderColor: 'rgba(255,255,255,0.72)',
+                  },
+                  '&.Mui-focused fieldset': {
+                    borderColor: '#ffffff',
+                  },
+                },
+                '& .MuiSelect-icon': {
+                  color: '#ffffff',
+                },
+              }}
+            >
+              <InputLabel id="attendance-worker-language-label">
+                Language
+              </InputLabel>
+              <Select
+                labelId="attendance-worker-language-label"
+                label="Language"
+                value={language}
+                onChange={handleLanguageChange}
+                MenuProps={{
+                  PaperProps: {
+                    sx: {
+                      '& .MuiMenuItem-root': {
+                        minHeight: appMode ? 52 : 44,
+                        fontSize: appMode ? '1rem' : '0.9rem',
+                      },
+                    },
+                  },
+                }}
+              >
+                {ATTENDANCE_LANGUAGES.map((item) => (
+                  <MenuItem key={item.code} value={item.code}>
+                    {item.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+
+            <IconButton
+              aria-label={t('logout')}
+              title={t('logout')}
+              onClick={handleLogout}
+              sx={{
+                width: appMode ? 44 : 40,
+                height: appMode ? 44 : 40,
+                color: '#ffffff',
+                bgcolor: 'rgba(255,255,255,0.12)',
+                border: '1px solid rgba(255,255,255,0.28)',
+                '&:hover': {
+                  bgcolor: 'rgba(255,255,255,0.2)',
+                },
+              }}
+            >
+              <LogoutRoundedIcon />
+            </IconButton>
+          </Stack>
         }
       >
         <AttendanceToast message={message} onClose={() => setMessage(null)} appMode={appMode} />
