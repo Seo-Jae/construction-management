@@ -46,7 +46,7 @@ export const formatKoreaDateTime = (value, options = {}) => {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '-';
 
-  return new Intl.DateTimeFormat('ko-KR', {
+  return new Intl.DateTimeFormat(options.locale || 'ko-KR', {
     timeZone: 'Asia/Seoul',
     year: options.timeOnly ? undefined : '2-digit',
     month: options.timeOnly ? undefined : '2-digit',

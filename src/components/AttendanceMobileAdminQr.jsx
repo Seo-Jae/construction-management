@@ -21,7 +21,6 @@ import {
 } from '@mui/material';
 import AdminPanelSettingsRoundedIcon from '@mui/icons-material/AdminPanelSettingsRounded';
 import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
-import LockRoundedIcon from '@mui/icons-material/LockRounded';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import QrCode2RoundedIcon from '@mui/icons-material/QrCode2Rounded';
 import QrCode from 'qrcode';
@@ -45,6 +44,8 @@ const readInitialProject = () => {
 export default function AttendanceMobileAdminQr({
   appMode = false,
   onBack,
+  t = (key) => key,
+  locale = 'ko-KR',
 }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -88,8 +89,7 @@ export default function AttendanceMobileAdminQr({
       issuingRef.current = false;
       setQrImage('');
       setErrorMessage(
-        error.message ||
-          '출·퇴근 QR을 발급하지 못했습니다.',
+        t('adminQrIssueFailed'),
       );
       return;
     }
@@ -123,16 +123,15 @@ export default function AttendanceMobileAdminQr({
       );
       setSeconds(5);
       setErrorMessage('');
-    } catch (error) {
+    } catch {
       setQrImage('');
       setErrorMessage(
-        error?.message ||
-          'QR 이미지를 만들지 못했습니다.',
+        t('adminQrImageFailed'),
       );
     } finally {
       issuingRef.current = false;
     }
-  }, [displayToken, projectName]);
+  }, [displayToken, projectName, t]);
 
   useEffect(() => {
     if (!displayToken) {
@@ -175,14 +174,14 @@ export default function AttendanceMobileAdminQr({
 
     if (!normalizedEmail || !password) {
       setErrorMessage(
-        '통합관리시스템 아이디와 비밀번호를 입력해주세요.',
+        t('adminMissingCredentials'),
       );
       return;
     }
 
     if (!ATTENDANCE_PROJECTS.includes(projectName)) {
       setErrorMessage(
-        'QR을 표시할 현장을 선택해주세요.',
+        t('adminSelectProject'),
       );
       return;
     }
@@ -199,7 +198,7 @@ export default function AttendanceMobileAdminQr({
     if (signIn.error) {
       setLoading(false);
       setErrorMessage(
-        '통합관리시스템 아이디 또는 비밀번호를 확인해주세요.',
+        t('adminInvalidCredentials'),
       );
       return;
     }
@@ -223,7 +222,7 @@ export default function AttendanceMobileAdminQr({
       });
       setLoading(false);
       setErrorMessage(
-        '사용 가능한 통합관리시스템 계정인지 확인해주세요.',
+        t('adminInactiveAccount'),
       );
       return;
     }
@@ -241,8 +240,7 @@ export default function AttendanceMobileAdminQr({
       });
       setLoading(false);
       setErrorMessage(
-        displaySession.error.message ||
-          '해당 현장의 QR 표시 권한을 확인해주세요.',
+        t('adminNoPermission'),
       );
       return;
     }
@@ -257,7 +255,7 @@ export default function AttendanceMobileAdminQr({
       });
       setLoading(false);
       setErrorMessage(
-        'QR 표시 세션을 발급하지 못했습니다.',
+        t('adminSessionFailed'),
       );
       return;
     }
@@ -285,10 +283,17 @@ export default function AttendanceMobileAdminQr({
   if (displayToken) {
     return (
       <Paper
-        variant="outlined"
+        variant={appMode ? undefined : 'outlined'}
+        elevation={0}
         sx={{
-          p: appMode ? 2.5 : 3,
-          borderRadius: appMode ? 3.5 : 3,
+          width: appMode ? '90%' : '100%',
+          maxWidth: 'none',
+          mx: 'auto',
+          mt: appMode ? 6 : 0,
+          p: appMode ? 0 : 3,
+          border: appMode ? 'none' : undefined,
+          borderRadius: appMode ? 0 : 3,
+          boxShadow: 'none',
           textAlign: 'center',
         }}
       >
@@ -303,12 +308,12 @@ export default function AttendanceMobileAdminQr({
               sx={{
                 fontSize:
                   appMode
-                    ? '1.25rem'
+                    ? '2.1rem'
                     : '1.12rem',
                 fontWeight: 900,
               }}
             >
-              관리자 출·퇴근 QR
+              {t('adminQrTitle')}
             </Typography>
             <Typography
               sx={{
@@ -326,8 +331,8 @@ export default function AttendanceMobileAdminQr({
           </Box>
 
           <IconButton
-            aria-label="관리자 모드 종료"
-            title="관리자 모드 종료"
+            aria-label={t('exitAdmin')}
+            title={t('exitAdmin')}
             onClick={leaveAdminMode}
             color="error"
           >
@@ -346,8 +351,7 @@ export default function AttendanceMobileAdminQr({
                 : '0.74rem',
           }}
         >
-          근로자가 자신의 휴대폰으로 아래 QR을 촬영하면
-          기존과 동일하게 출·퇴근 처리가 진행됩니다.
+          {t('adminQrGuide')}
         </Alert>
 
         {errorMessage ? (
@@ -374,7 +378,7 @@ export default function AttendanceMobileAdminQr({
             <Box
               component="img"
               src={qrImage}
-              alt="관리자 휴대폰 출퇴근 QR"
+              alt={t('adminQrAlt')}
               sx={{
                 display: 'block',
                 width: '100%',
@@ -426,7 +430,7 @@ export default function AttendanceMobileAdminQr({
             fontWeight: 900,
           }}
         >
-          {seconds}초 후 자동 변경 · 서버 유효시간 7초
+          {t('qrRefresh', { seconds })}
         </Typography>
 
         <Stack
@@ -445,10 +449,11 @@ export default function AttendanceMobileAdminQr({
               fontSize: '0.68rem',
             }}
           >
-            현재시각{' '}
+            {t('currentTime')}{' '}
             {formatKoreaDateTime(clock, {
               timeOnly: true,
               withSeconds: true,
+              locale,
             })}
           </Typography>
 
@@ -459,13 +464,16 @@ export default function AttendanceMobileAdminQr({
             }}
           >
             {issuedAt
-              ? `최근 발급 ${formatKoreaDateTime(
-                  issuedAt,
-                  {
-                    timeOnly: true,
-                    withSeconds: true,
-                  },
-                )}`
+              ? t('recentlyIssued', {
+                  time: formatKoreaDateTime(
+                    issuedAt,
+                    {
+                      timeOnly: true,
+                      withSeconds: true,
+                      locale,
+                    },
+                  ),
+                })
               : ''}
           </Typography>
         </Stack>
@@ -478,9 +486,11 @@ export default function AttendanceMobileAdminQr({
               fontSize: '0.65rem',
             }}
           >
-            QR 표시 세션 만료{' '}
-            {formatKoreaDateTime(expiresAt, {
-              withSeconds: true,
+            {t('qrSessionExpires', {
+              time: formatKoreaDateTime(expiresAt, {
+                withSeconds: true,
+                locale,
+              }),
             })}
           </Typography>
         ) : null}
@@ -493,7 +503,7 @@ export default function AttendanceMobileAdminQr({
           onClick={leaveAdminMode}
           sx={{ mt: 1.5, fontWeight: 900 }}
         >
-          관리자 모드 종료
+          {t('exitAdmin')}
         </Button>
       </Paper>
     );
@@ -501,24 +511,40 @@ export default function AttendanceMobileAdminQr({
 
   return (
     <Paper
-      variant="outlined"
+      variant={appMode ? undefined : 'outlined'}
+      elevation={0}
       sx={{
-        p: appMode ? 3 : 3.5,
-        borderRadius: appMode ? 3.5 : 3,
+        width: appMode ? '90%' : '100%',
+        maxWidth: 'none',
+        minHeight: appMode
+          ? 'calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom))'
+          : 'auto',
+        mx: 'auto',
+        mt: appMode ? 10 : 0,
+        p: appMode ? 0 : 3.5,
+        border: appMode ? 'none' : undefined,
+        borderRadius: appMode ? 0 : 3,
+        boxShadow: 'none',
       }}
     >
       <Stack
         direction="row"
         alignItems="center"
-        spacing={1}
-        sx={{ mb: 2 }}
+        spacing={appMode ? 2 : 1}
+        sx={{ mb: appMode ? 6 : 2 }}
       >
         <IconButton
           size="small"
           onClick={() => onBack?.()}
-          aria-label="근로자 로그인으로 돌아가기"
+          aria-label={t('backToWorkerLogin')}
+          sx={{
+            width: appMode ? 64 : undefined,
+            height: appMode ? 64 : undefined,
+          }}
         >
-          <ArrowBackRoundedIcon />
+          <ArrowBackRoundedIcon
+            sx={{ fontSize: appMode ? 42 : undefined }}
+          />
         </IconButton>
 
         <Box>
@@ -526,12 +552,12 @@ export default function AttendanceMobileAdminQr({
             sx={{
               fontSize:
                 appMode
-                  ? '1.4rem'
+                  ? '2.8rem'
                   : '1.22rem',
               fontWeight: 900,
             }}
           >
-            관리자 모드
+            {t('adminTitle')}
           </Typography>
           <Typography
             sx={{
@@ -539,27 +565,30 @@ export default function AttendanceMobileAdminQr({
               color: '#64748b',
               fontSize:
                 appMode
-                  ? '0.92rem'
+                  ? '1.3rem'
                   : '0.78rem',
+              lineHeight: 1.55,
             }}
           >
-            통합관리시스템에 등록된 관리자 계정으로 인증합니다.
+            {t('adminSubtitle')}
           </Typography>
         </Box>
       </Stack>
 
       <Alert
         severity="info"
-        sx={{ mb: 1.5 }}
+        sx={{
+          mb: appMode ? 5 : 1.5,
+          fontSize: appMode ? '1.25rem' : undefined,
+          lineHeight: 1.7,
+        }}
       >
-        현장에서 근로자에게 보여줄 출·퇴근 QR만 실행합니다.
-        QR 표시 세션 발급 후 관리자 로그인 세션은 현재 탭에서
-        자동 종료됩니다.
+        {t('adminInfo')}
       </Alert>
 
-      <Stack spacing={1.5}>
+      <Stack spacing={appMode ? 4 : 1.5}>
         <TextField
-          label="통합관리시스템 아이디(이메일)"
+          label={t('adminEmail')}
           type="email"
           value={email}
           onChange={(event) =>
@@ -567,10 +596,19 @@ export default function AttendanceMobileAdminQr({
           }
           autoComplete="username"
           autoCapitalize="none"
+          sx={{
+            '& .MuiInputBase-root': {
+              minHeight: appMode ? 92 : undefined,
+              fontSize: appMode ? '1.55rem' : undefined,
+            },
+            '& .MuiInputLabel-root': {
+              fontSize: appMode ? '1.2rem' : undefined,
+            },
+          }}
         />
 
         <TextField
-          label="비밀번호"
+          label={t('password')}
           type="password"
           value={password}
           onChange={(event) =>
@@ -582,12 +620,32 @@ export default function AttendanceMobileAdminQr({
               void startAdminQr();
             }
           }}
+          sx={{
+            '& .MuiInputBase-root': {
+              minHeight: appMode ? 92 : undefined,
+              fontSize: appMode ? '1.55rem' : undefined,
+            },
+            '& .MuiInputLabel-root': {
+              fontSize: appMode ? '1.2rem' : undefined,
+            },
+          }}
         />
 
-        <FormControl fullWidth>
-          <InputLabel>QR 표시 현장</InputLabel>
+        <FormControl
+          fullWidth
+          sx={{
+            '& .MuiInputBase-root': {
+              minHeight: appMode ? 92 : undefined,
+              fontSize: appMode ? '1.4rem' : undefined,
+            },
+            '& .MuiInputLabel-root': {
+              fontSize: appMode ? '1.2rem' : undefined,
+            },
+          }}
+        >
+          <InputLabel>{t('adminProject')}</InputLabel>
           <Select
-            label="QR 표시 현장"
+            label={t('adminProject')}
             value={projectName}
             onChange={(event) =>
               setProjectName(event.target.value)
@@ -628,8 +686,9 @@ export default function AttendanceMobileAdminQr({
           disabled={loading}
           onClick={() => void startAdminQr()}
           sx={{
-            minHeight: appMode ? 62 : 54,
+            minHeight: appMode ? 110 : 54,
             bgcolor: '#0f6fae',
+            fontSize: appMode ? '1.7rem' : undefined,
             fontWeight: 900,
             '&:hover': {
               bgcolor: '#0b5f96',
@@ -637,8 +696,8 @@ export default function AttendanceMobileAdminQr({
           }}
         >
           {loading
-            ? '관리자 인증 중'
-            : '출·퇴근 QR 실행'}
+            ? t('adminAuthenticating')
+            : t('startAttendanceQr')}
         </Button>
 
         <Button
@@ -647,8 +706,12 @@ export default function AttendanceMobileAdminQr({
             <AdminPanelSettingsRoundedIcon />
           }
           onClick={() => onBack?.()}
+          sx={{
+            minHeight: appMode ? 72 : undefined,
+            fontSize: appMode ? '1.3rem' : undefined,
+          }}
         >
-          근로자 로그인으로 돌아가기
+          {t('backToWorkerLogin')}
         </Button>
       </Stack>
     </Paper>

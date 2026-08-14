@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   AppBar,
@@ -33,7 +33,6 @@ import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import CameraAltRoundedIcon from '@mui/icons-material/CameraAltRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import HowToRegRoundedIcon from '@mui/icons-material/HowToRegRounded';
-import LoginRoundedIcon from '@mui/icons-material/LoginRounded';
 import LogoutRoundedIcon from '@mui/icons-material/LogoutRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import { BrowserQRCodeReader } from '@zxing/browser';
@@ -48,6 +47,13 @@ import {
   getAttendanceDeviceKey,
   normalizePhone,
 } from '../utils/attendance';
+import {
+  ATTENDANCE_LANGUAGES,
+  createAttendanceTranslator,
+  getAttendanceLocale,
+  readAttendanceLanguage,
+  saveAttendanceLanguage,
+} from '../utils/attendanceI18n';
 
 const initialSignup = {
   projectName: '',
@@ -149,7 +155,7 @@ const buildAttendanceByDate = (monthEvents, todayEvents) => {
   return grouped;
 };
 
-function MonthlyAttendanceCalendar({ monthEvents, todayEvents, selectedDate, onSelectDate }) {
+function MonthlyAttendanceCalendar({ monthEvents, todayEvents, selectedDate, onSelectDate, t, locale }) {
   const calendar = getCurrentMonthCalendar();
   const attendanceByDate = buildAttendanceByDate(monthEvents, todayEvents);
   const selectedEvents = attendanceByDate[selectedDate] || {};
@@ -158,14 +164,14 @@ function MonthlyAttendanceCalendar({ monthEvents, todayEvents, selectedDate, onS
   return (
     <Paper variant="outlined" sx={{ p: 2, borderRadius: 3 }}>
       <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.25 }}>
-        <Typography sx={{ fontSize: '0.84rem', fontWeight: 900 }}>금월 출결현황</Typography>
+        <Typography sx={{ fontSize: '0.84rem', fontWeight: 900 }}>{t('monthlyAttendance')}</Typography>
         <Typography sx={{ fontSize: '0.76rem', color: '#64748b', fontWeight: 800 }}>
-          {calendar.year}년 {String(calendar.month).padStart(2, '0')}월
+          {t('yearMonth', { year: calendar.year, month: String(calendar.month).padStart(2, '0') })}
         </Typography>
       </Stack>
 
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(0, 1fr))', gap: 0.4 }}>
-        {['일', '월', '화', '수', '목', '금', '토'].map((weekday, index) => (
+        {t('weekdays').map((weekday, index) => (
           <Typography
             key={weekday}
             sx={{
@@ -195,7 +201,7 @@ function MonthlyAttendanceCalendar({ monthEvents, todayEvents, selectedDate, onS
               type="button"
               key={dateKey}
               onClick={() => onSelectDate(dateKey)}
-              aria-label={`${calendar.month}월 ${day}일 출결 확인`}
+              aria-label={t('dateAttendanceAria', { month: calendar.month, day })}
               sx={{
                 minWidth: 0,
                 minHeight: 43,
@@ -215,12 +221,12 @@ function MonthlyAttendanceCalendar({ monthEvents, todayEvents, selectedDate, onS
               <Stack direction="row" spacing={0.25} justifyContent="center" sx={{ mt: 0.55, minHeight: 15 }}>
                 {hasCheckIn && (
                   <Box sx={{ px: 0.45, py: 0.1, borderRadius: 2, bgcolor: '#d1fae5', color: '#047857', fontSize: '0.52rem', fontWeight: 900 }}>
-                    출
+                    {t('checkInShort')}
                   </Box>
                 )}
                 {hasCheckOut && (
                   <Box sx={{ px: 0.45, py: 0.1, borderRadius: 2, bgcolor: '#dbeafe', color: '#1d4ed8', fontSize: '0.52rem', fontWeight: 900 }}>
-                    퇴
+                    {t('checkOutShort')}
                   </Box>
                 )}
               </Stack>
@@ -231,14 +237,14 @@ function MonthlyAttendanceCalendar({ monthEvents, todayEvents, selectedDate, onS
 
       <Box sx={{ mt: 1.25, px: 1.25, py: 1, borderRadius: 1.75, bgcolor: '#f8fafc' }}>
         <Typography sx={{ fontSize: '0.68rem', color: '#64748b', fontWeight: 800 }}>
-          {calendar.month}월 {selectedDay || Number(calendar.todayKey.slice(-2))}일 출결
+          {t('dayAttendance', { month: calendar.month, day: selectedDay || Number(calendar.todayKey.slice(-2)) })}
         </Typography>
         <Stack direction="row" spacing={1.5} sx={{ mt: 0.45 }}>
           <Typography sx={{ fontSize: '0.74rem', fontWeight: 900, color: selectedEvents.check_in ? '#047857' : '#94a3b8' }}>
-            출근 {selectedEvents.check_in ? formatKoreaDateTime(selectedEvents.check_in.event_at, { timeOnly: true }) : '미처리'}
+            {t('checkIn')} {selectedEvents.check_in ? formatKoreaDateTime(selectedEvents.check_in.event_at, { timeOnly: true, locale }) : t('unprocessed')}
           </Typography>
           <Typography sx={{ fontSize: '0.74rem', fontWeight: 900, color: selectedEvents.check_out ? '#1d4ed8' : '#94a3b8' }}>
-            퇴근 {selectedEvents.check_out ? formatKoreaDateTime(selectedEvents.check_out.event_at, { timeOnly: true }) : '미처리'}
+            {t('checkOut')} {selectedEvents.check_out ? formatKoreaDateTime(selectedEvents.check_out.event_at, { timeOnly: true, locale }) : t('unprocessed')}
           </Typography>
         </Stack>
       </Box>
@@ -246,17 +252,17 @@ function MonthlyAttendanceCalendar({ monthEvents, todayEvents, selectedDate, onS
   );
 }
 
-function RiskBroadcastPanel({ broadcasts }) {
+function RiskBroadcastPanel({ broadcasts, t, locale }) {
   const activeBroadcasts = Array.isArray(broadcasts) ? broadcasts : [];
 
   return (
     <Paper variant="outlined" sx={{ p: 2, mb: 2, borderRadius: 3, borderColor: '#fecaca', bgcolor: '#fffafa' }}>
       <Stack direction="row" alignItems="center" justifyContent="space-between" spacing={1}>
         <Typography sx={{ fontSize: '0.86rem', fontWeight: 900, color: '#991b1b' }}>
-          중점위험요인 전파
+          {t('riskTitle')}
         </Typography>
         <Chip
-          label={activeBroadcasts.length ? `${activeBroadcasts.length}건` : '등록 없음'}
+          label={activeBroadcasts.length ? t('itemCount', { count: activeBroadcasts.length }) : t('noneRegistered')}
           size="small"
           sx={{ height: 22, fontSize: '0.62rem', fontWeight: 800, bgcolor: '#fee2e2', color: '#991b1b' }}
         />
@@ -264,7 +270,7 @@ function RiskBroadcastPanel({ broadcasts }) {
 
       {activeBroadcasts.length === 0 ? (
         <Typography sx={{ mt: 1, fontSize: '0.74rem', color: '#64748b' }}>
-          등록된 중점위험요인이 없습니다.
+          {t('noRisk')}
         </Typography>
       ) : (
         <Stack spacing={1.1} sx={{ mt: 1.25 }}>
@@ -300,14 +306,14 @@ function RiskBroadcastPanel({ broadcasts }) {
                     border: `1px solid ${badgeColor}33`,
                   }}
                 >
-                  {isCommon ? '공통' : '담당'}
+                  {isCommon ? t('common') : t('assigned')}
                 </Box>
                 <Box sx={{ minWidth: 0, flex: 1 }}>
                   <Typography sx={{ whiteSpace: 'pre-wrap', color: '#1e293b', fontSize: '0.78rem', fontWeight: 800, lineHeight: 1.65 }}>
                     {broadcast.content}
                   </Typography>
                   <Typography sx={{ mt: 0.55, color: '#64748b', fontSize: '0.64rem', lineHeight: 1.5 }}>
-                    {formatKoreaDateTime(broadcast.created_at)} · {broadcast.author_position || broadcast.author_role || '작성자'} {broadcast.author_name || ''}
+                    {formatKoreaDateTime(broadcast.created_at, { locale })} · {broadcast.author_position || broadcast.author_role || t('author')} {broadcast.author_name || ''}
                   </Typography>
                 </Box>
               </Box>
@@ -371,29 +377,29 @@ const queryCameraPermissionState = async () => {
   }
 };
 
-const getCameraErrorMessage = (error) => {
+const getCameraErrorMessage = (error, t) => {
   const errorName = String(error?.name || '');
   const errorMessage = String(error?.message || '');
 
   if (!window.isSecureContext) {
-    return '카메라는 보안 연결(HTTPS)에서만 사용할 수 있습니다. 운영 주소로 다시 접속해주세요.';
+    return t('cameraHttpsError');
   }
   if (errorName === 'NotAllowedError' || errorName === 'SecurityError') {
-    return '카메라 권한이 차단되어 있습니다. Android는 Chrome 설정 → 사이트 설정 → 카메라에서 허용하고, 아이폰은 Safari 웹사이트 설정 → 카메라 → 허용으로 바꾼 뒤 다시 눌러주세요.';
+    return t('cameraDeniedError');
   }
   if (errorName === 'NotFoundError' || errorName === 'DevicesNotFoundError') {
-    return '사용할 수 있는 카메라를 찾지 못했습니다. 휴대폰 카메라 상태를 확인해주세요.';
+    return t('cameraNotFoundError');
   }
   if (errorName === 'NotReadableError' || errorName === 'TrackStartError' || errorName === 'AbortError') {
-    return '다른 앱이 카메라를 사용 중이거나 카메라를 시작하지 못했습니다. 다른 카메라 앱을 닫고 다시 시도해주세요.';
+    return t('cameraBusyError');
   }
   if (errorName === 'OverconstrainedError' || errorName === 'ConstraintNotSatisfiedError') {
-    return '휴대폰 카메라 설정을 적용하지 못했습니다. 다시 촬영을 눌러주세요.';
+    return t('cameraConstraintError');
   }
   if (errorMessage.includes('CameraPreviewTimeout')) {
-    return '카메라 권한은 확인됐지만 영상이 재생되지 않았습니다. 브라우저를 완전히 닫았다가 다시 열고 촬영해주세요.';
+    return t('cameraTimeoutError');
   }
-  return '카메라를 시작하지 못했습니다. 브라우저의 카메라 권한을 허용한 뒤 다시 시도해주세요.';
+  return t('cameraStartError');
 };
 
 const readInitialProject = () => {
@@ -401,30 +407,30 @@ const readInitialProject = () => {
   return ATTENDANCE_PROJECTS.includes(requested) ? requested : '';
 };
 
-const statusMeta = {
+const getStatusMeta = (t) => ({
   pending: {
-    label: '승인 대기',
+    label: t('pending'),
     color: 'warning',
-    description: '현장담당자가 가입정보와 휴대폰을 확인하고 있습니다.',
+    description: t('pendingDescription'),
   },
   active: {
-    label: '사용 가능',
+    label: t('active'),
     color: 'success',
-    description: '출·퇴근 QR을 촬영할 수 있습니다.',
+    description: t('activeDescription'),
   },
   rejected: {
-    label: '승인 반려',
+    label: t('rejected'),
     color: 'error',
-    description: '현장담당자에게 가입정보를 확인해주세요.',
+    description: t('rejectedDescription'),
   },
   disabled: {
-    label: '사용 중지',
+    label: t('disabled'),
     color: 'error',
-    description: '현장담당자에게 계정 상태를 확인해주세요.',
+    description: t('disabledDescription'),
   },
-};
+});
 
-function AttendanceNoticeTicker({ notices, appMode = false }) {
+function AttendanceNoticeTicker({ notices, appMode = false, t }) {
   const visibleNotices = Array.isArray(notices)
     ? notices
         .map((item, originalIndex) => ({
@@ -458,7 +464,7 @@ function AttendanceNoticeTicker({ notices, appMode = false }) {
   return (
     <Box
       role="status"
-      aria-label={`공지사항 ${ariaText}`}
+      aria-label={t('noticeAria', { content: ariaText })}
       sx={{
         width: '100%',
         minHeight: appMode ? 56 : 42,
@@ -485,7 +491,7 @@ function AttendanceNoticeTicker({ notices, appMode = false }) {
           zIndex: 1,
         }}
       >
-        공지
+        {t('notice')}
       </Box>
 
       <Box
@@ -555,6 +561,7 @@ function MobileShell({
   headerAction = null,
   contentMaxWidth = null,
   cleanLogin = false,
+  appTitle = '욱림건설 근태시스템',
 }) {
   return (
     <Box
@@ -618,7 +625,7 @@ function MobileShell({
               WOOKLIM CONSTRUCTION
             </Typography>
             <Typography sx={{ fontSize: appMode ? '1.18rem' : '1rem', fontWeight: 900 }}>
-              욱림건설 근태시스템
+              {appTitle}
             </Typography>
             </Box>
           </Stack>
@@ -678,6 +685,7 @@ function MobileShell({
 
 export default function AttendanceWorkerPortal() {
   const [mode, setMode] = useState('login');
+  const [language, setLanguage] = useState(readAttendanceLanguage);
   const [signup, setSignup] = useState(() => ({
     ...initialSignup,
     projectName: readInitialProject(),
@@ -717,6 +725,23 @@ export default function AttendanceWorkerPortal() {
   const handledDeepLinkRef = useRef('');
   const deviceKey = useRef(getAttendanceDeviceKey()).current;
   const primaryActionColor = appMode ? APP_BRAND_GREEN : '#0f6fae';
+  const t = useMemo(
+    () => createAttendanceTranslator(language),
+    [language],
+  );
+  const locale = getAttendanceLocale(language);
+
+  const handleLanguageChange = (event) => {
+    const nextLanguage = saveAttendanceLanguage(
+      event.target.value,
+    );
+    setLanguage(nextLanguage);
+    setMessage(null);
+  };
+
+  useEffect(() => {
+    document.documentElement.lang = language;
+  }, [language]);
 
   useEffect(() => {
     const metaTheme = document.querySelector('meta[name="theme-color"]');
@@ -728,7 +753,7 @@ export default function AttendanceWorkerPortal() {
 
     metaTheme.setAttribute(
       'content',
-      appMode && mode === 'login'
+      appMode && ['login', 'admin'].includes(mode)
         ? '#ffffff'
         : APP_BRAND_GREEN,
     );
@@ -811,7 +836,7 @@ export default function AttendanceWorkerPortal() {
         setAttendanceNotices([]);
         setMessage({
           severity: 'warning',
-          text: error.message || '로그인 정보가 유효하지 않습니다. 다시 로그인해주세요.',
+          text: t('sessionInvalid'),
         });
       } else {
         /*
@@ -821,7 +846,7 @@ export default function AttendanceWorkerPortal() {
         if (!silent) {
           setMessage({
             severity: 'warning',
-            text: '서버 연결이 잠시 불안정합니다. 로그인 상태는 유지되며 자동으로 다시 연결합니다.',
+            text: t('connectionUnstable'),
           });
         }
       }
@@ -844,6 +869,7 @@ export default function AttendanceWorkerPortal() {
     isAttendanceSessionInvalidError,
     saveSession,
     sessionToken,
+    t,
   ]);
 
   useEffect(() => {
@@ -918,35 +944,35 @@ export default function AttendanceWorkerPortal() {
     const nameEn = signup.nameEn.trim();
 
     if (!ATTENDANCE_PROJECTS.includes(signup.projectName)) {
-      setMessage({ severity: 'warning', text: '근무할 현장을 선택해주세요.' });
+      setMessage({ severity: 'warning', text: t('selectProject') });
       return;
     }
     if (!/^[가-힣]{2,10}$/.test(nameKo)) {
-      setMessage({ severity: 'warning', text: '이름은 한글 2~10자로 입력해주세요.' });
+      setMessage({ severity: 'warning', text: t('invalidKoreanName') });
       return;
     }
     if (signup.isForeigner && !/^[A-Za-z .'-]{2,60}$/.test(nameEn)) {
-      setMessage({ severity: 'warning', text: '외국인 근로자는 영문명을 입력해주세요.' });
+      setMessage({ severity: 'warning', text: t('invalidEnglishName') });
       return;
     }
     if (!/^01\d{8,9}$/.test(phone)) {
-      setMessage({ severity: 'warning', text: '휴대폰번호를 정확히 입력해주세요.' });
+      setMessage({ severity: 'warning', text: t('invalidPhone') });
       return;
     }
     if (signup.tradeName.trim().length < 1) {
-      setMessage({ severity: 'warning', text: '직종·공종을 입력해주세요.' });
+      setMessage({ severity: 'warning', text: t('invalidTrade') });
       return;
     }
     if (!signup.isTestAccount && (signup.password.length < 8 || !/[A-Za-z]/.test(signup.password) || !/\d/.test(signup.password))) {
-      setMessage({ severity: 'warning', text: '비밀번호는 영문과 숫자를 포함해 8자 이상 입력해주세요.' });
+      setMessage({ severity: 'warning', text: t('invalidPassword') });
       return;
     }
     if (signup.password !== signup.passwordConfirm) {
-      setMessage({ severity: 'warning', text: '비밀번호 확인이 일치하지 않습니다.' });
+      setMessage({ severity: 'warning', text: t('passwordMismatch') });
       return;
     }
     if (!signup.privacyAgreed) {
-      setMessage({ severity: 'warning', text: '필수 개인정보 수집에 동의해주세요.' });
+      setMessage({ severity: 'warning', text: t('privacyRequired') });
       return;
     }
 
@@ -966,7 +992,7 @@ export default function AttendanceWorkerPortal() {
 
     if (error) {
       setLoading(false);
-      setMessage({ severity: 'error', text: error.message || '가입 신청에 실패했습니다.' });
+      setMessage({ severity: 'error', text: t('signupFailed') });
       return;
     }
 
@@ -975,8 +1001,8 @@ export default function AttendanceWorkerPortal() {
     setMessage({
       severity: 'success',
       text: signup.isTestAccount
-        ? '테스트계정 가입 신청이 완료되었습니다. 로그인 비밀번호는 1입니다.'
-        : '가입 신청이 완료되었습니다. 현장담당자의 승인을 기다려주세요.',
+        ? t('testSignupSuccess')
+        : t('signupSuccess'),
     });
     await loadMe(data?.session_token || '', true);
   };
@@ -985,7 +1011,7 @@ export default function AttendanceWorkerPortal() {
     setMessage(null);
     const phone = normalizePhone(login.phone);
     if (!/^01\d{8,9}$/.test(phone) || !login.password) {
-      setMessage({ severity: 'warning', text: '휴대폰번호와 비밀번호를 입력해주세요.' });
+      setMessage({ severity: 'warning', text: t('loginRequiredFields') });
       return;
     }
 
@@ -999,13 +1025,13 @@ export default function AttendanceWorkerPortal() {
 
     if (error) {
       setLoading(false);
-      setMessage({ severity: 'error', text: error.message || '로그인에 실패했습니다.' });
+      setMessage({ severity: 'error', text: t('loginFailed') });
       return;
     }
 
     if (data?.code === 'device_change_requested') {
       setLoading(false);
-      setMessage({ severity: 'info', text: data.message || '기기 변경 승인을 요청했습니다.' });
+      setMessage({ severity: 'info', text: t('deviceChangeRequested') });
       return;
     }
 
@@ -1057,6 +1083,7 @@ export default function AttendanceWorkerPortal() {
         severity: 'error',
         text: getCameraErrorMessage(
           new Error('MediaDevicesUnavailable'),
+          t,
         ),
       });
       return;
@@ -1119,7 +1146,7 @@ export default function AttendanceWorkerPortal() {
 
       setMessage({
         severity: 'error',
-        text: getCameraErrorMessage(error),
+        text: getCameraErrorMessage(error, t),
       });
     }
   };
@@ -1130,6 +1157,7 @@ export default function AttendanceWorkerPortal() {
         severity: 'error',
         text: getCameraErrorMessage(
           new Error('MediaDevicesUnavailable'),
+          t,
         ),
       });
       return;
@@ -1167,7 +1195,7 @@ export default function AttendanceWorkerPortal() {
     });
 
     if (exchange.error) {
-      setMessage({ severity: 'error', text: exchange.error.message || 'QR 확인에 실패했습니다.' });
+      setMessage({ severity: 'error', text: t('qrCheckFailed') });
       setProcessingScan(false);
       return;
     }
@@ -1179,15 +1207,22 @@ export default function AttendanceWorkerPortal() {
     });
 
     if (finalize.error) {
-      setMessage({ severity: 'error', text: finalize.error.message || '출·퇴근 처리에 실패했습니다.' });
+      setMessage({ severity: 'error', text: t('attendanceFailed') });
       setProcessingScan(false);
       return;
     }
 
-    const label = finalize.data?.event_type === 'check_in' ? '출근' : '퇴근';
+    const label = finalize.data?.event_type === 'check_in' ? t('checkIn') : t('checkOut');
     setMessage({
       severity: 'success',
-      text: `${label} 처리가 완료되었습니다. ${formatKoreaDateTime(finalize.data?.event_at, { timeOnly: true, withSeconds: true })}`,
+      text: t('attendanceSuccess', {
+        type: label,
+        time: formatKoreaDateTime(finalize.data?.event_at, {
+          timeOnly: true,
+          withSeconds: true,
+          locale,
+        }),
+      }),
     });
     setProcessingScan(false);
     await loadMe(sessionToken, true);
@@ -1195,7 +1230,7 @@ export default function AttendanceWorkerPortal() {
     const url = new URL(window.location.href);
     url.searchParams.delete('attendanceQr');
     window.history.replaceState({}, '', url.toString());
-  }, [closeScanner, deviceKey, loadMe, processingScan, sessionToken]);
+  }, [closeScanner, deviceKey, loadMe, locale, processingScan, sessionToken, t]);
 
   useEffect(() => {
     if (!worker || worker.status !== 'active' || !sessionToken) return;
@@ -1295,7 +1330,7 @@ export default function AttendanceWorkerPortal() {
         setScannerOpen(false);
         setScannerStarting(false);
         setCameraReady(false);
-        setMessage({ severity: 'error', text: getCameraErrorMessage(error) });
+        setMessage({ severity: 'error', text: getCameraErrorMessage(error, t) });
       }
     };
 
@@ -1305,20 +1340,21 @@ export default function AttendanceWorkerPortal() {
       cancelled = true;
       stopScanner();
     };
-  }, [processQrToken, scannerOpen, scannerVideoElement, stopScanner]);
+  }, [processQrToken, scannerOpen, scannerVideoElement, stopScanner, t]);
 
   if (loading && !worker) {
     return (
-      <MobileShell appMode={appMode}>
+      <MobileShell appMode={appMode} appTitle={t('appTitle')}>
         <Box sx={{ py: 12, textAlign: 'center' }}>
           <CircularProgress />
-          <Typography sx={{ mt: 2, color: '#64748b', fontSize: appMode ? '1rem' : undefined }}>근태 계정을 확인하고 있습니다.</Typography>
+          <Typography sx={{ mt: 2, color: '#64748b', fontSize: appMode ? '1rem' : undefined }}>{t('checkingAccount')}</Typography>
         </Box>
       </MobileShell>
     );
   }
 
   if (worker) {
+    const statusMeta = getStatusMeta(t);
     const meta = statusMeta[worker.status] || statusMeta.pending;
     const checkIn = todayEvents.find((item) => item.event_type === 'check_in');
     const checkOut = todayEvents.find((item) => item.event_type === 'check_out');
@@ -1326,11 +1362,12 @@ export default function AttendanceWorkerPortal() {
     return (
       <MobileShell
         appMode={appMode}
-        topBanner={<AttendanceNoticeTicker notices={attendanceNotices} appMode={appMode} />}
+        appTitle={t('appTitle')}
+        topBanner={<AttendanceNoticeTicker notices={attendanceNotices} appMode={appMode} t={t} />}
         headerAction={
           <IconButton
-            aria-label="로그아웃"
-            title="로그아웃"
+            aria-label={t('logout')}
+            title={t('logout')}
             onClick={handleLogout}
             sx={{
               width: appMode ? 44 : 40,
@@ -1348,7 +1385,7 @@ export default function AttendanceWorkerPortal() {
         }
       >
         <AttendanceToast message={message} onClose={() => setMessage(null)} appMode={appMode} />
-        <RiskBroadcastPanel broadcasts={riskBroadcasts} />
+        <RiskBroadcastPanel broadcasts={riskBroadcasts} t={t} locale={locale} />
 
         <Box sx={{ mb: 2 }}>
           <MonthlyAttendanceCalendar
@@ -1356,6 +1393,8 @@ export default function AttendanceWorkerPortal() {
             todayEvents={todayEvents}
             selectedDate={selectedAttendanceDate}
             onSelectDate={setSelectedAttendanceDate}
+            t={t}
+            locale={locale}
           />
         </Box>
 
@@ -1382,18 +1421,18 @@ export default function AttendanceWorkerPortal() {
           <>
             <Card variant="outlined" sx={{ mt: 2, borderRadius: appMode ? 3.5 : 3 }}>
               <CardContent sx={{ p: appMode ? 3 : undefined, '&:last-child': { pb: appMode ? 3 : undefined } }}>
-                <Typography sx={{ fontSize: appMode ? '1rem' : '0.78rem', color: '#64748b', fontWeight: 800 }}>오늘 출·퇴근</Typography>
+                <Typography sx={{ fontSize: appMode ? '1rem' : '0.78rem', color: '#64748b', fontWeight: 800 }}>{t('todayAttendance')}</Typography>
                 <Stack direction="row" spacing={appMode ? 2 : 1.5} sx={{ mt: appMode ? 2 : 1.5 }}>
                   <Paper variant="outlined" sx={{ flex: 1, p: appMode ? 2.25 : 1.5, textAlign: 'center', bgcolor: checkIn ? '#ecfdf5' : '#f8fafc', borderRadius: appMode ? 3 : undefined }}>
-                    <Typography sx={{ fontSize: appMode ? '0.95rem' : '0.7rem', color: '#64748b' }}>출근</Typography>
+                    <Typography sx={{ fontSize: appMode ? '0.95rem' : '0.7rem', color: '#64748b' }}>{t('checkIn')}</Typography>
                     <Typography sx={{ mt: 0.65, fontSize: appMode ? '1.35rem' : undefined, fontWeight: 900, color: checkIn ? '#047857' : '#94a3b8' }}>
-                      {checkIn ? formatKoreaDateTime(checkIn.event_at, { timeOnly: true }) : '미처리'}
+                      {checkIn ? formatKoreaDateTime(checkIn.event_at, { timeOnly: true, locale }) : t('unprocessed')}
                     </Typography>
                   </Paper>
                   <Paper variant="outlined" sx={{ flex: 1, p: appMode ? 2.25 : 1.5, textAlign: 'center', bgcolor: checkOut ? '#ecfdf5' : '#f8fafc', borderRadius: appMode ? 3 : undefined }}>
-                    <Typography sx={{ fontSize: appMode ? '0.95rem' : '0.7rem', color: '#64748b' }}>퇴근</Typography>
+                    <Typography sx={{ fontSize: appMode ? '0.95rem' : '0.7rem', color: '#64748b' }}>{t('checkOut')}</Typography>
                     <Typography sx={{ mt: 0.65, fontSize: appMode ? '1.35rem' : undefined, fontWeight: 900, color: checkOut ? '#047857' : '#94a3b8' }}>
-                      {checkOut ? formatKoreaDateTime(checkOut.event_at, { timeOnly: true }) : '미처리'}
+                      {checkOut ? formatKoreaDateTime(checkOut.event_at, { timeOnly: true, locale }) : t('unprocessed')}
                     </Typography>
                   </Paper>
                 </Stack>
@@ -1409,12 +1448,12 @@ export default function AttendanceWorkerPortal() {
               disabled={processingScan || scannerStarting || Boolean(checkIn && checkOut)}
               sx={{ mt: 2, minHeight: appMode ? 66 : 58, borderRadius: appMode ? 3 : 2.5, bgcolor: primaryActionColor, fontWeight: 900, fontSize: appMode ? '1.08rem' : '1rem', '&:hover': { bgcolor: primaryActionColor } }}
             >
-              {checkIn && checkOut ? '오늘 근태 처리 완료' : processingScan ? '처리 중' : scannerStarting ? '카메라 준비 중' : '출·퇴근 QR 촬영'}
+              {checkIn && checkOut ? t('attendanceComplete') : processingScan ? t('processing') : scannerStarting ? t('cameraPreparing') : t('scanAttendanceQr')}
             </Button>
           </>
         ) : (
           <Button fullWidth variant="outlined" startIcon={<RefreshRoundedIcon />} onClick={() => loadMe(sessionToken)} sx={{ mt: 2 }}>
-            승인상태 다시 확인
+            {t('recheckApproval')}
           </Button>
         )}
 
@@ -1426,7 +1465,7 @@ export default function AttendanceWorkerPortal() {
             onClick={handleInstall}
             sx={{ mt: 2 }}
           >
-            앱으로 설치
+            {t('installAsApp')}
           </Button>
         )}
         <Dialog
@@ -1440,15 +1479,13 @@ export default function AttendanceWorkerPortal() {
           maxWidth="xs"
         >
           <DialogTitle sx={{ fontWeight: 900 }}>
-            카메라 권한 필요
+            {t('cameraPermissionNeeded')}
           </DialogTitle>
           <DialogContent dividers>
             {cameraPermissionState === 'denied' ? (
               <Stack spacing={1.25}>
                 <Alert severity="warning">
-                  카메라 권한이 현재 차단되어 있습니다.
-                  차단된 권한은 앱에서 시스템 허용창을 강제로
-                  다시 띄울 수 없습니다.
+                  {t('cameraBlocked')}
                 </Alert>
                 <Typography
                   sx={{
@@ -1456,10 +1493,7 @@ export default function AttendanceWorkerPortal() {
                     lineHeight: 1.8,
                   }}
                 >
-                  Android Chrome에서는
-                  <b> Chrome 설정 → 사이트 설정 → 카메라</b>에서
-                  현재 욱림건설 근태시스템 사이트를 찾아
-                  <b> 허용</b>으로 변경해주세요.
+                  {t('androidCameraSettings')}
                 </Typography>
                 <Typography
                   sx={{
@@ -1468,16 +1502,13 @@ export default function AttendanceWorkerPortal() {
                     lineHeight: 1.7,
                   }}
                 >
-                  Android 자체에서 Chrome의 카메라 권한이 꺼져
-                  있다면 휴대폰 설정 → 앱 → Chrome → 권한 →
-                  카메라도 허용해야 합니다.
+                  {t('androidAppPermission')}
                 </Typography>
               </Stack>
             ) : (
               <Stack spacing={1.25}>
                 <Alert severity="info">
-                  출·퇴근 QR 촬영을 위해 후면 카메라 권한이
-                  필요합니다.
+                  {t('rearCameraNeeded')}
                 </Alert>
                 <Typography
                   sx={{
@@ -1485,9 +1516,7 @@ export default function AttendanceWorkerPortal() {
                     lineHeight: 1.8,
                   }}
                 >
-                  아래 <b>카메라 사용 허용</b>을 누르면
-                  Chrome/Safari의 카메라 권한창이 표시됩니다.
-                  권한창에서 <b>허용</b>을 선택해주세요.
+                  {t('cameraPromptGuide')}
                 </Typography>
               </Stack>
             )}
@@ -1506,7 +1535,7 @@ export default function AttendanceWorkerPortal() {
               disabled={scannerStarting}
               onClick={() => setCameraPermissionOpen(false)}
             >
-              취소
+              {t('cancel')}
             </Button>
             <Button
               variant="contained"
@@ -1526,27 +1555,27 @@ export default function AttendanceWorkerPortal() {
               }}
             >
               {scannerStarting
-                ? '권한 확인 중'
+                ? t('checkingPermission')
                 : cameraPermissionState === 'denied'
-                  ? '카메라 권한 다시 확인'
-                  : '카메라 사용 허용'}
+                  ? t('recheckCameraPermission')
+                  : t('allowCamera')}
             </Button>
           </Box>
         </Dialog>
 
         <Dialog open={scannerOpen} onClose={closeScanner} fullWidth maxWidth="xs">
           <DialogTitle sx={{ pr: 6, fontWeight: 900 }}>
-            동적 QR 촬영
+            {t('dynamicQrScan')}
             <IconButton onClick={closeScanner} sx={{ position: 'absolute', right: 8, top: 8 }}><CloseRoundedIcon /></IconButton>
           </DialogTitle>
           <DialogContent>
-            <Alert severity="info" sx={{ mb: 1.5, fontSize: '0.75rem' }}>화면의 QR을 네모 안에 맞춰주세요. 인식 즉시 서버에서 처리합니다.</Alert>
+            <Alert severity="info" sx={{ mb: 1.5, fontSize: '0.75rem' }}>{t('qrFrameGuide')}</Alert>
             <Box sx={{ position: 'relative', bgcolor: '#000', borderRadius: 2, overflow: 'hidden', aspectRatio: '1 / 1' }}>
               <Box component="video" ref={handleScannerVideoRef} autoPlay muted playsInline sx={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               {!cameraReady && (
                 <Stack alignItems="center" justifyContent="center" spacing={1.5} sx={{ position: 'absolute', inset: 0, bgcolor: '#020617', color: '#fff', zIndex: 2 }}>
                   <CircularProgress size={34} color="inherit" />
-                  <Typography sx={{ fontSize: '0.78rem', fontWeight: 800 }}>후면 카메라를 준비하고 있습니다.</Typography>
+                  <Typography sx={{ fontSize: '0.78rem', fontWeight: 800 }}>{t('preparingRearCamera')}</Typography>
                 </Stack>
               )}
               <Box sx={{ position: 'absolute', inset: '15%', border: '3px solid #38bdf8', borderRadius: 2, boxShadow: '0 0 0 999px rgba(0,0,0,0.28)' }} />
@@ -1555,17 +1584,17 @@ export default function AttendanceWorkerPortal() {
         </Dialog>
 
         <Dialog open={!appMode && installHelpOpen} onClose={() => setInstallHelpOpen(false)} fullWidth maxWidth="xs">
-          <DialogTitle sx={{ fontWeight: 900 }}>근태앱 설치</DialogTitle>
+          <DialogTitle sx={{ fontWeight: 900 }}>{t('installAttendanceApp')}</DialogTitle>
           <DialogContent>
             <Stack spacing={1}>
               <Typography sx={{ fontSize: '0.84rem', lineHeight: 1.8 }}>
-                아이폰은 Safari 하단의 공유 버튼을 누른 뒤 <b>홈 화면에 추가</b>를 선택하세요.
+                {t('iosInstallGuide')}
               </Typography>
               <Typography sx={{ fontSize: '0.84rem', lineHeight: 1.8 }}>
-                안드로이드는 Chrome 메뉴의 <b>앱 설치</b>를 선택하세요. <b>홈 화면에 추가</b> 방식은 사용하지 않는 것을 권장합니다.
+                {t('androidInstallGuide')}
               </Typography>
               <Alert severity="info" sx={{ fontSize: '0.74rem' }}>
-                기존에 홈 화면 바로가기 방식으로 설치한 경우 Chrome이 “이 앱의 URL 복사하기” 시스템 알림을 표시할 수 있습니다. 기존 아이콘을 제거한 뒤 Chrome의 “앱 설치” 방식으로 다시 설치해주세요.
+                {t('legacyInstallGuide')}
               </Alert>
             </Stack>
           </DialogContent>
@@ -1578,6 +1607,8 @@ export default function AttendanceWorkerPortal() {
     return (
       <MobileShell
         appMode={appMode}
+        cleanLogin={appMode}
+        appTitle={t('appTitle')}
         contentMaxWidth={
           appMode
             ? 'none'
@@ -1587,6 +1618,8 @@ export default function AttendanceWorkerPortal() {
         <AttendanceMobileAdminQr
           appMode={appMode}
           onBack={() => setMode('login')}
+          t={t}
+          locale={locale}
         />
       </MobileShell>
     );
@@ -1596,6 +1629,7 @@ export default function AttendanceWorkerPortal() {
     <MobileShell
       appMode={appMode}
       cleanLogin={mode === 'login'}
+      appTitle={t('appTitle')}
       contentMaxWidth={
         appMode
           ? 'none'
@@ -1628,7 +1662,7 @@ export default function AttendanceWorkerPortal() {
         }
         data-attendance-login-reference-layout={
           mode === 'login' && appMode
-            ? 'v52.48.5.3'
+            ? 'v52.48.5.4'
             : undefined
         }
         variant={
@@ -1676,6 +1710,44 @@ export default function AttendanceWorkerPortal() {
         }}
       >
         {mode === 'login' ? (
+          <FormControl
+            size="small"
+            sx={{
+              position: 'absolute',
+              top: appMode ? 3 : 0,
+              right: 0,
+              width: appMode ? 174 : 150,
+              zIndex: 2,
+              '& .MuiInputLabel-root': {
+                fontSize: appMode ? '1rem' : '0.86rem',
+              },
+              '& .MuiInputBase-root': {
+                minHeight: appMode ? 52 : 44,
+                fontSize: appMode ? '1rem' : '0.86rem',
+                bgcolor: '#ffffff',
+                borderRadius: 2,
+              },
+            }}
+          >
+            <InputLabel id="attendance-language-label">
+              Language
+            </InputLabel>
+            <Select
+              labelId="attendance-language-label"
+              label="Language"
+              value={language}
+              onChange={handleLanguageChange}
+            >
+              {ATTENDANCE_LANGUAGES.map((item) => (
+                <MenuItem key={item.code} value={item.code}>
+                  {item.label}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+        ) : null}
+
+        {mode === 'login' ? (
           <Box>
             <Stack
               direction="row"
@@ -1713,7 +1785,7 @@ export default function AttendanceWorkerPortal() {
                   letterSpacing: '-0.045em',
                 }}
               >
-                로그인
+                {t('loginTitle')}
               </Typography>
             </Stack>
           </Box>
@@ -1740,7 +1812,7 @@ export default function AttendanceWorkerPortal() {
                   fontWeight: 900,
                 }}
               >
-                근로자 가입 신청
+                {t('signupTitle')}
               </Typography>
 
               <Typography
@@ -1752,7 +1824,7 @@ export default function AttendanceWorkerPortal() {
                     : '0.74rem',
                 }}
               >
-                별도의 사내 ERP 계정 없이 이용합니다.
+                {t('signupSubtitle')}
               </Typography>
             </Box>
           </Stack>
@@ -1768,7 +1840,7 @@ export default function AttendanceWorkerPortal() {
             <TextField
               fullWidth
               variant="standard"
-              placeholder="휴대폰번호"
+              placeholder={t('phone')}
               value={formatPhone(login.phone)}
               onChange={(event) =>
                 setLogin((prev) => ({
@@ -1784,7 +1856,7 @@ export default function AttendanceWorkerPortal() {
                 disableUnderline: false,
               }}
               inputProps={{
-                'aria-label': '휴대폰번호',
+                'aria-label': t('phone'),
               }}
               sx={{
                 '& .MuiInputBase-root': {
@@ -1816,7 +1888,7 @@ export default function AttendanceWorkerPortal() {
               fullWidth
               variant="standard"
               type="password"
-              placeholder="비밀번호"
+              placeholder={t('password')}
               value={login.password}
               onChange={(event) =>
                 setLogin((prev) => ({
@@ -1835,7 +1907,7 @@ export default function AttendanceWorkerPortal() {
                 disableUnderline: false,
               }}
               inputProps={{
-                'aria-label': '비밀번호',
+                'aria-label': t('password'),
               }}
               sx={{
                 mt: appMode ? 10 : 1.8,
@@ -1891,7 +1963,7 @@ export default function AttendanceWorkerPortal() {
                 },
               }}
             >
-              로그인
+              {t('login')}
             </Button>
 
             <Button
@@ -1922,7 +1994,7 @@ export default function AttendanceWorkerPortal() {
                 },
               }}
             >
-              처음 이용하시나요? 가입 신청
+              {t('signupPrompt')}
             </Button>
 
             <Button
@@ -1946,25 +2018,25 @@ export default function AttendanceWorkerPortal() {
                 fontWeight: 900,
               }}
             >
-              관리자 모드
+              {t('adminMode')}
             </Button>
           </Stack>
         ) : (
           <Stack spacing={1.5}>
             <FormControl fullWidth>
-              <InputLabel>근무 현장</InputLabel>
-              <Select label="근무 현장" value={signup.projectName} onChange={(event) => setSignup((prev) => ({ ...prev, projectName: event.target.value }))}>
+              <InputLabel>{t('workSite')}</InputLabel>
+              <Select label={t('workSite')} value={signup.projectName} onChange={(event) => setSignup((prev) => ({ ...prev, projectName: event.target.value }))}>
                 {ATTENDANCE_PROJECTS.map((project) => <MenuItem key={project} value={project}>{project}</MenuItem>)}
               </Select>
             </FormControl>
             <TextField
-              label="이름(한글)"
+              label={t('koreanName')}
               value={signup.nameKo}
               onChange={(event) => setSignup((prev) => ({ ...prev, nameKo: event.target.value.slice(0, 10) }))}
               inputProps={{ maxLength: 10 }}
             />
-            <FormControlLabel control={<Checkbox checked={signup.isForeigner} onChange={(event) => setSignup((prev) => ({ ...prev, isForeigner: event.target.checked, nameEn: event.target.checked ? prev.nameEn : '' }))} />} label="외국인 근로자입니다" />
-            {signup.isForeigner && <TextField label="영문명" value={signup.nameEn} onChange={(event) => setSignup((prev) => ({ ...prev, nameEn: event.target.value }))} helperText="여권 또는 외국인등록증의 영문명" />}
+            <FormControlLabel control={<Checkbox checked={signup.isForeigner} onChange={(event) => setSignup((prev) => ({ ...prev, isForeigner: event.target.checked, nameEn: event.target.checked ? prev.nameEn : '' }))} />} label={t('foreignWorker')} />
+            {signup.isForeigner && <TextField label={t('englishName')} value={signup.nameEn} onChange={(event) => setSignup((prev) => ({ ...prev, nameEn: event.target.value }))} helperText={t('englishNameHelp')} />}
             <FormControlLabel
               control={(
                 <Checkbox
@@ -1977,30 +2049,30 @@ export default function AttendanceWorkerPortal() {
                       password: checked ? '1' : '',
                       passwordConfirm: checked ? '1' : '',
                     }));
-                    setMessage(checked ? { severity: 'info', text: '테스트계정의 로그인 비밀번호는 자동으로 1로 설정됩니다.' } : null);
+                    setMessage(checked ? { severity: 'info', text: t('testPasswordToast') } : null);
                   }}
                 />
               )}
-              label="테스트계정입니다"
+              label={t('testAccount')}
             />
             {signup.isTestAccount && (
               <Alert severity="info" sx={{ fontSize: appMode ? '0.92rem' : '0.75rem' }}>
-                테스트계정 비밀번호는 <b>1</b>입니다. 담당자 승인 후 휴대폰번호와 비밀번호 1로 로그인하세요.
+                {t('testPasswordInfo')}
               </Alert>
             )}
-            <TextField label="휴대폰번호" value={formatPhone(signup.phone)} onChange={(event) => setSignup((prev) => ({ ...prev, phone: normalizePhone(event.target.value) }))} inputMode="tel" />
-            <TextField label="직종·공종" value={signup.tradeName} onChange={(event) => setSignup((prev) => ({ ...prev, tradeName: event.target.value }))} placeholder="예: 경량, 합지, 몰딩" />
+            <TextField label={t('phone')} value={formatPhone(signup.phone)} onChange={(event) => setSignup((prev) => ({ ...prev, phone: normalizePhone(event.target.value) }))} inputMode="tel" />
+            <TextField label={t('trade')} value={signup.tradeName} onChange={(event) => setSignup((prev) => ({ ...prev, tradeName: event.target.value }))} placeholder={t('tradePlaceholder')} />
             {!signup.isTestAccount && (
               <>
-                <TextField label="비밀번호" type="password" value={signup.password} onChange={(event) => setSignup((prev) => ({ ...prev, password: event.target.value }))} helperText="영문과 숫자를 포함해 8자 이상" autoComplete="new-password" />
-                <TextField label="비밀번호 확인" type="password" value={signup.passwordConfirm} onChange={(event) => setSignup((prev) => ({ ...prev, passwordConfirm: event.target.value }))} autoComplete="new-password" />
+                <TextField label={t('password')} type="password" value={signup.password} onChange={(event) => setSignup((prev) => ({ ...prev, password: event.target.value }))} helperText={t('passwordHelp')} autoComplete="new-password" />
+                <TextField label={t('passwordConfirm')} type="password" value={signup.passwordConfirm} onChange={(event) => setSignup((prev) => ({ ...prev, passwordConfirm: event.target.value }))} autoComplete="new-password" />
               </>
             )}
             <FormControlLabel
               control={<Checkbox checked={signup.privacyAgreed} onChange={(event) => setSignup((prev) => ({ ...prev, privacyAgreed: event.target.checked }))} />}
-              label={<Typography sx={{ fontSize: appMode ? '0.92rem' : '0.75rem', lineHeight: 1.6 }}>[필수] 가입 승인과 근태처리를 위한 이름·휴대폰·직종·등록기기 정보 수집에 동의합니다. 위치정보는 수집하지 않습니다.</Typography>}
+              label={<Typography sx={{ fontSize: appMode ? '0.92rem' : '0.75rem', lineHeight: 1.6 }}>{t('privacyAgreement')}</Typography>}
             />
-            <Button variant="contained" size="large" onClick={handleSignup} disabled={loading} sx={{ minHeight: appMode ? 60 : 50, bgcolor: primaryActionColor, fontWeight: 900, '&:hover': { bgcolor: primaryActionColor } }}>가입 신청</Button>
+            <Button variant="contained" size="large" onClick={handleSignup} disabled={loading} sx={{ minHeight: appMode ? 60 : 50, bgcolor: primaryActionColor, fontWeight: 900, '&:hover': { bgcolor: primaryActionColor } }}>{t('signup')}</Button>
           </Stack>
         )}
       </Paper>
@@ -2017,7 +2089,7 @@ export default function AttendanceWorkerPortal() {
             color: '#64748b',
           }}
         >
-          근태앱 설치
+          {t('installAttendanceApp')}
         </Button>
       )}
     </MobileShell>
