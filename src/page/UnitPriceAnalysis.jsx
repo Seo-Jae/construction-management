@@ -171,19 +171,19 @@ const makeBlankRow = (sortOrder = 0) => ({
   sortOrder,
 });
 
-const getMarkupForType = (document, costType) => {
+const getLegacyMarkupForType = (document, costType) => {
   if (costType === 'labor') return toNumber(document.laborMarkup);
   if (costType === 'expense') return toNumber(document.expenseMarkup);
   return toNumber(document.materialMarkup);
 };
 
-const getEffectiveMarkup = (row, document) => (
+const getEffectiveMarkup = (row) => (
   row.itemMarkupPercent === '' || row.itemMarkupPercent === null
-    ? getMarkupForType(document, row.costType)
+    ? 0
     : toNumber(row.itemMarkupPercent)
 );
 
-const getSubmittedQuantity = (row, document) => {
+const getSubmittedQuantity = (row) => {
   if (
     row.submittedQuantityOverride !== '' &&
     row.submittedQuantityOverride !== null
@@ -191,9 +191,7 @@ const getSubmittedQuantity = (row, document) => {
     return toNumber(row.submittedQuantityOverride);
   }
 
-  return toNumber(row.netQuantity) * (
-    1 + getEffectiveMarkup(row, document) / 100
-  );
+  return toNumber(row.netQuantity);
 };
 
 const isOwnerSuppliedMaterial = (row) => (
@@ -204,6 +202,16 @@ const getChargeableAmount = (row, quantity) => (
   isOwnerSuppliedMaterial(row)
     ? 0
     : toNumber(quantity) * toNumber(row.unitPrice)
+);
+
+const getSubmittedUnitPrice = (row) => (
+  isOwnerSuppliedMaterial(row)
+    ? 0
+    : toNumber(row.unitPrice) * (1 + getEffectiveMarkup(row) / 100)
+);
+
+const getSubmittedAmount = (row) => (
+  getSubmittedQuantity(row) * getSubmittedUnitPrice(row)
 );
 
 const getToday = () => {
@@ -691,13 +699,10 @@ export default function UnitPriceAnalysis({
         ? row.costType
         : 'material';
       result[key].net += getChargeableAmount(row, row.netQuantity);
-      result[key].submitted += getChargeableAmount(
-        row,
-        getSubmittedQuantity(row, documentState),
-      );
+      result[key].submitted += getSubmittedAmount(row);
       return result;
     }, initial);
-  }, [documentState, draftRows]);
+  }, [draftRows]);
 
   const grandNet = totals.material.net + totals.labor.net + totals.expense.net;
   const grandSubmitted = (
@@ -759,11 +764,11 @@ export default function UnitPriceAnalysis({
         major_category: selectedSpec.major_category,
         middle_category: selectedSpec.middle_category,
         detail_category: selectedSpec.detail_category,
-        material_markup_percent: toNumber(documentState.materialMarkup),
-        labor_markup_percent: toNumber(documentState.laborMarkup),
-        expense_markup_percent: toNumber(documentState.expenseMarkup),
+        material_markup_percent: 0,
+        labor_markup_percent: 0,
+        expense_markup_percent: 0,
         image_url: selectedSpec.image_url || '',
-        notes: documentState.notes || '',
+        notes: '',
       };
       const itemPayload = draftRows
         .filter((row) => String(row.itemName || '').trim())
@@ -779,7 +784,7 @@ export default function UnitPriceAnalysis({
           net_unit_price: toNumber(row.unitPrice),
           markup_override_percent:
             row.itemMarkupPercent === '' ? null : toNumber(row.itemMarkupPercent),
-          submitted_quantity: getSubmittedQuantity(row, documentState),
+          submitted_quantity: getSubmittedQuantity(row),
           is_owner_supplied: isOwnerSuppliedMaterial(row),
           remarks: row.remarks || '',
           sort_order: index,
@@ -860,11 +865,18 @@ export default function UnitPriceAnalysis({
           remarks: item.remarks || '',
           sortOrder: item.sort_order ?? index,
         };
-        const calculated = toNumber(baseRow.netQuantity) * (
-          1 + getEffectiveMarkup(baseRow, nextDocument) / 100
+        const storedSubmittedQuantity = toNumber(item.submitted_quantity);
+        const netQuantity = toNumber(baseRow.netQuantity);
+        const legacyMarkup = item.markup_override_percent === null
+          ? getLegacyMarkupForType(nextDocument, baseRow.costType)
+          : toNumber(item.markup_override_percent);
+        const legacyAutoQuantity = netQuantity * (1 + legacyMarkup / 100);
+        const isNewDefault = Math.abs(netQuantity - storedSubmittedQuantity) <= 0.000001;
+        const isLegacyAutoQuantity = (
+          Math.abs(legacyAutoQuantity - storedSubmittedQuantity) <= 0.000001
         );
-        if (Math.abs(calculated - toNumber(item.submitted_quantity)) > 0.000001) {
-          baseRow.submittedQuantityOverride = toNumber(item.submitted_quantity);
+        if (!isNewDefault && !isLegacyAutoQuantity) {
+          baseRow.submittedQuantityOverride = storedSubmittedQuantity;
         }
         return baseRow;
       }));
@@ -1218,14 +1230,17 @@ export default function UnitPriceAnalysis({
         '합계 단가', '합계 금액', '비고',
       ]);
       draftRows.forEach((row) => {
-        const quantity = mode === 'net' ? toNumber(row.netQuantity) : getSubmittedQuantity(row, documentState);
+        const isNet = mode === 'net';
+        const quantity = isNet ? toNumber(row.netQuantity) : getSubmittedQuantity(row);
         const price = toNumber(row.unitPrice);
         const ownerSupplied = isOwnerSuppliedMaterial(row);
-        const amount = getChargeableAmount(row, quantity);
-        const chargeablePrice = ownerSupplied ? 0 : price;
+        const amount = isNet ? getChargeableAmount(row, quantity) : getSubmittedAmount(row);
+        const chargeablePrice = isNet
+          ? (ownerSupplied ? 0 : price)
+          : getSubmittedUnitPrice(row);
         const materialPrice = row.costType === 'material' ? chargeablePrice : 0;
-        const laborPrice = row.costType === 'labor' ? price : 0;
-        const expensePrice = row.costType === 'expense' ? price : 0;
+        const laborPrice = row.costType === 'labor' ? chargeablePrice : 0;
+        const expensePrice = row.costType === 'expense' ? chargeablePrice : 0;
         sheet.addRow([
           row.itemName,
           row.specification,
@@ -1348,9 +1363,8 @@ export default function UnitPriceAnalysis({
         <TableBody>
           {draftRows.map((row) => {
             const netAmount = getChargeableAmount(row, row.netQuantity);
-            const submittedQuantity = getSubmittedQuantity(row, documentState);
-            const submittedAmount = getChargeableAmount(row, submittedQuantity);
-            const categoryMarkup = getMarkupForType(documentState, row.costType);
+            const submittedQuantity = getSubmittedQuantity(row);
+            const submittedAmount = getSubmittedAmount(row);
             return (
               <TableRow
                 key={row.clientId}
@@ -1398,11 +1412,11 @@ export default function UnitPriceAnalysis({
                   <TextField
                     type="number"
                     value={row.itemMarkupPercent}
-                    placeholder={`${categoryMarkup}%`}
+                    placeholder="0%"
                     onChange={(event) => updateDraftRow(row.clientId, 'itemMarkupPercent', event.target.value)}
                     size="small"
                     inputProps={{ min: 0, step: 0.1 }}
-                    helperText={row.itemMarkupPercent === '' ? '분류값 적용' : '개별 적용'}
+                    helperText={row.itemMarkupPercent === '' ? '할증 없음' : '금액에 적용'}
                     sx={{ '& .MuiInputBase-input': { textAlign: 'right' } }}
                   />
                 </TableCell>
@@ -1414,7 +1428,7 @@ export default function UnitPriceAnalysis({
                     onChange={(event) => updateDraftRow(row.clientId, 'submittedQuantityOverride', event.target.value)}
                     size="small"
                     inputProps={{ min: 0, step: 0.0001 }}
-                    helperText={row.submittedQuantityOverride === '' ? '할증 자동계산' : '직접 수정'}
+                    helperText={row.submittedQuantityOverride === '' ? '정미수량 적용' : '직접 수정'}
                     sx={{ '& .MuiInputBase-input': { textAlign: 'right' } }}
                   />
                 </TableCell>
@@ -1479,16 +1493,18 @@ export default function UnitPriceAnalysis({
               return [
                 <TableRow key={`${type.value}-title`} className="print-section-row"><TableCell colSpan={13}>■ {type.label}</TableCell></TableRow>,
                 ...rows.map((row) => {
-                  const quantity = isNet ? toNumber(row.netQuantity) : getSubmittedQuantity(row, documentState);
+                  const quantity = isNet ? toNumber(row.netQuantity) : getSubmittedQuantity(row);
                   const ownerSupplied = isOwnerSuppliedMaterial(row);
-                  const amount = getChargeableAmount(row, quantity);
-                  const chargeablePrice = ownerSupplied ? 0 : toNumber(row.unitPrice);
+                  const amount = isNet ? getChargeableAmount(row, quantity) : getSubmittedAmount(row);
+                  const chargeablePrice = isNet
+                    ? (ownerSupplied ? 0 : toNumber(row.unitPrice))
+                    : getSubmittedUnitPrice(row);
                   return (
                     <TableRow key={row.clientId}>
                       <TableCell>{row.itemName}</TableCell><TableCell>{row.specification}</TableCell><TableCell>{row.unit}</TableCell><TableCell>{formatQuantity(quantity)}</TableCell>
                       <TableCell>{row.costType === 'material' ? formatMoney(chargeablePrice) : ''}</TableCell><TableCell>{row.costType === 'material' ? formatMoney(amount) : ''}</TableCell>
-                      <TableCell>{row.costType === 'labor' ? formatMoney(row.unitPrice) : ''}</TableCell><TableCell>{row.costType === 'labor' ? formatMoney(amount) : ''}</TableCell>
-                      <TableCell>{row.costType === 'expense' ? formatMoney(row.unitPrice) : ''}</TableCell><TableCell>{row.costType === 'expense' ? formatMoney(amount) : ''}</TableCell>
+                      <TableCell>{row.costType === 'labor' ? formatMoney(chargeablePrice) : ''}</TableCell><TableCell>{row.costType === 'labor' ? formatMoney(amount) : ''}</TableCell>
+                      <TableCell>{row.costType === 'expense' ? formatMoney(chargeablePrice) : ''}</TableCell><TableCell>{row.costType === 'expense' ? formatMoney(amount) : ''}</TableCell>
                       <TableCell>{formatMoney(chargeablePrice)}</TableCell><TableCell>{formatMoney(amount)}</TableCell><TableCell>{[ownerSupplied ? '지급자재' : '', row.remarks].filter(Boolean).join(' · ')}</TableCell>
                     </TableRow>
                   );
@@ -1504,7 +1520,6 @@ export default function UnitPriceAnalysis({
             </TableRow>
           </TableBody>
         </Table>
-        {documentState.notes && <Typography className="print-note">※ {documentState.notes}</Typography>}
       </Box>
     );
   };
@@ -1690,23 +1705,6 @@ export default function UnitPriceAnalysis({
                     {renderAuthoringTable()}
                   </Paper>
                 </Box>
-
-                <Paper variant="outlined" sx={{ p: 1.3 }}>
-                  <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, minmax(130px, 1fr)) 2fr' }, gap: 1 }}>
-                    {COST_TYPES.map((type) => {
-                      const key = type.value === 'material' ? 'materialMarkup' : type.value === 'labor' ? 'laborMarkup' : 'expenseMarkup';
-                      return (
-                        <TextField
-                          key={type.value} type="number" size="small" label={`${type.label} 기본 할증률(%)`}
-                          value={documentState[key]}
-                          onChange={(event) => setDocumentState((previous) => ({ ...previous, [key]: event.target.value }))}
-                          inputProps={{ min: 0, step: 0.1 }}
-                        />
-                      );
-                    })}
-                    <TextField size="small" label="문서 비고" value={documentState.notes} onChange={(event) => setDocumentState((previous) => ({ ...previous, notes: event.target.value }))} />
-                  </Box>
-                </Paper>
               </Box>
 
               <Stack spacing={1.2}>
