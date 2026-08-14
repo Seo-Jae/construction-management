@@ -55,6 +55,7 @@ import WeeklyOverview from './page/WeeklyOverview.jsx';
 import WeeklyOverviewArchive from './page/WeeklyOverviewArchive.jsx';
 import MaterialOrderUpload from './page/MaterialOrderUpload.jsx';
 import MaterialInputStatus from './page/MaterialInputStatus.jsx';
+import UnitPriceAnalysis from './page/UnitPriceAnalysis.jsx';
 import LaborContractManagement from './page/LaborContractManagement.jsx';
 import MonthlyLaborManagement from './page/MonthlyLaborManagement.jsx';
 import WorkerMasterManagement from './page/WorkerMasterManagement.jsx';
@@ -337,6 +338,7 @@ const viewTitles = {
   'progress-monthly': '월별 완료 집계',
   'material-order': '자재발주작성',
   'material-input-status': '자재투입현황',
+  'material-unit-price': '일위대가작성',
   'drawing-quantity': '타입별 도면분석',
   'payment-claim': '기성내역서작성',
   'payment-contract-mapping': '계약품목 공정연결',
@@ -374,6 +376,7 @@ const VIEW_PERMISSION_KEYS = {
   'drawing-quantity': 'construction.drawing.view',
   'material-order': 'material.order.view',
   'material-input-status': 'material.input.view',
+  'material-unit-price': 'material.input.view',
   'payment-claim': 'claim.statement.view',
   'payment-contract-mapping': 'claim.process_link.view',
   'payment-sales-status': 'claim.sales.view',
@@ -4136,6 +4139,23 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             activeProjectName && (
               <MaterialInputStatus
                 projectName={activeProjectName}
+              />
+            )}
+
+          {currentView ===
+            'material-unit-price' &&
+            activeProjectName && (
+              <UnitPriceAnalysis
+                projectName={activeProjectName}
+                userProfile={activeUserProfile}
+                projectOptions={accessibleProjectNames}
+                canManage={Boolean(
+                  isSuperAdmin ||
+                    hasPermission(
+                      'material.input.manage',
+                      activeProjectName,
+                    ) === true
+                )}
               />
             )}
 

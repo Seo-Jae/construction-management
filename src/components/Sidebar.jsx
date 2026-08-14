@@ -59,6 +59,10 @@ const progressMenus = [
 
 const materialMenus = [
   {
+    value: 'material-unit-price',
+    label: '일위대가작성',
+  },
+  {
     value: 'material-order',
     label: '자재발주작성',
     disabled: true,
