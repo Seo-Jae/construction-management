@@ -90,11 +90,49 @@ const toNumber = (value) => {
 const formatMoney = (value) => moneyFormatter.format(Math.round(toNumber(value)));
 const formatQuantity = (value) => quantityFormatter.format(toNumber(value));
 
-const normalizeMaterialSearchText = (value) => String(value || '')
-  .normalize('NFKC')
-  .toLowerCase()
-  .replace(/스터드/g, 'stud')
-  .replace(/[^a-z0-9가-힣]/g, '');
+const MATERIAL_SEARCH_ALIASES = [
+  [/클립바/g, 'clipbar'],
+  [/clipbar/g, 'clipbar'],
+  [/(스터드|stud)/g, 'stud'],
+  [/(런너|러너|runner)/g, 'runner'],
+  [/(타일판)/g, 'altile'],
+  [/(타일|tile)/g, 'tile'],
+  [/(루바|루버|louver|lover)/g, 'louver'],
+  [/(볼트|bolt)/g, 'bolt'],
+  [/(찬넬|채널|channel)/g, 'channel'],
+  [/(앵글|angle)/g, 'angle'],
+  [/(조인트|joint|joiner)/g, 'joint'],
+  [/(행거|hanger)/g, 'hanger'],
+  [/(보드|board)/g, 'board'],
+  [/(판넬|패널|panel)/g, 'panel'],
+  [/(클립|clip)/g, 'clip'],
+  [/(핀|pin)/g, 'pin'],
+  [/(너트|nut)/g, 'nut'],
+  [/(스프링|spring)/g, 'spring'],
+  [/(몰딩|molding|moulding)/g, 'molding'],
+  [/(메인|main)/g, 'main'],
+  [/(마이너|minor)/g, 'minor'],
+  [/(크로스|cross)/g, 'cross'],
+  [/(캐링|캐리잉|carrying)/g, 'carrying'],
+  [/(스크린|screen)/g, 'screen'],
+  [/(티바|tbar)/g, 'tbar'],
+  [/(엠바|mbar)/g, 'mbar'],
+  [/(에이치바|hbar)/g, 'hbar'],
+  [/(에스큐바|sqbar)/g, 'sqbar'],
+];
+
+const normalizeMaterialSearchText = (value) => {
+  let normalized = String(value || '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[^a-z0-9가-힣]/g, '');
+
+  MATERIAL_SEARCH_ALIASES.forEach(([pattern, replacement]) => {
+    normalized = normalized.replace(pattern, replacement);
+  });
+
+  return normalized;
+};
 
 const matchesMaterialSearch = (material, searchValue) => {
   const search = normalizeMaterialSearchText(searchValue);
