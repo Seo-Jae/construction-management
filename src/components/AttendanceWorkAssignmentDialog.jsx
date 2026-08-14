@@ -11,6 +11,7 @@ import {
   FormControlLabel,
   InputLabel,
   MenuItem,
+  Paper,
   Select,
   Stack,
   TextField,
@@ -18,6 +19,7 @@ import {
 } from '@mui/material';
 import { ATTENDANCE_TRADE_OPTIONS } from '../utils/attendance';
 import { getAttendanceTradeLabel } from '../utils/attendanceI18n';
+import AttendanceProgressFloorGrid from './AttendanceProgressFloorGrid.jsx';
 
 const normalizeBuildingLabel = (buildingName, suffix) => {
   const value = String(buildingName || '').trim();
@@ -26,6 +28,13 @@ const normalizeBuildingLabel = (buildingName, suffix) => {
     return `${value.slice(0, -1)}${suffix}`;
   }
   return `${value}${suffix}`;
+};
+
+const buildFloorRange = (startValue, endValue) => {
+  const start = Number(startValue);
+  const end = Number(endValue);
+  if (!start || !end || end < start) return [];
+  return Array.from({ length: end - start + 1 }, (_unused, index) => start + index);
 };
 
 export default function AttendanceWorkAssignmentDialog({
@@ -37,6 +46,9 @@ export default function AttendanceWorkAssignmentDialog({
   submitting,
   t,
   onChange,
+  onToggleUnit,
+  onSelectFloorUnits,
+  onClearFloorUnits,
   onCancel,
   onSubmit,
 }) {
@@ -67,7 +79,7 @@ export default function AttendanceWorkAssignmentDialog({
   return (
     <Dialog
       open={open}
-      data-attendance-work-assignment-scale="v52.48.5.7"
+      data-attendance-work-assignment-scale="v52.48.5.10"
       fullScreen={appMode}
       fullWidth
       maxWidth="sm"
@@ -157,7 +169,11 @@ export default function AttendanceWorkAssignmentDialog({
                   onChange({
                     locationMode: event.target.checked ? 'other' : 'standard',
                     building: '',
-                    floor: '',
+                    floorStart: '',
+                    floorEnd: '',
+                    floors: [],
+                    scopeMode: 'whole_floor',
+                    plannedUnitKeys: new Set(),
                     locationText: '',
                   });
                 }}
@@ -191,7 +207,14 @@ export default function AttendanceWorkAssignmentDialog({
                   label={t('building')}
                   value={draft.building}
                   MenuProps={largeSelectMenuProps}
-                  onChange={(event) => onChange({ building: event.target.value, floor: '' })}
+                  onChange={(event) => onChange({
+                    building: event.target.value,
+                    floorStart: '',
+                    floorEnd: '',
+                    floors: [],
+                    scopeMode: 'whole_floor',
+                    plannedUnitKeys: new Set(),
+                  })}
                 >
                   {buildings.map((item) => (
                     <MenuItem key={item.building_name} value={item.building_name}>
@@ -201,21 +224,123 @@ export default function AttendanceWorkAssignmentDialog({
                 </Select>
               </FormControl>
 
-              <FormControl fullWidth disabled={!draft.building}>
-                <InputLabel>{t('floor')}</InputLabel>
-                <Select
-                  label={t('floor')}
-                  value={draft.floor}
-                  MenuProps={largeSelectMenuProps}
-                  onChange={(event) => onChange({ floor: event.target.value })}
-                >
-                  {floors.map((floor) => (
-                    <MenuItem key={floor} value={floor}>
-                      {t('floorNumber', { floor })}
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
+              <Stack direction="row" spacing={appMode ? 2 : 1.2}>
+                <FormControl fullWidth disabled={!draft.building}>
+                  <InputLabel>{t('workFloorStart')}</InputLabel>
+                  <Select
+                    label={t('workFloorStart')}
+                    value={draft.floorStart}
+                    MenuProps={largeSelectMenuProps}
+                    onChange={(event) => {
+                      const floorStart = Number(event.target.value);
+                      const floorEnd = Math.max(floorStart, Number(draft.floorEnd) || floorStart);
+                      onChange({
+                        floorStart,
+                        floorEnd,
+                        floors: buildFloorRange(floorStart, floorEnd),
+                        plannedUnitKeys: new Set(),
+                      });
+                    }}
+                  >
+                    {floors.map((floor) => (
+                      <MenuItem key={floor} value={floor}>
+                        {t('floorNumber', { floor })}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+
+                <FormControl fullWidth disabled={!draft.building || !draft.floorStart}>
+                  <InputLabel>{t('workFloorEnd')}</InputLabel>
+                  <Select
+                    label={t('workFloorEnd')}
+                    value={draft.floorEnd}
+                    MenuProps={largeSelectMenuProps}
+                    onChange={(event) => {
+                      const floorEnd = Number(event.target.value);
+                      onChange({
+                        floorEnd,
+                        floors: buildFloorRange(draft.floorStart, floorEnd),
+                        plannedUnitKeys: new Set(),
+                      });
+                    }}
+                  >
+                    {floors
+                      .filter((floor) => floor >= Number(draft.floorStart || 0))
+                      .map((floor) => (
+                        <MenuItem key={floor} value={floor}>
+                          {t('floorNumber', { floor })}
+                        </MenuItem>
+                      ))}
+                  </Select>
+                </FormControl>
+              </Stack>
+
+              {draft.floors.length > 0 && (
+                <Alert severity="success" sx={{ fontSize: appMode ? '1.2rem' : undefined, fontWeight: 800 }}>
+                  {t('selectedFloorRange', {
+                    start: draft.floors[0],
+                    end: draft.floors[draft.floors.length - 1],
+                    count: draft.floors.length,
+                  })}
+                </Alert>
+              )}
+
+              {draft.floors.length > 0 && (
+                <Box>
+                  <Typography sx={{ mb: appMode ? 1.5 : 1, fontSize: appMode ? '1.35rem' : '0.9rem', fontWeight: 950 }}>
+                    {t('plannedUnitScope')}
+                  </Typography>
+                  <Stack direction="row" spacing={appMode ? 1.5 : 1}>
+                    <Button
+                      fullWidth
+                      variant={draft.scopeMode === 'whole_floor' ? 'contained' : 'outlined'}
+                      color="success"
+                      onClick={() => onChange({ scopeMode: 'whole_floor', plannedUnitKeys: new Set() })}
+                      sx={{ minHeight: appMode ? 74 : 48, fontSize: appMode ? '1.18rem' : undefined, fontWeight: 950 }}
+                    >
+                      {t('wholeSelectedFloors')}
+                    </Button>
+                    <Button
+                      fullWidth
+                      variant={draft.scopeMode === 'selected_units' ? 'contained' : 'outlined'}
+                      color="inherit"
+                      onClick={() => onChange({ scopeMode: 'selected_units', plannedUnitKeys: new Set() })}
+                      sx={{ minHeight: appMode ? 74 : 48, fontSize: appMode ? '1.18rem' : undefined, fontWeight: 950 }}
+                    >
+                      {t('selectedUnitsOnly')}
+                    </Button>
+                  </Stack>
+                </Box>
+              )}
+
+              {draft.scopeMode === 'selected_units' && draft.floors.map((floor) => {
+                const selectedUnits = new Set(
+                  Array.from(draft.plannedUnitKeys || [])
+                    .filter((key) => key.startsWith(`${draft.building}\u001f`))
+                    .map((key) => key.slice(key.indexOf('\u001f') + 1))
+                    .filter((unit) => Number(String(unit).slice(0, -2)) === Number(floor)),
+                );
+
+                return (
+                  <Paper key={`${draft.building}-${floor}`} variant="outlined" sx={{ p: appMode ? 2.2 : 1.5, borderRadius: 3 }}>
+                    <AttendanceProgressFloorGrid
+                      building={normalizeBuildingLabel(draft.building, '')}
+                      floor={floor}
+                      config={selectedBuilding?.config_json || {}}
+                      selectedUnits={selectedUnits}
+                      completedUnits={[]}
+                      plannedUnits={[]}
+                      appMode={appMode}
+                      selectedLabelKey="plannedSelection"
+                      t={t}
+                      onToggle={(unit) => onToggleUnit(floor, unit)}
+                      onSelectAll={(units) => onSelectFloorUnits(floor, units)}
+                      onClear={(units) => onClearFloorUnits(floor, units)}
+                    />
+                  </Paper>
+                );
+              })}
             </>
           )}
 

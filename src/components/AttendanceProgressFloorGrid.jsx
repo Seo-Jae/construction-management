@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Box, Stack, Typography } from '@mui/material';
+import { Box, Button, Stack, Typography } from '@mui/material';
 import { buildFloorVisualCells } from '../utils/buildingUnits.js';
 
 const toUnitSet = (value) =>
@@ -13,10 +13,14 @@ export default function AttendanceProgressFloorGrid({
   config,
   selectedUnits,
   completedUnits,
+  plannedUnits,
   appMode = false,
   readOnly = false,
+  selectedLabelKey = 'selectedForCompletion',
   t,
   onToggle,
+  onSelectAll,
+  onClear,
 }) {
   const cells = useMemo(
     () => buildFloorVisualCells(config || {}, Number(floor) || 0),
@@ -24,7 +28,12 @@ export default function AttendanceProgressFloorGrid({
   );
   const selectedSet = toUnitSet(selectedUnits);
   const completedSet = toUnitSet(completedUnits);
+  const plannedSet = toUnitSet(plannedUnits);
   const selectableCount = cells.filter((cell) => cell.type === 'valid').length;
+  const selectableUnits = cells
+    .filter((cell) => cell.type === 'valid')
+    .map((cell) => String(cell.unitCode))
+    .filter((unit) => !completedSet.has(unit));
 
   return (
     <Box>
@@ -40,13 +49,43 @@ export default function AttendanceProgressFloorGrid({
       <Stack direction="row" spacing={appMode ? 2 : 1.2} sx={{ mt: 1.2, flexWrap: 'wrap', rowGap: 0.8 }}>
         <Stack direction="row" spacing={0.55} alignItems="center">
           <Box sx={{ width: 14, height: 14, borderRadius: 0.6, bgcolor: '#03c75a' }} />
-          <Typography sx={{ fontSize: appMode ? '1rem' : '0.7rem', color: '#475569' }}>{t('selectedForCompletion')}</Typography>
+          <Typography sx={{ fontSize: appMode ? '1rem' : '0.7rem', color: '#475569' }}>{t(selectedLabelKey)}</Typography>
         </Stack>
+        {plannedSet.size > 0 && (
+          <Stack direction="row" spacing={0.55} alignItems="center">
+            <Box sx={{ width: 14, height: 14, borderRadius: 0.6, bgcolor: '#fef3c7', border: '2px solid #f59e0b' }} />
+            <Typography sx={{ fontSize: appMode ? '1rem' : '0.7rem', color: '#475569' }}>{t('plannedWorkUnit')}</Typography>
+          </Stack>
+        )}
         <Stack direction="row" spacing={0.55} alignItems="center">
           <Box sx={{ width: 14, height: 14, borderRadius: 0.6, bgcolor: '#0ea5e9' }} />
           <Typography sx={{ fontSize: appMode ? '1rem' : '0.7rem', color: '#475569' }}>{t('alreadyCompleted')}</Typography>
         </Stack>
       </Stack>
+
+      {!readOnly && selectableUnits.length > 0 && (
+        <Stack direction="row" spacing={1} sx={{ mt: appMode ? 1.7 : 1.1 }}>
+          <Button
+            size={appMode ? 'large' : 'small'}
+            variant="outlined"
+            color="success"
+            onClick={() => onSelectAll?.(selectableUnits)}
+            sx={{ fontWeight: 900, fontSize: appMode ? '1.05rem' : undefined }}
+          >
+            {t('selectWholeFloor')}
+          </Button>
+          <Button
+            size={appMode ? 'large' : 'small'}
+            variant="text"
+            color="inherit"
+            disabled={selectedSet.size === 0}
+            onClick={() => onClear?.(selectableUnits)}
+            sx={{ fontWeight: 850, fontSize: appMode ? '1.05rem' : undefined }}
+          >
+            {t('clearFloorSelection')}
+          </Button>
+        </Stack>
+      )}
 
       <Box
         sx={{
@@ -116,6 +155,7 @@ export default function AttendanceProgressFloorGrid({
             const unit = String(cell.unitCode);
             const selected = selectedSet.has(unit);
             const completed = completedSet.has(unit);
+            const planned = plannedSet.has(unit);
             const disabled = readOnly || completed;
 
             return (
@@ -132,7 +172,7 @@ export default function AttendanceProgressFloorGrid({
                   px: 1,
                   borderRadius: 2,
                   border: '2px solid',
-                  borderColor: selected ? '#02a94d' : completed ? '#0284c7' : '#cbd5e1',
+                  borderColor: selected ? '#02a94d' : completed ? '#0284c7' : planned ? '#f59e0b' : '#cbd5e1',
                   bgcolor: selected ? '#03c75a' : completed ? '#0ea5e9' : '#ffffff',
                   color: selected || completed ? '#ffffff' : '#334155',
                   fontFamily: 'inherit',

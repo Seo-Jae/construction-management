@@ -109,11 +109,50 @@ const workerStatusColor = (status) => ({
   disabled: 'default',
 }[status] || 'default');
 
+const formatScopeGroups = (scopes, { markAdded = false } = {}) => {
+  const grouped = new Map();
+  (Array.isArray(scopes) ? scopes : []).forEach((scope) => {
+    const building = String(scope?.building || '').trim();
+    const floor = Number(scope?.floor);
+    if (!building || !floor) return;
+    const source = markAdded ? String(scope?.scope_source || 'check_in') : 'all';
+    const key = `${source}\u001f${building}`;
+    if (!grouped.has(key)) grouped.set(key, { building, source, floors: new Set() });
+    grouped.get(key).floors.add(floor);
+  });
+
+  return Array.from(grouped.values()).map(({ building, source, floors: floorSet }) => {
+    const floors = Array.from(floorSet).sort((a, b) => a - b);
+    const ranges = [];
+    let start = floors[0];
+    let end = floors[0];
+    floors.slice(1).forEach((floor) => {
+      if (floor === end + 1) {
+        end = floor;
+      } else {
+        ranges.push(start === end ? `${start}층` : `${start}~${end}층`);
+        start = floor;
+        end = floor;
+      }
+    });
+    if (start) ranges.push(start === end ? `${start}층` : `${start}~${end}층`);
+    const buildingLabel = building.endsWith('동') ? building : `${building}동`;
+    const addedLabel = source === 'checkout_added' ? ' (퇴근추가)' : '';
+    return `${buildingLabel} ${ranges.join(', ')}${addedLabel}`;
+  });
+};
+
 const formatAttendanceWorkLocation = (row) => {
   if (!row?.check_in_at) return '-';
 
   if (row.work_location_mode === 'other') {
     return String(row.work_location_text || '').trim() || '미입력';
+  }
+
+  const scopeLabels = formatScopeGroups(row.work_scopes);
+  const addedLabels = formatScopeGroups(row.checkout_added_scopes, { markAdded: true });
+  if (scopeLabels.length > 0) {
+    return [...scopeLabels, ...addedLabels].join(' / ');
   }
 
   const building = String(row.work_building || '').trim();
@@ -124,6 +163,9 @@ const formatAttendanceWorkLocation = (row) => {
 };
 
 const formatProgressSubmissionLocation = (row) => {
+  const scopeLabels = formatScopeGroups(row?.scopes, { markAdded: true });
+  if (scopeLabels.length > 0) return scopeLabels.join(' / ');
+
   const building = String(row?.building || '').trim();
   const floor = String(row?.floor ?? '').trim();
   if (!building || !floor) return '-';
@@ -144,6 +186,7 @@ const adminProgressGridTranslator = (key, variables = {}) => ({
   progressFloorTitle: `${normalizeProgressBuildingValue(variables.building)}동 ${variables.floor || ''}층 골구도`,
   selectedUnitCount: `${Number(variables.count || 0).toLocaleString()}세대 제출`,
   selectedForCompletion: '작업자 완료 제출',
+  plannedWorkUnit: '출근 시 작업 예정',
   alreadyCompleted: '기존 완료',
   noSelectableUnits: '이 층에는 표시할 세대가 없습니다.',
 }[key] || key);
@@ -185,7 +228,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
   const loadDashboard = useCallback(async (silent = false) => {
     if (!projectName) return;
     if (!silent) setLoading(true);
-    const { data, error } = await supabase.rpc('attendance_manager_dashboard_v52_48_5_6', {
+    const { data, error } = await supabase.rpc('attendance_manager_dashboard_v52_48_5_10', {
       p_project_name: projectName,
       p_work_date: workDate,
     });
@@ -254,7 +297,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
     if (!silent) setProgressSubmissionsLoading(true);
 
     const { data, error } = await supabase.rpc(
-      'attendance_manager_progress_submissions_v52_48_5_9',
+      'attendance_manager_progress_submissions_v52_48_5_10',
       { p_project_name: projectName },
     );
 
@@ -727,7 +770,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
 
     setProgressReviewingId(submission.id);
     const { data, error } = await supabase.rpc(
-      'attendance_manager_review_progress_v52_48_5_9',
+      'attendance_manager_review_progress_v52_48_5_10',
       {
         p_submission_id: submission.id,
         p_approved: approved,
@@ -1573,15 +1616,60 @@ export default function AttendanceManagement({ projectName, canManage = false, o
                 초록색 세대가 작업자가 퇴근할 때 완료로 제출한 세대입니다. 승인해야 기존 진척관리에 작업완료로 반영됩니다.
               </Alert>
 
-              <AttendanceProgressFloorGrid
-                building={progressPreview.building || ''}
-                floor={progressPreview.floor || 0}
-                config={progressPreview.building_config || {}}
-                selectedUnits={progressPreview.units || []}
-                completedUnits={[]}
-                readOnly
-                t={adminProgressGridTranslator}
-              />
+              {(Array.isArray(progressPreview.scopes) && progressPreview.scopes.length > 0
+                ? progressPreview.scopes
+                : [{
+                    building: progressPreview.building,
+                    floor: progressPreview.floor,
+                    scope_source: 'check_in',
+                    config_json: progressPreview.building_config || {},
+                  }]
+              ).map((scope) => {
+                const selectedUnits = (Array.isArray(progressPreview.units)
+                  ? progressPreview.units
+                  : [])
+                  .filter((unitRow) =>
+                    typeof unitRow === 'string'
+                      ? scope.building === progressPreview.building &&
+                        Number(scope.floor) === Number(progressPreview.floor)
+                      : unitRow?.building === scope.building &&
+                        Number(unitRow?.floor) === Number(scope.floor))
+                  .map((unitRow) => typeof unitRow === 'string' ? unitRow : unitRow.unit);
+                const plannedUnits = (Array.isArray(progressPreview.planned_units)
+                  ? progressPreview.planned_units
+                  : [])
+                  .filter((unitRow) =>
+                    unitRow?.building === scope.building &&
+                    Number(unitRow?.floor) === Number(scope.floor))
+                  .map((unitRow) => unitRow.unit);
+                const added = scope.scope_source === 'checkout_added';
+
+                return (
+                  <Paper
+                    key={`${scope.building}-${scope.floor}`}
+                    variant="outlined"
+                    sx={{ p: 1.7, borderRadius: 2.5, borderColor: added ? '#f59e0b' : '#cbd5e1' }}
+                  >
+                    <Chip
+                      size="small"
+                      color={added ? 'warning' : 'primary'}
+                      variant={added ? 'filled' : 'outlined'}
+                      label={added ? '퇴근 시 추가 위치' : '출근 등록 위치'}
+                      sx={{ mb: 1.4, fontWeight: 900 }}
+                    />
+                    <AttendanceProgressFloorGrid
+                      building={scope.building || ''}
+                      floor={scope.floor || 0}
+                      config={scope.config_json || {}}
+                      selectedUnits={selectedUnits}
+                      completedUnits={[]}
+                      plannedUnits={plannedUnits}
+                      readOnly
+                      t={adminProgressGridTranslator}
+                    />
+                  </Paper>
+                );
+              })}
 
               {progressPreview.review_status !== 'pending' && (
                 <Alert severity={progressPreview.review_status === 'approved' ? 'success' : 'error'}>

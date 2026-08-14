@@ -80,7 +80,11 @@ const initialLogin = {
 const initialWorkAssignment = {
   locationMode: 'standard',
   building: '',
-  floor: '',
+  floorStart: '',
+  floorEnd: '',
+  floors: [],
+  scopeMode: 'whole_floor',
+  plannedUnitKeys: new Set(),
   locationText: '',
   tradeName: '',
 };
@@ -88,7 +92,25 @@ const initialWorkAssignment = {
 const initialCheckoutProgress = {
   completionState: '',
   progressProcessType: '',
-  selectedUnits: new Set(),
+  selectedUnitKeys: new Set(),
+  additionalScopes: [],
+  addBuilding: '',
+  addFloorStart: '',
+  addFloorEnd: '',
+};
+
+const makeCheckoutUnitKey = (building, unit) =>
+  `${String(building || '').trim()}\u001f${String(unit || '').trim()}`;
+
+const parseCheckoutUnitKey = (key) => {
+  const value = String(key || '');
+  const separatorIndex = value.indexOf('\u001f');
+  if (separatorIndex < 1) return null;
+  const building = value.slice(0, separatorIndex);
+  const unit = value.slice(separatorIndex + 1);
+  const floor = Number(unit.slice(0, -2));
+  if (!building || !unit || !floor) return null;
+  return { building, floor, unit };
 };
 
 const APP_BRAND_GREEN = '#03c75a';
@@ -1235,7 +1257,7 @@ export default function AttendanceWorkerPortal() {
 
     if (exchange.data?.event_type === 'check_in') {
       const prepared = await supabase.rpc(
-        'attendance_prepare_work_context_v52_48_5_5',
+        'attendance_prepare_work_context_v52_48_5_10',
         {
           p_session_token: sessionToken,
           p_device_key: deviceKey,
@@ -1274,7 +1296,7 @@ export default function AttendanceWorkerPortal() {
     }
 
     const prepared = await supabase.rpc(
-      'attendance_prepare_checkout_context_v52_48_5_9',
+      'attendance_prepare_checkout_context_v52_48_5_10',
       {
         p_session_token: sessionToken,
         p_device_key: deviceKey,
@@ -1302,7 +1324,11 @@ export default function AttendanceWorkerPortal() {
       progressProcessType: processOptions.length === 1
         ? processOptions[0]
         : '',
-      selectedUnits: new Set(),
+      selectedUnitKeys: new Set(),
+      additionalScopes: [],
+      addBuilding: '',
+      addFloorStart: '',
+      addFloorEnd: '',
     });
     setPendingCheckOut({
       ...prepared.data,
@@ -1322,6 +1348,36 @@ export default function AttendanceWorkerPortal() {
     }));
   }, []);
 
+  const handleTogglePlannedUnit = useCallback((_floor, unit) => {
+    setWorkAssignment((previous) => {
+      const nextUnits = new Set(previous.plannedUnitKeys);
+      const unitKey = makeCheckoutUnitKey(previous.building, unit);
+      if (nextUnits.has(unitKey)) nextUnits.delete(unitKey);
+      else nextUnits.add(unitKey);
+      return { ...previous, plannedUnitKeys: nextUnits };
+    });
+  }, []);
+
+  const handleSelectPlannedFloorUnits = useCallback((_floor, units) => {
+    setWorkAssignment((previous) => {
+      const nextUnits = new Set(previous.plannedUnitKeys);
+      units.forEach((unit) => {
+        nextUnits.add(makeCheckoutUnitKey(previous.building, unit));
+      });
+      return { ...previous, plannedUnitKeys: nextUnits };
+    });
+  }, []);
+
+  const handleClearPlannedFloorUnits = useCallback((_floor, units) => {
+    setWorkAssignment((previous) => {
+      const nextUnits = new Set(previous.plannedUnitKeys);
+      units.forEach((unit) => {
+        nextUnits.delete(makeCheckoutUnitKey(previous.building, unit));
+      });
+      return { ...previous, plannedUnitKeys: nextUnits };
+    });
+  }, []);
+
   const handleCancelWorkAssignment = useCallback(() => {
     if (workAssignmentSubmitting) return;
     setPendingCheckIn(null);
@@ -1333,7 +1389,11 @@ export default function AttendanceWorkerPortal() {
 
     if (
       workAssignment.locationMode === 'standard' &&
-      (!workAssignment.building || !workAssignment.floor)
+      (
+        !workAssignment.building ||
+        !Array.isArray(workAssignment.floors) ||
+        workAssignment.floors.length === 0
+      )
     ) {
       setMessage({ severity: 'warning', text: t('selectBuildingFloor') });
       return;
@@ -1347,6 +1407,15 @@ export default function AttendanceWorkerPortal() {
       return;
     }
 
+    if (
+      workAssignment.locationMode === 'standard' &&
+      workAssignment.scopeMode === 'selected_units' &&
+      workAssignment.plannedUnitKeys.size === 0
+    ) {
+      setMessage({ severity: 'warning', text: t('selectPlannedUnits') });
+      return;
+    }
+
     if (!ATTENDANCE_TRADE_OPTIONS.includes(workAssignment.tradeName)) {
       setMessage({ severity: 'warning', text: t('selectWorkProcess') });
       return;
@@ -1354,7 +1423,7 @@ export default function AttendanceWorkerPortal() {
 
     setWorkAssignmentSubmitting(true);
     const finalize = await supabase.rpc(
-      'attendance_finalize_scan_v52_48_5_5',
+      'attendance_finalize_checkin_scopes_v52_48_5_10',
       {
         p_session_token: sessionToken,
         p_device_key: deviceKey,
@@ -1363,9 +1432,18 @@ export default function AttendanceWorkerPortal() {
         p_building: workAssignment.locationMode === 'standard'
           ? workAssignment.building
           : null,
-        p_floor: workAssignment.locationMode === 'standard'
-          ? Number(workAssignment.floor)
-          : null,
+        p_floors: workAssignment.locationMode === 'standard'
+          ? workAssignment.floors.map(Number)
+          : [],
+        p_scope_mode: workAssignment.locationMode === 'standard'
+          ? workAssignment.scopeMode
+          : 'whole_floor',
+        p_units: workAssignment.locationMode === 'standard' &&
+          workAssignment.scopeMode === 'selected_units'
+          ? Array.from(workAssignment.plannedUnitKeys)
+              .map(parseCheckoutUnitKey)
+              .filter(Boolean)
+          : [],
         p_location_text: workAssignment.locationMode === 'other'
           ? workAssignment.locationText.trim()
           : null,
@@ -1412,15 +1490,104 @@ export default function AttendanceWorkerPortal() {
     }));
   }, []);
 
-  const handleToggleCheckoutUnit = useCallback((unit) => {
+  const handleToggleCheckoutUnit = useCallback((scope, unit) => {
     setCheckoutProgress((previous) => {
-      const nextUnits = new Set(previous.selectedUnits);
-      if (nextUnits.has(unit)) nextUnits.delete(unit);
-      else nextUnits.add(unit);
+      const nextUnits = new Set(previous.selectedUnitKeys);
+      const unitKey = makeCheckoutUnitKey(scope.building, unit);
+      if (nextUnits.has(unitKey)) nextUnits.delete(unitKey);
+      else nextUnits.add(unitKey);
 
       return {
         ...previous,
-        selectedUnits: nextUnits,
+        selectedUnitKeys: nextUnits,
+      };
+    });
+  }, []);
+
+  const handleSelectCheckoutFloorUnits = useCallback((scope, units) => {
+    setCheckoutProgress((previous) => {
+      const nextUnits = new Set(previous.selectedUnitKeys);
+      units.forEach((unit) => {
+        nextUnits.add(makeCheckoutUnitKey(scope.building, unit));
+      });
+      return { ...previous, selectedUnitKeys: nextUnits };
+    });
+  }, []);
+
+  const handleClearCheckoutFloorUnits = useCallback((scope, units) => {
+    setCheckoutProgress((previous) => {
+      const nextUnits = new Set(previous.selectedUnitKeys);
+      units.forEach((unit) => {
+        nextUnits.delete(makeCheckoutUnitKey(scope.building, unit));
+      });
+      return { ...previous, selectedUnitKeys: nextUnits };
+    });
+  }, []);
+
+  const handleAddCheckoutScopeRange = useCallback(() => {
+    const building = checkoutProgress.addBuilding;
+    const start = Number(checkoutProgress.addFloorStart);
+    const end = Number(checkoutProgress.addFloorEnd);
+    const buildingRow = (pendingCheckOut?.buildings || []).find(
+      (item) => item.building_name === building,
+    );
+
+    if (!building || !start || !end || end < start || !buildingRow) {
+      setMessage({ severity: 'warning', text: t('selectAdditionalWorkRange') });
+      return;
+    }
+
+    setCheckoutProgress((previous) => {
+      const existingKeys = new Set([
+        ...(pendingCheckOut?.work_scopes || []).map(
+          (scope) => `${scope.building}\u001f${Number(scope.floor)}`,
+        ),
+        ...previous.additionalScopes.map(
+          (scope) => `${scope.building}\u001f${Number(scope.floor)}`,
+        ),
+      ]);
+      const added = [];
+      for (let floor = start; floor <= end; floor += 1) {
+        const key = `${building}\u001f${floor}`;
+        if (existingKeys.has(key)) continue;
+        existingKeys.add(key);
+        added.push({
+          building,
+          floor,
+          scope_source: 'checkout_added',
+          config_json: buildingRow.config_json || {},
+        });
+      }
+
+      return {
+        ...previous,
+        additionalScopes: [...previous.additionalScopes, ...added],
+        addBuilding: '',
+        addFloorStart: '',
+        addFloorEnd: '',
+      };
+    });
+  }, [checkoutProgress, pendingCheckOut, t]);
+
+  const handleRemoveCheckoutScope = useCallback((scope) => {
+    setCheckoutProgress((previous) => {
+      const nextUnits = new Set(
+        Array.from(previous.selectedUnitKeys).filter((key) => {
+          const parsed = parseCheckoutUnitKey(key);
+          return !parsed ||
+            parsed.building !== scope.building ||
+            parsed.floor !== Number(scope.floor);
+        }),
+      );
+      return {
+        ...previous,
+        selectedUnitKeys: nextUnits,
+        additionalScopes: previous.additionalScopes.filter(
+          (item) => !(
+            item.building === scope.building &&
+            Number(item.floor) === Number(scope.floor)
+          ),
+        ),
       };
     });
   }, []);
@@ -1459,7 +1626,7 @@ export default function AttendanceWorkerPortal() {
     }
     if (
       completionState === 'submitted' &&
-      checkoutProgress.selectedUnits.size === 0
+      checkoutProgress.selectedUnitKeys.size === 0
     ) {
       setMessage({ severity: 'warning', text: t('selectCompletedUnits') });
       return;
@@ -1467,7 +1634,7 @@ export default function AttendanceWorkerPortal() {
 
     setCheckoutProgressSubmitting(true);
     const finalize = await supabase.rpc(
-      'attendance_finalize_checkout_progress_v52_48_5_9',
+      'attendance_finalize_checkout_progress_v52_48_5_10',
       {
         p_session_token: sessionToken,
         p_device_key: deviceKey,
@@ -1476,8 +1643,16 @@ export default function AttendanceWorkerPortal() {
         p_progress_process_type: completionState === 'submitted'
           ? checkoutProgress.progressProcessType
           : null,
+        p_additional_scopes: completionState === 'submitted'
+          ? checkoutProgress.additionalScopes.map((scope) => ({
+              building: scope.building,
+              floor: Number(scope.floor),
+            }))
+          : [],
         p_units: completionState === 'submitted'
-          ? Array.from(checkoutProgress.selectedUnits)
+          ? Array.from(checkoutProgress.selectedUnitKeys)
+              .map(parseCheckoutUnitKey)
+              .filter(Boolean)
           : [],
       },
     );
@@ -1832,6 +2007,9 @@ export default function AttendanceWorkerPortal() {
           submitting={workAssignmentSubmitting}
           t={t}
           onChange={handleWorkAssignmentChange}
+          onToggleUnit={handleTogglePlannedUnit}
+          onSelectFloorUnits={handleSelectPlannedFloorUnits}
+          onClearFloorUnits={handleClearPlannedFloorUnits}
           onCancel={handleCancelWorkAssignment}
           onSubmit={handleSubmitWorkAssignment}
         />
@@ -1845,6 +2023,10 @@ export default function AttendanceWorkerPortal() {
           t={t}
           onChange={handleCheckoutProgressChange}
           onToggleUnit={handleToggleCheckoutUnit}
+          onSelectFloorUnits={handleSelectCheckoutFloorUnits}
+          onClearFloorUnits={handleClearCheckoutFloorUnits}
+          onAddScopeRange={handleAddCheckoutScopeRange}
+          onRemoveScope={handleRemoveCheckoutScope}
           onCancel={handleCancelCheckoutProgress}
           onSubmit={handleSubmitCheckoutProgress}
         />
