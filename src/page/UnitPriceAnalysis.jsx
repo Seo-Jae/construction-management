@@ -9,6 +9,7 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
@@ -39,14 +40,17 @@ import {
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import EditNoteRoundedIcon from '@mui/icons-material/EditNoteRounded';
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
 import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
 import KeyboardArrowUpRoundedIcon from '@mui/icons-material/KeyboardArrowUpRounded';
+import PostAddRoundedIcon from '@mui/icons-material/PostAddRounded';
 import PrintRoundedIcon from '@mui/icons-material/PrintRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
+import TableViewRoundedIcon from '@mui/icons-material/TableViewRounded';
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
@@ -180,6 +184,26 @@ const bodyCellSx = {
   fontSize: '0.76rem',
 };
 
+const compactHeaderCellSx = {
+  bgcolor: '#e2e8f0',
+  color: '#334155',
+  fontSize: '0.66rem',
+  lineHeight: 1.1,
+  fontWeight: 900,
+  whiteSpace: 'nowrap',
+  border: '1px solid #cbd5e1',
+  py: 0.45,
+  px: 0.45,
+};
+
+const compactBodyCellSx = {
+  border: '1px solid #dbe3ec',
+  py: 0.22,
+  px: 0.32,
+  fontSize: '0.67rem',
+  lineHeight: 1.1,
+};
+
 function CompactNumberField({ value, onChange, min, step = '0.0001', disabled = false }) {
   return (
     <TextField
@@ -190,11 +214,15 @@ function CompactNumberField({ value, onChange, min, step = '0.0001', disabled = 
       size="small"
       inputProps={{ min, step }}
       sx={{
-        minWidth: 82,
+        minWidth: 68,
+        '& .MuiInputBase-root': {
+          height: 28,
+          minHeight: 28,
+        },
         '& .MuiInputBase-input': {
-          px: 0.75,
-          py: 0.65,
-          fontSize: '0.76rem',
+          px: 0.55,
+          py: 0.35,
+          fontSize: '0.67rem',
           textAlign: 'right',
         },
       }}
@@ -221,6 +249,7 @@ export default function UnitPriceAnalysis({
   const [selectedDetail, setSelectedDetail] = useState('');
   const [selectedSpec, setSelectedSpec] = useState(null);
   const [draftRows, setDraftRows] = useState([]);
+  const [selectedRowIds, setSelectedRowIds] = useState(() => new Set());
   const [documentState, setDocumentState] = useState(EMPTY_DOCUMENT);
   const [printMode, setPrintMode] = useState('submitted');
   const [documentScope, setDocumentScope] = useState('current');
@@ -371,7 +400,10 @@ export default function UnitPriceAnalysis({
     }));
 
     if (target === 'template') setTemplateRows(nextRows);
-    else setDraftRows(nextRows);
+    else {
+      setDraftRows(nextRows);
+      setSelectedRowIds(new Set());
+    }
     return nextRows;
   }, []);
 
@@ -429,14 +461,72 @@ export default function UnitPriceAnalysis({
     )));
   };
 
-  const moveDraftRow = (index, direction) => {
+  const addBlankDraftRow = () => {
+    const nextRow = makeBlankRow(draftRows.length);
+    setDraftRows((previous) => [...previous, nextRow]);
+    setSelectedRowIds(new Set([nextRow.clientId]));
+  };
+
+  const removeSelectedDraftRows = () => {
+    if (selectedRowIds.size === 0) {
+      showToast('삭제할 항목을 체크해주세요.', 'warning');
+      return;
+    }
+
+    setDraftRows((previous) => previous
+      .filter((row) => !selectedRowIds.has(row.clientId))
+      .map((row, index) => ({ ...row, sortOrder: index })));
+    setSelectedRowIds(new Set());
+  };
+
+  const moveSelectedDraftRows = (direction) => {
+    if (selectedRowIds.size === 0) {
+      showToast('이동할 항목을 체크해주세요.', 'warning');
+      return;
+    }
+
     setDraftRows((previous) => {
-      const target = index + direction;
-      if (target < 0 || target >= previous.length) return previous;
       const next = [...previous];
-      [next[index], next[target]] = [next[target], next[index]];
+
+      if (direction < 0) {
+        for (let index = 1; index < next.length; index += 1) {
+          if (
+            selectedRowIds.has(next[index].clientId) &&
+            !selectedRowIds.has(next[index - 1].clientId)
+          ) {
+            [next[index - 1], next[index]] = [next[index], next[index - 1]];
+          }
+        }
+      } else {
+        for (let index = next.length - 2; index >= 0; index -= 1) {
+          if (
+            selectedRowIds.has(next[index].clientId) &&
+            !selectedRowIds.has(next[index + 1].clientId)
+          ) {
+            [next[index], next[index + 1]] = [next[index + 1], next[index]];
+          }
+        }
+      }
+
       return next.map((row, rowIndex) => ({ ...row, sortOrder: rowIndex }));
     });
+  };
+
+  const toggleDraftRowSelection = (clientId) => {
+    setSelectedRowIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(clientId)) next.delete(clientId);
+      else next.add(clientId);
+      return next;
+    });
+  };
+
+  const toggleAllDraftRows = () => {
+    setSelectedRowIds((previous) => (
+      draftRows.length > 0 && previous.size === draftRows.length
+        ? new Set()
+        : new Set(draftRows.map((row) => row.clientId))
+    ));
   };
 
   const totals = useMemo(() => {
@@ -596,6 +686,7 @@ export default function UnitPriceAnalysis({
       setSelectedDetail(spec.detail_category);
       setSelectedSpec(spec);
       setDocumentState(nextDocument);
+      setSelectedRowIds(new Set());
       setDraftRows((data || []).map((item, index) => {
         const baseRow = {
           clientId: createClientId(),
@@ -730,19 +821,21 @@ export default function UnitPriceAnalysis({
   }, [materialPicker.search, materials]);
 
   const addMaterialToDraft = (material) => {
+    const nextRow = {
+      ...makeBlankRow(draftRows.length),
+      materialId: material.id,
+      itemCode: material.item_code,
+      itemName: material.item_name,
+      specification: material.specification || '',
+      unit: material.unit || '',
+      netQuantity: 1,
+      unitPrice: toNumber(material.current_unit_price),
+    };
     setDraftRows((previous) => [
       ...previous,
-      {
-        ...makeBlankRow(previous.length),
-        materialId: material.id,
-        itemCode: material.item_code,
-        itemName: material.item_name,
-        specification: material.specification || '',
-        unit: material.unit || '',
-        netQuantity: 1,
-        unitPrice: toNumber(material.current_unit_price),
-      },
+      nextRow,
     ]);
+    setSelectedRowIds(new Set([nextRow.clientId]));
     showToast(`${material.item_name} 항목을 추가했습니다.`, 'info');
   };
 
@@ -1050,73 +1143,110 @@ export default function UnitPriceAnalysis({
   };
 
   const renderAuthoringTable = () => (
-    <TableContainer sx={{ maxHeight: 'calc(100vh - 405px)', minHeight: 310 }}>
-      <Table stickyHeader size="small" sx={{ minWidth: 1420 }}>
+    <TableContainer sx={{ maxHeight: 'calc(100vh - 365px)', minHeight: 280 }}>
+      <Table
+        stickyHeader
+        size="small"
+        sx={{
+          minWidth: 1200,
+          '& .MuiTableRow-root': { height: 35 },
+          '& .MuiInputBase-root': {
+            minHeight: 28,
+            height: 28,
+            fontSize: '0.67rem',
+          },
+          '& .MuiInputBase-input': {
+            px: '5px',
+            py: '3px',
+            fontSize: '0.67rem',
+          },
+          '& .MuiSelect-select': {
+            px: '5px !important',
+            py: '3px !important',
+            fontSize: '0.67rem',
+          },
+          '& .MuiFormHelperText-root': {
+            mx: 0,
+            mt: '1px',
+            fontSize: '0.52rem',
+            lineHeight: 1,
+          },
+        }}
+      >
         <TableHead>
           <TableRow>
-            <TableCell sx={{ ...headerCellSx, width: 70 }}>순서</TableCell>
-            <TableCell sx={{ ...headerCellSx, width: 105 }}>구분</TableCell>
-            <TableCell sx={{ ...headerCellSx, minWidth: 180 }}>품명</TableCell>
-            <TableCell sx={{ ...headerCellSx, minWidth: 165 }}>규격</TableCell>
-            <TableCell sx={{ ...headerCellSx, width: 75 }}>단위</TableCell>
-            <TableCell sx={{ ...headerCellSx, width: 110 }}>정미수량</TableCell>
-            <TableCell sx={{ ...headerCellSx, width: 115 }}>단가</TableCell>
-            <TableCell sx={{ ...headerCellSx, width: 120 }}>정미금액</TableCell>
-            <TableCell sx={{ ...headerCellSx, width: 110 }}>항목할증률</TableCell>
-            <TableCell sx={{ ...headerCellSx, width: 125 }}>제출수량</TableCell>
-            <TableCell sx={{ ...headerCellSx, width: 125 }}>제출금액</TableCell>
-            <TableCell sx={{ ...headerCellSx, minWidth: 150 }}>비고</TableCell>
-            <TableCell sx={{ ...headerCellSx, width: 54 }} />
+            <TableCell align="center" sx={{ ...compactHeaderCellSx, width: 38, px: 0 }}>
+              <Checkbox
+                size="small"
+                checked={draftRows.length > 0 && selectedRowIds.size === draftRows.length}
+                indeterminate={selectedRowIds.size > 0 && selectedRowIds.size < draftRows.length}
+                onChange={toggleAllDraftRows}
+                sx={{ p: 0.25 }}
+              />
+            </TableCell>
+            <TableCell sx={{ ...compactHeaderCellSx, width: 82 }}>구분</TableCell>
+            <TableCell sx={{ ...compactHeaderCellSx, minWidth: 145 }}>품명</TableCell>
+            <TableCell sx={{ ...compactHeaderCellSx, minWidth: 125 }}>규격</TableCell>
+            <TableCell sx={{ ...compactHeaderCellSx, width: 56 }}>단위</TableCell>
+            <TableCell sx={{ ...compactHeaderCellSx, width: 84 }}>정미수량</TableCell>
+            <TableCell sx={{ ...compactHeaderCellSx, width: 84 }}>단가</TableCell>
+            <TableCell sx={{ ...compactHeaderCellSx, width: 90 }}>정미금액</TableCell>
+            <TableCell sx={{ ...compactHeaderCellSx, width: 92 }}>항목할증률</TableCell>
+            <TableCell sx={{ ...compactHeaderCellSx, width: 94 }}>제출수량</TableCell>
+            <TableCell sx={{ ...compactHeaderCellSx, width: 94 }}>제출금액</TableCell>
+            <TableCell sx={{ ...compactHeaderCellSx, minWidth: 120 }}>비고</TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
-          {draftRows.map((row, index) => {
+          {draftRows.map((row) => {
             const netAmount = toNumber(row.netQuantity) * toNumber(row.unitPrice);
             const submittedQuantity = getSubmittedQuantity(row, documentState);
             const submittedAmount = submittedQuantity * toNumber(row.unitPrice);
             const categoryMarkup = getMarkupForType(documentState, row.costType);
             return (
-              <TableRow key={row.clientId} hover>
-                <TableCell sx={bodyCellSx}>
-                  <Stack direction="row" spacing={0} justifyContent="center">
-                    <IconButton size="small" disabled={index === 0} onClick={() => moveDraftRow(index, -1)}>
-                      <KeyboardArrowUpRoundedIcon fontSize="inherit" />
-                    </IconButton>
-                    <IconButton size="small" disabled={index === draftRows.length - 1} onClick={() => moveDraftRow(index, 1)}>
-                      <KeyboardArrowDownRoundedIcon fontSize="inherit" />
-                    </IconButton>
-                  </Stack>
+              <TableRow
+                key={row.clientId}
+                hover
+                selected={selectedRowIds.has(row.clientId)}
+                sx={{ '&.Mui-selected': { bgcolor: '#eff6ff' } }}
+              >
+                <TableCell align="center" sx={{ ...compactBodyCellSx, px: 0 }}>
+                  <Checkbox
+                    size="small"
+                    checked={selectedRowIds.has(row.clientId)}
+                    onChange={() => toggleDraftRowSelection(row.clientId)}
+                    sx={{ p: 0.25 }}
+                  />
                 </TableCell>
-                <TableCell sx={bodyCellSx}>
+                <TableCell sx={compactBodyCellSx}>
                   <Select
                     value={row.costType}
                     size="small"
                     fullWidth
                     onChange={(event) => updateDraftRow(row.clientId, 'costType', event.target.value)}
-                    sx={{ fontSize: '0.75rem', '& .MuiSelect-select': { py: 0.65, px: 0.8 } }}
                   >
                     {COST_TYPES.map((item) => (
                       <MenuItem key={item.value} value={item.value}>{item.label}</MenuItem>
                     ))}
                   </Select>
                 </TableCell>
-                <TableCell sx={bodyCellSx}>
+                <TableCell sx={compactBodyCellSx}>
                   <TextField value={row.itemName} onChange={(event) => updateDraftRow(row.clientId, 'itemName', event.target.value)} size="small" fullWidth />
                 </TableCell>
-                <TableCell sx={bodyCellSx}>
+                <TableCell sx={compactBodyCellSx}>
                   <TextField value={row.specification} onChange={(event) => updateDraftRow(row.clientId, 'specification', event.target.value)} size="small" fullWidth />
                 </TableCell>
-                <TableCell sx={bodyCellSx}>
+                <TableCell sx={compactBodyCellSx}>
                   <TextField value={row.unit} onChange={(event) => updateDraftRow(row.clientId, 'unit', event.target.value)} size="small" fullWidth />
                 </TableCell>
-                <TableCell sx={bodyCellSx}>
+                <TableCell sx={compactBodyCellSx}>
                   <CompactNumberField value={row.netQuantity} onChange={(value) => updateDraftRow(row.clientId, 'netQuantity', value)} min="0" />
                 </TableCell>
-                <TableCell sx={bodyCellSx}>
+                <TableCell sx={compactBodyCellSx}>
                   <CompactNumberField value={row.unitPrice} onChange={(value) => updateDraftRow(row.clientId, 'unitPrice', value)} min="0" step="1" />
                 </TableCell>
-                <TableCell align="right" sx={{ ...bodyCellSx, fontWeight: 700 }}>{formatMoney(netAmount)}</TableCell>
-                <TableCell sx={bodyCellSx}>
+                <TableCell align="right" sx={{ ...compactBodyCellSx, fontWeight: 700 }}>{formatMoney(netAmount)}</TableCell>
+                <TableCell sx={compactBodyCellSx}>
                   <TextField
                     type="number"
                     value={row.itemMarkupPercent}
@@ -1125,10 +1255,10 @@ export default function UnitPriceAnalysis({
                     size="small"
                     inputProps={{ min: 0, step: 0.1 }}
                     helperText={row.itemMarkupPercent === '' ? '분류값 적용' : '개별 적용'}
-                    sx={{ '& .MuiInputBase-input': { py: 0.6, textAlign: 'right' }, '& .MuiFormHelperText-root': { mx: 0, fontSize: '0.6rem' } }}
+                    sx={{ '& .MuiInputBase-input': { textAlign: 'right' } }}
                   />
                 </TableCell>
-                <TableCell sx={bodyCellSx}>
+                <TableCell sx={compactBodyCellSx}>
                   <TextField
                     type="number"
                     value={row.submittedQuantityOverride}
@@ -1137,24 +1267,19 @@ export default function UnitPriceAnalysis({
                     size="small"
                     inputProps={{ min: 0, step: 0.0001 }}
                     helperText={row.submittedQuantityOverride === '' ? '할증 자동계산' : '직접 수정'}
-                    sx={{ '& .MuiInputBase-input': { py: 0.6, textAlign: 'right' }, '& .MuiFormHelperText-root': { mx: 0, fontSize: '0.6rem' } }}
+                    sx={{ '& .MuiInputBase-input': { textAlign: 'right' } }}
                   />
                 </TableCell>
-                <TableCell align="right" sx={{ ...bodyCellSx, color: '#b91c1c', fontWeight: 800 }}>{formatMoney(submittedAmount)}</TableCell>
-                <TableCell sx={bodyCellSx}>
+                <TableCell align="right" sx={{ ...compactBodyCellSx, color: '#b91c1c', fontWeight: 800 }}>{formatMoney(submittedAmount)}</TableCell>
+                <TableCell sx={compactBodyCellSx}>
                   <TextField value={row.remarks} onChange={(event) => updateDraftRow(row.clientId, 'remarks', event.target.value)} size="small" fullWidth />
-                </TableCell>
-                <TableCell sx={bodyCellSx} align="center">
-                  <IconButton color="error" size="small" onClick={() => setDraftRows((previous) => previous.filter((item) => item.clientId !== row.clientId))}>
-                    <DeleteOutlineRoundedIcon fontSize="small" />
-                  </IconButton>
                 </TableCell>
               </TableRow>
             );
           })}
           {draftRows.length === 0 && (
             <TableRow>
-              <TableCell colSpan={13} align="center" sx={{ py: 6, color: '#64748b' }}>
+              <TableCell colSpan={12} align="center" sx={{ py: 6, color: '#64748b', fontSize: '0.7rem' }}>
                 규격을 선택하거나 항목을 추가해주세요.
               </TableCell>
             </TableRow>
@@ -1259,18 +1384,41 @@ export default function UnitPriceAnalysis({
         }
       `}</style>
 
-      <Paper sx={{ mb: 1.5, p: 2, border: '1px solid #dbe3ec' }}>
-        <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" gap={1.5}>
-          <Box>
-            <Typography variant="h5" sx={{ fontWeight: 950, color: '#0f172a' }}>일위대가작성</Typography>
-            <Typography sx={{ mt: 0.4, color: '#64748b', fontSize: '0.82rem' }}>
-              벽체·천정의 1㎡당 정미값을 기준으로 제출용 할증 일위대가를 작성하고 현장별로 저장합니다.
-            </Typography>
-          </Box>
-          <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
+      <Paper sx={{ mb: 1.2, px: 2, py: 1.2, border: '1px solid #dbe3ec' }}>
+        <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" alignItems={{ xs: 'stretch', lg: 'center' }} gap={1}>
+          <Stack direction="row" spacing={1.2} alignItems="center">
+            <Typography sx={{ fontSize: '1.22rem', fontWeight: 950, color: '#0f172a', whiteSpace: 'nowrap' }}>일위대가작성</Typography>
             <Chip label={`현재 현장 · ${projectName || '미선택'}`} color="primary" variant="outlined" />
+          </Stack>
+          <Stack direction="row" spacing={0.45} alignItems="center" justifyContent="flex-end">
+            <Tooltip title="새 일위대가 작성">
+              <IconButton size="small" onClick={resetDocument} sx={{ border: '1px solid #cbd5e1', borderRadius: 1 }}>
+                <PostAddRoundedIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="저장">
+              <span>
+                <IconButton size="small" color="primary" disabled={saving} onClick={handleSaveDocument} sx={{ border: '1px solid #93c5fd', borderRadius: 1 }}>
+                  {saving ? <CircularProgress size={18} /> : <SaveRoundedIcon fontSize="small" />}
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Tooltip title={printMode === 'net' ? '정미 일위대가 출력/PDF' : '제출용 일위대가 출력/PDF'}>
+              <IconButton size="small" onClick={printDocument} sx={{ border: '1px solid #cbd5e1', borderRadius: 1 }}>
+                <PrintRoundedIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="정미값·제출용 Excel 다운로드">
+              <IconButton size="small" onClick={exportDocumentExcel} sx={{ border: '1px solid #cbd5e1', borderRadius: 1 }}>
+                <TableViewRoundedIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
             <Tooltip title="기준정보와 저장목록 새로고침">
-              <span><IconButton onClick={loadBaseData} disabled={loading}><RefreshRoundedIcon /></IconButton></span>
+              <span>
+                <IconButton size="small" onClick={loadBaseData} disabled={loading} sx={{ ml: 0.5, border: '1px solid #cbd5e1', borderRadius: 1 }}>
+                  {loading ? <CircularProgress size={18} /> : <RefreshRoundedIcon fontSize="small" />}
+                </IconButton>
+              </span>
             </Tooltip>
           </Stack>
         </Stack>
@@ -1322,14 +1470,18 @@ export default function UnitPriceAnalysis({
                 </Paper>
 
                 <Paper variant="outlined" sx={{ mb: 1.3, overflow: 'hidden' }}>
-                  <Box sx={{ px: 1.3, py: 0.8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: '#f8fafc', borderBottom: '1px solid #dbe3ec' }}>
-                    <Stack direction="row" spacing={1} alignItems="center">
-                      <Typography sx={{ fontWeight: 900, fontSize: '0.86rem' }}>1㎡당 구성 항목</Typography>
-                      <Chip size="small" label={`${draftRows.length}개`} />
+                  <Box sx={{ px: 1, py: 0.45, minHeight: 34, display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: '#f8fafc', borderBottom: '1px solid #dbe3ec' }}>
+                    <Stack direction="row" spacing={0.7} alignItems="center">
+                      <Typography sx={{ fontWeight: 900, fontSize: '0.76rem' }}>1㎡당 구성 항목</Typography>
+                      <Chip size="small" label={`${draftRows.length}개`} sx={{ height: 20, fontSize: '0.62rem' }} />
+                      {selectedRowIds.size > 0 && <Chip size="small" color="primary" variant="outlined" label={`${selectedRowIds.size}개 선택`} sx={{ height: 20, fontSize: '0.62rem' }} />}
                     </Stack>
-                    <Stack direction="row" spacing={0.5}>
-                      <Button size="small" variant="outlined" onClick={() => setMaterialPicker({ open: true, search: '' })}>자재 마스터에서 추가</Button>
-                      <Button size="small" startIcon={<AddRoundedIcon />} onClick={() => setDraftRows((previous) => [...previous, makeBlankRow(previous.length)])}>빈 항목 추가</Button>
+                    <Stack direction="row" spacing={0.25} alignItems="center">
+                      <Button size="small" variant="outlined" onClick={() => setMaterialPicker({ open: true, search: '' })} sx={{ minHeight: 27, py: 0.2, fontSize: '0.66rem' }}>자재 마스터에서 추가</Button>
+                      <Tooltip title="빈 항목 추가"><IconButton size="small" onClick={addBlankDraftRow} sx={{ p: 0.35 }}><AddRoundedIcon fontSize="small" /></IconButton></Tooltip>
+                      <Tooltip title="선택 항목 삭제"><span><IconButton size="small" color="error" disabled={selectedRowIds.size === 0} onClick={removeSelectedDraftRows} sx={{ p: 0.35 }}><RemoveRoundedIcon fontSize="small" /></IconButton></span></Tooltip>
+                      <Tooltip title="선택 항목 위로"><span><IconButton size="small" disabled={selectedRowIds.size === 0} onClick={() => moveSelectedDraftRows(-1)} sx={{ p: 0.35 }}><KeyboardArrowUpRoundedIcon fontSize="small" /></IconButton></span></Tooltip>
+                      <Tooltip title="선택 항목 아래로"><span><IconButton size="small" disabled={selectedRowIds.size === 0} onClick={() => moveSelectedDraftRows(1)} sx={{ p: 0.35 }}><KeyboardArrowDownRoundedIcon fontSize="small" /></IconButton></span></Tooltip>
                     </Stack>
                   </Box>
                   {renderAuthoringTable()}
@@ -1383,14 +1535,6 @@ export default function UnitPriceAnalysis({
                 </Paper>
 
                 <FormControl size="small" fullWidth><InputLabel>출력 기준</InputLabel><Select value={printMode} label="출력 기준" onChange={(event) => setPrintMode(event.target.value)}><MenuItem value="net">정미 일위대가</MenuItem><MenuItem value="submitted">제출용 일위대가</MenuItem></Select></FormControl>
-                <Stack direction="row" spacing={1}>
-                  <Button fullWidth variant="outlined" startIcon={<PrintRoundedIcon />} onClick={printDocument}>출력/PDF</Button>
-                  <Button fullWidth variant="outlined" startIcon={<DownloadRoundedIcon />} onClick={exportDocumentExcel}>Excel</Button>
-                </Stack>
-                <Stack direction="row" spacing={1}>
-                  <Button fullWidth variant="outlined" color="inherit" onClick={resetDocument}>새로 작성</Button>
-                  <Button fullWidth variant="contained" startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <SaveRoundedIcon />} disabled={saving} onClick={handleSaveDocument}>저장</Button>
-                </Stack>
                 {documentState.id && <Alert severity="info" icon={<EditNoteRoundedIcon />} sx={{ fontSize: '0.72rem' }}>저장본 v{documentState.versionNo}을 편집 중입니다.</Alert>}
               </Stack>
             </Box>
