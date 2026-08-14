@@ -62,6 +62,11 @@ const COST_TYPES = [
   { value: 'expense', label: '경비', color: '#7c3aed' },
 ];
 
+const ROW_COST_TYPES = [
+  ...COST_TYPES,
+  { value: 'expense_rounding', label: '경비(단수정리)', color: '#7c3aed' },
+];
+
 const EMPTY_DOCUMENT = {
   id: '',
   documentName: '',
@@ -163,6 +168,7 @@ const makeBlankRow = (sortOrder = 0) => ({
   specification: '',
   unit: 'M',
   netQuantity: 0,
+  laborAmountPerM2: '',
   unitPrice: 0,
   itemMarkupPercent: '',
   submittedQuantityOverride: '',
@@ -183,7 +189,18 @@ const getEffectiveMarkup = (row) => (
     : toNumber(row.itemMarkupPercent)
 );
 
+const isOwnerSuppliedMaterial = (row) => (
+  row.costType === 'material' && Boolean(row.isOwnerSupplied)
+);
+
+const isRoundingExpense = (row) => row.costType === 'expense_rounding';
+
+const getSummaryCostType = (row) => (
+  isRoundingExpense(row) ? 'expense' : row.costType
+);
+
 const getSubmittedQuantity = (row) => {
+  if (isRoundingExpense(row)) return 1;
   if (
     row.submittedQuantityOverride !== '' &&
     row.submittedQuantityOverride !== null
@@ -194,25 +211,61 @@ const getSubmittedQuantity = (row) => {
   return toNumber(row.netQuantity);
 };
 
-const isOwnerSuppliedMaterial = (row) => (
-  row.costType === 'material' && Boolean(row.isOwnerSupplied)
+const getLaborAmountPerM2 = (row) => (
+  row.laborAmountPerM2 === '' || row.laborAmountPerM2 === null
+    ? toNumber(row.netQuantity) * toNumber(row.unitPrice)
+    : toNumber(row.laborAmountPerM2)
 );
 
-const getChargeableAmount = (row, quantity) => (
-  isOwnerSuppliedMaterial(row)
-    ? 0
-    : toNumber(quantity) * toNumber(row.unitPrice)
-);
-
-const getSubmittedUnitPrice = (row) => (
-  isOwnerSuppliedMaterial(row)
+const getSubmittedUnitPrice = (row, roundingAmount = 0) => (
+  isRoundingExpense(row)
+    ? toNumber(roundingAmount)
+    : isOwnerSuppliedMaterial(row)
     ? 0
     : toNumber(row.unitPrice) * (1 + getEffectiveMarkup(row) / 100)
 );
 
-const getSubmittedAmount = (row) => (
-  getSubmittedQuantity(row) * getSubmittedUnitPrice(row)
-);
+const getNetAmount = (row) => {
+  if (isOwnerSuppliedMaterial(row) || isRoundingExpense(row)) return 0;
+  if (row.costType === 'labor') return getLaborAmountPerM2(row);
+  return toNumber(row.netQuantity) * toNumber(row.unitPrice);
+};
+
+const getSubmittedAmount = (row, roundingAmount = 0) => {
+  if (isRoundingExpense(row)) return toNumber(roundingAmount);
+  if (isOwnerSuppliedMaterial(row)) return 0;
+
+  const usesNetLaborQuantity = (
+    row.costType === 'labor' &&
+    (row.submittedQuantityOverride === '' || row.submittedQuantityOverride === null)
+  );
+  const baseAmount = usesNetLaborQuantity
+    ? getLaborAmountPerM2(row)
+    : getSubmittedQuantity(row) * toNumber(row.unitPrice);
+  return baseAmount * (1 + getEffectiveMarkup(row) / 100);
+};
+
+const getRoundingAdjustment = (subtotal, baseAmount) => {
+  const normalizedSubtotal = toNumber(subtotal);
+  const remainder = ((normalizedSubtotal % 100) + 100) % 100;
+  const tailAdjustment = remainder < 0.000001 ? 0 : 100 - remainder;
+  return tailAdjustment + Math.max(0, toNumber(baseAmount));
+};
+
+const calculateRoundingAmounts = (rows) => {
+  let runningTotal = rows
+    .filter((row) => !isRoundingExpense(row))
+    .reduce((sum, row) => sum + getSubmittedAmount(row), 0);
+  const amounts = new Map();
+
+  rows.filter(isRoundingExpense).forEach((row) => {
+    const amount = getRoundingAdjustment(runningTotal, row.unitPrice);
+    amounts.set(row.clientId, amount);
+    runningTotal += amount;
+  });
+
+  return amounts;
+};
 
 const getToday = () => {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -340,7 +393,7 @@ function CompactNumberField({ value, onChange, min, step = '0.0001', disabled = 
   );
 }
 
-function CompactMoneyField({ value, onChange, disabled = false }) {
+function CompactMoneyField({ value, onChange, disabled = false, helperText = '' }) {
   const displayValue = value === '' || value === null || value === undefined
     ? ''
     : formatMoney(value);
@@ -354,6 +407,7 @@ function CompactMoneyField({ value, onChange, disabled = false }) {
         const digits = event.target.value.replace(/[^0-9]/g, '');
         onChange(digits === '' ? '' : digits.replace(/^0+(?=\d)/, ''));
       }}
+      helperText={helperText}
       size="small"
       inputProps={{ inputMode: 'numeric' }}
       sx={{
@@ -535,6 +589,9 @@ export default function UnitPriceAnalysis({
       specification: item.specification || item.material?.specification || '',
       unit: item.unit || item.material?.unit || '',
       netQuantity: toNumber(item.net_quantity),
+      laborAmountPerM2: item.cost_type === 'labor'
+        ? toNumber(item.net_quantity) * toNumber(item.unit_price_override ?? item.material?.current_unit_price)
+        : '',
       unitPrice: toNumber(item.unit_price_override ?? item.material?.current_unit_price),
       itemMarkupPercent: '',
       submittedQuantityOverride: '',
@@ -600,23 +657,129 @@ export default function UnitPriceAnalysis({
   );
 
   const updateDraftRow = (clientId, field, value) => {
-    setDraftRows((previous) => previous.map((row) => (
-      row.clientId === clientId
-        ? {
+    setDraftRows((previous) => previous.map((row) => {
+      if (row.clientId !== clientId) return row;
+
+      if (field === 'laborAmountPerM2') {
+        const amount = value;
+        const price = toNumber(row.unitPrice);
+        return {
           ...row,
-          [field]: value,
-          ...(field === 'costType' && value === 'labor'
-            ? { unit: '인' }
-            : {}),
-          ...(field === 'costType' && value === 'material' && row.unit === '인'
-            ? { unit: 'M' }
-            : {}),
-          ...(field === 'costType' && value !== 'material'
-            ? { isOwnerSupplied: false }
-            : {}),
+          laborAmountPerM2: amount,
+          netQuantity: price > 0
+            ? Number((toNumber(amount) / price).toFixed(6))
+            : 0,
+        };
+      }
+
+      if (field === 'unitPrice' && row.costType === 'labor') {
+        const amount = getLaborAmountPerM2(row);
+        const price = toNumber(value);
+        return {
+          ...row,
+          unitPrice: value,
+          netQuantity: price > 0
+            ? Number((amount / price).toFixed(6))
+            : 0,
+        };
+      }
+
+      if (field === 'costType') {
+        if (value === 'labor') {
+          return {
+            ...row,
+            costType: value,
+            unit: '인',
+            laborAmountPerM2: toNumber(row.netQuantity) * toNumber(row.unitPrice) || '',
+            isOwnerSupplied: false,
+          };
         }
-        : row
-    )));
+        if (value === 'expense_rounding') {
+          return {
+            ...row,
+            costType: value,
+            itemName: row.itemName || '경비 단수정리',
+            specification: row.specification || '제출금액 100원 단위 정리',
+            unit: '식',
+            netQuantity: 0,
+            laborAmountPerM2: '',
+            unitPrice: 100,
+            itemMarkupPercent: '',
+            submittedQuantityOverride: '',
+            isOwnerSupplied: false,
+          };
+        }
+        return {
+          ...row,
+          costType: value,
+          unit: value === 'material' && ['인', '식'].includes(row.unit) ? 'M' : row.unit,
+          laborAmountPerM2: '',
+          isOwnerSupplied: value === 'material' ? row.isOwnerSupplied : false,
+        };
+      }
+
+      return { ...row, [field]: value };
+    }));
+  };
+
+  const updateTemplateRow = (clientId, field, value) => {
+    setTemplateRows((previous) => previous.map((row) => {
+      if (row.clientId !== clientId) return row;
+
+      if (field === 'laborAmountPerM2') {
+        const price = toNumber(row.unitPrice);
+        return {
+          ...row,
+          laborAmountPerM2: value,
+          netQuantity: price > 0
+            ? Number((toNumber(value) / price).toFixed(6))
+            : 0,
+        };
+      }
+      if (field === 'unitPrice' && row.costType === 'labor') {
+        const amount = getLaborAmountPerM2(row);
+        const price = toNumber(value);
+        return {
+          ...row,
+          unitPrice: value,
+          netQuantity: price > 0
+            ? Number((amount / price).toFixed(6))
+            : 0,
+        };
+      }
+      if (field === 'costType') {
+        if (value === 'labor') {
+          return {
+            ...row,
+            costType: value,
+            unit: '인',
+            laborAmountPerM2: toNumber(row.netQuantity) * toNumber(row.unitPrice) || '',
+            isOwnerSupplied: false,
+          };
+        }
+        if (value === 'expense_rounding') {
+          return {
+            ...row,
+            costType: value,
+            itemName: row.itemName || '경비 단수정리',
+            specification: row.specification || '제출금액 100원 단위 정리',
+            unit: '식',
+            netQuantity: 0,
+            laborAmountPerM2: '',
+            unitPrice: 100,
+            isOwnerSupplied: false,
+          };
+        }
+        return {
+          ...row,
+          costType: value,
+          unit: value === 'material' && ['인', '식'].includes(row.unit) ? 'M' : row.unit,
+          laborAmountPerM2: '',
+          isOwnerSupplied: value === 'material' ? row.isOwnerSupplied : false,
+        };
+      }
+      return { ...row, [field]: value };
+    }));
   };
 
   const addBlankDraftRow = () => {
@@ -687,6 +850,11 @@ export default function UnitPriceAnalysis({
     ));
   };
 
+  const roundingAmounts = useMemo(
+    () => calculateRoundingAmounts(draftRows),
+    [draftRows],
+  );
+
   const totals = useMemo(() => {
     const initial = {
       material: { net: 0, submitted: 0 },
@@ -695,14 +863,18 @@ export default function UnitPriceAnalysis({
     };
 
     return draftRows.reduce((result, row) => {
-      const key = COST_TYPES.some((item) => item.value === row.costType)
-        ? row.costType
+      const summaryType = getSummaryCostType(row);
+      const key = COST_TYPES.some((item) => item.value === summaryType)
+        ? summaryType
         : 'material';
-      result[key].net += getChargeableAmount(row, row.netQuantity);
-      result[key].submitted += getSubmittedAmount(row);
+      result[key].net += getNetAmount(row);
+      result[key].submitted += getSubmittedAmount(
+        row,
+        roundingAmounts.get(row.clientId),
+      );
       return result;
     }, initial);
-  }, [draftRows]);
+  }, [draftRows, roundingAmounts]);
 
   const grandNet = totals.material.net + totals.labor.net + totals.expense.net;
   const grandSubmitted = (
@@ -752,6 +924,10 @@ export default function UnitPriceAnalysis({
       showToast('일위대가 항목을 한 개 이상 입력해주세요.', 'warning');
       return;
     }
+    if (draftRows.filter(isRoundingExpense).length > 1) {
+      showToast('경비(단수정리)는 문서당 한 개만 사용할 수 있습니다.', 'warning');
+      return;
+    }
 
     setSaving(true);
     try {
@@ -783,7 +959,9 @@ export default function UnitPriceAnalysis({
           net_quantity: toNumber(row.netQuantity),
           net_unit_price: toNumber(row.unitPrice),
           markup_override_percent:
-            row.itemMarkupPercent === '' ? null : toNumber(row.itemMarkupPercent),
+            isRoundingExpense(row) || row.itemMarkupPercent === ''
+              ? null
+              : toNumber(row.itemMarkupPercent),
           submitted_quantity: getSubmittedQuantity(row),
           is_owner_supplied: isOwnerSuppliedMaterial(row),
           remarks: row.remarks || '',
@@ -857,6 +1035,9 @@ export default function UnitPriceAnalysis({
           specification: item.specification || '',
           unit: item.unit || '',
           netQuantity: toNumber(item.net_quantity),
+          laborAmountPerM2: item.cost_type === 'labor'
+            ? toNumber(item.net_quantity) * toNumber(item.net_unit_price)
+            : '',
           unitPrice: toNumber(item.net_unit_price),
           itemMarkupPercent:
             item.markup_override_percent === null ? '' : toNumber(item.markup_override_percent),
@@ -1175,6 +1356,10 @@ export default function UnitPriceAnalysis({
 
   const saveTemplateRows = async () => {
     if (!canManage || !selectedTemplateSpecId) return;
+    if (templateRows.filter(isRoundingExpense).length > 1) {
+      showToast('경비(단수정리)는 규격당 한 개만 저장할 수 있습니다.', 'warning');
+      return;
+    }
     setSaving(true);
     try {
       const { error } = await supabase.rpc('replace_unit_price_spec_items', {
@@ -1234,24 +1419,28 @@ export default function UnitPriceAnalysis({
         const quantity = isNet ? toNumber(row.netQuantity) : getSubmittedQuantity(row);
         const price = toNumber(row.unitPrice);
         const ownerSupplied = isOwnerSuppliedMaterial(row);
-        const amount = isNet ? getChargeableAmount(row, quantity) : getSubmittedAmount(row);
+        const roundingAmount = roundingAmounts.get(row.clientId);
+        const amount = isNet
+          ? getNetAmount(row)
+          : getSubmittedAmount(row, roundingAmount);
         const chargeablePrice = isNet
-          ? (ownerSupplied ? 0 : price)
-          : getSubmittedUnitPrice(row);
-        const materialPrice = row.costType === 'material' ? chargeablePrice : 0;
-        const laborPrice = row.costType === 'labor' ? chargeablePrice : 0;
-        const expensePrice = row.costType === 'expense' ? chargeablePrice : 0;
+          ? (ownerSupplied || isRoundingExpense(row) ? 0 : price)
+          : getSubmittedUnitPrice(row, roundingAmount);
+        const summaryType = getSummaryCostType(row);
+        const materialPrice = summaryType === 'material' ? chargeablePrice : 0;
+        const laborPrice = summaryType === 'labor' ? chargeablePrice : 0;
+        const expensePrice = summaryType === 'expense' ? chargeablePrice : 0;
         sheet.addRow([
           row.itemName,
           row.specification,
           row.unit,
           quantity,
           materialPrice,
-          row.costType === 'material' ? amount : 0,
+          summaryType === 'material' ? amount : 0,
           laborPrice,
-          row.costType === 'labor' ? amount : 0,
+          summaryType === 'labor' ? amount : 0,
           expensePrice,
-          row.costType === 'expense' ? amount : 0,
+          summaryType === 'expense' ? amount : 0,
           chargeablePrice,
           amount,
           [ownerSupplied ? '지급자재' : '', row.remarks].filter(Boolean).join(' · '),
@@ -1350,7 +1539,7 @@ export default function UnitPriceAnalysis({
             <TableCell align="center" sx={{ ...compactHeaderCellSx, minWidth: 145 }}>품명</TableCell>
             <TableCell align="center" sx={{ ...compactHeaderCellSx, minWidth: 125 }}>규격</TableCell>
             <TableCell align="center" sx={{ ...compactHeaderCellSx, width: 56 }}>단위</TableCell>
-            <TableCell align="center" sx={{ ...compactHeaderCellSx, width: 84 }}>정미수량</TableCell>
+            <TableCell align="center" sx={{ ...compactHeaderCellSx, width: 90 }}>정미수량/㎡금액</TableCell>
             <TableCell align="center" sx={{ ...compactHeaderCellSx, width: 84 }}>단가</TableCell>
             <TableCell align="center" sx={{ ...compactHeaderCellSx, width: 90 }}>정미금액</TableCell>
             <TableCell align="center" sx={{ ...compactHeaderCellSx, width: 92 }}>항목할증률</TableCell>
@@ -1362,9 +1551,13 @@ export default function UnitPriceAnalysis({
         </TableHead>
         <TableBody>
           {draftRows.map((row) => {
-            const netAmount = getChargeableAmount(row, row.netQuantity);
+            const netAmount = getNetAmount(row);
             const submittedQuantity = getSubmittedQuantity(row);
-            const submittedAmount = getSubmittedAmount(row);
+            const roundingAmount = roundingAmounts.get(row.clientId);
+            const submittedAmount = getSubmittedAmount(row, roundingAmount);
+            const hasAnotherRoundingRow = draftRows.some((item) => (
+              item.clientId !== row.clientId && isRoundingExpense(item)
+            ));
             return (
               <TableRow
                 key={row.clientId}
@@ -1387,8 +1580,14 @@ export default function UnitPriceAnalysis({
                     fullWidth
                     onChange={(event) => updateDraftRow(row.clientId, 'costType', event.target.value)}
                   >
-                    {COST_TYPES.map((item) => (
-                      <MenuItem key={item.value} value={item.value}>{item.label}</MenuItem>
+                    {ROW_COST_TYPES.map((item) => (
+                      <MenuItem
+                        key={item.value}
+                        value={item.value}
+                        disabled={item.value === 'expense_rounding' && hasAnotherRoundingRow}
+                      >
+                        {item.label}
+                      </MenuItem>
                     ))}
                   </Select>
                 </TableCell>
@@ -1402,16 +1601,37 @@ export default function UnitPriceAnalysis({
                   <TextField value={row.unit} onChange={(event) => updateDraftRow(row.clientId, 'unit', event.target.value)} size="small" fullWidth sx={{ '& .MuiInputBase-input': { textAlign: 'center' } }} />
                 </TableCell>
                 <TableCell sx={compactBodyCellSx}>
-                  <CompactNumberField value={row.netQuantity} onChange={(value) => updateDraftRow(row.clientId, 'netQuantity', value)} min="0" />
+                  {row.costType === 'labor' ? (
+                    <CompactMoneyField
+                      value={getLaborAmountPerM2(row)}
+                      onChange={(value) => updateDraftRow(row.clientId, 'laborAmountPerM2', value)}
+                      helperText={`${formatQuantity(row.netQuantity)}인`}
+                    />
+                  ) : isRoundingExpense(row) ? (
+                    <TextField
+                      value="자동"
+                      disabled
+                      size="small"
+                      helperText="제출용만 반영"
+                      sx={{ '& .MuiInputBase-input': { textAlign: 'center' } }}
+                    />
+                  ) : (
+                    <CompactNumberField value={row.netQuantity} onChange={(value) => updateDraftRow(row.clientId, 'netQuantity', value)} min="0" />
+                  )}
                 </TableCell>
                 <TableCell sx={compactBodyCellSx}>
-                  <CompactMoneyField value={row.unitPrice} onChange={(value) => updateDraftRow(row.clientId, 'unitPrice', value)} />
+                  <CompactMoneyField
+                    value={row.unitPrice}
+                    onChange={(value) => updateDraftRow(row.clientId, 'unitPrice', value)}
+                    helperText={isRoundingExpense(row) ? '기본 가산액' : ''}
+                  />
                 </TableCell>
                 <TableCell align="right" sx={{ ...compactBodyCellSx, pr: 0.85, fontWeight: 700 }}>{formatMoney(netAmount)}</TableCell>
                 <TableCell sx={compactBodyCellSx}>
                   <TextField
                     type="number"
                     value={row.itemMarkupPercent}
+                    disabled={isRoundingExpense(row)}
                     placeholder="0%"
                     onChange={(event) => updateDraftRow(row.clientId, 'itemMarkupPercent', event.target.value)}
                     size="small"
@@ -1424,6 +1644,7 @@ export default function UnitPriceAnalysis({
                   <TextField
                     type="number"
                     value={row.submittedQuantityOverride}
+                    disabled={isRoundingExpense(row)}
                     placeholder={formatQuantity(submittedQuantity)}
                     onChange={(event) => updateDraftRow(row.clientId, 'submittedQuantityOverride', event.target.value)}
                     size="small"
@@ -1488,23 +1709,27 @@ export default function UnitPriceAnalysis({
           </TableHead>
           <TableBody>
             {COST_TYPES.flatMap((type) => {
-              const rows = draftRows.filter((row) => row.costType === type.value);
+              const rows = draftRows.filter((row) => getSummaryCostType(row) === type.value);
               if (rows.length === 0) return [];
               return [
                 <TableRow key={`${type.value}-title`} className="print-section-row"><TableCell colSpan={13}>■ {type.label}</TableCell></TableRow>,
                 ...rows.map((row) => {
                   const quantity = isNet ? toNumber(row.netQuantity) : getSubmittedQuantity(row);
                   const ownerSupplied = isOwnerSuppliedMaterial(row);
-                  const amount = isNet ? getChargeableAmount(row, quantity) : getSubmittedAmount(row);
+                  const roundingAmount = roundingAmounts.get(row.clientId);
+                  const amount = isNet
+                    ? getNetAmount(row)
+                    : getSubmittedAmount(row, roundingAmount);
                   const chargeablePrice = isNet
-                    ? (ownerSupplied ? 0 : toNumber(row.unitPrice))
-                    : getSubmittedUnitPrice(row);
+                    ? (ownerSupplied || isRoundingExpense(row) ? 0 : toNumber(row.unitPrice))
+                    : getSubmittedUnitPrice(row, roundingAmount);
+                  const summaryType = getSummaryCostType(row);
                   return (
                     <TableRow key={row.clientId}>
                       <TableCell>{row.itemName}</TableCell><TableCell>{row.specification}</TableCell><TableCell>{row.unit}</TableCell><TableCell>{formatQuantity(quantity)}</TableCell>
-                      <TableCell>{row.costType === 'material' ? formatMoney(chargeablePrice) : ''}</TableCell><TableCell>{row.costType === 'material' ? formatMoney(amount) : ''}</TableCell>
-                      <TableCell>{row.costType === 'labor' ? formatMoney(chargeablePrice) : ''}</TableCell><TableCell>{row.costType === 'labor' ? formatMoney(amount) : ''}</TableCell>
-                      <TableCell>{row.costType === 'expense' ? formatMoney(chargeablePrice) : ''}</TableCell><TableCell>{row.costType === 'expense' ? formatMoney(amount) : ''}</TableCell>
+                      <TableCell>{summaryType === 'material' ? formatMoney(chargeablePrice) : ''}</TableCell><TableCell>{summaryType === 'material' ? formatMoney(amount) : ''}</TableCell>
+                      <TableCell>{summaryType === 'labor' ? formatMoney(chargeablePrice) : ''}</TableCell><TableCell>{summaryType === 'labor' ? formatMoney(amount) : ''}</TableCell>
+                      <TableCell>{summaryType === 'expense' ? formatMoney(chargeablePrice) : ''}</TableCell><TableCell>{summaryType === 'expense' ? formatMoney(amount) : ''}</TableCell>
                       <TableCell>{formatMoney(chargeablePrice)}</TableCell><TableCell>{formatMoney(amount)}</TableCell><TableCell>{[ownerSupplied ? '지급자재' : '', row.remarks].filter(Boolean).join(' · ')}</TableCell>
                     </TableRow>
                   );
@@ -1829,14 +2054,14 @@ export default function UnitPriceAnalysis({
                     {['구분', '품명', '규격', '단위', '기본 정미수량', '기준단가', '지급자재 여부', '비고', '관리'].map((label) => <TableCell key={label} align="center" sx={headerCellSx}>{label}</TableCell>)}
                   </TableRow></TableHead><TableBody>
                     {templateRows.map((row) => <TableRow key={row.clientId}>
-                      <TableCell sx={bodyCellSx}><Select disabled={!canManage} size="small" value={row.costType} onChange={(event) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, costType: event.target.value, ...(event.target.value === 'labor' ? { unit: '인' } : {}), ...(event.target.value === 'material' && item.unit === '인' ? { unit: 'M' } : {}), ...(event.target.value !== 'material' ? { isOwnerSupplied: false } : {}) } : item))}>{COST_TYPES.map((type) => <MenuItem key={type.value} value={type.value}>{type.label}</MenuItem>)}</Select></TableCell>
-                      <TableCell sx={bodyCellSx}><TextField disabled={!canManage} size="small" value={row.itemName} onChange={(event) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, itemName: event.target.value } : item))} /></TableCell>
-                      <TableCell sx={bodyCellSx}><TextField disabled={!canManage} size="small" value={row.specification} onChange={(event) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, specification: event.target.value } : item))} /></TableCell>
-                      <TableCell sx={bodyCellSx}><TextField disabled={!canManage} size="small" value={row.unit} onChange={(event) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, unit: event.target.value } : item))} sx={{ '& .MuiInputBase-input': { textAlign: 'center' } }} /></TableCell>
-                      <TableCell sx={bodyCellSx}><CompactNumberField disabled={!canManage} value={row.netQuantity} onChange={(value) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, netQuantity: value } : item))} /></TableCell>
-                      <TableCell sx={bodyCellSx}><CompactMoneyField disabled={!canManage || Boolean(row.materialId)} value={row.unitPrice} onChange={(value) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, unitPrice: value } : item))} /></TableCell>
+                      <TableCell sx={bodyCellSx}><Select disabled={!canManage} size="small" value={row.costType} onChange={(event) => updateTemplateRow(row.clientId, 'costType', event.target.value)}>{ROW_COST_TYPES.map((type) => <MenuItem key={type.value} value={type.value} disabled={type.value === 'expense_rounding' && templateRows.some((item) => item.clientId !== row.clientId && isRoundingExpense(item))}>{type.label}</MenuItem>)}</Select></TableCell>
+                      <TableCell sx={bodyCellSx}><TextField disabled={!canManage} size="small" value={row.itemName} onChange={(event) => updateTemplateRow(row.clientId, 'itemName', event.target.value)} /></TableCell>
+                      <TableCell sx={bodyCellSx}><TextField disabled={!canManage} size="small" value={row.specification} onChange={(event) => updateTemplateRow(row.clientId, 'specification', event.target.value)} /></TableCell>
+                      <TableCell sx={bodyCellSx}><TextField disabled={!canManage} size="small" value={row.unit} onChange={(event) => updateTemplateRow(row.clientId, 'unit', event.target.value)} sx={{ '& .MuiInputBase-input': { textAlign: 'center' } }} /></TableCell>
+                      <TableCell sx={bodyCellSx}>{row.costType === 'labor' ? <CompactMoneyField disabled={!canManage} value={getLaborAmountPerM2(row)} onChange={(value) => updateTemplateRow(row.clientId, 'laborAmountPerM2', value)} helperText={`${formatQuantity(row.netQuantity)}인`} /> : isRoundingExpense(row) ? <TextField disabled size="small" value="자동" helperText="제출용만 반영" /> : <CompactNumberField disabled={!canManage} value={row.netQuantity} onChange={(value) => updateTemplateRow(row.clientId, 'netQuantity', value)} />}</TableCell>
+                      <TableCell sx={bodyCellSx}><CompactMoneyField disabled={!canManage || Boolean(row.materialId)} value={row.unitPrice} onChange={(value) => updateTemplateRow(row.clientId, 'unitPrice', value)} helperText={isRoundingExpense(row) ? '기본 가산액' : ''} /></TableCell>
                       <TableCell align="center" sx={bodyCellSx}><Checkbox disabled={!canManage || row.costType !== 'material'} size="small" checked={Boolean(row.isOwnerSupplied)} onChange={(event) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, isOwnerSupplied: event.target.checked } : item))} /></TableCell>
-                      <TableCell sx={bodyCellSx}><TextField disabled={!canManage} size="small" value={row.remarks} onChange={(event) => setTemplateRows((previous) => previous.map((item) => item.clientId === row.clientId ? { ...item, remarks: event.target.value } : item))} /></TableCell>
+                      <TableCell sx={bodyCellSx}><TextField disabled={!canManage} size="small" value={row.remarks} onChange={(event) => updateTemplateRow(row.clientId, 'remarks', event.target.value)} /></TableCell>
                       <TableCell sx={bodyCellSx}>{canManage && <IconButton color="error" size="small" onClick={() => setTemplateRows((previous) => previous.filter((item) => item.clientId !== row.clientId))}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton>}</TableCell>
                     </TableRow>)}
                   </TableBody></Table>
