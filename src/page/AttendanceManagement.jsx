@@ -35,6 +35,8 @@ import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import CampaignRoundedIcon from '@mui/icons-material/CampaignRounded';
+import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded';
+import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import DevicesRoundedIcon from '@mui/icons-material/DevicesRounded';
 import DeleteForeverRoundedIcon from '@mui/icons-material/DeleteForeverRounded';
@@ -83,6 +85,25 @@ const addDateDays = (dateValue, days) => {
   const date = new Date(Date.UTC(year, month - 1, day + days));
   return date.toISOString().slice(0, 10);
 };
+
+function RefreshIconButton({ onClick, loading = false, label = '새로고침' }) {
+  return (
+    <Tooltip title={label} arrow>
+      <span>
+        <IconButton
+          type="button"
+          onClick={onClick}
+          disabled={loading}
+          aria-label={label}
+        >
+          {loading
+            ? <CircularProgress size={22} color="inherit" />
+            : <RefreshRoundedIcon />}
+        </IconButton>
+      </span>
+    </Tooltip>
+  );
+}
 
 const emptyNoticeDraft = () => {
   const startsOn = getKoreaDateValue();
@@ -1220,7 +1241,11 @@ export default function AttendanceManagement({ projectName, canManage = false, o
           <Paper variant="outlined" sx={{ borderColor: '#cbd5e1' }}>
             <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Box><Typography sx={{ fontWeight: 900 }}>가입 승인 대기</Typography><Typography sx={{ color: '#64748b', fontSize: '0.72rem' }}>현장에서 본인과 휴대폰을 확인한 뒤 승인하세요.</Typography></Box>
-              <IconButton onClick={() => loadDashboard()}><RefreshRoundedIcon /></IconButton>
+              <RefreshIconButton
+                onClick={() => loadDashboard()}
+                loading={loading}
+                label="가입 승인 새로고침"
+              />
             </Box>
             <Divider />
             <TableContainer>
@@ -1247,7 +1272,37 @@ export default function AttendanceManagement({ projectName, canManage = false, o
           <Paper variant="outlined" sx={{ borderColor: '#cbd5e1' }}>
             <Box sx={{ p: 2, display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', justifyContent: 'space-between' }}>
               <Box><Typography sx={{ fontWeight: 900 }}>일자별 근태 기록</Typography><Typography sx={{ color: '#64748b', fontSize: '0.72rem' }}>모든 시간은 서버가 기록한 한국시간 기준입니다. 테스트계정만 해당 일자의 근태를 초기화할 수 있습니다.</Typography></Box>
-              <TextField type="date" size="small" value={workDate} onChange={(event) => setWorkDate(event.target.value)} />
+              <Stack direction="row" spacing={0.35} alignItems="center">
+                <Tooltip title="이전 날짜" arrow>
+                  <IconButton
+                    type="button"
+                    aria-label="이전 날짜"
+                    onClick={() => setWorkDate((previous) => addDateDays(previous, -1))}
+                  >
+                    <ChevronLeftRoundedIcon />
+                  </IconButton>
+                </Tooltip>
+                <TextField
+                  type="date"
+                  size="small"
+                  value={workDate}
+                  onChange={(event) => setWorkDate(event.target.value)}
+                />
+                <Tooltip title="다음 날짜" arrow>
+                  <IconButton
+                    type="button"
+                    aria-label="다음 날짜"
+                    onClick={() => setWorkDate((previous) => addDateDays(previous, 1))}
+                  >
+                    <ChevronRightRoundedIcon />
+                  </IconButton>
+                </Tooltip>
+                <RefreshIconButton
+                  onClick={() => loadDashboard()}
+                  loading={loading}
+                  label="근태 기록 새로고침"
+                />
+              </Stack>
             </Box>
             <Divider />
             {loading ? <Box sx={{ py: 10, textAlign: 'center' }}><CircularProgress /></Box> : (
@@ -1316,14 +1371,11 @@ export default function AttendanceManagement({ projectName, canManage = false, o
                   같은 날짜·같은 공정의 제출은 공동작업으로 자동 통합됩니다. 작업자 간 중복은 제거되고 고유 세대만 한 번 반영됩니다.
                 </Typography>
               </Box>
-              <Button
-                variant="outlined"
-                startIcon={<RefreshRoundedIcon />}
+              <RefreshIconButton
                 onClick={() => loadProgressSubmissions()}
-                disabled={progressSubmissionsLoading}
-              >
-                새로고침
-              </Button>
+                loading={progressSubmissionsLoading}
+                label="진척 승인 새로고침"
+              />
             </Box>
             <Divider />
 
@@ -1437,7 +1489,14 @@ export default function AttendanceManagement({ projectName, canManage = false, o
 
         {tab === 'devices' && (
           <Paper variant="outlined" sx={{ borderColor: '#cbd5e1' }}>
-            <Box sx={{ p: 2 }}><Typography sx={{ fontWeight: 900 }}>기기 변경 승인</Typography><Typography sx={{ color: '#64748b', fontSize: '0.72rem' }}>휴대폰 교체·분실 시 새 기기 요청을 대면 확인합니다.</Typography></Box><Divider />
+            <Box sx={{ p: 2, display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', justifyContent: 'space-between' }}>
+              <Box><Typography sx={{ fontWeight: 900 }}>기기 변경 승인</Typography><Typography sx={{ color: '#64748b', fontSize: '0.72rem' }}>휴대폰 교체·분실 시 새 기기 요청을 대면 확인합니다.</Typography></Box>
+              <RefreshIconButton
+                onClick={() => loadDashboard()}
+                loading={loading}
+                label="기기 변경 새로고침"
+              />
+            </Box><Divider />
             <TableContainer><Table size="small"><TableHead><TableRow><TableCell>요청일시</TableCell><TableCell>성명</TableCell><TableCell>휴대폰</TableCell><TableCell>직종</TableCell><TableCell align="right">처리</TableCell></TableRow></TableHead><TableBody>
               {dashboard.device_requests.map((row) => <TableRow key={row.id}><TableCell>{formatKoreaDateTime(row.requested_at)}</TableCell><TableCell><b>{row.name_ko}</b></TableCell><TableCell>{formatPhone(row.phone)}</TableCell><TableCell>{row.trade_name}</TableCell><TableCell align="right"><Stack direction="row" spacing={0.7} justifyContent="flex-end"><Button size="small" variant="contained" color="success" disabled={!canManage} onClick={() => handleDeviceDecision(row.id, true)}>승인</Button><Button size="small" variant="outlined" color="error" disabled={!canManage} onClick={() => handleDeviceDecision(row.id, false)}>반려</Button></Stack></TableCell></TableRow>)}
               {deviceCount === 0 && <TableRow><TableCell colSpan={5} align="center" sx={{ py: 8, color: '#94a3b8' }}>기기 변경 요청이 없습니다.</TableCell></TableRow>}
@@ -1448,17 +1507,26 @@ export default function AttendanceManagement({ projectName, canManage = false, o
         {tab === 'audit' && (
           <Paper variant="outlined" sx={{ borderColor: '#cbd5e1' }}>
             <Box sx={{ p: 2 }}>
-              <Typography sx={{ fontWeight: 900 }}>
-                최근 변경 이력
-              </Typography>
-              <Typography
-                sx={{
-                  color: '#64748b',
-                  fontSize: '0.72rem',
-                }}
-              >
-                승인·반려·기기변경·수동수정·가입내역 삭제 기록을 보존합니다.
-              </Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', justifyContent: 'space-between' }}>
+                <Box>
+                  <Typography sx={{ fontWeight: 900 }}>
+                    최근 변경 이력
+                  </Typography>
+                  <Typography
+                    sx={{
+                      color: '#64748b',
+                      fontSize: '0.72rem',
+                    }}
+                  >
+                    승인·반려·기기변경·수동수정·가입내역 삭제 기록을 보존합니다.
+                  </Typography>
+                </Box>
+                <RefreshIconButton
+                  onClick={() => loadDashboard()}
+                  loading={loading}
+                  label="변경 이력 새로고침"
+                />
+              </Box>
 
               <Box
                 aria-label="변경이력 처리내용 필터"
@@ -1573,9 +1641,11 @@ export default function AttendanceManagement({ projectName, canManage = false, o
                   가입일자와 계정 상태를 확인하고 잘못 가입한 계정·테스트계정을 정리할 수 있습니다. 삭제 후 같은 휴대폰번호와 기기로 다시 가입할 수 있습니다.
                 </Typography>
               </Box>
-              <IconButton onClick={() => loadWorkers()} aria-label="근로자 목록 새로고침">
-                <RefreshRoundedIcon />
-              </IconButton>
+              <RefreshIconButton
+                onClick={() => loadWorkers()}
+                loading={workersLoading}
+                label="근로자 목록 새로고침"
+              />
             </Box>
             <Divider />
             {!canManage && (
@@ -1650,12 +1720,11 @@ export default function AttendanceManagement({ projectName, canManage = false, o
                   체크박스로 공지를 선택한 뒤 위·아래 버튼으로 표시 순서를 변경할 수 있습니다. 게시기간 동안 로그인한 근로자 앱 상단에 순번대로 계속 표시되며 근로자는 공지를 끌 수 없습니다.
                 </Typography>
               </Box>
-              <IconButton
+              <RefreshIconButton
                 onClick={() => loadNotices()}
-                aria-label="공지사항 새로고침"
-              >
-                <RefreshRoundedIcon />
-              </IconButton>
+                loading={noticesLoading}
+                label="공지사항 새로고침"
+              />
             </Box>
             <Divider />
 
