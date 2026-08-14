@@ -17,6 +17,7 @@ import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
 const pad2 = (value) => String(value).padStart(2, '0');
+const TOTAL_DAY_COLUMNS = 31;
 
 const createDateKey = (year, monthIndex, day) => {
   const yy = String(year).slice(2);
@@ -250,14 +251,34 @@ export default function MonthlyWorkerStatus({
     );
 
   const dayColumns = Array.from(
-    { length: daysInMonth },
-    (_, index) => index + 1,
+    { length: TOTAL_DAY_COLUMNS },
+    (_, index) => {
+      const columnDate = new Date(
+        viewYear,
+        viewMonth,
+        index + 1,
+      );
+      const isOverflow = index >= daysInMonth;
+
+      return {
+        key: `${columnDate.getFullYear()}-${columnDate.getMonth()}-${columnDate.getDate()}`,
+        day: columnDate.getDate(),
+        monthIndex: columnDate.getMonth(),
+        year: columnDate.getFullYear(),
+        isOverflow,
+        label: isOverflow
+          ? `${columnDate.getMonth() + 1}/${columnDate.getDate()}`
+          : columnDate.getDate(),
+      };
+    },
   );
 
   const attendanceSubtotal = useMemo(() => {
     const dailyTotals = Array.from(
-      { length: daysInMonth },
+      { length: TOTAL_DAY_COLUMNS },
       (_, index) => {
+        if (index >= daysInMonth) return null;
+
         const day = index + 1;
 
         return filteredWorkers.reduce(
@@ -572,7 +593,7 @@ export default function MonthlyWorkerStatus({
           stickyHeader
           size="small"
           sx={{
-            minWidth: 300 + daysInMonth * 34,
+            minWidth: 300 + TOTAL_DAY_COLUMNS * 34,
             tableLayout: 'fixed',
             borderCollapse: 'separate',
             borderSpacing: 0,
@@ -623,16 +644,16 @@ export default function MonthlyWorkerStatus({
                 성명
               </TableCell>
 
-              {dayColumns.map((day) => {
+              {dayColumns.map((column) => {
                 const weekendStyle = getWeekendStyle(
-                  viewYear,
-                  viewMonth,
-                  day,
+                  column.year,
+                  column.monthIndex,
+                  column.day,
                 );
 
                 return (
                   <TableCell
-                    key={day}
+                    key={column.key}
                     align="center"
                     sx={{
                       ...stickyHeaderStyle,
@@ -641,12 +662,16 @@ export default function MonthlyWorkerStatus({
                       width: 34,
                       minWidth: 34,
                       maxWidth: 34,
-                      color: weekendStyle.color,
-                      bgcolor: weekendStyle.bgcolor,
+                      color: column.isOverflow
+                        ? '#64748b'
+                        : weekendStyle.color,
+                      bgcolor: column.isOverflow
+                        ? '#d1d5db'
+                        : weekendStyle.bgcolor,
                       px: 0,
                     }}
                   >
-                    {day}
+                    {column.label}
                   </TableCell>
                 );
               })}
@@ -672,7 +697,7 @@ export default function MonthlyWorkerStatus({
             {filteredWorkers.length === 0 ? (
               <TableRow>
                 <TableCell
-                  colSpan={daysInMonth + 4}
+                  colSpan={TOTAL_DAY_COLUMNS + 4}
                   align="center"
                   sx={{
                     py: 7,
@@ -689,13 +714,15 @@ export default function MonthlyWorkerStatus({
               <React.Fragment>
                 {filteredWorkers.map((worker, index) => {
                   const totalAttendance = dayColumns.reduce(
-                    (total, day) =>
-                      total +
-                      Number(worker.attendance[day] || 0),
+                    (total, column) =>
+                      column.isOverflow
+                        ? total
+                        : total +
+                          Number(worker.attendance[column.day] || 0),
                     0,
                   );
 
-                return (
+                  return (
                   <TableRow
                     key={worker.key}
                     hover
@@ -762,19 +789,21 @@ export default function MonthlyWorkerStatus({
                       {worker.name}
                     </TableCell>
 
-                    {dayColumns.map((day) => {
-                      const attended = Number(
-                        worker.attendance[day] || 0,
-                      );
+                    {dayColumns.map((column) => {
+                      const attended = column.isOverflow
+                        ? 0
+                        : Number(
+                            worker.attendance[column.day] || 0,
+                          );
                       const weekendStyle = getWeekendStyle(
-                        viewYear,
-                        viewMonth,
-                        day,
+                        column.year,
+                        column.monthIndex,
+                        column.day,
                       );
 
                       return (
                         <TableCell
-                          key={`${worker.key}-${day}`}
+                          key={`${worker.key}-${column.key}`}
                           align="center"
                           sx={{
                             width: 34,
@@ -783,8 +812,9 @@ export default function MonthlyWorkerStatus({
                             px: 0,
                             py: 0.65,
                             borderRight: '1px dotted #cbd5e1',
-                            bgcolor:
-                              weekendStyle.bgcolor === '#f8fafc'
+                            bgcolor: column.isOverflow
+                              ? '#e5e7eb'
+                              : weekendStyle.bgcolor === '#f8fafc'
                                 ? '#ffffff'
                                 : weekendStyle.bgcolor,
                             color: attended
@@ -794,7 +824,7 @@ export default function MonthlyWorkerStatus({
                             fontWeight: attended ? 800 : 400,
                           }}
                         >
-                          {attended || ''}
+                          {column.isOverflow ? '' : attended || ''}
                         </TableCell>
                       );
                     })}
@@ -856,15 +886,19 @@ export default function MonthlyWorkerStatus({
                           maxWidth: 34,
                           px: 0,
                           py: 0.72,
-                          bgcolor: '#e0f2fe',
+                          bgcolor: dailyTotal === null
+                            ? '#d1d5db'
+                            : '#e0f2fe',
                           borderTop: '2px solid #0284c7',
                           borderRight: '1px dotted #7dd3fc',
                           fontSize: '0.72rem',
                           fontWeight: 900,
-                          color: '#075985',
+                          color: dailyTotal === null
+                            ? '#94a3b8'
+                            : '#075985',
                         }}
                       >
-                        {dailyTotal}
+                        {dailyTotal === null ? '' : dailyTotal}
                       </TableCell>
                     ),
                   )}
