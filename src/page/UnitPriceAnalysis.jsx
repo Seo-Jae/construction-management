@@ -46,6 +46,7 @@ import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import EditNoteRoundedIcon from '@mui/icons-material/EditNoteRounded';
+import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
 import PostAddRoundedIcon from '@mui/icons-material/PostAddRounded';
 import PrintRoundedIcon from '@mui/icons-material/PrintRounded';
@@ -73,6 +74,7 @@ const EMPTY_DOCUMENT = {
   documentName: '',
   status: 'draft',
   versionNo: 0,
+  latestVersionNo: 0,
   materialMarkup: 0,
   laborMarkup: 0,
   expenseMarkup: 0,
@@ -183,6 +185,52 @@ const getLegacyMarkupForType = (document, costType) => {
   if (costType === 'expense') return toNumber(document.expenseMarkup);
   return toNumber(document.materialMarkup);
 };
+
+const mapStoredDocumentItems = (items, documentMeta) => (
+  (items || []).map((item, index) => {
+    const baseRow = {
+      clientId: createClientId(),
+      sourceTemplateItemId: item.source_template_item_id || '',
+      materialId: item.material_id || '',
+      itemCode: item.item_code || '',
+      costType: item.cost_type === 'expense_rounding'
+        ? 'material_rounding'
+        : item.cost_type || 'material',
+      itemName: item.cost_type === 'expense_rounding' && item.item_name === '경비 단수정리'
+        ? ''
+        : item.item_name || '',
+      specification: item.cost_type === 'expense_rounding' && item.specification === '제출금액 100원 단위 정리'
+        ? ''
+        : item.specification || '',
+      unit: item.unit || '',
+      netQuantity: toNumber(item.net_quantity),
+      laborAmountPerM2: item.cost_type === 'labor'
+        ? toNumber(item.net_quantity) * toNumber(item.net_unit_price)
+        : '',
+      unitPrice: toNumber(item.net_unit_price),
+      itemMarkupPercent:
+        item.markup_override_percent === null ? '' : toNumber(item.markup_override_percent),
+      submittedQuantityOverride: '',
+      isOwnerSupplied: Boolean(item.is_owner_supplied),
+      remarks: item.remarks || '',
+      sortOrder: item.sort_order ?? index,
+    };
+    const storedSubmittedQuantity = toNumber(item.submitted_quantity);
+    const netQuantity = toNumber(baseRow.netQuantity);
+    const legacyMarkup = item.markup_override_percent === null
+      ? getLegacyMarkupForType(documentMeta, baseRow.costType)
+      : toNumber(item.markup_override_percent);
+    const legacyAutoQuantity = netQuantity * (1 + legacyMarkup / 100);
+    const isNewDefault = Math.abs(netQuantity - storedSubmittedQuantity) <= 0.000001;
+    const isLegacyAutoQuantity = (
+      Math.abs(legacyAutoQuantity - storedSubmittedQuantity) <= 0.000001
+    );
+    if (!isNewDefault && !isLegacyAutoQuantity) {
+      baseRow.submittedQuantityOverride = storedSubmittedQuantity;
+    }
+    return baseRow;
+  })
+);
 
 const getEffectiveMarkup = (row) => (
   row.itemMarkupPercent === '' || row.itemMarkupPercent === null
@@ -473,6 +521,13 @@ export default function UnitPriceAnalysis({
     targetProject: '',
     documentName: '',
   });
+  const [nameGuideDialogOpen, setNameGuideDialogOpen] = useState(false);
+  const [revisionDialog, setRevisionDialog] = useState({
+    open: false,
+    document: null,
+    revisions: [],
+    loading: false,
+  });
   const [priceDialog, setPriceDialog] = useState({
     open: false,
     material: null,
@@ -679,6 +734,11 @@ export default function UnitPriceAnalysis({
       )
       .map((item) => item.detail_category),
     [selectedMajor, selectedMiddle, specs],
+  );
+
+  const guidedDocumentName = useMemo(
+    () => `${selectedMiddle || '공정'} ${selectedDetail || '규격'} 일위대가`,
+    [selectedDetail, selectedMiddle],
   );
 
   const updateDraftRow = (clientId, field, value) => {
@@ -969,34 +1029,33 @@ export default function UnitPriceAnalysis({
     if (spec) await loadTemplateRows(spec.id);
   };
 
-  const handleSaveDocument = async () => {
+  const validateDocumentForSave = () => {
     if (!projectName) {
       showToast('현장을 먼저 선택해주세요.', 'warning');
-      return;
+      return false;
     }
     if (!selectedSpec) {
       showToast('벽체 또는 천정 규격을 선택해주세요.', 'warning');
-      return;
-    }
-    if (!String(documentState.documentName || '').trim()) {
-      showToast('일위대가 문서명을 입력해주세요.', 'warning');
-      return;
+      return false;
     }
     if (draftRows.length === 0 || draftRows.every((row) => !row.itemName.trim())) {
       showToast('일위대가 항목을 한 개 이상 입력해주세요.', 'warning');
-      return;
+      return false;
     }
     if (draftRows.filter(isRoundingMaterial).length > 1) {
       showToast('재료비(단수정리)는 문서당 한 개만 사용할 수 있습니다.', 'warning');
-      return;
+      return false;
     }
+    return true;
+  };
 
+  const persistDocument = async (resolvedDocumentName) => {
     setSaving(true);
     try {
       const documentPayload = {
         id: documentState.id || null,
         project_name: projectName,
-        document_name: documentState.documentName.trim(),
+        document_name: resolvedDocumentName,
         status: documentState.status,
         spec_id: selectedSpec.id,
         major_category: selectedSpec.major_category,
@@ -1037,11 +1096,21 @@ export default function UnitPriceAnalysis({
       if (error) throw error;
 
       const nextId = data;
-      const nextVersion = documentState.id ? documentState.versionNo + 1 : 1;
+      const fallbackVersion = documentState.id
+        ? Math.max(documentState.latestVersionNo, documentState.versionNo) + 1
+        : 1;
+      const { data: savedDocument } = await supabase
+        .from('unit_price_documents')
+        .select('version_no')
+        .eq('id', nextId)
+        .maybeSingle();
+      const nextVersion = toNumber(savedDocument?.version_no) || fallbackVersion;
       setDocumentState((previous) => ({
         ...previous,
         id: nextId,
+        documentName: resolvedDocumentName,
         versionNo: nextVersion,
+        latestVersionNo: nextVersion,
       }));
       await loadDocuments();
       showToast(`일위대가가 ${nextVersion}차 버전으로 저장되었습니다.`);
@@ -1051,6 +1120,27 @@ export default function UnitPriceAnalysis({
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSaveDocument = () => {
+    if (!validateDocumentForSave()) return;
+
+    const enteredDocumentName = String(documentState.documentName || '').trim();
+    if (!enteredDocumentName) {
+      setNameGuideDialogOpen(true);
+      return;
+    }
+
+    persistDocument(enteredDocumentName);
+  };
+
+  const saveWithGuidedDocumentName = () => {
+    setNameGuideDialogOpen(false);
+    setDocumentState((previous) => ({
+      ...previous,
+      documentName: guidedDocumentName,
+    }));
+    persistDocument(guidedDocumentName);
   };
 
   const loadDocument = async (document) => {
@@ -1075,6 +1165,7 @@ export default function UnitPriceAnalysis({
         documentName: document.document_name,
         status: document.status || 'draft',
         versionNo: toNumber(document.version_no),
+        latestVersionNo: toNumber(document.version_no),
         materialMarkup: toNumber(document.material_markup_percent),
         laborMarkup: toNumber(document.labor_markup_percent),
         expenseMarkup: toNumber(document.expense_markup_percent),
@@ -1086,49 +1177,7 @@ export default function UnitPriceAnalysis({
       setSelectedSpec(spec);
       setDocumentState(nextDocument);
       setSelectedRowIds(new Set());
-      setDraftRows((data || []).map((item, index) => {
-        const baseRow = {
-          clientId: createClientId(),
-          sourceTemplateItemId: item.source_template_item_id || '',
-          materialId: item.material_id || '',
-          itemCode: item.item_code || '',
-          costType: item.cost_type === 'expense_rounding'
-            ? 'material_rounding'
-            : item.cost_type || 'material',
-          itemName: item.cost_type === 'expense_rounding' && item.item_name === '경비 단수정리'
-            ? ''
-            : item.item_name || '',
-          specification: item.cost_type === 'expense_rounding' && item.specification === '제출금액 100원 단위 정리'
-            ? ''
-            : item.specification || '',
-          unit: item.unit || '',
-          netQuantity: toNumber(item.net_quantity),
-          laborAmountPerM2: item.cost_type === 'labor'
-            ? toNumber(item.net_quantity) * toNumber(item.net_unit_price)
-            : '',
-          unitPrice: toNumber(item.net_unit_price),
-          itemMarkupPercent:
-            item.markup_override_percent === null ? '' : toNumber(item.markup_override_percent),
-          submittedQuantityOverride: '',
-          isOwnerSupplied: Boolean(item.is_owner_supplied),
-          remarks: item.remarks || '',
-          sortOrder: item.sort_order ?? index,
-        };
-        const storedSubmittedQuantity = toNumber(item.submitted_quantity);
-        const netQuantity = toNumber(baseRow.netQuantity);
-        const legacyMarkup = item.markup_override_percent === null
-          ? getLegacyMarkupForType(nextDocument, baseRow.costType)
-          : toNumber(item.markup_override_percent);
-        const legacyAutoQuantity = netQuantity * (1 + legacyMarkup / 100);
-        const isNewDefault = Math.abs(netQuantity - storedSubmittedQuantity) <= 0.000001;
-        const isLegacyAutoQuantity = (
-          Math.abs(legacyAutoQuantity - storedSubmittedQuantity) <= 0.000001
-        );
-        if (!isNewDefault && !isLegacyAutoQuantity) {
-          baseRow.submittedQuantityOverride = storedSubmittedQuantity;
-        }
-        return baseRow;
-      }));
+      setDraftRows(mapStoredDocumentItems(data, nextDocument));
       setMainTab(0);
       showToast('저장된 일위대가를 불러왔습니다.', 'info');
     } catch (error) {
@@ -1137,6 +1186,73 @@ export default function UnitPriceAnalysis({
     } finally {
       setLoading(false);
     }
+  };
+
+  const openRevisionHistory = async (document) => {
+    setRevisionDialog({
+      open: true,
+      document,
+      revisions: [],
+      loading: true,
+    });
+    try {
+      const { data, error } = await supabase
+        .from('unit_price_document_revisions')
+        .select('id, document_id, version_no, snapshot, created_at, created_by')
+        .eq('document_id', document.id)
+        .order('version_no', { ascending: false });
+      if (error) throw error;
+      setRevisionDialog((previous) => ({
+        ...previous,
+        revisions: data || [],
+        loading: false,
+      }));
+    } catch (error) {
+      console.error('일위대가 버전 이력 조회 실패:', error);
+      setRevisionDialog((previous) => ({ ...previous, loading: false }));
+      showToast('일위대가 버전 이력을 불러오지 못했습니다.', 'error');
+    }
+  };
+
+  const loadDocumentRevision = (document, revision) => {
+    const snapshot = revision.snapshot || {};
+    const snapshotDocument = snapshot.document || {};
+    const snapshotItems = Array.isArray(snapshot.items) ? snapshot.items : [];
+    const specId = snapshotDocument.spec_id || document.spec_id;
+    const spec = specs.find((item) => item.id === specId) || {
+      id: specId,
+      major_category: snapshotDocument.major_category || document.major_category,
+      middle_category: snapshotDocument.middle_category || document.middle_category,
+      detail_category: snapshotDocument.detail_category || document.detail_category,
+      image_url: snapshotDocument.image_url || document.image_url || '',
+    };
+    const latestVersionNo = toNumber(document.version_no);
+    const revisionVersionNo = toNumber(revision.version_no);
+    const nextDocument = {
+      id: document.id,
+      documentName: snapshotDocument.document_name || document.document_name,
+      status: snapshotDocument.status || document.status || 'draft',
+      versionNo: revisionVersionNo,
+      latestVersionNo,
+      materialMarkup: toNumber(snapshotDocument.material_markup_percent),
+      laborMarkup: toNumber(snapshotDocument.labor_markup_percent),
+      expenseMarkup: toNumber(snapshotDocument.expense_markup_percent),
+      notes: snapshotDocument.notes || '',
+    };
+
+    setSelectedMajor(spec.major_category);
+    setSelectedMiddle(spec.middle_category);
+    setSelectedDetail(spec.detail_category);
+    setSelectedSpec(spec);
+    setDocumentState(nextDocument);
+    setSelectedRowIds(new Set());
+    setDraftRows(mapStoredDocumentItems(snapshotItems, nextDocument));
+    setRevisionDialog((previous) => ({ ...previous, open: false }));
+    setMainTab(0);
+    showToast(
+      `v${revisionVersionNo}을 불러왔습니다. 저장하면 v${latestVersionNo + 1}로 새 버전이 추가됩니다.`,
+      'info',
+    );
   };
 
   const deleteDocument = async (document) => {
@@ -1942,7 +2058,7 @@ export default function UnitPriceAnalysis({
                     <TextField
                       label="문서명" size="small" value={documentState.documentName}
                       sx={compactFilterFieldSx}
-                      placeholder={`${selectedMiddle || '공정'} ${selectedDetail || '규격'} 일위대가`}
+                      placeholder={guidedDocumentName}
                       onChange={(event) => setDocumentState((previous) => ({ ...previous, documentName: event.target.value }))}
                     />
                     <TextField select label="저장상태" size="small" value={documentState.status} sx={compactFilterFieldSx} onChange={(event) => setDocumentState((previous) => ({ ...previous, status: event.target.value }))}>
@@ -2053,7 +2169,13 @@ export default function UnitPriceAnalysis({
                 </Paper>
 
                 <FormControl size="small" fullWidth><InputLabel>출력 기준</InputLabel><Select value={printMode} label="출력 기준" onChange={(event) => setPrintMode(event.target.value)}><MenuItem value="net">정미 일위대가</MenuItem><MenuItem value="submitted">제출용 일위대가</MenuItem></Select></FormControl>
-                {documentState.id && <Alert severity="info" icon={<EditNoteRoundedIcon />} sx={{ fontSize: '0.72rem' }}>저장본 v{documentState.versionNo}을 편집 중입니다.</Alert>}
+                {documentState.id && (
+                  <Alert severity="info" icon={<EditNoteRoundedIcon />} sx={{ fontSize: '0.72rem' }}>
+                    {documentState.latestVersionNo > documentState.versionNo
+                      ? `과거 저장본 v${documentState.versionNo}을 편집 중입니다. 저장하면 v${documentState.latestVersionNo + 1}로 추가됩니다.`
+                      : `최신 저장본 v${documentState.versionNo}을 편집 중입니다. 저장하면 v${documentState.versionNo + 1}로 추가됩니다.`}
+                  </Alert>
+                )}
               </Stack>
             </Box>
           </Box>
@@ -2082,6 +2204,7 @@ export default function UnitPriceAnalysis({
                       <TableCell sx={bodyCellSx}>
                         <Stack direction="row" spacing={0.3}>
                           <Tooltip title="불러와서 편집"><IconButton size="small" color="primary" onClick={() => loadDocument(item)}><EditNoteRoundedIcon fontSize="small" /></IconButton></Tooltip>
+                          <Tooltip title="버전 이력"><IconButton size="small" onClick={() => openRevisionHistory(item)}><HistoryRoundedIcon fontSize="small" /></IconButton></Tooltip>
                           <Tooltip title="다른 현장으로 복사"><IconButton size="small" onClick={() => setCopyDialog({ open: true, document: item, targetProject: projectName || accessibleProjects[0] || '', documentName: `${item.document_name} 복사본` })}><ContentCopyRoundedIcon fontSize="small" /></IconButton></Tooltip>
                           {(canManage || item.project_name === projectName) && <Tooltip title="삭제"><IconButton size="small" color="error" onClick={() => deleteDocument(item)}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip>}
                         </Stack>
@@ -2189,6 +2312,81 @@ export default function UnitPriceAnalysis({
           적용
         </Button>
       </Popover>
+
+      <Dialog
+        open={nameGuideDialogOpen}
+        onClose={() => setNameGuideDialogOpen(false)}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle>가이드 문서명으로 저장</DialogTitle>
+        <DialogContent>
+          <Stack spacing={1.2} sx={{ mt: 0.5 }}>
+            <Typography sx={{ fontSize: '0.86rem' }}>
+              문서명이 입력되지 않았습니다. 아래 가이드된 명칭으로 저장할까요?
+            </Typography>
+            <Alert severity="info" sx={{ fontWeight: 800 }}>
+              {guidedDocumentName}
+            </Alert>
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setNameGuideDialogOpen(false)}>아니오</Button>
+          <Button variant="contained" disabled={saving} onClick={saveWithGuidedDocumentName}>예</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={revisionDialog.open}
+        onClose={() => setRevisionDialog((previous) => ({ ...previous, open: false }))}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle>
+          일위대가 버전 이력
+          {revisionDialog.document?.document_name ? ` · ${revisionDialog.document.document_name}` : ''}
+        </DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb: 1.2, mt: 0.5, fontSize: '0.76rem' }}>
+            각 버전의 저장 당시 내용은 그대로 보존됩니다. 과거 버전을 불러와 저장해도 기존 버전은 바뀌지 않고 새로운 최신 버전으로 추가됩니다.
+          </Alert>
+          {revisionDialog.loading ? (
+            <Box sx={{ py: 6, display: 'grid', placeItems: 'center' }}><CircularProgress size={28} /></Box>
+          ) : (
+            <TableContainer component={Paper} variant="outlined" sx={{ maxHeight: 420 }}>
+              <Table stickyHeader size="small">
+                <TableHead><TableRow>
+                  <TableCell align="center" sx={headerCellSx}>버전</TableCell>
+                  <TableCell sx={headerCellSx}>저장 문서명</TableCell>
+                  <TableCell sx={headerCellSx}>저장일시</TableCell>
+                  <TableCell align="center" sx={headerCellSx}>구분</TableCell>
+                  <TableCell align="center" sx={headerCellSx}>작업</TableCell>
+                </TableRow></TableHead>
+                <TableBody>
+                  {revisionDialog.revisions.map((revision) => {
+                    const isLatest = toNumber(revision.version_no) === toNumber(revisionDialog.document?.version_no);
+                    return (
+                      <TableRow key={revision.id} hover>
+                        <TableCell align="center" sx={{ ...bodyCellSx, fontWeight: 900 }}>v{revision.version_no}</TableCell>
+                        <TableCell sx={bodyCellSx}>{revision.snapshot?.document?.document_name || revisionDialog.document?.document_name || '-'}</TableCell>
+                        <TableCell sx={bodyCellSx}>{revision.created_at ? new Date(revision.created_at).toLocaleString('ko-KR') : '-'}</TableCell>
+                        <TableCell align="center" sx={bodyCellSx}>{isLatest ? <Chip size="small" color="primary" label="최신" /> : <Chip size="small" label="과거" />}</TableCell>
+                        <TableCell align="center" sx={bodyCellSx}>
+                          <Button size="small" variant={isLatest ? 'contained' : 'outlined'} onClick={() => loadDocumentRevision(revisionDialog.document, revision)}>불러오기</Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                  {revisionDialog.revisions.length === 0 && (
+                    <TableRow><TableCell colSpan={5} align="center" sx={{ py: 6, color: '#64748b' }}>저장된 버전 이력이 없습니다.</TableCell></TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </DialogContent>
+        <DialogActions><Button onClick={() => setRevisionDialog((previous) => ({ ...previous, open: false }))}>닫기</Button></DialogActions>
+      </Dialog>
 
       <Dialog open={copyDialog.open} onClose={() => setCopyDialog((previous) => ({ ...previous, open: false }))} fullWidth maxWidth="sm">
         <DialogTitle>일위대가를 다른 현장으로 복사</DialogTitle>
