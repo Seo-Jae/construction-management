@@ -37,6 +37,7 @@ import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import CampaignRoundedIcon from '@mui/icons-material/CampaignRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import DevicesRoundedIcon from '@mui/icons-material/DevicesRounded';
+import DeleteForeverRoundedIcon from '@mui/icons-material/DeleteForeverRounded';
 import EditCalendarRoundedIcon from '@mui/icons-material/EditCalendarRounded';
 import FactCheckRoundedIcon from '@mui/icons-material/FactCheckRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
@@ -210,6 +211,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
   const [progressSubmissionsLoading, setProgressSubmissionsLoading] = useState(false);
   const [progressPreview, setProgressPreview] = useState(null);
   const [progressReviewingId, setProgressReviewingId] = useState('');
+  const [attendanceResettingKey, setAttendanceResettingKey] = useState('');
   const [selectedNoticeIds, setSelectedNoticeIds] = useState(() => new Set());
   const [noticeDeleteOpen, setNoticeDeleteOpen] = useState(false);
   const [noticeEditorOpen, setNoticeEditorOpen] = useState(false);
@@ -228,7 +230,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
   const loadDashboard = useCallback(async (silent = false) => {
     if (!projectName) return;
     if (!silent) setLoading(true);
-    const { data, error } = await supabase.rpc('attendance_manager_dashboard_v52_48_5_10', {
+    const { data, error } = await supabase.rpc('attendance_manager_dashboard_v52_48_5_11', {
       p_project_name: projectName,
       p_work_date: workDate,
     });
@@ -770,7 +772,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
 
     setProgressReviewingId(submission.id);
     const { data, error } = await supabase.rpc(
-      'attendance_manager_review_progress_v52_48_5_10',
+      'attendance_manager_review_progress_v52_48_5_11',
       {
         p_submission_id: submission.id,
         p_approved: approved,
@@ -809,6 +811,61 @@ export default function AttendanceManagement({ projectName, canManage = false, o
     setCorrectionTime(defaultValue);
     setCorrectionReason('');
     setTimeEditorOpen(false);
+  };
+
+  const handleResetTestAttendance = async (record) => {
+    if (
+      !canManage ||
+      !record?.worker_id ||
+      !record?.is_test_account ||
+      attendanceResettingKey
+    ) return;
+
+    const confirmed = window.confirm(
+      `${record.name_ko} 테스트계정의 ${workDate} 근태기록을 초기화할까요?\n\n` +
+      '출근·퇴근 기록, 작업위치, 퇴근 진척 제출이 삭제되어 같은 계정으로 바로 다시 테스트할 수 있습니다.\n' +
+      '이번 버전 이후 승인된 테스트 진척은 승인 전 상태로 원복됩니다.',
+    );
+    if (!confirmed) return;
+
+    const reason = window.prompt(
+      '초기화 사유를 입력해주세요.',
+      '출퇴근 기능 재테스트',
+    )?.trim() || '';
+    if (reason.length < 2) return;
+
+    const resetKey = `${record.worker_id}-${workDate}`;
+    setAttendanceResettingKey(resetKey);
+    const { data, error } = await supabase.rpc(
+      'attendance_manager_reset_test_attendance_v52_48_5_11',
+      {
+        p_project_name: projectName,
+        p_worker_id: record.worker_id,
+        p_work_date: workDate,
+        p_reason: reason,
+      },
+    );
+    setAttendanceResettingKey('');
+
+    if (error) {
+      setMessage({
+        severity: 'error',
+        text: error.message || '테스트계정 근태기록을 초기화하지 못했습니다.',
+      });
+      return;
+    }
+
+    const preservedCount = Number(data?.preserved_legacy_progress_count || 0);
+    setMessage({
+      severity: 'success',
+      text: data?.already_reset
+        ? '이미 초기화된 근태기록입니다.'
+        : `테스트계정의 근태기록을 초기화했습니다. 바로 다시 출근 QR부터 테스트할 수 있습니다.${preservedCount > 0 ? ` 이전 버전에서 승인된 진척 ${preservedCount.toLocaleString()}건은 안전을 위해 유지했습니다.` : ''}`,
+    });
+    await Promise.all([
+      loadDashboard(true),
+      loadProgressSubmissions(true),
+    ]);
   };
 
   const openTimeEditor = () => {
@@ -992,13 +1049,13 @@ export default function AttendanceManagement({ projectName, canManage = false, o
         {tab === 'records' && (
           <Paper variant="outlined" sx={{ borderColor: '#cbd5e1' }}>
             <Box sx={{ p: 2, display: 'flex', flexWrap: 'wrap', gap: 1, alignItems: 'center', justifyContent: 'space-between' }}>
-              <Box><Typography sx={{ fontWeight: 900 }}>일자별 근태 기록</Typography><Typography sx={{ color: '#64748b', fontSize: '0.72rem' }}>모든 시간은 서버가 기록한 한국시간 기준입니다.</Typography></Box>
+              <Box><Typography sx={{ fontWeight: 900 }}>일자별 근태 기록</Typography><Typography sx={{ color: '#64748b', fontSize: '0.72rem' }}>모든 시간은 서버가 기록한 한국시간 기준입니다. 테스트계정만 해당 일자의 근태를 초기화할 수 있습니다.</Typography></Box>
               <TextField type="date" size="small" value={workDate} onChange={(event) => setWorkDate(event.target.value)} />
             </Box>
             <Divider />
             {loading ? <Box sx={{ py: 10, textAlign: 'center' }}><CircularProgress /></Box> : (
               <TableContainer>
-                <Table size="small" sx={{ minWidth: 940 }}>
+                <Table size="small" sx={{ minWidth: 1120 }}>
                   <TableHead>
                     <TableRow>
                       <TableCell>성명</TableCell>
@@ -1008,21 +1065,44 @@ export default function AttendanceManagement({ projectName, canManage = false, o
                       <TableCell>출근</TableCell>
                       <TableCell>퇴근</TableCell>
                       <TableCell>상태</TableCell>
+                      <TableCell align="right">테스트 초기화</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {dashboard.daily_records.map((row) => (
                       <TableRow key={row.worker_id} hover>
-                        <TableCell><b>{row.name_ko}</b></TableCell>
+                        <TableCell>
+                          <Stack direction="row" spacing={0.6} alignItems="center">
+                            <b>{row.name_ko}</b>
+                            {row.is_test_account && <Chip label="테스트" size="small" color="info" />}
+                          </Stack>
+                        </TableCell>
                         <TableCell>{row.trade_name || '-'}</TableCell>
                         <TableCell sx={{ minWidth: 150 }}>{formatAttendanceWorkLocation(row)}</TableCell>
                         <TableCell>{row.check_in_at ? row.work_trade_name || '미입력' : '-'}</TableCell>
                         <TableCell><Stack direction="row" alignItems="center" spacing={0.5}><span>{formatKoreaDateTime(row.check_in_at, { timeOnly: true })}</span>{canManage && <Tooltip title="출근 수정"><IconButton size="small" onClick={() => openCorrection(row, 'check_in')}><EditCalendarRoundedIcon sx={{ fontSize: 16 }} /></IconButton></Tooltip>}</Stack></TableCell>
                         <TableCell><Stack direction="row" alignItems="center" spacing={0.5}><span>{formatKoreaDateTime(row.check_out_at, { timeOnly: true })}</span>{canManage && <Tooltip title="퇴근 수정"><IconButton size="small" onClick={() => openCorrection(row, 'check_out')}><EditCalendarRoundedIcon sx={{ fontSize: 16 }} /></IconButton></Tooltip>}</Stack></TableCell>
                         <TableCell><Chip size="small" color={row.check_in_at && row.check_out_at ? 'success' : row.check_in_at ? 'warning' : 'default'} label={row.check_in_at && row.check_out_at ? '완료' : row.check_in_at ? '근무중' : '미출근'} /></TableCell>
+                        <TableCell align="right">
+                          {canManage && row.is_test_account && (row.check_in_at || row.check_out_at) ? (
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              color="error"
+                              startIcon={attendanceResettingKey === `${row.worker_id}-${workDate}`
+                                ? <CircularProgress size={14} color="inherit" />
+                                : <DeleteForeverRoundedIcon />}
+                              disabled={Boolean(attendanceResettingKey)}
+                              onClick={() => handleResetTestAttendance(row)}
+                              sx={{ whiteSpace: 'nowrap', fontWeight: 850 }}
+                            >
+                              {attendanceResettingKey === `${row.worker_id}-${workDate}` ? '초기화 중' : '근태 초기화'}
+                            </Button>
+                          ) : '-'}
+                        </TableCell>
                       </TableRow>
                     ))}
-                    {dashboard.daily_records.length === 0 && <TableRow><TableCell colSpan={7} align="center" sx={{ py: 8, color: '#94a3b8' }}>승인된 근로자가 없습니다.</TableCell></TableRow>}
+                    {dashboard.daily_records.length === 0 && <TableRow><TableCell colSpan={8} align="center" sx={{ py: 8, color: '#94a3b8' }}>승인된 근로자가 없습니다.</TableCell></TableRow>}
                   </TableBody>
                 </Table>
               </TableContainer>
