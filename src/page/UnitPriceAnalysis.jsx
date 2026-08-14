@@ -90,6 +90,26 @@ const toNumber = (value) => {
 const formatMoney = (value) => moneyFormatter.format(Math.round(toNumber(value)));
 const formatQuantity = (value) => quantityFormatter.format(toNumber(value));
 
+const normalizeMaterialSearchText = (value) => String(value || '')
+  .normalize('NFKC')
+  .toLowerCase()
+  .replace(/스터드/g, 'stud')
+  .replace(/[^a-z0-9가-힣]/g, '');
+
+const matchesMaterialSearch = (material, searchValue) => {
+  const search = normalizeMaterialSearchText(searchValue);
+  if (!search) return true;
+
+  const searchableText = [
+    material.item_code,
+    material.item_name,
+    material.specification,
+    material.unit,
+  ].map(normalizeMaterialSearchText).join('');
+
+  return searchableText.includes(search);
+};
+
 const createClientId = () => (
   globalThis.crypto?.randomUUID?.() ||
   `row-${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -897,23 +917,12 @@ export default function UnitPriceAnalysis({
   }, [documentScope, documentSearch, documents, projectName]);
 
   const filteredMaterials = useMemo(() => {
-    const search = materialSearch.trim().toLowerCase();
-    return materials.filter((item) => {
-      if (!search) return true;
-      return [item.item_code, item.item_name, item.specification, item.unit]
-        .some((value) => String(value || '').toLowerCase().includes(search));
-    });
+    return materials.filter((item) => matchesMaterialSearch(item, materialSearch));
   }, [materialSearch, materials]);
 
   const pickerMaterials = useMemo(() => {
-    const search = materialPicker.search.trim().toLowerCase();
     return materials
-      .filter((item) => !search || [
-        item.item_code,
-        item.item_name,
-        item.specification,
-        item.unit,
-      ].some((value) => String(value || '').toLowerCase().includes(search)))
+      .filter((item) => matchesMaterialSearch(item, materialPicker.search))
       .slice(0, 120);
   }, [materialPicker.search, materials]);
 
@@ -1854,10 +1863,19 @@ export default function UnitPriceAnalysis({
             onChange={(event) => setMaterialPicker((previous) => ({ ...previous, search: event.target.value }))}
             sx={{ my: 1 }}
           />
-          <TableContainer sx={{ maxHeight: 460 }}>
+          <TableContainer sx={{ height: 460, minHeight: 460, maxHeight: 460 }}>
             <Table stickyHeader size="small">
               <TableHead><TableRow><TableCell sx={headerCellSx}>품명</TableCell><TableCell sx={headerCellSx}>규격</TableCell><TableCell sx={headerCellSx}>단위</TableCell><TableCell sx={headerCellSx}>현재단가</TableCell><TableCell sx={headerCellSx} /></TableRow></TableHead>
-              <TableBody>{pickerMaterials.map((item) => <TableRow key={item.id} hover><TableCell sx={bodyCellSx}>{item.item_name}</TableCell><TableCell sx={bodyCellSx}>{item.specification || '-'}</TableCell><TableCell sx={bodyCellSx}>{item.unit}</TableCell><TableCell align="right" sx={bodyCellSx}>{formatMoney(item.current_unit_price)}원</TableCell><TableCell sx={bodyCellSx}><Button size="small" onClick={() => addMaterialToDraft(item)}>추가</Button></TableCell></TableRow>)}</TableBody>
+              <TableBody>
+                {pickerMaterials.map((item) => <TableRow key={item.id} hover><TableCell sx={bodyCellSx}>{item.item_name}</TableCell><TableCell sx={bodyCellSx}>{item.specification || '-'}</TableCell><TableCell sx={bodyCellSx}>{item.unit}</TableCell><TableCell align="right" sx={bodyCellSx}>{formatMoney(item.current_unit_price)}원</TableCell><TableCell sx={bodyCellSx}><Button size="small" onClick={() => addMaterialToDraft(item)}>추가</Button></TableCell></TableRow>)}
+                {pickerMaterials.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={5} align="center" sx={{ border: 0, py: 8, color: '#64748b', fontSize: '0.76rem' }}>
+                      검색어가 포함된 자재가 없습니다.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
             </Table>
           </TableContainer>
         </DialogContent>
