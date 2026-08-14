@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Box,
@@ -50,7 +50,7 @@ import RemoveCircleOutlineRoundedIcon from '@mui/icons-material/RemoveCircleOutl
 import ScheduleRoundedIcon from '@mui/icons-material/ScheduleRounded';
 import QrCode from 'qrcode';
 import { supabase } from '../supabaseClient';
-import AttendanceProgressFloorGrid from '../components/AttendanceProgressFloorGrid.jsx';
+import AttendanceProgressBuildingOverview from '../components/AttendanceProgressBuildingOverview.jsx';
 import RiskBroadcastManagement from './RiskBroadcastManagement.jsx';
 import {
   buildAttendanceQrDisplayUrl,
@@ -173,9 +173,6 @@ const formatProgressSubmissionLocation = (row) => {
   return `${building.endsWith('동') ? building : `${building}동`} ${floor}층`;
 };
 
-const normalizeProgressBuildingValue = (value) =>
-  String(value || '').trim().replace(/동$/, '');
-
 const progressReviewStatusMeta = (status) => ({
   pending: { label: '승인대기', color: 'warning' },
   approved: { label: '승인완료', color: 'success' },
@@ -183,14 +180,207 @@ const progressReviewStatusMeta = (status) => ({
   not_required: { label: '제출 없음', color: 'default' },
 }[status] || { label: status || '-', color: 'default' });
 
-const adminProgressGridTranslator = (key, variables = {}) => ({
-  progressFloorTitle: `${normalizeProgressBuildingValue(variables.building)}동 ${variables.floor || ''}층 골구도`,
-  selectedUnitCount: `${Number(variables.count || 0).toLocaleString()}세대 제출`,
-  selectedForCompletion: '작업자 완료 제출',
-  plannedWorkUnit: '출근 시 작업 예정',
-  alreadyCompleted: '기존 완료',
-  noSelectableUnits: '이 층에는 표시할 세대가 없습니다.',
-}[key] || key);
+const normalizeProgressUnitRow = (unitRow, parentRow) => {
+  if (typeof unitRow === 'string') {
+    return {
+      building: parentRow?.building,
+      floor: Number(parentRow?.floor),
+      unit: unitRow,
+      scope_source: 'check_in',
+    };
+  }
+  return {
+    ...unitRow,
+    building: String(unitRow?.building || '').trim(),
+    floor: Number(unitRow?.floor),
+    unit: String(unitRow?.unit || '').trim(),
+  };
+};
+
+const groupPendingProgressSubmissions = (rows) => {
+  const groups = new Map();
+  const reviewedRows = [];
+
+  (Array.isArray(rows) ? rows : []).forEach((row) => {
+    if (row?.completion_state !== 'submitted') return;
+
+    if (row.review_status !== 'pending') {
+      reviewedRows.push({
+        ...row,
+        is_group: false,
+        submission_ids: row?.id ? [row.id] : [],
+        worker_count: 1,
+        raw_submitted_units_count: Number(row?.submitted_units_count || 0),
+        duplicate_units_count: 0,
+        units: (Array.isArray(row?.units) ? row.units : []).map((unitRow) => ({
+          ...normalizeProgressUnitRow(unitRow, row),
+          contributor_names: [row.worker_name].filter(Boolean),
+        })),
+      });
+      return;
+    }
+
+    const groupKey = `${row.work_date || ''}\u001f${row.progress_process_type || ''}`;
+    if (!groups.has(groupKey)) {
+      groups.set(groupKey, {
+        id: `pending-group-${groupKey}`,
+        is_group: true,
+        work_date: row.work_date,
+        progress_process_type: row.progress_process_type,
+        completion_state: 'submitted',
+        review_status: 'pending',
+        submitted_at: row.submitted_at,
+        submissionIds: [],
+        workerNames: new Set(),
+        companyNames: new Set(),
+        attendanceTrades: new Set(),
+        scopeMap: new Map(),
+        unitMap: new Map(),
+        completedMap: new Map(),
+        plannedMap: new Map(),
+        rawSubmittedCount: 0,
+      });
+    }
+
+    const group = groups.get(groupKey);
+    if (row.id) group.submissionIds.push(row.id);
+    if (row.worker_name) group.workerNames.add(row.worker_name);
+    if (row.company_name) group.companyNames.add(row.company_name);
+    if (row.attendance_trade_name) group.attendanceTrades.add(row.attendance_trade_name);
+    group.rawSubmittedCount += Number(row.submitted_units_count || 0);
+    if (String(row.submitted_at || '') > String(group.submitted_at || '')) {
+      group.submitted_at = row.submitted_at;
+    }
+
+    (Array.isArray(row.scopes) ? row.scopes : []).forEach((scope) => {
+      const building = String(scope?.building || '').trim();
+      const floor = Number(scope?.floor);
+      if (!building || !floor) return;
+      const key = `${building}\u001f${floor}`;
+      if (!group.scopeMap.has(key)) group.scopeMap.set(key, { ...scope, building, floor });
+    });
+
+    (Array.isArray(row.units) ? row.units : []).forEach((unitRow) => {
+      const normalized = normalizeProgressUnitRow(unitRow, row);
+      if (!normalized.building || !normalized.floor || !normalized.unit) return;
+      const key = `${normalized.building}\u001f${normalized.unit}`;
+      if (!group.unitMap.has(key)) {
+        group.unitMap.set(key, { ...normalized, contributorMap: new Map() });
+      }
+      if (row.worker_name) {
+        group.unitMap.get(key).contributorMap.set(
+          row.worker_id || row.id || row.worker_name,
+          row.worker_name,
+        );
+      }
+    });
+
+    (Array.isArray(row.completed_units) ? row.completed_units : []).forEach((unitRow) => {
+      const normalized = normalizeProgressUnitRow(unitRow, row);
+      if (!normalized.building || !normalized.unit) return;
+      group.completedMap.set(`${normalized.building}\u001f${normalized.unit}`, normalized);
+    });
+
+    (Array.isArray(row.planned_units) ? row.planned_units : []).forEach((unitRow) => {
+      const normalized = normalizeProgressUnitRow(unitRow, row);
+      if (!normalized.building || !normalized.unit) return;
+      group.plannedMap.set(`${normalized.building}\u001f${normalized.unit}`, normalized);
+    });
+  });
+
+  const pendingGroups = Array.from(groups.values()).map((group) => {
+    const units = Array.from(group.unitMap.values()).map((unitRow) => ({
+      ...unitRow,
+      contributor_names: Array.from(unitRow.contributorMap.values()),
+      contributor_count: unitRow.contributorMap.size,
+      contributorMap: undefined,
+    }));
+    const workerNames = Array.from(group.workerNames);
+    const uniqueCount = units.length;
+
+    return {
+      id: group.id,
+      is_group: true,
+      submission_ids: group.submissionIds,
+      worker_names: workerNames,
+      worker_name: workerNames.join(', '),
+      worker_count: group.submissionIds.length,
+      company_name: Array.from(group.companyNames).join(', '),
+      work_date: group.work_date,
+      attendance_trade_name: Array.from(group.attendanceTrades).join(', '),
+      progress_process_type: group.progress_process_type,
+      completion_state: group.completion_state,
+      review_status: group.review_status,
+      submitted_at: group.submitted_at,
+      scopes: Array.from(group.scopeMap.values()),
+      units,
+      completed_units: Array.from(group.completedMap.values()),
+      planned_units: Array.from(group.plannedMap.values()),
+      submitted_units_count: uniqueCount,
+      raw_submitted_units_count: group.rawSubmittedCount,
+      duplicate_units_count: Math.max(0, group.rawSubmittedCount - uniqueCount),
+    };
+  });
+
+  return [...pendingGroups, ...reviewedRows].sort((left, right) => {
+    const leftRank = left.review_status === 'pending' ? 0 : left.review_status === 'rejected' ? 1 : 2;
+    const rightRank = right.review_status === 'pending' ? 0 : right.review_status === 'rejected' ? 1 : 2;
+    return leftRank - rightRank || String(right.submitted_at || '').localeCompare(String(left.submitted_at || ''));
+  });
+};
+
+const buildProgressPreviewBuildings = (preview) => {
+  const buildingMap = new Map();
+  const ensureBuilding = (building, config = {}) => {
+    const name = String(building || '').trim();
+    if (!name) return null;
+    if (!buildingMap.has(name)) {
+      buildingMap.set(name, {
+        building: name,
+        config: config || {},
+        submittedFloors: new Set(),
+        submittedUnits: new Set(),
+        completedUnits: new Set(),
+        contributorCounts: {},
+        contributorNames: {},
+      });
+    } else if (Object.keys(buildingMap.get(name).config || {}).length === 0) {
+      buildingMap.get(name).config = config || {};
+    }
+    return buildingMap.get(name);
+  };
+
+  (Array.isArray(preview?.scopes) ? preview.scopes : []).forEach((scope) => {
+    const building = ensureBuilding(scope?.building, scope?.config_json || {});
+    const floor = Number(scope?.floor);
+    if (building && floor) building.submittedFloors.add(floor);
+  });
+
+  (Array.isArray(preview?.units) ? preview.units : []).forEach((unitRow) => {
+    const normalized = normalizeProgressUnitRow(unitRow, preview);
+    const building = ensureBuilding(normalized.building, {});
+    if (!building || !normalized.unit) return;
+    building.submittedUnits.add(normalized.unit);
+    if (normalized.floor) building.submittedFloors.add(normalized.floor);
+    const names = Array.isArray(unitRow?.contributor_names)
+      ? unitRow.contributor_names.filter(Boolean)
+      : [preview.worker_name].filter(Boolean);
+    building.contributorNames[normalized.unit] = names;
+    building.contributorCounts[normalized.unit] = Math.max(
+      1,
+      Number(unitRow?.contributor_count || names.length),
+    );
+  });
+
+  (Array.isArray(preview?.completed_units) ? preview.completed_units : []).forEach((unitRow) => {
+    const normalized = normalizeProgressUnitRow(unitRow, preview);
+    const building = ensureBuilding(normalized.building, {});
+    if (building && normalized.unit) building.completedUnits.add(normalized.unit);
+  });
+
+  return Array.from(buildingMap.values()).sort((left, right) =>
+    left.building.localeCompare(right.building, 'ko'));
+};
 
 export default function AttendanceManagement({ projectName, canManage = false, onLogout }) {
   const [tab, setTab] = useState('approval');
@@ -299,7 +489,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
     if (!silent) setProgressSubmissionsLoading(true);
 
     const { data, error } = await supabase.rpc(
-      'attendance_manager_progress_submissions_v52_48_5_10',
+      'attendance_manager_progress_submissions_v52_48_5_12',
       { p_project_name: projectName },
     );
 
@@ -757,12 +947,15 @@ export default function AttendanceManagement({ projectName, canManage = false, o
     if (!canManage || !submission?.id || progressReviewingId) return;
 
     const unitCount = Number(submission.submitted_units_count) || 0;
+    const workerCount = Number(submission.worker_count || 1);
+    const duplicateCount = Number(submission.duplicate_units_count || 0);
     let reason = '담당자 골구도 확인 후 승인';
 
     if (approved) {
       const confirmed = window.confirm(
-        `${submission.worker_name}님이 제출한 ${unitCount.toLocaleString()}세대를 작업완료로 승인할까요?\n\n` +
-        '승인하면 기존 진척관리에 작업일 기준으로 즉시 반영됩니다.',
+        `${workerCount > 1 ? `${workerCount}명의 공동작업` : `${submission.worker_name}님의 작업`}으로 제출된 고유 ${unitCount.toLocaleString()}세대를 승인할까요?\n\n` +
+        `${duplicateCount > 0 ? `작업자 간 중복 ${duplicateCount.toLocaleString()}건은 한 번만 반영됩니다.\n` : ''}` +
+        '동일 공정의 기존 완료세대는 자동 제외되고 신규 세대만 작업일 기준으로 반영됩니다.',
       );
       if (!confirmed) return;
     } else {
@@ -772,9 +965,11 @@ export default function AttendanceManagement({ projectName, canManage = false, o
 
     setProgressReviewingId(submission.id);
     const { data, error } = await supabase.rpc(
-      'attendance_manager_review_progress_v52_48_5_11',
+      'attendance_manager_review_progress_group_v52_48_5_12',
       {
-        p_submission_id: submission.id,
+        p_submission_ids: Array.isArray(submission.submission_ids)
+          ? submission.submission_ids
+          : [submission.id],
         p_approved: approved,
         p_reason: reason,
       },
@@ -793,8 +988,8 @@ export default function AttendanceManagement({ projectName, canManage = false, o
     setMessage({
       severity: 'success',
       text: approved
-        ? `${Number(data?.applied_units_count || 0).toLocaleString()}세대를 진척관리에 작업완료로 반영했습니다.${Number(data?.skipped_units_count || 0) > 0 ? ` 기존 완료 ${Number(data.skipped_units_count).toLocaleString()}세대는 완료일을 유지했습니다.` : ''}`
-        : '작업자의 진척 제출을 반려했습니다. 근태기록은 그대로 유지됩니다.',
+        ? `공동작업 제출 ${Number(data?.submission_count || 1).toLocaleString()}건을 한 번에 승인했습니다. 고유 ${Number(data?.unique_units_count || 0).toLocaleString()}세대 중 ${Number(data?.applied_units_count || 0).toLocaleString()}세대를 반영했습니다.${Number(data?.duplicate_units_count || 0) > 0 ? ` 작업자 간 중복 ${Number(data.duplicate_units_count).toLocaleString()}건은 통합했습니다.` : ''}${Number(data?.skipped_units_count || 0) > 0 ? ` 기존 완료·중복 ${Number(data.skipped_units_count).toLocaleString()}건은 완료일을 유지했습니다.` : ''}`
+        : `같은 날짜·공정의 공동작업 제출 ${Number(data?.submission_count || 1).toLocaleString()}건을 함께 반려했습니다. 근태기록은 그대로 유지됩니다.`,
     });
     await Promise.all([
       loadProgressSubmissions(true),
@@ -837,7 +1032,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
     const resetKey = `${record.worker_id}-${workDate}`;
     setAttendanceResettingKey(resetKey);
     const { data, error } = await supabase.rpc(
-      'attendance_manager_reset_test_attendance_v52_48_5_11',
+      'attendance_manager_reset_test_attendance_v52_48_5_12',
       {
         p_project_name: projectName,
         p_worker_id: record.worker_id,
@@ -856,11 +1051,12 @@ export default function AttendanceManagement({ projectName, canManage = false, o
     }
 
     const preservedCount = Number(data?.preserved_legacy_progress_count || 0);
+    const preservedSharedCount = Number(data?.preserved_shared_progress_count || 0);
     setMessage({
       severity: 'success',
       text: data?.already_reset
         ? '이미 초기화된 근태기록입니다.'
-        : `테스트계정의 근태기록을 초기화했습니다. 바로 다시 출근 QR부터 테스트할 수 있습니다.${preservedCount > 0 ? ` 이전 버전에서 승인된 진척 ${preservedCount.toLocaleString()}건은 안전을 위해 유지했습니다.` : ''}`,
+        : `테스트계정의 근태기록을 초기화했습니다. 바로 다시 출근 QR부터 테스트할 수 있습니다.${preservedSharedCount > 0 ? ` 다른 작업자의 공동작업 진척 ${preservedSharedCount.toLocaleString()}세대는 유지했습니다.` : ''}${preservedCount > 0 ? ` 이전 버전에서 승인된 진척 ${preservedCount.toLocaleString()}건은 안전을 위해 유지했습니다.` : ''}`,
     });
     await Promise.all([
       loadDashboard(true),
@@ -922,8 +1118,9 @@ export default function AttendanceManagement({ projectName, canManage = false, o
 
   const pendingCount = dashboard.pending_workers.length;
   const deviceCount = dashboard.device_requests.length;
-  const visibleProgressSubmissions = progressSubmissions.filter(
-    (row) => row.completion_state === 'submitted',
+  const visibleProgressSubmissions = useMemo(
+    () => groupPendingProgressSubmissions(progressSubmissions),
+    [progressSubmissions],
   );
   const progressPendingCount = visibleProgressSubmissions.filter(
     (row) => row.review_status === 'pending',
@@ -1116,7 +1313,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
               <Box>
                 <Typography sx={{ fontWeight: 900 }}>퇴근 진척 승인</Typography>
                 <Typography sx={{ color: '#64748b', fontSize: '0.72rem' }}>
-                  작업자가 퇴근할 때 제출한 완료 세대를 확인합니다. 승인 전에는 진척관리에 반영되지 않습니다.
+                  같은 날짜·같은 공정의 제출은 공동작업으로 자동 통합됩니다. 작업자 간 중복은 제거되고 고유 세대만 한 번 반영됩니다.
                 </Typography>
               </Box>
               <Button
@@ -1138,7 +1335,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
                   <TableHead>
                     <TableRow>
                       <TableCell>작업일</TableCell>
-                      <TableCell>성명</TableCell>
+                      <TableCell>작업자</TableCell>
                       <TableCell>작업위치</TableCell>
                       <TableCell>출근 공정</TableCell>
                       <TableCell>진척 공정</TableCell>
@@ -1156,11 +1353,25 @@ export default function AttendanceManagement({ projectName, canManage = false, o
                       return (
                         <TableRow key={row.id} hover>
                           <TableCell>{row.work_date || '-'}</TableCell>
-                          <TableCell><b>{row.worker_name}</b></TableCell>
+                          <TableCell sx={{ minWidth: 150 }}>
+                            <Stack direction="row" spacing={0.6} alignItems="center" flexWrap="wrap" useFlexGap>
+                              <b>{row.worker_name}</b>
+                              {Number(row.worker_count || 1) > 1 && (
+                                <Chip size="small" color="success" variant="outlined" label={`공동 ${row.worker_count}명`} />
+                              )}
+                            </Stack>
+                          </TableCell>
                           <TableCell>{formatProgressSubmissionLocation(row)}</TableCell>
                           <TableCell>{row.attendance_trade_name || '-'}</TableCell>
                           <TableCell><b>{row.progress_process_type || '-'}</b></TableCell>
-                          <TableCell>{Number(row.submitted_units_count || 0).toLocaleString()}세대</TableCell>
+                          <TableCell sx={{ minWidth: 125 }}>
+                            <b>고유 {Number(row.submitted_units_count || 0).toLocaleString()}세대</b>
+                            {Number(row.duplicate_units_count || 0) > 0 && (
+                              <Typography sx={{ color: '#047857', fontSize: '0.68rem', fontWeight: 800 }}>
+                                중복 {Number(row.duplicate_units_count).toLocaleString()}건 자동 통합
+                              </Typography>
+                            )}
+                          </TableCell>
                           <TableCell>
                             <Chip size="small" color={statusMeta.color} label={statusMeta.label} />
                           </TableCell>
@@ -1174,7 +1385,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
                           <TableCell align="right">
                             <Stack direction="row" spacing={0.7} justifyContent="flex-end">
                               <Button size="small" variant="outlined" onClick={() => setProgressPreview(row)}>
-                                골구도 확인
+                                동 전체 골구도
                               </Button>
                               {row.review_status === 'pending' && (
                                 <>
@@ -1185,7 +1396,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
                                     disabled={!canManage || reviewing}
                                     onClick={() => handleProgressReview(row, true)}
                                   >
-                                    승인
+                                    통합 승인
                                   </Button>
                                   <Button
                                     size="small"
@@ -1668,10 +1879,10 @@ export default function AttendanceManagement({ projectName, canManage = false, o
         open={Boolean(progressPreview)}
         onClose={() => !progressReviewingId && setProgressPreview(null)}
         fullWidth
-        maxWidth="md"
+        maxWidth="lg"
       >
         <DialogTitle sx={{ fontWeight: 900 }}>
-          퇴근 진척 골구도 확인
+          퇴근 진척 동 전체 골구도 확인
           <IconButton
             onClick={() => setProgressPreview(null)}
             disabled={Boolean(progressReviewingId)}
@@ -1684,72 +1895,45 @@ export default function AttendanceManagement({ projectName, canManage = false, o
           {progressPreview && (
             <Stack spacing={2}>
               <Paper variant="outlined" sx={{ p: 2, bgcolor: '#f8fafc', borderRadius: 2.5 }}>
-                <Typography sx={{ fontSize: '1.05rem', fontWeight: 900 }}>
-                  {progressPreview.worker_name} · {progressPreview.work_date}
-                </Typography>
+                <Stack direction="row" spacing={0.8} alignItems="center" flexWrap="wrap" useFlexGap>
+                  <Typography sx={{ fontSize: '1.05rem', fontWeight: 900 }}>
+                    {progressPreview.worker_name} · {progressPreview.work_date}
+                  </Typography>
+                  {Number(progressPreview.worker_count || 1) > 1 && (
+                    <Chip size="small" color="success" label={`공동작업 ${progressPreview.worker_count}명`} />
+                  )}
+                </Stack>
                 <Typography sx={{ mt: 0.5, color: '#475569', fontSize: '0.82rem' }}>
                   {formatProgressSubmissionLocation(progressPreview)} · 출근 공정 {progressPreview.attendance_trade_name} · 진척 공정 {progressPreview.progress_process_type}
                 </Typography>
+                <Stack direction="row" spacing={0.8} sx={{ mt: 1 }} flexWrap="wrap" useFlexGap>
+                  <Chip size="small" variant="outlined" label={`작업자 제출 합계 ${Number(progressPreview.raw_submitted_units_count || progressPreview.submitted_units_count || 0).toLocaleString()}건`} />
+                  <Chip size="small" color="success" variant="outlined" label={`중복 제거 고유 ${Number(progressPreview.submitted_units_count || 0).toLocaleString()}세대`} />
+                  {Number(progressPreview.duplicate_units_count || 0) > 0 && (
+                    <Chip size="small" color="info" label={`공동 중복 ${Number(progressPreview.duplicate_units_count).toLocaleString()}건 자동 통합`} />
+                  )}
+                </Stack>
               </Paper>
 
               <Alert severity="info">
-                초록색 세대가 작업자가 퇴근할 때 완료로 제출한 세대입니다. 승인해야 기존 진척관리에 작업완료로 반영됩니다.
+                동 전체 골구도에서 초록색은 금일 퇴근 제출, 회색은 동일 공정에서 이미 작업완료된 세대입니다. 초록색 우측 상단 숫자는 같은 세대를 제출한 공동작업자 수입니다. 승인 시 고유 세대만 한 번 반영됩니다.
               </Alert>
 
-              {(Array.isArray(progressPreview.scopes) && progressPreview.scopes.length > 0
-                ? progressPreview.scopes
-                : [{
-                    building: progressPreview.building,
-                    floor: progressPreview.floor,
-                    scope_source: 'check_in',
-                    config_json: progressPreview.building_config || {},
-                  }]
-              ).map((scope) => {
-                const selectedUnits = (Array.isArray(progressPreview.units)
-                  ? progressPreview.units
-                  : [])
-                  .filter((unitRow) =>
-                    typeof unitRow === 'string'
-                      ? scope.building === progressPreview.building &&
-                        Number(scope.floor) === Number(progressPreview.floor)
-                      : unitRow?.building === scope.building &&
-                        Number(unitRow?.floor) === Number(scope.floor))
-                  .map((unitRow) => typeof unitRow === 'string' ? unitRow : unitRow.unit);
-                const plannedUnits = (Array.isArray(progressPreview.planned_units)
-                  ? progressPreview.planned_units
-                  : [])
-                  .filter((unitRow) =>
-                    unitRow?.building === scope.building &&
-                    Number(unitRow?.floor) === Number(scope.floor))
-                  .map((unitRow) => unitRow.unit);
-                const added = scope.scope_source === 'checkout_added';
-
-                return (
-                  <Paper
-                    key={`${scope.building}-${scope.floor}`}
-                    variant="outlined"
-                    sx={{ p: 1.7, borderRadius: 2.5, borderColor: added ? '#f59e0b' : '#cbd5e1' }}
-                  >
-                    <Chip
-                      size="small"
-                      color={added ? 'warning' : 'primary'}
-                      variant={added ? 'filled' : 'outlined'}
-                      label={added ? '퇴근 시 추가 위치' : '출근 등록 위치'}
-                      sx={{ mb: 1.4, fontWeight: 900 }}
+              <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 2, flexWrap: 'wrap' }}>
+                {buildProgressPreviewBuildings(progressPreview).map((buildingRow) => (
+                  <Box key={buildingRow.building} sx={{ flex: '1 1 390px', minWidth: 0 }}>
+                    <AttendanceProgressBuildingOverview
+                      buildingName={buildingRow.building}
+                      config={buildingRow.config}
+                      submittedUnits={buildingRow.submittedUnits}
+                      completedUnits={buildingRow.completedUnits}
+                      contributorCounts={buildingRow.contributorCounts}
+                      contributorNames={buildingRow.contributorNames}
+                      submittedFloors={buildingRow.submittedFloors}
                     />
-                    <AttendanceProgressFloorGrid
-                      building={scope.building || ''}
-                      floor={scope.floor || 0}
-                      config={scope.config_json || {}}
-                      selectedUnits={selectedUnits}
-                      completedUnits={[]}
-                      plannedUnits={plannedUnits}
-                      readOnly
-                      t={adminProgressGridTranslator}
-                    />
-                  </Paper>
-                );
-              })}
+                  </Box>
+                ))}
+              </Box>
 
               {progressPreview.review_status !== 'pending' && (
                 <Alert severity={progressPreview.review_status === 'approved' ? 'success' : 'error'}>
@@ -1781,7 +1965,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
                 disabled={!canManage || Boolean(progressReviewingId)}
                 onClick={() => handleProgressReview(progressPreview, true)}
               >
-                {progressReviewingId ? '처리 중...' : '확인완료 승인'}
+                {progressReviewingId ? '처리 중...' : Number(progressPreview.worker_count || 1) > 1 ? '공동작업 통합 승인' : '확인완료 승인'}
               </Button>
             </>
           )}
