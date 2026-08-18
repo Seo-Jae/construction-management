@@ -57,6 +57,11 @@ import TableViewRoundedIcon from '@mui/icons-material/TableViewRounded';
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
+import {
+  normalizeTechnicalAnnotations,
+  openTechnicalImageEditorWindow,
+  openTechnicalImageViewerWindow,
+} from '../utils/technicalImageAnnotations';
 
 const COST_TYPES = [
   { value: 'material', label: '재료비', color: '#0f766e' },
@@ -581,11 +586,58 @@ export default function UnitPriceAnalysis({
   const priceUploadRef = useRef(null);
   const technicalImageInputRef = useRef(null);
   const [technicalImageBusy, setTechnicalImageBusy] = useState(false);
+  const [technicalAnnotations, setTechnicalAnnotations] = useState([]);
+  const [technicalAnnotationBusy, setTechnicalAnnotationBusy] = useState(false);
 
 
   const showToast = useCallback((message, severity = 'success') => {
     setToast({ open: true, message, severity });
   }, []);
+
+  // v52.48.5.32 기술자료 편집기 v1
+  // 원본 이미지는 수정하지 않고 image_key별 지시선/번호/명칭 좌표만 별도 저장합니다.
+  const loadTechnicalAnnotations = useCallback(async (imageKey) => {
+    const normalizedKey = String(imageKey || '').trim();
+    if (!normalizedKey) {
+      setTechnicalAnnotations([]);
+      return [];
+    }
+
+    setTechnicalAnnotationBusy(true);
+    try {
+      const { data, error } = await supabase
+        .from('unit_price_technical_annotations')
+        .select('annotations')
+        .eq('image_key', normalizedKey)
+        .maybeSingle();
+      if (error) throw error;
+      const next = normalizeTechnicalAnnotations(data?.annotations || []);
+      setTechnicalAnnotations(next);
+      return next;
+    } catch (error) {
+      const message = String(error?.message || '');
+      if (error?.code === '42P01' || /unit_price_technical_annotations/i.test(message)) {
+        console.warn('기술자료 지시선 DB가 아직 준비되지 않았습니다:', error);
+        setTechnicalAnnotations([]);
+        return [];
+      }
+      console.error('기술자료 지시선 조회 실패:', error);
+      setTechnicalAnnotations([]);
+      return [];
+    } finally {
+      setTechnicalAnnotationBusy(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const imageKey = String(selectedSpec?.image_key || '').trim();
+    if (!imageKey) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setTechnicalAnnotations([]);
+      return;
+    }
+    loadTechnicalAnnotations(imageKey);
+  }, [loadTechnicalAnnotations, selectedSpec?.image_key]);
 
   // v52.48.5.29 기술자료 이미지는 기존 image_key 그룹 단위로 관리합니다.
   const applyTechnicalImageUrlLocally = useCallback((imageKey, imageUrl) => {
@@ -691,8 +743,8 @@ export default function UnitPriceAnalysis({
     }
   }, [canManageTechnicalImages, persistTechnicalImageUrl, selectedSpec?.image_key, showToast]);
 
-  // v52.48.5.31 기술자료 새창 보기
-  // 일위대가 화면을 닫지 않고 기술자료를 나란히 참고할 수 있도록 별도 브라우저 창을 엽니다.
+  // v52.48.5.32 기술자료 편집기 v1
+  // 조회 창은 일위대가 화면과 나란히 유지하며, 하단 항목 hover 시 해당 지시선/부재 위치가 강조됩니다.
   const openTechnicalImageWindow = useCallback(() => {
     const imageUrl = String(selectedSpec?.image_url || '').trim();
     if (!imageUrl) return;
@@ -701,102 +753,92 @@ export default function UnitPriceAnalysis({
       .filter(Boolean)
       .join(' · ') || '기술자료';
 
-    const escapeHtml = (value) => String(value || '')
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#039;');
-
-    const availableWidth = window.screen?.availWidth || window.innerWidth || 1440;
-    const availableHeight = window.screen?.availHeight || window.innerHeight || 900;
-    const popupWidth = Math.max(760, Math.min(1500, Math.floor(availableWidth * 0.78)));
-    const popupHeight = Math.max(620, Math.min(1100, Math.floor(availableHeight * 0.88)));
-    const popupLeft = Math.max(0, Math.floor((availableWidth - popupWidth) / 2));
-    const popupTop = Math.max(0, Math.floor((availableHeight - popupHeight) / 2));
-
-    const previewWindow = window.open(
-      '',
-      'unitPriceTechnicalImagePreview',
-      [
-        'popup=yes',
-        `width=${popupWidth}`,
-        `height=${popupHeight}`,
-        `left=${popupLeft}`,
-        `top=${popupTop}`,
-        'resizable=yes',
-        'scrollbars=yes',
-      ].join(','),
-    );
+    const previewWindow = openTechnicalImageViewerWindow({
+      imageUrl,
+      title: imageTitle,
+      annotations: technicalAnnotations,
+    });
 
     if (!previewWindow) {
       showToast('기술자료 새 창이 차단되었습니다. 브라우저의 팝업 허용 후 다시 눌러주세요.', 'warning');
+    }
+  }, [
+    selectedDetail,
+    selectedMiddle,
+    selectedSpec?.image_url,
+    showToast,
+    technicalAnnotations,
+  ]);
+
+  const openTechnicalAnnotationEditor = useCallback(async () => {
+    if (!canManageTechnicalImages) {
+      showToast('기술자료 이미지를 편집할 권한이 없습니다.', 'warning');
       return;
     }
 
-    const safeImageUrl = escapeHtml(imageUrl);
-    const safeTitle = escapeHtml(imageTitle);
+    const imageKey = String(selectedSpec?.image_key || '').trim();
+    const imageUrl = String(selectedSpec?.image_url || '').trim();
+    if (!imageKey || !imageUrl) {
+      showToast('기술자료 이미지를 먼저 등록해주세요.', 'warning');
+      return;
+    }
 
-    previewWindow.document.open();
-    previewWindow.document.write(`<!doctype html>
-<html lang="ko">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>기술자료 · ${safeTitle}</title>
-  <style>
-    * { box-sizing: border-box; }
-    html, body { margin: 0; width: 100%; height: 100%; background: #0f172a; font-family: Arial, "Malgun Gothic", sans-serif; }
-    body { display: flex; flex-direction: column; overflow: hidden; }
-    .toolbar { height: 58px; min-height: 58px; padding: 8px 12px; display: flex; align-items: center; gap: 8px; background: #ffffff; border-bottom: 1px solid #cbd5e1; }
-    .title-wrap { min-width: 0; flex: 1; }
-    .title { color: #0f172a; font-size: 15px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .sub { margin-top: 3px; color: #64748b; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    button { height: 32px; padding: 0 11px; border: 1px solid #cbd5e1; border-radius: 6px; background: #ffffff; color: #334155; font-size: 12px; font-weight: 700; cursor: pointer; }
-    button:hover { background: #f8fafc; }
-    .viewer { flex: 1; min-height: 0; overflow: auto; display: grid; place-items: center; padding: 14px; }
-    .image-wrap { min-width: 100%; min-height: 100%; display: grid; place-items: center; }
-    img { display: block; background: #ffffff; box-shadow: 0 12px 36px rgba(0,0,0,.32); }
-    img.fit { max-width: calc(100vw - 28px); max-height: calc(100vh - 86px); width: auto; height: auto; object-fit: contain; }
-    img.original { max-width: none; max-height: none; width: auto; height: auto; object-fit: initial; }
-  </style>
-</head>
-<body>
-  <div class="toolbar">
-    <div class="title-wrap">
-      <div class="title">기술자료 상세보기</div>
-      <div class="sub">${safeTitle} · 본 창을 열어둔 상태로 기존 일위대가 화면을 함께 확인할 수 있습니다.</div>
-    </div>
-    <button id="fitButton" type="button">화면 맞춤</button>
-    <button id="originalButton" type="button">원본 크기</button>
-    <button id="closeButton" type="button">닫기</button>
-  </div>
-  <div class="viewer" id="viewer">
-    <div class="image-wrap">
-      <img id="technicalImage" class="fit" src="${safeImageUrl}" alt="${safeTitle}" />
-    </div>
-  </div>
-  <script>
-    (function () {
-      var image = document.getElementById('technicalImage');
-      var viewer = document.getElementById('viewer');
-      document.getElementById('fitButton').addEventListener('click', function () {
-        image.className = 'fit';
-        viewer.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+    const imageTitle = [selectedMiddle, selectedDetail]
+      .filter(Boolean)
+      .join(' · ') || '기술자료';
+
+    const result = await openTechnicalImageEditorWindow({
+      imageUrl,
+      title: imageTitle,
+      annotations: technicalAnnotations,
+    });
+
+    if (!result?.opened && result?.reason === 'blocked') {
+      showToast('기술자료 편집 창이 차단되었습니다. 브라우저의 팝업 허용 후 다시 눌러주세요.', 'warning');
+      return;
+    }
+    if (!result?.saved) return;
+
+    const nextAnnotations = normalizeTechnicalAnnotations(result.annotations);
+    setTechnicalAnnotationBusy(true);
+    try {
+      const { error } = await supabase.rpc('save_unit_price_technical_annotations', {
+        p_image_key: imageKey,
+        p_annotations: nextAnnotations,
       });
-      document.getElementById('originalButton').addEventListener('click', function () {
-        image.className = 'original';
-      });
-      document.getElementById('closeButton').addEventListener('click', function () {
-        window.close();
-      });
-    }());
-  </script>
-</body>
-</html>`);
-    previewWindow.document.close();
-    previewWindow.focus();
-  }, [selectedDetail, selectedMiddle, selectedSpec?.image_url, showToast]);
+      if (error) throw error;
+      setTechnicalAnnotations(nextAnnotations);
+      showToast(
+        nextAnnotations.length > 0
+          ? `기술자료 지시선 ${nextAnnotations.length}개를 저장했습니다.`
+          : '기술자료 지시선을 모두 삭제했습니다.',
+      );
+      try {
+        if (result.popup && !result.popup.closed) result.popup.close();
+      } catch (_error) {
+        // 팝업 닫기 실패는 저장 결과에 영향을 주지 않습니다.
+      }
+    } catch (error) {
+      console.error('기술자료 지시선 저장 실패:', error);
+      const message = String(error?.message || '');
+      showToast(
+        message.includes('save_unit_price_technical_annotations')
+          ? 'v52.48.5.32 Supabase SQL을 먼저 실행해주세요.'
+          : message || '기술자료 지시선을 저장하지 못했습니다.',
+        'error',
+      );
+    } finally {
+      setTechnicalAnnotationBusy(false);
+    }
+  }, [
+    canManageTechnicalImages,
+    selectedDetail,
+    selectedMiddle,
+    selectedSpec?.image_key,
+    selectedSpec?.image_url,
+    showToast,
+    technicalAnnotations,
+  ]);
 
   const accessibleProjects = useMemo(() => {
     const normalized = [projectName, ...projectOptions]
@@ -2402,6 +2444,26 @@ export default function UnitPriceAnalysis({
                         기술자료
                       </Typography>
                       <Box sx={{ flex: 1 }} />
+                      {technicalAnnotations.length > 0 && (
+                        <Chip
+                          size="small"
+                          label={`지시선 ${technicalAnnotations.length}`}
+                          variant="outlined"
+                          sx={{ height: 20, fontSize: '0.58rem', bgcolor: '#ffffff' }}
+                        />
+                      )}
+                      {canManageTechnicalImages && selectedSpec?.image_url && (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          startIcon={technicalAnnotationBusy ? <CircularProgress size={13} /> : <EditNoteRoundedIcon />}
+                          disabled={technicalAnnotationBusy}
+                          onClick={openTechnicalAnnotationEditor}
+                          sx={{ minHeight: 24, py: 0.1, px: 0.75, fontSize: '0.6rem' }}
+                        >
+                          지시선 편집
+                        </Button>
+                      )}
                       {canManageTechnicalImages && (
                         <Chip
                           size="small"
