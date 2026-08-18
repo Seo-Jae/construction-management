@@ -209,11 +209,28 @@ const getSharedPopupScript = () => String.raw`
       }
 `;
 
-const viewerHtml = ({ imageUrl, title, annotations, layout }) => {
+const normalizeTechnicalAccessories = (value) => (
+  Array.isArray(value)
+    ? value
+      .map((item, index) => ({
+        id: String(item?.id || `accessory-${index}`),
+        name: String(item?.name || '').trim() || `부속자재 ${index + 1}`,
+        imageUrl: String(item?.image_url || item?.imageUrl || '').trim(),
+        sortOrder: Number.isFinite(Number(item?.sort_order ?? item?.sortOrder))
+          ? Number(item?.sort_order ?? item?.sortOrder)
+          : index,
+      }))
+      .filter((item) => item.imageUrl)
+      .sort((first, second) => first.sortOrder - second.sortOrder)
+    : []
+);
+
+const viewerHtml = ({ imageUrl, title, annotations, layout, accessories }) => {
   const safeImageUrl = escapeHtml(imageUrl);
   const safeTitle = escapeHtml(title);
   const annotationJson = serializeForInlineScript(normalizeTechnicalAnnotations(annotations));
   const layoutJson = serializeForInlineScript(normalizeTechnicalSheetLayout(layout));
+  const accessoryJson = serializeForInlineScript(normalizeTechnicalAccessories(accessories));
 
   return `<!doctype html>
 <html lang="ko">
@@ -231,9 +248,10 @@ const viewerHtml = ({ imageUrl, title, annotations, layout }) => {
     .sub { margin-top: 3px; color: #64748b; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     button { height: 32px; padding: 0 11px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #334155; font-size: 12px; font-weight: 800; cursor: pointer; }
     button:hover { background: #f8fafc; }
-    .viewer { flex: 1; min-height: 0; overflow: auto; display: grid; place-items: center; padding: 16px; background: #0f172a; }
+    .workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0,1fr) 320px; background: #0f172a; }
+    .viewer { min-width: 0; min-height: 0; overflow: auto; display: grid; place-items: center; padding: 16px; background: #0f172a; }
     .sheet { background: #fff; box-shadow: 0 12px 36px rgba(0,0,0,.34); }
-    .sheet.fit { width: min(1120px, calc(100vw - 36px)); }
+    .sheet.fit { width: min(1040px, calc(100vw - 370px)); }
     .sheet.original { width: max-content; }
     .image-stage { position: relative; width: 100%; line-height: 0; background: #fff; }
     .sheet.fit .image-stage img { display: block; width: 100%; height: auto; }
@@ -257,6 +275,22 @@ const viewerHtml = ({ imageUrl, title, annotations, layout }) => {
     .caption-item.active { text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
     .caption-item.dimmed { opacity: .26; }
     .empty-caption { color: #94a3b8; font-size: 12px; font-weight: 700; }
+    .accessory-panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: #f8fafc; border-left: 1px solid #cbd5e1; }
+    .accessory-head { flex: 0 0 auto; padding: 12px 12px 10px; background: #fff; border-bottom: 1px solid #e2e8f0; }
+    .accessory-title { font-size: 13px; font-weight: 900; color: #0f172a; }
+    .accessory-help { margin-top: 3px; color: #64748b; font-size: 10px; line-height: 1.35; }
+    .accessory-list { flex: 1; min-height: 0; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 9px; }
+    .accessory-card { flex: 0 0 auto; overflow: hidden; border: 1px solid #dbe3ec; border-radius: 8px; background: #fff; box-shadow: 0 1px 2px rgba(15,23,42,.04); cursor: zoom-in; }
+    .accessory-card:hover { border-color: #93c5fd; box-shadow: 0 0 0 2px rgba(37,99,235,.08); }
+    .accessory-image-wrap { height: 150px; display: grid; place-items: center; padding: 7px; background: #fff; border-bottom: 1px solid #eef2f7; }
+    .accessory-image { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; }
+    .accessory-name { padding: 7px 9px 8px; color: #111827; font-size: 11px; font-weight: 900; line-height: 1.3; text-align: center; }
+    .accessory-empty { margin: auto 8px; padding: 24px 10px; border: 1px dashed #cbd5e1; border-radius: 8px; background: #fff; color: #94a3b8; font-size: 11px; font-weight: 700; line-height: 1.55; text-align: center; }
+    @media (max-width: 1050px) {
+      .workspace { grid-template-columns: minmax(0,1fr) 260px; }
+      .sheet.fit { width: min(900px, calc(100vw - 310px)); }
+      .accessory-image-wrap { height: 120px; }
+    }
   </style>
 </head>
 <body>
@@ -269,28 +303,39 @@ const viewerHtml = ({ imageUrl, title, annotations, layout }) => {
     <button id="originalButton" type="button">원본 크기</button>
     <button id="closeButton" type="button">닫기</button>
   </div>
-  <div class="viewer" id="viewer">
-    <div class="sheet fit" id="sheet">
-      <div class="image-stage" id="imageStage">
-        <img id="technicalImage" src="${safeImageUrl}" alt="${safeTitle}" />
-        <svg class="leader-layer" id="leaderLayer" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
-        <div id="overlayLayer"></div>
-      </div>
-      <div class="footer" id="footer">
-        <div class="caption-box" id="captionBox"></div>
+  <div class="workspace">
+    <div class="viewer" id="viewer">
+      <div class="sheet fit" id="sheet">
+        <div class="image-stage" id="imageStage">
+          <img id="technicalImage" src="${safeImageUrl}" alt="${safeTitle}" />
+          <svg class="leader-layer" id="leaderLayer" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+          <div id="overlayLayer"></div>
+        </div>
+        <div class="footer" id="footer">
+          <div class="caption-box" id="captionBox"></div>
+        </div>
       </div>
     </div>
+    <aside class="accessory-panel">
+      <div class="accessory-head">
+        <div class="accessory-title">상세 부속자재</div>
+        <div class="accessory-help">현재 공법에 연결된 공통 부속자재입니다. 이미지를 클릭하면 원본 크기로 확인할 수 있습니다.</div>
+      </div>
+      <div class="accessory-list" id="accessoryList"></div>
+    </aside>
   </div>
   <script>
     (function () {
       var annotations = ${annotationJson};
       var layout = ${layoutJson};
+      var accessories = ${accessoryJson};
       var activeId = '';
       var sheet = document.getElementById('sheet');
       var leaderLayer = document.getElementById('leaderLayer');
       var overlayLayer = document.getElementById('overlayLayer');
       var captionBox = document.getElementById('captionBox');
       var technicalImage = document.getElementById('technicalImage');
+      var accessoryList = document.getElementById('accessoryList');
 ${getSharedPopupScript()}
 
       function applyLayout() {
@@ -356,6 +401,30 @@ ${getSharedPopupScript()}
         });
       }
 
+      function renderAccessories() {
+        if (!accessories.length) {
+          accessoryList.innerHTML = '<div class="accessory-empty">현재 공법에 연결된<br/>상세 부속자재가 없습니다.</div>';
+          return;
+        }
+
+        accessoryList.innerHTML = accessories.map(function (item) {
+          return '<div class="accessory-card" data-url="' + esc(item.imageUrl) + '" title="클릭하여 크게 보기">' +
+            '<div class="accessory-image-wrap">' +
+              '<img class="accessory-image" src="' + esc(item.imageUrl) + '" alt="' + esc(item.name) + '" />' +
+            '</div>' +
+            '<div class="accessory-name">' + esc(item.name) + '</div>' +
+          '</div>';
+        }).join('');
+
+        Array.prototype.forEach.call(accessoryList.querySelectorAll('.accessory-card'), function (element) {
+          element.addEventListener('click', function () {
+            var url = element.getAttribute('data-url');
+            if (!url) return;
+            window.open(url, '_blank', 'noopener,noreferrer');
+          });
+        });
+      }
+
       document.getElementById('fitButton').addEventListener('click', function () {
         sheet.className = 'sheet fit';
         sheet.style.width = '';
@@ -369,6 +438,7 @@ ${getSharedPopupScript()}
       applyLayout();
       renderOverlay();
       renderCaption();
+      renderAccessories();
     }());
   </script>
 </body>
@@ -380,6 +450,7 @@ export const openTechnicalSheetViewerWindow = ({
   title = '기술자료',
   annotations = [],
   layout = DEFAULT_TECHNICAL_SHEET_LAYOUT,
+  accessories = [],
 }) => {
   const normalizedUrl = String(imageUrl || '').trim();
   if (!normalizedUrl) return null;
@@ -396,6 +467,7 @@ export const openTechnicalSheetViewerWindow = ({
     title,
     annotations,
     layout,
+    accessories,
   }));
   popup.document.close();
   popup.focus();
@@ -452,11 +524,11 @@ const editorHtml = ({ imageUrl, title, annotations, layout, sessionId }) => {
     .caption-name { min-width: 0; overflow-wrap: anywhere; }
     .caption-desc { grid-column: 2; margin-top: 1px; color: #475569; font-family: Arial, "Malgun Gothic", sans-serif; font-size: .64em; font-weight: 500; line-height: 1.25; letter-spacing: 0; white-space: pre-wrap; }
     .panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: #fff; border-left: 1px solid #cbd5e1; }
-    .panel-scroll { min-height: 0; overflow: auto; }
+    .panel-scroll { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
     .status { min-height: 46px; padding: 8px 10px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
     .status strong { display: block; font-size: 11px; }
     .status span { display: block; margin-top: 2px; color: #64748b; font-size: 10px; line-height: 1.35; }
-    .section { padding: 10px; border-bottom: 1px solid #e2e8f0; }
+    .section { flex: 0 0 auto; padding: 10px; border-bottom: 1px solid #e2e8f0; }
     .section-title { margin-bottom: 8px; color: #0f172a; font-size: 11px; font-weight: 900; }
     .fields { display: grid; gap: 8px; }
     .field label { display: block; margin-bottom: 3px; color: #475569; font-size: 10px; font-weight: 800; }
@@ -466,9 +538,9 @@ const editorHtml = ({ imageUrl, title, annotations, layout, sessionId }) => {
     .field-row { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
     .field-row.three { grid-template-columns: repeat(3, minmax(0,1fr)); }
     .check-row { display: flex; align-items: center; gap: 6px; min-height: 28px; font-size: 10px; font-weight: 800; color: #475569; }
-    .list-head { padding: 8px 10px; display: flex; align-items: center; gap: 6px; border-bottom: 1px solid #e2e8f0; }
+    .list-head { flex: 0 0 auto; padding: 8px 10px; display: flex; align-items: center; gap: 6px; border-bottom: 1px solid #e2e8f0; }
     .list-head strong { flex: 1; font-size: 11px; }
-    .list { max-height: 260px; overflow: auto; padding: 6px; }
+    .list { flex: 1; min-height: 0; max-height: none; overflow-y: auto; overflow-x: hidden; padding: 6px; }
     .item { margin-bottom: 5px; padding: 7px; display: grid; grid-template-columns: 26px minmax(0,1fr); gap: 6px; border: 1px solid #e2e8f0; border-radius: 6px; cursor: pointer; }
     .item:hover { background: #f8fafc; }
     .item.selected { border-color: #2563eb; background: #eff6ff; }
