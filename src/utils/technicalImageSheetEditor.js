@@ -327,8 +327,41 @@ const viewerHtml = ({ imageUrl, title, annotations, layout, accessories }) => {
     .accessory-preview-head { height: 30px; padding: 0 7px 0 9px; display: flex; align-items: center; gap: 6px; border-bottom: 1px solid #e2e8f0; background: #eff6ff; }
     .accessory-preview-title { flex: 1; min-width: 0; color: #1e3a8a; font-size: 10px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .accessory-preview-close { width: 24px; min-width: 24px; height: 24px; min-height: 24px; padding: 0; border: 0; background: transparent; color: #64748b; font-size: 16px; }
-    .accessory-preview-image-wrap { height: min(28vh, 250px); min-height: 150px; display: grid; place-items: center; padding: 7px; background: #fff; }
-    .accessory-preview-image { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; }
+
+    /* v52.48.5.37.3
+       번호/명칭을 직접 선택한 경우에는 업로드 상세이미지를 크게 보여줍니다.
+       세로형 상세자료의 제품사진 + 하단 규격설명이 함께 읽히도록
+       250px 강제 높이를 없애고 우측 패널 너비 전체를 사용합니다. */
+    .accessory-preview-image-wrap { position: relative; width: 100%; height: auto; min-height: 0; overflow: hidden; background: #fff; }
+    .accessory-preview-image { display: block; width: 100%; height: auto; max-width: none; max-height: none; object-fit: contain; }
+
+    /* 자동 외곽 여백 제거가 가능한 이미지에서는 흰 바깥 여백만 잘라 확대합니다.
+       원본 파일/Storage 이미지는 수정하지 않고 VIEW 표시만 조정합니다. */
+    .accessory-preview-image-wrap.smart-cropped { aspect-ratio: var(--crop-ratio); }
+    .accessory-preview-image-wrap.smart-cropped .accessory-preview-image {
+      position: absolute;
+      width: var(--crop-image-width);
+      height: auto;
+      left: var(--crop-image-left);
+      top: var(--crop-image-top);
+    }
+
+    /* 전체보기 목록에서 자재 하나를 눌렀을 때는 작은 미리보기 유지 */
+    .accessory-preview.compact .accessory-preview-image-wrap {
+      height: min(30vh, 285px);
+      min-height: 180px;
+      padding: 7px;
+      display: grid;
+      place-items: center;
+    }
+    .accessory-preview.compact .accessory-preview-image {
+      position: static;
+      width: auto;
+      height: auto;
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+    }
     @media (max-width: 1000px) {
       .workspace { grid-template-columns: minmax(0,1fr) 310px; }
       .sheet.fit { width: min(720px, calc(100vw - 350px)); }
@@ -577,21 +610,169 @@ ${getSharedPopupScript()}
         }));
       }
 
+      var previewRenderToken = 0;
+
+      function resetPreviewCrop() {
+        var wrap = accessoryPreviewImage.parentElement;
+        if (!wrap) return;
+        wrap.classList.remove('smart-cropped');
+        wrap.style.removeProperty('--crop-ratio');
+        wrap.style.removeProperty('--crop-image-width');
+        wrap.style.removeProperty('--crop-image-left');
+        wrap.style.removeProperty('--crop-image-top');
+      }
+
       function hideAccessoryPreview() {
-        accessoryPreview.classList.remove('open');
+        previewRenderToken += 1;
+        accessoryPreview.classList.remove('open', 'compact');
         accessoryPreviewTitle.textContent = '';
+        resetPreviewCrop();
         accessoryPreviewImage.removeAttribute('src');
+        accessoryPreviewImage.removeAttribute('crossorigin');
         accessoryPreviewImage.alt = '';
       }
 
-      function showAccessoryPreview(item) {
+      function applySmartPreviewCrop(image, token) {
+        if (!image || token !== previewRenderToken) return;
+
+        var naturalWidth = Number(image.naturalWidth || 0);
+        var naturalHeight = Number(image.naturalHeight || 0);
+        if (!naturalWidth || !naturalHeight) return;
+
+        try {
+          var maxSampleSide = 520;
+          var scale = Math.min(
+            1,
+            maxSampleSide / Math.max(naturalWidth, naturalHeight)
+          );
+          var sampleWidth = Math.max(1, Math.round(naturalWidth * scale));
+          var sampleHeight = Math.max(1, Math.round(naturalHeight * scale));
+
+          var canvas = document.createElement('canvas');
+          canvas.width = sampleWidth;
+          canvas.height = sampleHeight;
+          var context = canvas.getContext('2d', { willReadFrequently: true });
+          if (!context) return;
+
+          context.drawImage(image, 0, 0, sampleWidth, sampleHeight);
+          var pixels = context.getImageData(
+            0,
+            0,
+            sampleWidth,
+            sampleHeight
+          ).data;
+
+          var minX = sampleWidth;
+          var minY = sampleHeight;
+          var maxX = -1;
+          var maxY = -1;
+          var threshold = 245;
+
+          for (var y = 0; y < sampleHeight; y += 1) {
+            for (var x = 0; x < sampleWidth; x += 1) {
+              var offset = (y * sampleWidth + x) * 4;
+              var alpha = pixels[offset + 3];
+              if (alpha < 20) continue;
+
+              var red = pixels[offset];
+              var green = pixels[offset + 1];
+              var blue = pixels[offset + 2];
+
+              if (
+                red < threshold
+                || green < threshold
+                || blue < threshold
+              ) {
+                if (x < minX) minX = x;
+                if (x > maxX) maxX = x;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+              }
+            }
+          }
+
+          if (
+            maxX < minX
+            || maxY < minY
+            || token !== previewRenderToken
+          ) {
+            return;
+          }
+
+          // 기술자료 글자/제품 외곽을 너무 딱 붙여 자르지 않도록 작은 여백을 둡니다.
+          var margin = Math.max(
+            5,
+            Math.round(Math.min(sampleWidth, sampleHeight) * 0.018)
+          );
+          minX = Math.max(0, minX - margin);
+          minY = Math.max(0, minY - margin);
+          maxX = Math.min(sampleWidth - 1, maxX + margin);
+          maxY = Math.min(sampleHeight - 1, maxY + margin);
+
+          var cropSampleWidth = maxX - minX + 1;
+          var cropSampleHeight = maxY - minY + 1;
+
+          // 거의 원본 전체라면 별도 crop은 하지 않습니다.
+          if (
+            cropSampleWidth / sampleWidth > 0.985
+            && cropSampleHeight / sampleHeight > 0.985
+          ) {
+            return;
+          }
+
+          var left = minX / scale;
+          var top = minY / scale;
+          var cropWidth = cropSampleWidth / scale;
+          var cropHeight = cropSampleHeight / scale;
+
+          var wrap = image.parentElement;
+          if (!wrap || token !== previewRenderToken) return;
+
+          wrap.style.setProperty('--crop-ratio', cropWidth + ' / ' + cropHeight);
+          wrap.style.setProperty(
+            '--crop-image-width',
+            ((naturalWidth / cropWidth) * 100) + '%'
+          );
+          wrap.style.setProperty(
+            '--crop-image-left',
+            (-(left / cropWidth) * 100) + '%'
+          );
+          wrap.style.setProperty(
+            '--crop-image-top',
+            (-(top / cropHeight) * 100) + '%'
+          );
+          wrap.classList.add('smart-cropped');
+        } catch (_error) {
+          // Supabase/CORS 등으로 픽셀 분석이 불가능한 경우
+          // 원본 전체비율 표시로 자동 fallback합니다.
+          resetPreviewCrop();
+        }
+      }
+
+      function showAccessoryPreview(item, mode) {
         if (!item || !item.imageUrl) {
           hideAccessoryPreview();
           return;
         }
+
+        previewRenderToken += 1;
+        var token = previewRenderToken;
+        var compact = mode === 'compact';
+
+        accessoryPreview.classList.toggle('compact', compact);
         accessoryPreviewTitle.textContent = item.name || '상세 부속자재';
-        accessoryPreviewImage.src = item.imageUrl;
+        resetPreviewCrop();
+
         accessoryPreviewImage.alt = item.name || '상세 부속자재';
+        accessoryPreviewImage.setAttribute('crossorigin', 'anonymous');
+        accessoryPreviewImage.onload = function () {
+          if (token !== previewRenderToken) return;
+          if (!compact) applySmartPreviewCrop(accessoryPreviewImage, token);
+        };
+        accessoryPreviewImage.onerror = function () {
+          resetPreviewCrop();
+        };
+        accessoryPreviewImage.src = item.imageUrl;
         accessoryPreview.classList.add('open');
       }
 
@@ -614,7 +795,7 @@ ${getSharedPopupScript()}
             + ' · 연결 ' + visible.length + '개';
 
           // 번호/명칭을 클릭하면 연결된 첫 번째 부속자재가 우측에 즉시 보입니다.
-          if (visible.length) showAccessoryPreview(visible[0]);
+          if (visible.length) showAccessoryPreview(visible[0], 'detail');
           else hideAccessoryPreview();
         } else {
           accessoryContext.textContent = '';
@@ -650,7 +831,12 @@ ${getSharedPopupScript()}
             var item = visible.find(function (candidate) {
               return String(candidate.id) === String(id);
             });
-            if (item) showAccessoryPreview(item);
+            if (item) {
+              showAccessoryPreview(
+                item,
+                showAllAccessories ? 'compact' : 'detail'
+              );
+            }
           });
         });
       }
