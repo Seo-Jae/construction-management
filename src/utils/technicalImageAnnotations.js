@@ -20,6 +20,24 @@ const sanitizeColor = (value, fallback) => {
   return /^#[0-9a-f]{6}$/i.test(normalized) ? normalized : fallback;
 };
 
+// v52.48.5.33 지시선 각도 / 시작위치 / 명칭 방향
+const normalizeLeaderAngle = (value) => {
+  const parsed = Number(value);
+  return [30, 60, 90].includes(parsed) ? parsed : 90;
+};
+
+const normalizeLeaderStart = (value) => (
+  ['auto', 'left', 'right', 'top', 'bottom'].includes(String(value || ''))
+    ? String(value)
+    : 'auto'
+);
+
+const normalizeLabelDirection = (value, labelX = 50) => {
+  const normalized = String(value || '').trim();
+  if (normalized === 'left' || normalized === 'right') return normalized;
+  return Number(labelX) <= 50 ? 'right' : 'left';
+};
+
 const createAnnotationId = () => (
   globalThis.crypto?.randomUUID?.() ||
   `tech-${Date.now()}-${Math.random().toString(16).slice(2)}`
@@ -38,6 +56,12 @@ export const normalizeTechnicalAnnotations = (value) => {
         title: String(item?.title || '').trim(),
         description: String(item?.description || '').trim(),
         color: sanitizeColor(item?.color, fallbackColor),
+        leaderAngle: normalizeLeaderAngle(item?.leaderAngle),
+        leaderStart: normalizeLeaderStart(item?.leaderStart),
+        labelDirection: normalizeLabelDirection(
+          item?.labelDirection,
+          clampPercent(item?.labelX, 20),
+        ),
         targetX: clampPercent(item?.targetX, 50),
         targetY: clampPercent(item?.targetY, 50),
         labelX: clampPercent(item?.labelX, 20),
@@ -125,7 +149,7 @@ const viewerHtml = ({ imageUrl, title, annotations }) => {
     .leader-line.active { stroke-width: 1.2; opacity: 1; }
     .target-highlight { position: absolute; width: 18px; height: 18px; border-radius: 50%; transform: translate(-50%,-50%); border: 3px solid var(--color); background: color-mix(in srgb, var(--color) 18%, transparent); opacity: .35; pointer-events: none; transition: width .12s ease, height .12s ease, opacity .12s ease, box-shadow .12s ease; }
     .target-highlight.active { width: 34px; height: 34px; opacity: 1; box-shadow: 0 0 0 7px color-mix(in srgb, var(--color) 20%, transparent); }
-    .annotation-label { position: absolute; transform: translate(-50%,-50%); display: flex; align-items: center; gap: 6px; max-width: 42%; line-height: 1.15; cursor: default; pointer-events: auto; filter: drop-shadow(0 1px 1px rgba(255,255,255,.9)); }
+    .annotation-label { position: absolute; display: flex; align-items: center; gap: 6px; max-width: 42%; line-height: 1.15; cursor: default; pointer-events: auto; filter: drop-shadow(0 1px 1px rgba(255,255,255,.9)); }
     .annotation-label.dimmed { opacity: .36; }
     .annotation-label.active { opacity: 1; z-index: 10; }
     .symbol { width: 26px; height: 26px; min-width: 26px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: var(--color); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.45); font-size: 12px; font-weight: 900; line-height: 1; }
@@ -194,10 +218,80 @@ const viewerHtml = ({ imageUrl, title, annotations }) => {
         renderLegend();
       }
 
+      function getStartSide(item) {
+        var requested = String(item.leaderStart || 'auto');
+        if (requested !== 'auto') return requested;
+        var dx = Number(item.targetX) - Number(item.labelX);
+        var dy = Number(item.targetY) - Number(item.labelY);
+        if (Math.abs(dx) >= Math.abs(dy)) return dx < 0 ? 'left' : 'right';
+        return dy < 0 ? 'top' : 'bottom';
+      }
+
+      function getLeaderPoints(item) {
+        var labelX = Number(item.labelX);
+        var labelY = Number(item.labelY);
+        var targetX = Number(item.targetX);
+        var targetY = Number(item.targetY);
+        var side = getStartSide(item);
+        var angle = [30, 60, 90].indexOf(Number(item.leaderAngle)) >= 0
+          ? Number(item.leaderAngle)
+          : 90;
+        var startX = labelX;
+        var startY = labelY;
+        var edge = 1.35;
+
+        if (side === 'left') startX -= edge;
+        if (side === 'right') startX += edge;
+        if (side === 'top') startY -= edge;
+        if (side === 'bottom') startY += edge;
+
+        var elbowX = startX;
+        var elbowY = startY;
+
+        if (angle === 90) {
+          if (side === 'left' || side === 'right') {
+            elbowX = targetX;
+            elbowY = startY;
+          } else {
+            elbowX = startX;
+            elbowY = targetY;
+          }
+        } else {
+          var radians = angle * Math.PI / 180;
+          if (side === 'left' || side === 'right') {
+            var verticalDistance = Math.abs(targetY - startY);
+            var horizontalOffset = verticalDistance / Math.tan(radians);
+            var horizontalDirection = targetX >= startX ? 1 : -1;
+            elbowX = targetX - (horizontalDirection * horizontalOffset);
+            elbowY = startY;
+          } else {
+            var horizontalDistance = Math.abs(targetX - startX);
+            var verticalOffset = horizontalDistance * Math.tan(radians);
+            var verticalDirection = targetY >= startY ? 1 : -1;
+            elbowX = startX;
+            elbowY = targetY - (verticalDirection * verticalOffset);
+          }
+        }
+
+        function clampPoint(value) { return Math.max(0, Math.min(100, value)); }
+        return [
+          clampPoint(startX) + ',' + clampPoint(startY),
+          clampPoint(elbowX) + ',' + clampPoint(elbowY),
+          clampPoint(targetX) + ',' + clampPoint(targetY)
+        ].join(' ');
+      }
+
+      function getLabelStyle(item) {
+        var direction = item.labelDirection === 'left' ? 'left' : 'right';
+        return direction === 'left'
+          ? 'transform:translate(calc(-100% + 13px),-50%);flex-direction:row-reverse;'
+          : 'transform:translate(-13px,-50%);flex-direction:row;';
+      }
+
       function renderOverlay() {
         leaderLayer.innerHTML = annotations.map(function (item) {
           var active = !activeId || activeId === item.id;
-          return '<line class="leader-line ' + (activeId ? (active ? 'active' : 'dimmed') : '') + '" data-id="' + esc(item.id) + '" x1="' + item.labelX + '" y1="' + item.labelY + '" x2="' + item.targetX + '" y2="' + item.targetY + '" stroke="' + esc(item.color) + '" />';
+          return '<polyline class="leader-line ' + (activeId ? (active ? 'active' : 'dimmed') : '') + '" data-id="' + esc(item.id) + '" points="' + getLeaderPoints(item) + '" fill="none" stroke="' + esc(item.color) + '" />';
         }).join('');
 
         overlayLayer.innerHTML = annotations.map(function (item) {
@@ -205,7 +299,7 @@ const viewerHtml = ({ imageUrl, title, annotations }) => {
           var stateClass = activeId ? (active ? 'active' : 'dimmed') : '';
           var title = item.title || '명칭 미입력';
           return '<div class="target-highlight ' + (activeId && active ? 'active' : '') + '" style="left:' + item.targetX + '%;top:' + item.targetY + '%;--color:' + esc(item.color) + '"></div>' +
-            '<div class="annotation-label ' + stateClass + '" data-id="' + esc(item.id) + '" style="left:' + item.labelX + '%;top:' + item.labelY + '%;--color:' + esc(item.color) + '">' +
+            '<div class="annotation-label ' + stateClass + '" data-id="' + esc(item.id) + '" style="left:' + item.labelX + '%;top:' + item.labelY + '%;--color:' + esc(item.color) + ';' + getLabelStyle(item) + '">' +
               '<span class="symbol">' + esc(item.symbol) + '</span>' +
               '<span class="label-text">' + esc(title) + '</span>' +
             '</div>';
@@ -294,7 +388,7 @@ const editorHtml = ({ imageUrl, title, annotations, sessionId }) => {
     * { box-sizing: border-box; }
     html, body { margin: 0; width: 100%; height: 100%; font-family: Arial, "Malgun Gothic", sans-serif; color: #0f172a; }
     body { overflow: hidden; background: #e2e8f0; }
-    button, input, textarea { font: inherit; }
+    button, input, textarea, select { font: inherit; }
     button { min-height: 32px; padding: 0 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #334155; font-size: 12px; font-weight: 800; cursor: pointer; }
     button:hover:not(:disabled) { background: #f8fafc; }
     button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
@@ -314,7 +408,7 @@ const editorHtml = ({ imageUrl, title, annotations, sessionId }) => {
     .leader-line.selected { stroke-width: 1.3; opacity: 1; }
     .target { position: absolute; width: 16px; height: 16px; border-radius: 50%; transform: translate(-50%,-50%); border: 3px solid #fff; background: var(--color); box-shadow: 0 1px 5px rgba(0,0,0,.45); cursor: move; line-height: 1; z-index: 5; }
     .target.selected { width: 22px; height: 22px; box-shadow: 0 0 0 5px color-mix(in srgb, var(--color) 25%, transparent), 0 1px 5px rgba(0,0,0,.45); }
-    .annotation-label { position: absolute; transform: translate(-50%,-50%); display: flex; align-items: center; gap: 5px; max-width: 44%; cursor: move; line-height: 1.1; z-index: 4; }
+    .annotation-label { position: absolute; display: flex; align-items: center; gap: 5px; max-width: 44%; cursor: move; line-height: 1.1; z-index: 4; }
     .annotation-label.selected { z-index: 8; }
     .symbol { width: 27px; height: 27px; min-width: 27px; border-radius: 50%; display: grid; place-items: center; color: #fff; background: var(--color); border: 2px solid #fff; box-shadow: 0 1px 4px rgba(0,0,0,.45); font-size: 12px; font-weight: 900; }
     .label-text { padding: 3px 5px; border-radius: 4px; color: #111827; background: rgba(255,255,255,.9); border: 1px solid #cbd5e1; font-size: 11px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -325,10 +419,11 @@ const editorHtml = ({ imageUrl, title, annotations, sessionId }) => {
     .status span { display: block; margin-top: 2px; color: #64748b; font-size: 10px; line-height: 1.35; }
     .fields { padding: 10px; border-bottom: 1px solid #e2e8f0; display: grid; gap: 8px; }
     .field label { display: block; margin-bottom: 3px; color: #475569; font-size: 10px; font-weight: 800; }
-    .field input[type="text"], .field textarea { width: 100%; border: 1px solid #cbd5e1; border-radius: 5px; padding: 6px 7px; color: #0f172a; font-size: 11px; outline: none; }
-    .field input:focus, .field textarea:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,.12); }
+    .field input[type="text"], .field textarea, .field select { width: 100%; border: 1px solid #cbd5e1; border-radius: 5px; padding: 6px 7px; color: #0f172a; background: #fff; font-size: 11px; outline: none; }
+    .field input:focus, .field textarea:focus, .field select:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,.12); }
     .field textarea { min-height: 58px; resize: vertical; }
     .field-row { display: grid; grid-template-columns: 90px minmax(0,1fr); gap: 8px; }
+    .field-row.three { grid-template-columns: repeat(3, minmax(0,1fr)); }
     .color-row { display: flex; align-items: center; gap: 7px; }
     .color-row input { width: 40px; height: 28px; padding: 1px; border: 1px solid #cbd5e1; border-radius: 5px; background: #fff; }
     .list-head { padding: 8px 10px; display: flex; align-items: center; gap: 6px; border-bottom: 1px solid #e2e8f0; }
@@ -349,8 +444,8 @@ const editorHtml = ({ imageUrl, title, annotations, sessionId }) => {
   <div class="app">
     <div class="toolbar">
       <div class="title-wrap">
-        <div class="title">기술자료 편집기 v1 · ${safeTitle}</div>
-        <div class="sub">지시선 추가 → 이미지의 부재 위치 클릭 → 명칭을 둘 위치 클릭. 생성 후 양 끝점을 마우스로 끌어 위치를 조정합니다.</div>
+        <div class="title">기술자료 편집기 v1.1 · ${safeTitle}</div>
+        <div class="sub">기본 90° 직교 지시선으로 생성됩니다. 필요 시 30°·60°·90°, 시작 위치, 명칭 전개 방향을 선택할 수 있습니다.</div>
       </div>
       <button id="addButton" type="button">+ 지시선 추가</button>
       <button id="deleteButton" type="button" class="danger">선택 삭제</button>
@@ -378,6 +473,33 @@ const editorHtml = ({ imageUrl, title, annotations, sessionId }) => {
             <div class="field">
               <label for="colorInput">표시 색상</label>
               <div class="color-row"><input id="colorInput" type="color" value="#dc2626" /><span id="colorText"></span></div>
+            </div>
+          </div>
+          <div class="field-row three">
+            <div class="field">
+              <label for="leaderAngleInput">지시선 각도</label>
+              <select id="leaderAngleInput">
+                <option value="90">90° 직교</option>
+                <option value="60">60°</option>
+                <option value="30">30°</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="leaderStartInput">지시선 시작</label>
+              <select id="leaderStartInput">
+                <option value="auto">자동</option>
+                <option value="left">왼쪽</option>
+                <option value="right">오른쪽</option>
+                <option value="top">위</option>
+                <option value="bottom">아래</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="labelDirectionInput">명칭 방향</label>
+              <select id="labelDirectionInput">
+                <option value="right">→ 오른쪽</option>
+                <option value="left">← 왼쪽</option>
+              </select>
             </div>
           </div>
           <div class="field">
@@ -414,6 +536,9 @@ const editorHtml = ({ imageUrl, title, annotations, sessionId }) => {
       var descriptionInput = document.getElementById('descriptionInput');
       var colorInput = document.getElementById('colorInput');
       var colorText = document.getElementById('colorText');
+      var leaderAngleInput = document.getElementById('leaderAngleInput');
+      var leaderStartInput = document.getElementById('leaderStartInput');
+      var labelDirectionInput = document.getElementById('labelDirectionInput');
 
       function esc(value) {
         return String(value || '').replace(/[&<>\"']/g, function (char) {
@@ -427,6 +552,76 @@ const editorHtml = ({ imageUrl, title, annotations, sessionId }) => {
           : 'annotation-' + Date.now() + '-' + Math.random().toString(16).slice(2);
       }
       function current() { return annotations.find(function (item) { return item.id === selectedId; }) || null; }
+
+      function getStartSide(item) {
+        var requested = String(item.leaderStart || 'auto');
+        if (requested !== 'auto') return requested;
+        var dx = Number(item.targetX) - Number(item.labelX);
+        var dy = Number(item.targetY) - Number(item.labelY);
+        if (Math.abs(dx) >= Math.abs(dy)) return dx < 0 ? 'left' : 'right';
+        return dy < 0 ? 'top' : 'bottom';
+      }
+
+      function getLeaderPoints(item) {
+        var labelX = Number(item.labelX);
+        var labelY = Number(item.labelY);
+        var targetX = Number(item.targetX);
+        var targetY = Number(item.targetY);
+        var side = getStartSide(item);
+        var angle = [30, 60, 90].indexOf(Number(item.leaderAngle)) >= 0
+          ? Number(item.leaderAngle)
+          : 90;
+        var startX = labelX;
+        var startY = labelY;
+        var edge = 1.35;
+
+        if (side === 'left') startX -= edge;
+        if (side === 'right') startX += edge;
+        if (side === 'top') startY -= edge;
+        if (side === 'bottom') startY += edge;
+
+        var elbowX = startX;
+        var elbowY = startY;
+
+        if (angle === 90) {
+          if (side === 'left' || side === 'right') {
+            elbowX = targetX;
+            elbowY = startY;
+          } else {
+            elbowX = startX;
+            elbowY = targetY;
+          }
+        } else {
+          var radians = angle * Math.PI / 180;
+          if (side === 'left' || side === 'right') {
+            var verticalDistance = Math.abs(targetY - startY);
+            var horizontalOffset = verticalDistance / Math.tan(radians);
+            var horizontalDirection = targetX >= startX ? 1 : -1;
+            elbowX = targetX - (horizontalDirection * horizontalOffset);
+            elbowY = startY;
+          } else {
+            var horizontalDistance = Math.abs(targetX - startX);
+            var verticalOffset = horizontalDistance * Math.tan(radians);
+            var verticalDirection = targetY >= startY ? 1 : -1;
+            elbowX = startX;
+            elbowY = targetY - (verticalDirection * verticalOffset);
+          }
+        }
+
+        return [
+          clamp(startX) + ',' + clamp(startY),
+          clamp(elbowX) + ',' + clamp(elbowY),
+          clamp(targetX) + ',' + clamp(targetY)
+        ].join(' ');
+      }
+
+      function getLabelStyle(item) {
+        var direction = item.labelDirection === 'left' ? 'left' : 'right';
+        return direction === 'left'
+          ? 'transform:translate(calc(-100% + 13.5px),-50%);flex-direction:row-reverse;'
+          : 'transform:translate(-13.5px,-50%);flex-direction:row;';
+      }
+
       function markDirty() { dirty = true; document.getElementById('dirtyText').textContent = '저장 필요'; }
       function pointFromEvent(event) {
         var rect = stage.getBoundingClientRect();
@@ -449,7 +644,7 @@ const editorHtml = ({ imageUrl, title, annotations, sessionId }) => {
         } else if (addStep === 'label') {
           statusBox.innerHTML = '<strong>② 명칭을 둘 위치를 클릭하세요.</strong><span>번호/기호와 명칭이 표시될 위치를 클릭하면 새 항목이 생성됩니다.</span>';
         } else if (selected) {
-          statusBox.innerHTML = '<strong>' + esc(selected.symbol) + ' · ' + esc(selected.title || '명칭 미입력') + '</strong><span>원형 번호 또는 부재 위치 점을 드래그하면 지시선 위치를 바꿀 수 있습니다.</span>';
+          statusBox.innerHTML = '<strong>' + esc(selected.symbol) + ' · ' + esc(selected.title || '명칭 미입력') + '</strong><span>번호/명칭 또는 부재 위치를 드래그하고, 30°·60°·90° 각도와 시작 위치·명칭 방향을 조정할 수 있습니다.</span>';
         } else {
           statusBox.innerHTML = '<strong>지시선을 추가하거나 항목을 선택하세요.</strong><span>저장은 원본 이미지를 변경하지 않고 좌표·명칭 데이터만 별도로 보관합니다.</span>';
         }
@@ -461,20 +656,28 @@ const editorHtml = ({ imageUrl, title, annotations, sessionId }) => {
         titleInput.disabled = disabled;
         descriptionInput.disabled = disabled;
         colorInput.disabled = disabled;
+        leaderAngleInput.disabled = disabled;
+        leaderStartInput.disabled = disabled;
+        labelDirectionInput.disabled = disabled;
         symbolInput.value = item ? item.symbol : '';
         titleInput.value = item ? item.title : '';
         descriptionInput.value = item ? item.description : '';
         colorInput.value = item ? item.color : '#dc2626';
         colorText.textContent = item ? item.color : '';
+        leaderAngleInput.value = item ? String(item.leaderAngle || 90) : '90';
+        leaderStartInput.value = item ? String(item.leaderStart || 'auto') : 'auto';
+        labelDirectionInput.value = item
+          ? String(item.labelDirection || (Number(item.labelX) <= 50 ? 'right' : 'left'))
+          : 'right';
       }
       function renderOverlay() {
         leaderLayer.innerHTML = annotations.map(function (item) {
-          return '<line class="leader-line ' + (item.id === selectedId ? 'selected' : '') + '" x1="' + item.labelX + '" y1="' + item.labelY + '" x2="' + item.targetX + '" y2="' + item.targetY + '" stroke="' + esc(item.color) + '" />';
+          return '<polyline class="leader-line ' + (item.id === selectedId ? 'selected' : '') + '" points="' + getLeaderPoints(item) + '" fill="none" stroke="' + esc(item.color) + '" />';
         }).join('');
         overlayLayer.innerHTML = annotations.map(function (item) {
           var selected = item.id === selectedId ? 'selected' : '';
           return '<div class="target ' + selected + '" data-id="' + esc(item.id) + '" data-kind="target" style="left:' + item.targetX + '%;top:' + item.targetY + '%;--color:' + esc(item.color) + '"></div>' +
-            '<div class="annotation-label ' + selected + '" data-id="' + esc(item.id) + '" data-kind="label" style="left:' + item.labelX + '%;top:' + item.labelY + '%;--color:' + esc(item.color) + '">' +
+            '<div class="annotation-label ' + selected + '" data-id="' + esc(item.id) + '" data-kind="label" style="left:' + item.labelX + '%;top:' + item.labelY + '%;--color:' + esc(item.color) + ';' + getLabelStyle(item) + '">' +
               '<span class="symbol">' + esc(item.symbol) + '</span><span class="label-text">' + esc(item.title || '명칭 미입력') + '</span></div>';
         }).join('');
         Array.prototype.forEach.call(overlayLayer.querySelectorAll('[data-id]'), function (element) {
@@ -541,6 +744,9 @@ const editorHtml = ({ imageUrl, title, annotations, sessionId }) => {
           var item = {
             id: createId(), symbol: String(nextNumber), title: '', description: '',
             color: palette[annotations.length % palette.length],
+            leaderAngle: 90,
+            leaderStart: 'auto',
+            labelDirection: point.x <= 50 ? 'right' : 'left',
             targetX: pendingTarget.x, targetY: pendingTarget.y,
             labelX: point.x, labelY: point.y, sortOrder: annotations.length
           };
@@ -566,6 +772,9 @@ const editorHtml = ({ imageUrl, title, annotations, sessionId }) => {
       titleInput.addEventListener('input', function () { updateSelected('title', titleInput.value); });
       descriptionInput.addEventListener('input', function () { updateSelected('description', descriptionInput.value); });
       colorInput.addEventListener('input', function () { colorText.textContent = colorInput.value; updateSelected('color', colorInput.value); });
+      leaderAngleInput.addEventListener('change', function () { updateSelected('leaderAngle', Number(leaderAngleInput.value) || 90); });
+      leaderStartInput.addEventListener('change', function () { updateSelected('leaderStart', leaderStartInput.value); });
+      labelDirectionInput.addEventListener('change', function () { updateSelected('labelDirection', labelDirectionInput.value); });
 
       document.getElementById('deleteButton').addEventListener('click', function () {
         var index = annotations.findIndex(function (item) { return item.id === selectedId; });
