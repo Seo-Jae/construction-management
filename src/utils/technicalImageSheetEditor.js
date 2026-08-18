@@ -285,9 +285,45 @@ const viewerHtml = ({ imageUrl, title, annotations, layout, accessories }) => {
     .sheet { background: #fff; box-shadow: 0 12px 36px rgba(0,0,0,.34); }
     .sheet.fit { width: min(780px, calc(100vw - 390px)); }
     .sheet.original { width: max-content; }
-    .image-stage { position: relative; width: 100%; line-height: 0; background: #fff; }
-    .sheet.fit .image-stage img { display: block; width: 100%; height: auto; }
-    .sheet.original .image-stage img { display: block; width: auto; height: auto; max-width: none; max-height: none; }
+
+    /* v52.48.5.37.4
+       업로드 이미지의 가로/세로 비율과 관계없이 VIEW의 도면 영역은
+       일정한 3:2 박스로 유지하고, 원본 이미지는 박스 안에 비율 유지(contain)로 축소합니다.
+       지시선 좌표는 실제 이미지 영역(image-canvas)을 기준으로 유지합니다. */
+    .image-stage {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 3 / 2;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      line-height: 0;
+      background: #fff;
+    }
+    .image-canvas {
+      position: relative;
+      flex: 0 0 auto;
+      line-height: 0;
+    }
+    .sheet.fit .image-canvas img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .sheet.original .image-stage {
+      display: block;
+      aspect-ratio: auto;
+      overflow: visible;
+    }
+    .sheet.original .image-canvas img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      max-width: none;
+      max-height: none;
+      object-fit: contain;
+    }
     .leader-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
     .leader-line { stroke: #2563eb; stroke-width: .78; vector-effect: non-scaling-stroke; fill: none; opacity: .82; transition: stroke-width .12s ease, opacity .12s ease; }
     .leader-line.dimmed { opacity: .22; }
@@ -382,9 +418,11 @@ const viewerHtml = ({ imageUrl, title, annotations, layout, accessories }) => {
     <div class="viewer" id="viewer">
       <div class="sheet fit" id="sheet">
         <div class="image-stage" id="imageStage">
-          <img id="technicalImage" src="${safeImageUrl}" alt="${safeTitle}" />
-          <svg class="leader-layer" id="leaderLayer" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
-          <div id="overlayLayer"></div>
+          <div class="image-canvas" id="imageCanvas">
+            <img id="technicalImage" src="${safeImageUrl}" alt="${safeTitle}" />
+            <svg class="leader-layer" id="leaderLayer" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+            <div id="overlayLayer"></div>
+          </div>
         </div>
         <div class="footer" id="footer">
           <div class="caption-box" id="captionBox"></div>
@@ -421,6 +459,8 @@ const viewerHtml = ({ imageUrl, title, annotations, layout, accessories }) => {
       var hoverAnnotationId = '';
       var showAllAccessories = false;
       var sheet = document.getElementById('sheet');
+      var imageStage = document.getElementById('imageStage');
+      var imageCanvas = document.getElementById('imageCanvas');
       var leaderLayer = document.getElementById('leaderLayer');
       var overlayLayer = document.getElementById('overlayLayer');
       var captionBox = document.getElementById('captionBox');
@@ -433,6 +473,43 @@ const viewerHtml = ({ imageUrl, title, annotations, layout, accessories }) => {
       var accessoryPreviewImage = document.getElementById('accessoryPreviewImage');
       var accessoryPreviewClose = document.getElementById('accessoryPreviewClose');
 ${getSharedPopupScript()}
+
+      function fitTechnicalImageCanvas() {
+        if (
+          !technicalImage
+          || !technicalImage.naturalWidth
+          || !technicalImage.naturalHeight
+        ) {
+          return;
+        }
+
+        if (sheet.classList.contains('original')) {
+          imageStage.style.aspectRatio = 'auto';
+          imageStage.style.height = technicalImage.naturalHeight + 'px';
+          imageCanvas.style.width = technicalImage.naturalWidth + 'px';
+          imageCanvas.style.height = technicalImage.naturalHeight + 'px';
+          return;
+        }
+
+        imageStage.style.removeProperty('height');
+        imageStage.style.removeProperty('aspect-ratio');
+
+        var stageRect = imageStage.getBoundingClientRect();
+        var stageWidth = Math.max(1, stageRect.width);
+        var stageHeight = Math.max(1, stageRect.height);
+        var imageRatio = technicalImage.naturalWidth / technicalImage.naturalHeight;
+
+        var canvasWidth = stageWidth;
+        var canvasHeight = canvasWidth / imageRatio;
+
+        if (canvasHeight > stageHeight) {
+          canvasHeight = stageHeight;
+          canvasWidth = canvasHeight * imageRatio;
+        }
+
+        imageCanvas.style.width = Math.max(1, canvasWidth) + 'px';
+        imageCanvas.style.height = Math.max(1, canvasHeight) + 'px';
+      }
 
       function applyLayout() {
         document.getElementById('footer').style.setProperty('--footer-height', layout.footerHeight + 'px');
@@ -856,17 +933,32 @@ ${getSharedPopupScript()}
       document.getElementById('fitButton').addEventListener('click', function () {
         sheet.className = 'sheet fit';
         sheet.style.width = '';
+        window.requestAnimationFrame(fitTechnicalImageCanvas);
       });
       document.getElementById('originalButton').addEventListener('click', function () {
         sheet.className = 'sheet original';
-        if (technicalImage.naturalWidth) sheet.style.width = technicalImage.naturalWidth + 'px';
+        if (technicalImage.naturalWidth) {
+          sheet.style.width = technicalImage.naturalWidth + 'px';
+        }
+        window.requestAnimationFrame(fitTechnicalImageCanvas);
       });
       document.getElementById('closeButton').addEventListener('click', function () { window.close(); });
+
+      technicalImage.addEventListener('load', fitTechnicalImageCanvas);
+      window.addEventListener('resize', function () {
+        if (sheet.classList.contains('fit')) {
+          window.requestAnimationFrame(fitTechnicalImageCanvas);
+        }
+      });
 
       applyLayout();
       renderOverlay();
       renderCaption();
       renderAccessories();
+
+      if (technicalImage.complete) {
+        window.requestAnimationFrame(fitTechnicalImageCanvas);
+      }
     }());
   </script>
 </body>
@@ -943,8 +1035,30 @@ const editorHtml = ({
     .main { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0,1fr) 390px; }
     .viewer { min-width: 0; min-height: 0; overflow: auto; display: grid; place-items: start center; padding: 14px; background: #0f172a; }
     .sheet { width: min(1020px, calc(100vw - 440px)); background: #fff; box-shadow: 0 12px 36px rgba(0,0,0,.34); }
-    .image-stage { position: relative; width: 100%; line-height: 0; background: #fff; cursor: crosshair; }
-    .image-stage img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; }
+    .image-stage {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 3 / 2;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      line-height: 0;
+      background: #fff;
+    }
+    .image-canvas {
+      position: relative;
+      flex: 0 0 auto;
+      line-height: 0;
+      cursor: crosshair;
+    }
+    .image-canvas img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
     .leader-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
     .leader-line { stroke: #111827; stroke-width: .7; vector-effect: non-scaling-stroke; fill: none; opacity: .72; }
     .leader-line.selected { stroke: #2563eb; stroke-width: 1.5; opacity: 1; }
@@ -1041,9 +1155,11 @@ const editorHtml = ({
       <div class="viewer">
         <div class="sheet" id="sheet">
           <div class="image-stage" id="imageStage">
-            <img id="technicalImage" src="${safeImageUrl}" alt="${safeTitle}" />
-            <svg class="leader-layer" id="leaderLayer" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
-            <div id="overlayLayer"></div>
+            <div class="image-canvas" id="imageCanvas">
+              <img id="technicalImage" src="${safeImageUrl}" alt="${safeTitle}" />
+              <svg class="leader-layer" id="leaderLayer" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
+              <div id="overlayLayer"></div>
+            </div>
           </div>
           <div class="footer" id="footer">
             <div class="caption-box" id="captionBox"></div>
@@ -1190,6 +1306,8 @@ const editorHtml = ({
       var pendingAccessoryUpload = null;
 
       var imageStage = document.getElementById('imageStage');
+      var imageCanvas = document.getElementById('imageCanvas');
+      var technicalImage = document.getElementById('technicalImage');
       var leaderLayer = document.getElementById('leaderLayer');
       var overlayLayer = document.getElementById('overlayLayer');
       var captionBox = document.getElementById('captionBox');
@@ -1241,8 +1359,34 @@ ${getSharedPopupScript()}
         document.getElementById('dirtyText').textContent = '저장 필요';
       }
 
+      function fitEditorImageCanvas() {
+        if (
+          !technicalImage
+          || !technicalImage.naturalWidth
+          || !technicalImage.naturalHeight
+        ) {
+          return;
+        }
+
+        var stageRect = imageStage.getBoundingClientRect();
+        var stageWidth = Math.max(1, stageRect.width);
+        var stageHeight = Math.max(1, stageRect.height);
+        var imageRatio = technicalImage.naturalWidth / technicalImage.naturalHeight;
+
+        var canvasWidth = stageWidth;
+        var canvasHeight = canvasWidth / imageRatio;
+
+        if (canvasHeight > stageHeight) {
+          canvasHeight = stageHeight;
+          canvasWidth = canvasHeight * imageRatio;
+        }
+
+        imageCanvas.style.width = Math.max(1, canvasWidth) + 'px';
+        imageCanvas.style.height = Math.max(1, canvasHeight) + 'px';
+      }
+
       function pointFromEvent(event) {
-        var rect = imageStage.getBoundingClientRect();
+        var rect = imageCanvas.getBoundingClientRect();
         return {
           x: clamp(((event.clientX - rect.left) / rect.width) * 100, 0, 100),
           y: clamp(((event.clientY - rect.top) / rect.height) * 100, 0, 100)
@@ -1635,7 +1779,7 @@ ${getSharedPopupScript()}
         renderStatus();
       });
 
-      imageStage.addEventListener('click', function (event) {
+      imageCanvas.addEventListener('click', function (event) {
         if (!addStep) return;
         if (event.target.closest && event.target.closest('[data-id]')) return;
         var point = pointFromEvent(event);
@@ -1827,7 +1971,16 @@ ${getSharedPopupScript()}
         event.returnValue = '';
       });
 
+      technicalImage.addEventListener('load', fitEditorImageCanvas);
+      window.addEventListener('resize', function () {
+        window.requestAnimationFrame(fitEditorImageCanvas);
+      });
+
       render();
+
+      if (technicalImage.complete) {
+        window.requestAnimationFrame(fitEditorImageCanvas);
+      }
     }());
   </script>
 </body>
