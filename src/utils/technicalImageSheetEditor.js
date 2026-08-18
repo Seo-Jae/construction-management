@@ -417,18 +417,63 @@ ${getSharedPopupScript()}
         return hoverAnnotationId || selectedAnnotationId || '';
       }
 
+      // v52.48.5.37.2
+      // hover 중 overlay/caption DOM 자체를 다시 만들면 mouseenter 직후
+      // 클릭 대상 요소가 교체되어 click 이벤트가 유실될 수 있습니다.
+      // DOM은 유지하고 active/dimmed class만 동기화합니다.
+      function syncViewerActiveState() {
+        var activeId = getActiveId();
+
+        Array.prototype.forEach.call(
+          leaderLayer.querySelectorAll('.leader-line'),
+          function (element, index) {
+            var item = annotations[index];
+            var active = !activeId || (item && String(item.id) === String(activeId));
+            element.classList.toggle('active', !!activeId && active);
+            element.classList.toggle('dimmed', !!activeId && !active);
+          }
+        );
+
+        Array.prototype.forEach.call(
+          overlayLayer.querySelectorAll('.target-dot'),
+          function (element, index) {
+            var item = annotations[index];
+            var active = !!activeId && item && String(item.id) === String(activeId);
+            element.classList.toggle('active', active);
+          }
+        );
+
+        Array.prototype.forEach.call(
+          overlayLayer.querySelectorAll('.number-marker'),
+          function (element) {
+            var itemId = String(element.getAttribute('data-id') || '');
+            var active = !activeId || itemId === String(activeId);
+            element.classList.toggle('active', !!activeId && active);
+            element.classList.toggle('dimmed', !!activeId && !active);
+          }
+        );
+
+        Array.prototype.forEach.call(
+          captionBox.querySelectorAll('.caption-item'),
+          function (element) {
+            var itemId = String(element.getAttribute('data-id') || '');
+            var active = !activeId || itemId === String(activeId);
+            element.classList.toggle('active', !!activeId && active);
+            element.classList.toggle('dimmed', !!activeId && !active);
+          }
+        );
+      }
+
       function setHover(id) {
         hoverAnnotationId = id || '';
-        renderOverlay();
-        renderCaption();
+        syncViewerActiveState();
       }
 
       function selectAnnotation(id) {
         selectedAnnotationId = id || '';
         hoverAnnotationId = '';
         showAllAccessories = false;
-        renderOverlay();
-        renderCaption();
+        syncViewerActiveState();
         renderAccessories();
       }
 
@@ -510,6 +555,16 @@ ${getSharedPopupScript()}
           if (!accessoryTitle || !annotationTitle || accessoryTitle === annotationTitle) {
             return true;
           }
+        }
+
+        // 과거 저장자료에서 annotation_id 또는 번호 메타데이터가 비어 있더라도
+        // 명칭이 동일하면 해당 부위의 연결자료로 복구합니다.
+        if (
+          accessoryTitle
+          && annotationTitle
+          && accessoryTitle.toLowerCase() === annotationTitle.toLowerCase()
+        ) {
+          return true;
         }
 
         return false;
@@ -608,8 +663,7 @@ ${getSharedPopupScript()}
         showAllAccessories = true;
         selectedAnnotationId = '';
         hoverAnnotationId = '';
-        renderOverlay();
-        renderCaption();
+        syncViewerActiveState();
         renderAccessories();
       });
 
