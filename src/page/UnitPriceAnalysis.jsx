@@ -342,6 +342,27 @@ const saveBlob = (blob, fileName) => {
   URL.revokeObjectURL(url);
 };
 
+// v52.48.5.29 일위대가 기술자료 이미지
+const UNIT_PRICE_TECHNICAL_IMAGE_BUCKET = 'unit-price-technical-images';
+const UNIT_PRICE_TECHNICAL_IMAGE_MAX_BYTES = 10 * 1024 * 1024;
+const UNIT_PRICE_TECHNICAL_IMAGE_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+]);
+
+const normalizeTechnicalImageStorageKey = (value) => {
+  const normalized = String(value || '')
+    .normalize('NFKC')
+    .trim()
+    .replace(/[^a-zA-Z0-9가-힣_-]+/g, '-');
+  return normalized || 'technical-image';
+};
+
+const getTechnicalImageStoragePath = (imageKey) => (
+  `${normalizeTechnicalImageStorageKey(imageKey)}/technical-image`
+);
+
 const isMissingTableError = (error) => (
   error?.code === '42P01' ||
   /unit_price_/i.test(String(error?.message || '')) &&
@@ -492,6 +513,7 @@ export default function UnitPriceAnalysis({
   projectName,
   projectOptions = [],
   canManage = false,
+  canManageTechnicalImages = false,
 }) {
   const [mainTab, setMainTab] = useState(0);
   const [managementTab, setManagementTab] = useState(0);
@@ -557,10 +579,224 @@ export default function UnitPriceAnalysis({
   });
   const [toast, setToast] = useState({ open: false, message: '', severity: 'success' });
   const priceUploadRef = useRef(null);
+  const technicalImageInputRef = useRef(null);
+  const [technicalImageBusy, setTechnicalImageBusy] = useState(false);
+
 
   const showToast = useCallback((message, severity = 'success') => {
     setToast({ open: true, message, severity });
   }, []);
+
+  // v52.48.5.29 기술자료 이미지는 기존 image_key 그룹 단위로 관리합니다.
+  const applyTechnicalImageUrlLocally = useCallback((imageKey, imageUrl) => {
+    setSpecs((previous) => previous.map((spec) => (
+      spec.image_key === imageKey
+        ? { ...spec, image_url: imageUrl }
+        : spec
+    )));
+    setSelectedSpec((previous) => (
+      previous?.image_key === imageKey
+        ? { ...previous, image_url: imageUrl }
+        : previous
+    ));
+  }, []);
+
+  const persistTechnicalImageUrl = useCallback(async (imageKey, imageUrl) => {
+    const { error } = await supabase.rpc('set_unit_price_technical_image', {
+      p_image_key: imageKey,
+      p_image_url: imageUrl,
+    });
+    if (error) throw error;
+    applyTechnicalImageUrlLocally(imageKey, imageUrl);
+  }, [applyTechnicalImageUrlLocally]);
+
+  const uploadTechnicalImage = useCallback(async (file) => {
+    if (!file) return;
+    if (!canManageTechnicalImages) {
+      showToast('기술자료 이미지를 수정할 권한이 없습니다.', 'warning');
+      return;
+    }
+
+    const imageKey = String(selectedSpec?.image_key || '').trim();
+    if (!imageKey) {
+      showToast('선택한 규격에 기술자료 이미지 키가 없습니다.', 'warning');
+      return;
+    }
+    if (!UNIT_PRICE_TECHNICAL_IMAGE_TYPES.has(file.type)) {
+      showToast('PNG, JPG(JPEG), WEBP 이미지만 업로드할 수 있습니다.', 'warning');
+      return;
+    }
+    if (file.size > UNIT_PRICE_TECHNICAL_IMAGE_MAX_BYTES) {
+      showToast('기술자료 이미지는 10MB 이하만 업로드할 수 있습니다.', 'warning');
+      return;
+    }
+
+    setTechnicalImageBusy(true);
+    try {
+      const storagePath = getTechnicalImageStoragePath(imageKey);
+      const { error: uploadError } = await supabase.storage
+        .from(UNIT_PRICE_TECHNICAL_IMAGE_BUCKET)
+        .upload(storagePath, file, {
+          upsert: true,
+          contentType: file.type,
+          cacheControl: '3600',
+        });
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage
+        .from(UNIT_PRICE_TECHNICAL_IMAGE_BUCKET)
+        .getPublicUrl(storagePath);
+      const publicUrl = String(publicUrlData?.publicUrl || '').trim();
+      if (!publicUrl) throw new Error('업로드된 기술자료 이미지 URL을 만들지 못했습니다.');
+
+      const versionedUrl = `${publicUrl}?v=${Date.now()}`;
+      await persistTechnicalImageUrl(imageKey, versionedUrl);
+      showToast('기술자료 이미지를 저장했습니다.');
+    } catch (error) {
+      console.error('기술자료 이미지 업로드 실패:', error);
+      showToast(error?.message || '기술자료 이미지를 업로드하지 못했습니다.', 'error');
+    } finally {
+      setTechnicalImageBusy(false);
+      if (technicalImageInputRef.current) technicalImageInputRef.current.value = '';
+    }
+  }, [canManageTechnicalImages, persistTechnicalImageUrl, selectedSpec?.image_key, showToast]);
+
+  const removeTechnicalImage = useCallback(async () => {
+    if (!canManageTechnicalImages) {
+      showToast('기술자료 이미지를 수정할 권한이 없습니다.', 'warning');
+      return;
+    }
+
+    const imageKey = String(selectedSpec?.image_key || '').trim();
+    if (!imageKey) return;
+    if (!window.confirm('현재 기술자료 이미지를 삭제하시겠습니까?')) return;
+
+    setTechnicalImageBusy(true);
+    try {
+      const storagePath = getTechnicalImageStoragePath(imageKey);
+      const { error: removeError } = await supabase.storage
+        .from(UNIT_PRICE_TECHNICAL_IMAGE_BUCKET)
+        .remove([storagePath]);
+      if (removeError) {
+        console.warn('Storage 기존 이미지 삭제 경고:', removeError);
+      }
+
+      await persistTechnicalImageUrl(imageKey, '');
+      showToast('기술자료 이미지를 삭제했습니다.', 'info');
+    } catch (error) {
+      console.error('기술자료 이미지 삭제 실패:', error);
+      showToast(error?.message || '기술자료 이미지를 삭제하지 못했습니다.', 'error');
+    } finally {
+      setTechnicalImageBusy(false);
+    }
+  }, [canManageTechnicalImages, persistTechnicalImageUrl, selectedSpec?.image_key, showToast]);
+
+  // v52.48.5.31 기술자료 새창 보기
+  // 일위대가 화면을 닫지 않고 기술자료를 나란히 참고할 수 있도록 별도 브라우저 창을 엽니다.
+  const openTechnicalImageWindow = useCallback(() => {
+    const imageUrl = String(selectedSpec?.image_url || '').trim();
+    if (!imageUrl) return;
+
+    const imageTitle = [selectedMiddle, selectedDetail]
+      .filter(Boolean)
+      .join(' · ') || '기술자료';
+
+    const escapeHtml = (value) => String(value || '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+
+    const availableWidth = window.screen?.availWidth || window.innerWidth || 1440;
+    const availableHeight = window.screen?.availHeight || window.innerHeight || 900;
+    const popupWidth = Math.max(760, Math.min(1500, Math.floor(availableWidth * 0.78)));
+    const popupHeight = Math.max(620, Math.min(1100, Math.floor(availableHeight * 0.88)));
+    const popupLeft = Math.max(0, Math.floor((availableWidth - popupWidth) / 2));
+    const popupTop = Math.max(0, Math.floor((availableHeight - popupHeight) / 2));
+
+    const previewWindow = window.open(
+      '',
+      'unitPriceTechnicalImagePreview',
+      [
+        'popup=yes',
+        `width=${popupWidth}`,
+        `height=${popupHeight}`,
+        `left=${popupLeft}`,
+        `top=${popupTop}`,
+        'resizable=yes',
+        'scrollbars=yes',
+      ].join(','),
+    );
+
+    if (!previewWindow) {
+      showToast('기술자료 새 창이 차단되었습니다. 브라우저의 팝업 허용 후 다시 눌러주세요.', 'warning');
+      return;
+    }
+
+    const safeImageUrl = escapeHtml(imageUrl);
+    const safeTitle = escapeHtml(imageTitle);
+
+    previewWindow.document.open();
+    previewWindow.document.write(`<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>기술자료 · ${safeTitle}</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; background: #0f172a; font-family: Arial, "Malgun Gothic", sans-serif; }
+    body { display: flex; flex-direction: column; overflow: hidden; }
+    .toolbar { height: 58px; min-height: 58px; padding: 8px 12px; display: flex; align-items: center; gap: 8px; background: #ffffff; border-bottom: 1px solid #cbd5e1; }
+    .title-wrap { min-width: 0; flex: 1; }
+    .title { color: #0f172a; font-size: 15px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sub { margin-top: 3px; color: #64748b; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    button { height: 32px; padding: 0 11px; border: 1px solid #cbd5e1; border-radius: 6px; background: #ffffff; color: #334155; font-size: 12px; font-weight: 700; cursor: pointer; }
+    button:hover { background: #f8fafc; }
+    .viewer { flex: 1; min-height: 0; overflow: auto; display: grid; place-items: center; padding: 14px; }
+    .image-wrap { min-width: 100%; min-height: 100%; display: grid; place-items: center; }
+    img { display: block; background: #ffffff; box-shadow: 0 12px 36px rgba(0,0,0,.32); }
+    img.fit { max-width: calc(100vw - 28px); max-height: calc(100vh - 86px); width: auto; height: auto; object-fit: contain; }
+    img.original { max-width: none; max-height: none; width: auto; height: auto; object-fit: initial; }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <div class="title-wrap">
+      <div class="title">기술자료 상세보기</div>
+      <div class="sub">${safeTitle} · 본 창을 열어둔 상태로 기존 일위대가 화면을 함께 확인할 수 있습니다.</div>
+    </div>
+    <button id="fitButton" type="button">화면 맞춤</button>
+    <button id="originalButton" type="button">원본 크기</button>
+    <button id="closeButton" type="button">닫기</button>
+  </div>
+  <div class="viewer" id="viewer">
+    <div class="image-wrap">
+      <img id="technicalImage" class="fit" src="${safeImageUrl}" alt="${safeTitle}" />
+    </div>
+  </div>
+  <script>
+    (function () {
+      var image = document.getElementById('technicalImage');
+      var viewer = document.getElementById('viewer');
+      document.getElementById('fitButton').addEventListener('click', function () {
+        image.className = 'fit';
+        viewer.scrollTo({ top: 0, left: 0, behavior: 'smooth' });
+      });
+      document.getElementById('originalButton').addEventListener('click', function () {
+        image.className = 'original';
+      });
+      document.getElementById('closeButton').addEventListener('click', function () {
+        window.close();
+      });
+    }());
+  </script>
+</body>
+</html>`);
+    previewWindow.document.close();
+    previewWindow.focus();
+  }, [selectedDetail, selectedMiddle, selectedSpec?.image_url, showToast]);
 
   const accessibleProjects = useMemo(() => {
     const normalized = [projectName, ...projectOptions]
@@ -2156,16 +2392,141 @@ export default function UnitPriceAnalysis({
                   </Box>
                 </Paper>
 
-                <Paper variant="outlined" sx={{ p: 1.3, minHeight: 180, display: 'grid', placeItems: 'center', bgcolor: '#f8fafc' }}>
-                  {selectedSpec?.image_url ? (
-                    <Box component="img" src={selectedSpec.image_url} alt={selectedSpec.detail_category} sx={{ width: '100%', maxHeight: 230, objectFit: 'contain' }} />
-                  ) : (
-                    <Stack alignItems="center" spacing={0.7} sx={{ color: '#94a3b8' }}>
-                      <ImageOutlinedIcon sx={{ fontSize: 44 }} />
-                      <Typography sx={{ fontWeight: 800, fontSize: '0.8rem' }}>기술자료 이미지 준비 중</Typography>
-                      <Typography sx={{ fontSize: '0.68rem', textAlign: 'center' }}>{selectedMiddle}<br />{selectedDetail}</Typography>
-                    </Stack>
-                  )}
+                <Paper
+                  variant="outlined"
+                  sx={{ p: 1.15, minHeight: 180, bgcolor: '#f8fafc', borderColor: '#cbd5e1' }}
+                >
+                  <Stack spacing={0.8} sx={{ width: '100%' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6 }}>
+                      <Typography sx={{ fontSize: '0.78rem', fontWeight: 900, color: '#334155' }}>
+                        기술자료
+                      </Typography>
+                      <Box sx={{ flex: 1 }} />
+                      {canManageTechnicalImages && (
+                        <Chip
+                          size="small"
+                          label="이미지 관리"
+                          variant="outlined"
+                          color="primary"
+                          sx={{ height: 20, fontSize: '0.58rem' }}
+                        />
+                      )}
+                    </Box>
+
+                    {selectedSpec?.image_url ? (
+                      <>
+                        <Box
+                          sx={{
+                            minHeight: 145,
+                            display: 'grid',
+                            placeItems: 'center',
+                            overflow: 'hidden',
+                            borderRadius: 1,
+                            bgcolor: '#ffffff',
+                            border: '1px solid #e2e8f0',
+                          }}
+                        >
+                          <Tooltip title="새 창에서 크게 보기" arrow>
+                            <Box
+                              component="img"
+                              src={selectedSpec.image_url}
+                              alt={selectedSpec.detail_category || '기술자료'}
+                              role="button"
+                              tabIndex={0}
+                              aria-label="기술자료 이미지를 새 창에서 보기"
+                              onClick={openTechnicalImageWindow}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter' || event.key === ' ') {
+                                  event.preventDefault();
+                                  openTechnicalImageWindow();
+                                }
+                              }}
+                              sx={{
+                                width: '100%',
+                                maxHeight: 260,
+                                objectFit: 'contain',
+                                display: 'block',
+                                cursor: 'pointer',
+                                transition: 'opacity 0.15s ease, transform 0.15s ease',
+                                '&:hover': {
+                                  opacity: 0.92,
+                                  transform: 'scale(1.01)',
+                                },
+                                '&:focus-visible': {
+                                  outline: '2px solid #2563eb',
+                                  outlineOffset: 2,
+                                },
+                              }}
+                            />
+                          </Tooltip>
+                        </Box>
+                        {canManageTechnicalImages && (
+                          <Stack direction="row" spacing={0.6} justifyContent="flex-end">
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              startIcon={technicalImageBusy ? <CircularProgress size={14} /> : <UploadFileRoundedIcon />}
+                              disabled={technicalImageBusy}
+                              onClick={() => technicalImageInputRef.current?.click()}
+                              sx={{ fontSize: '0.64rem' }}
+                            >
+                              교체
+                            </Button>
+                            <Button
+                              size="small"
+                              color="error"
+                              variant="outlined"
+                              startIcon={<DeleteOutlineRoundedIcon />}
+                              disabled={technicalImageBusy}
+                              onClick={removeTechnicalImage}
+                              sx={{ fontSize: '0.64rem' }}
+                            >
+                              삭제
+                            </Button>
+                          </Stack>
+                        )}
+                      </>
+                    ) : canManageTechnicalImages ? (
+                      <Button
+                        variant="outlined"
+                        disabled={technicalImageBusy || !selectedSpec?.image_key}
+                        onClick={() => technicalImageInputRef.current?.click()}
+                        sx={{
+                          minHeight: 150,
+                          borderStyle: 'dashed',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 0.6,
+                          color: '#64748b',
+                          bgcolor: '#ffffff',
+                        }}
+                      >
+                        {technicalImageBusy ? <CircularProgress size={26} /> : <UploadFileRoundedIcon sx={{ fontSize: 34 }} />}
+                        <Typography sx={{ fontSize: '0.72rem', fontWeight: 900 }}>기술자료 이미지 업로드</Typography>
+                        <Typography sx={{ fontSize: '0.6rem', color: '#94a3b8' }}>PNG · JPG · WEBP / 최대 10MB</Typography>
+                      </Button>
+                    ) : (
+                      <Stack
+                        alignItems="center"
+                        justifyContent="center"
+                        spacing={0.55}
+                        sx={{ minHeight: 150, color: '#94a3b8' }}
+                      >
+                        <ImageOutlinedIcon sx={{ fontSize: 38 }} />
+                        <Typography sx={{ fontWeight: 800, fontSize: '0.72rem' }}>등록된 기술자료 이미지가 없습니다.</Typography>
+                      </Stack>
+                    )}
+
+                    {canManageTechnicalImages && (
+                      <input
+                        ref={technicalImageInputRef}
+                        type="file"
+                        hidden
+                        accept="image/png,image/jpeg,image/webp"
+                        onChange={(event) => uploadTechnicalImage(event.target.files?.[0])}
+                      />
+                    )}
+                  </Stack>
                 </Paper>
 
                 <FormControl size="small" fullWidth><InputLabel>출력 기준</InputLabel><Select value={printMode} label="출력 기준" onChange={(event) => setPrintMode(event.target.value)}><MenuItem value="net">정미 일위대가</MenuItem><MenuItem value="submitted">제출용 일위대가</MenuItem></Select></FormControl>

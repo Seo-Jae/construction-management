@@ -4156,6 +4156,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                       activeProjectName,
                     ) === true
                 )}
+                canManageTechnicalImages={Boolean(
+                  isSuperAdmin ||
+                    hasPermission(
+                      'material.unit_price.tech_image.manage',
+                      activeProjectName,
+                    ) === true
+                )}
               />
             )}
 
