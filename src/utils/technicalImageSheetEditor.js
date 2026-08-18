@@ -231,6 +231,8 @@ const normalizeTechnicalAccessories = (value) => (
         imageUrl: String(item?.image_url || item?.imageUrl || '').trim(),
         storagePath: String(item?.storage_path || item?.storagePath || '').trim(),
         annotationId: String(item?.annotation_id || item?.annotationId || '').trim(),
+        annotationSymbol: String(item?.annotation_symbol || item?.annotationSymbol || '').trim(),
+        annotationTitle: String(item?.annotation_title || item?.annotationTitle || '').trim(),
         sortOrder: Number.isFinite(Number(item?.sort_order ?? item?.sortOrder))
           ? Number(item?.sort_order ?? item?.sortOrder)
           : index,
@@ -254,6 +256,7 @@ const normalizeTechnicalAccessoryLinks = (value) => (
     : []
 );
 
+// v52.48.5.37 VIEW 선택연동 + 직관적 부속자재 연결 UI
 const viewerHtml = ({ imageUrl, title, annotations, layout, accessories }) => {
   const safeImageUrl = escapeHtml(imageUrl);
   const safeTitle = escapeHtml(title);
@@ -312,11 +315,20 @@ const viewerHtml = ({ imageUrl, title, annotations, layout, accessories }) => {
     .accessory-all-button.active { background: #2563eb; color: #fff; border-color: #2563eb; }
     .accessory-help { margin-top: 4px; color: #64748b; font-size: 10px; line-height: 1.35; }
     .accessory-context { margin-top: 5px; color: #2563eb; font-size: 10px; font-weight: 900; line-height: 1.3; min-height: 13px; }
-    .accessory-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 9px; display: flex; flex-direction: column; gap: 10px; }
-    .accessory-card { flex: 0 0 auto; overflow: hidden; border: 1px solid #dbe3ec; border-radius: 7px; background: #fff; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
-    .accessory-name { padding: 7px 9px; color: #111827; font-size: 11px; font-weight: 900; line-height: 1.3; border-bottom: 1px solid #eef2f7; }
-    .accessory-image { display: block; width: 100%; height: auto; object-fit: contain; background: #fff; }
+    .accessory-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+    .accessory-card { flex: 0 0 auto; min-height: 62px; padding: 6px; display: grid; grid-template-columns: 58px minmax(0,1fr); gap: 8px; align-items: center; border: 1px solid #dbe3ec; border-radius: 7px; background: #fff; box-shadow: 0 1px 2px rgba(15,23,42,.04); cursor: pointer; }
+    .accessory-card:hover { border-color: #93c5fd; background: #eff6ff; }
+    .accessory-thumb { width: 58px; height: 50px; display: block; object-fit: contain; background: #fff; border: 1px solid #eef2f7; border-radius: 4px; }
+    .accessory-name { min-width: 0; color: #111827; font-size: 11px; font-weight: 900; line-height: 1.3; overflow-wrap: anywhere; }
+    .accessory-note { margin-top: 3px; color: #64748b; font-size: 9px; line-height: 1.3; }
     .accessory-empty { margin: auto 8px; padding: 24px 10px; border: 1px dashed #cbd5e1; border-radius: 8px; background: #fff; color: #94a3b8; font-size: 11px; font-weight: 700; line-height: 1.55; text-align: center; }
+    .accessory-preview { flex: 0 0 auto; display: none; margin: 8px 8px 0; overflow: hidden; border: 1px solid #93c5fd; border-radius: 8px; background: #fff; box-shadow: 0 6px 18px rgba(15,23,42,.12); }
+    .accessory-preview.open { display: block; }
+    .accessory-preview-head { height: 30px; padding: 0 7px 0 9px; display: flex; align-items: center; gap: 6px; border-bottom: 1px solid #e2e8f0; background: #eff6ff; }
+    .accessory-preview-title { flex: 1; min-width: 0; color: #1e3a8a; font-size: 10px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .accessory-preview-close { width: 24px; min-width: 24px; height: 24px; min-height: 24px; padding: 0; border: 0; background: transparent; color: #64748b; font-size: 16px; }
+    .accessory-preview-image-wrap { height: min(28vh, 250px); min-height: 150px; display: grid; place-items: center; padding: 7px; background: #fff; }
+    .accessory-preview-image { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; }
     @media (max-width: 1000px) {
       .workspace { grid-template-columns: minmax(0,1fr) 310px; }
       .sheet.fit { width: min(720px, calc(100vw - 350px)); }
@@ -355,6 +367,15 @@ const viewerHtml = ({ imageUrl, title, annotations, layout, accessories }) => {
         <div class="accessory-help">도면의 번호 또는 하단 부재명을 클릭하면 해당 부위에 연결한 상세 부속자재가 표시됩니다.</div>
         <div class="accessory-context" id="accessoryContext"></div>
       </div>
+      <div class="accessory-preview" id="accessoryPreview">
+        <div class="accessory-preview-head">
+          <div class="accessory-preview-title" id="accessoryPreviewTitle"></div>
+          <button class="accessory-preview-close" id="accessoryPreviewClose" type="button" aria-label="미리보기 닫기">×</button>
+        </div>
+        <div class="accessory-preview-image-wrap">
+          <img class="accessory-preview-image" id="accessoryPreviewImage" alt="" />
+        </div>
+      </div>
       <div class="accessory-list" id="accessoryList"></div>
     </aside>
   </div>
@@ -374,6 +395,10 @@ const viewerHtml = ({ imageUrl, title, annotations, layout, accessories }) => {
       var accessoryList = document.getElementById('accessoryList');
       var accessoryContext = document.getElementById('accessoryContext');
       var allAccessoriesButton = document.getElementById('allAccessoriesButton');
+      var accessoryPreview = document.getElementById('accessoryPreview');
+      var accessoryPreviewTitle = document.getElementById('accessoryPreviewTitle');
+      var accessoryPreviewImage = document.getElementById('accessoryPreviewImage');
+      var accessoryPreviewClose = document.getElementById('accessoryPreviewClose');
 ${getSharedPopupScript()}
 
       function applyLayout() {
@@ -465,33 +490,87 @@ ${getSharedPopupScript()}
         });
       }
 
+      function accessoryMatchesAnnotation(accessory, annotation) {
+        if (!accessory || !annotation) return false;
+
+        var accessoryId = String(accessory.annotationId || '').trim();
+        var annotationId = String(annotation.id || '').trim();
+        if (accessoryId && annotationId && accessoryId === annotationId) {
+          return true;
+        }
+
+        // v52.48.5.37: 과거 연결정보의 id가 어긋난 경우에도
+        // 번호/명칭 메타데이터로 한 번 더 확인합니다.
+        var accessorySymbol = String(accessory.annotationSymbol || '').trim();
+        var annotationSymbol = String(annotation.symbol || '').trim();
+        var accessoryTitle = String(accessory.annotationTitle || '').trim();
+        var annotationTitle = String(annotation.title || '').trim();
+
+        if (accessorySymbol && annotationSymbol && accessorySymbol === annotationSymbol) {
+          if (!accessoryTitle || !annotationTitle || accessoryTitle === annotationTitle) {
+            return true;
+          }
+        }
+
+        return false;
+      }
+
+      function getAccessoriesForAnnotation(annotation) {
+        if (!annotation) return [];
+        return uniqueAccessories(accessories.filter(function (item) {
+          return accessoryMatchesAnnotation(item, annotation);
+        }));
+      }
+
+      function hideAccessoryPreview() {
+        accessoryPreview.classList.remove('open');
+        accessoryPreviewTitle.textContent = '';
+        accessoryPreviewImage.removeAttribute('src');
+        accessoryPreviewImage.alt = '';
+      }
+
+      function showAccessoryPreview(item) {
+        if (!item || !item.imageUrl) {
+          hideAccessoryPreview();
+          return;
+        }
+        accessoryPreviewTitle.textContent = item.name || '상세 부속자재';
+        accessoryPreviewImage.src = item.imageUrl;
+        accessoryPreviewImage.alt = item.name || '상세 부속자재';
+        accessoryPreview.classList.add('open');
+      }
+
       function renderAccessories() {
         var visible = [];
         var selectedAnnotation = annotations.find(function (item) {
-          return item.id === selectedAnnotationId;
+          return String(item.id) === String(selectedAnnotationId);
         }) || null;
 
         if (showAllAccessories) {
           visible = uniqueAccessories(accessories);
           accessoryContext.textContent = visible.length
-            ? '현재 기술자료에 연결된 부속자재 전체'
+            ? '현재 기술자료에 연결된 부속자재 전체 · 항목을 클릭하면 작은 미리보기가 열립니다.'
             : '';
-        } else if (selectedAnnotationId) {
-          visible = uniqueAccessories(accessories.filter(function (item) {
-            return item.annotationId === selectedAnnotationId;
-          }));
-          accessoryContext.textContent = selectedAnnotation
-            ? selectedAnnotation.symbol + '. ' + (selectedAnnotation.title || '명칭 미입력')
-            : '';
+          hideAccessoryPreview();
+        } else if (selectedAnnotation) {
+          visible = getAccessoriesForAnnotation(selectedAnnotation);
+          accessoryContext.textContent =
+            selectedAnnotation.symbol + '. ' + (selectedAnnotation.title || '명칭 미입력')
+            + ' · 연결 ' + visible.length + '개';
+
+          // 번호/명칭을 클릭하면 연결된 첫 번째 부속자재가 우측에 즉시 보입니다.
+          if (visible.length) showAccessoryPreview(visible[0]);
+          else hideAccessoryPreview();
         } else {
           accessoryContext.textContent = '';
+          hideAccessoryPreview();
         }
 
         allAccessoriesButton.classList.toggle('active', showAllAccessories);
         allAccessoriesButton.disabled = accessories.length === 0;
 
-        if (!showAllAccessories && !selectedAnnotationId) {
-          accessoryList.innerHTML = '<div class="accessory-empty">도면의 번호 또는<br/>하단 부재명을 클릭하세요.<br/><br/>선택한 부위에 연결된 상세이미지가<br/>이 영역에 그대로 표시됩니다.</div>';
+        if (!showAllAccessories && !selectedAnnotation) {
+          accessoryList.innerHTML = '<div class="accessory-empty">도면의 번호 또는<br/>하단 부재명을 클릭하세요.<br/><br/>연결된 부속자재가 있으면<br/>우측에 바로 표시됩니다.</div>';
           return;
         }
 
@@ -501,12 +580,29 @@ ${getSharedPopupScript()}
         }
 
         accessoryList.innerHTML = visible.map(function (item) {
-          return '<div class="accessory-card">' +
-            '<div class="accessory-name">' + esc(item.name) + '</div>' +
-            '<img class="accessory-image" src="' + esc(item.imageUrl) + '" alt="' + esc(item.name) + '" />' +
+          return '<div class="accessory-card" data-id="' + esc(item.id) + '">' +
+            '<img class="accessory-thumb" src="' + esc(item.imageUrl) + '" alt="' + esc(item.name) + '" />' +
+            '<div>' +
+              '<div class="accessory-name">' + esc(item.name) + '</div>' +
+              '<div class="accessory-note">클릭하여 작은 미리보기</div>' +
+            '</div>' +
           '</div>';
         }).join('');
+
+        Array.prototype.forEach.call(accessoryList.querySelectorAll('.accessory-card'), function (card) {
+          card.addEventListener('click', function () {
+            var id = card.getAttribute('data-id');
+            var item = visible.find(function (candidate) {
+              return String(candidate.id) === String(id);
+            });
+            if (item) showAccessoryPreview(item);
+          });
+        });
       }
+
+      accessoryPreviewClose.addEventListener('click', function () {
+        hideAccessoryPreview();
+      });
 
       allAccessoriesButton.addEventListener('click', function () {
         showAllAccessories = true;
@@ -659,15 +755,24 @@ const editorHtml = ({
     .tab-hidden { display: none !important; }
     .accessory-editor-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: #f8fafc; }
     .accessory-editor-head { flex: 0 0 auto; padding: 9px 10px; border-bottom: 1px solid #e2e8f0; background: #fff; }
+    .accessory-annotation-nav { margin-bottom: 8px; display: flex; gap: 5px; overflow-x: auto; padding-bottom: 3px; }
+    .accessory-annotation-chip { flex: 0 0 auto; min-height: 29px; padding: 0 8px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid #cbd5e1; border-radius: 999px; background: #fff; color: #475569; font-size: 9px; font-weight: 900; white-space: nowrap; }
+    .accessory-annotation-chip.active { border-color: #2563eb; background: #2563eb; color: #fff; }
+    .accessory-annotation-count { min-width: 16px; height: 16px; padding: 0 4px; display: inline-grid; place-items: center; border-radius: 999px; background: #e2e8f0; color: #475569; font-size: 8px; }
+    .accessory-annotation-chip.active .accessory-annotation-count { background: #fff; color: #2563eb; }
+    .accessory-link-summary { margin-top: 4px; color: #b45309; font-size: 9px; font-weight: 900; line-height: 1.35; }
+    .accessory-search { margin-top: 7px; width: 100%; border: 1px solid #cbd5e1; border-radius: 5px; padding: 6px 7px; font-size: 10px; outline: none; }
+    .accessory-search:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,.12); }
     .accessory-selected { color: #0f172a; font-size: 11px; font-weight: 900; line-height: 1.35; }
     .accessory-selected-help { margin-top: 3px; color: #64748b; font-size: 9px; line-height: 1.35; }
     .accessory-upload-row { margin-top: 8px; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 6px; }
     .accessory-upload-row input { width: 100%; min-width: 0; border: 1px solid #cbd5e1; border-radius: 5px; padding: 6px 7px; font-size: 10px; outline: none; }
     .accessory-upload-row input:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,.12); }
     .accessory-editor-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 7px; }
-    .accessory-editor-card { margin-bottom: 6px; padding: 6px; display: grid; grid-template-columns: 24px 76px minmax(0,1fr); gap: 6px; align-items: center; border: 1px solid #dbe3ec; border-radius: 6px; background: #fff; }
-    .accessory-editor-card.linked { border-color: #93c5fd; background: #eff6ff; }
-    .accessory-editor-check { width: 17px; height: 17px; }
+    .accessory-editor-card { margin-bottom: 6px; padding: 6px; display: grid; grid-template-columns: 76px minmax(0,1fr) auto; gap: 7px; align-items: center; border: 1px solid #dbe3ec; border-radius: 6px; background: #fff; }
+    .accessory-editor-card.linked { border: 2px solid #2563eb; background: #eff6ff; }
+    .accessory-connect-button { min-width: 70px; min-height: 30px; padding: 0 7px; border-color: #cbd5e1; color: #475569; font-size: 9px; }
+    .accessory-connect-button.linked { border-color: #2563eb; background: #2563eb; color: #fff; }
     .accessory-editor-thumb { width: 76px; height: 60px; display: block; object-fit: contain; background: #fff; border: 1px solid #eef2f7; border-radius: 4px; }
     .accessory-editor-info { min-width: 0; }
     .accessory-editor-name { color: #0f172a; font-size: 10px; font-weight: 900; line-height: 1.3; overflow-wrap: anywhere; }
@@ -812,8 +917,11 @@ const editorHtml = ({
 
         <div class="accessory-editor-pane tab-hidden" id="accessoryPane">
           <div class="accessory-editor-head">
+            <div class="accessory-annotation-nav" id="accessoryAnnotationNav"></div>
             <div class="accessory-selected" id="accessorySelectedTitle">연결할 지시선 항목을 선택하세요.</div>
-            <div class="accessory-selected-help">공통 부속자재 이미지는 한 번만 업로드하고 여러 명칭에서 반복 연결할 수 있습니다.</div>
+            <div class="accessory-selected-help">위 번호를 선택한 뒤 아래 공통자재의 [연결하기]를 누르면 해당 명칭과 연결됩니다.</div>
+            <div class="accessory-link-summary" id="accessoryLinkSummary"></div>
+            <input class="accessory-search" id="accessorySearchInput" type="search" placeholder="공통 부속자재명 검색" />
             <div class="accessory-upload-row">
               <input id="newAccessoryNameInput" type="text" maxlength="120" placeholder="새 공통 부속자재명" />
               <button id="newAccessoryUploadButton" type="button">+ 이미지 업로드</button>
@@ -868,7 +976,10 @@ const editorHtml = ({
       var annotationPane = document.getElementById('annotationPane');
       var accessoryPane = document.getElementById('accessoryPane');
       var accessoryEditorList = document.getElementById('accessoryEditorList');
+      var accessoryAnnotationNav = document.getElementById('accessoryAnnotationNav');
       var accessorySelectedTitle = document.getElementById('accessorySelectedTitle');
+      var accessoryLinkSummary = document.getElementById('accessoryLinkSummary');
+      var accessorySearchInput = document.getElementById('accessorySearchInput');
       var newAccessoryNameInput = document.getElementById('newAccessoryNameInput');
       var newAccessoryUploadButton = document.getElementById('newAccessoryUploadButton');
       var accessoryFileInput = document.getElementById('accessoryFileInput');
@@ -1077,44 +1188,81 @@ ${getSharedPopupScript()}
       function renderAccessoryEditor() {
         var selected = current();
         var linkedIds = selected ? getAccessoryLinkIds(selected.id) : [];
+        var searchText = String(accessorySearchInput.value || '').trim().toLowerCase();
+
+        accessoryAnnotationNav.innerHTML = annotations.map(function (item) {
+          var count = getAccessoryLinkIds(item.id).length;
+          var active = item.id === selectedId ? 'active' : '';
+          return '<button type="button" class="accessory-annotation-chip ' + active + '" data-id="' + esc(item.id) + '">' +
+            '<span>' + esc(item.symbol) + '. ' + esc(item.title || '명칭 미입력') + '</span>' +
+            '<span class="accessory-annotation-count">' + count + '</span>' +
+          '</button>';
+        }).join('');
+
+        Array.prototype.forEach.call(accessoryAnnotationNav.querySelectorAll('.accessory-annotation-chip'), function (chip) {
+          chip.addEventListener('click', function () {
+            selectedId = chip.getAttribute('data-id') || '';
+            renderOverlay();
+            renderCaption();
+            renderList();
+            renderStatus();
+            renderAccessoryEditor();
+          });
+        });
 
         accessorySelectedTitle.textContent = selected
-          ? selected.symbol + '. ' + (selected.title || '부재명 미입력')
+          ? selected.symbol + '. ' + (selected.title || '부재명 미입력') + '에 연결할 부속자재'
           : '연결할 지시선 항목을 선택하세요.';
+
+        accessoryLinkSummary.textContent = selected
+          ? '현재 ' + linkedIds.length + '개 연결됨 · 변경 후 우측 상단 [저장] 버튼을 눌러 확정합니다.'
+          : '위 번호를 먼저 선택해주세요.';
 
         newAccessoryUploadButton.disabled = accessoryRequestBusy || !selected;
         newAccessoryNameInput.disabled = accessoryRequestBusy || !selected;
+        accessorySearchInput.disabled = accessoryRequestBusy;
         accessoryEditorList.classList.toggle('accessory-busy', accessoryRequestBusy);
 
-        if (!accessoryLibrary.length) {
-          accessoryEditorList.innerHTML = '<div class="empty">등록된 공통 부속자재가 없습니다.<br/>위에서 부속자재명 입력 후 이미지를 업로드하세요.</div>';
+        var visibleLibrary = accessoryLibrary.filter(function (accessory) {
+          if (!searchText) return true;
+          return String(accessory.name || '').toLowerCase().indexOf(searchText) >= 0;
+        });
+
+        if (!visibleLibrary.length) {
+          accessoryEditorList.innerHTML = accessoryLibrary.length
+            ? '<div class="empty">검색 결과가 없습니다.</div>'
+            : '<div class="empty">등록된 공통 부속자재가 없습니다.<br/>위에서 부속자재명 입력 후 이미지를 업로드하세요.</div>';
           return;
         }
 
-        accessoryEditorList.innerHTML = accessoryLibrary.map(function (accessory) {
+        accessoryEditorList.innerHTML = visibleLibrary.map(function (accessory) {
           var linked = !!selected && linkedIds.indexOf(accessory.id) >= 0;
           return '<div class="accessory-editor-card ' + (linked ? 'linked' : '') + '" data-id="' + esc(accessory.id) + '">' +
-            '<input class="accessory-editor-check" type="checkbox" ' + (linked ? 'checked' : '') + ' ' + (!selected || accessoryRequestBusy ? 'disabled' : '') + ' />' +
             '<img class="accessory-editor-thumb" src="' + esc(accessory.imageUrl) + '" alt="' + esc(accessory.name) + '" />' +
             '<div class="accessory-editor-info">' +
               '<div class="accessory-editor-name">' + esc(accessory.name) + '</div>' +
-              '<div class="accessory-editor-state">' + (linked ? '현재 명칭에 연결됨' : '공통 라이브러리') + '</div>' +
+              '<div class="accessory-editor-state">' + (linked ? '✓ 현재 명칭에 연결됨' : '공통 라이브러리 · 연결 안됨') + '</div>' +
               '<div class="accessory-editor-actions">' +
                 '<button type="button" data-action="replace" ' + (accessoryRequestBusy ? 'disabled' : '') + '>이미지 교체</button>' +
                 '<button type="button" class="danger" data-action="delete" ' + (accessoryRequestBusy ? 'disabled' : '') + '>삭제</button>' +
               '</div>' +
             '</div>' +
+            '<button type="button" class="accessory-connect-button ' + (linked ? 'linked' : '') + '" data-action="connect" ' + (!selected || accessoryRequestBusy ? 'disabled' : '') + '>' +
+              (linked ? '연결됨 ✓' : '연결하기') +
+            '</button>' +
           '</div>';
         }).join('');
 
         Array.prototype.forEach.call(accessoryEditorList.querySelectorAll('.accessory-editor-card'), function (card) {
           var accessoryId = card.getAttribute('data-id');
           var accessory = accessoryLibrary.find(function (item) { return item.id === accessoryId; });
-          var checkbox = card.querySelector('.accessory-editor-check');
-          if (checkbox) {
-            checkbox.addEventListener('change', function () {
-              if (!selectedId) return;
-              setAccessoryLinked(selectedId, accessoryId, checkbox.checked);
+
+          var connectButton = card.querySelector('[data-action="connect"]');
+          if (connectButton) {
+            connectButton.addEventListener('click', function () {
+              if (!selectedId || accessoryRequestBusy) return;
+              var currentlyLinked = getAccessoryLinkIds(selectedId).indexOf(accessoryId) >= 0;
+              setAccessoryLinked(selectedId, accessoryId, !currentlyLinked);
             });
           }
 
@@ -1132,7 +1280,7 @@ ${getSharedPopupScript()}
           if (deleteButton) {
             deleteButton.addEventListener('click', function () {
               if (!accessory || accessoryRequestBusy) return;
-              if (!window.confirm('"' + accessory.name + '" 공통 부속자재를 삭제하시겠습니까?\\n다른 명칭에서 연결한 내용도 함께 제거됩니다.')) return;
+              if (!window.confirm('"' + accessory.name + '" 공통 부속자재를 삭제하시겠습니까?\n다른 명칭에서 연결한 내용도 함께 제거됩니다.')) return;
               sendAccessoryRequest('delete', { accessory: accessory });
             });
           }
@@ -1317,6 +1465,9 @@ ${getSharedPopupScript()}
       symbolInput.addEventListener('input', function () { updateSelected('symbol', symbolInput.value); });
       titleInput.addEventListener('input', function () { updateSelected('title', titleInput.value); });
       descriptionInput.addEventListener('input', function () { updateSelected('description', descriptionInput.value); });
+      accessorySearchInput.addEventListener('input', function () {
+        if (activePanelTab === 'accessory') renderAccessoryEditor();
+      });
       leaderAngleInput.addEventListener('change', function () { updateSelected('leaderAngle', Number(leaderAngleInput.value) || 90); });
       leaderStartInput.addEventListener('change', function () { updateSelected('leaderStart', leaderStartInput.value); });
 

@@ -703,7 +703,7 @@ export default function UnitPriceAnalysis({
           .order('name'),
         supabase
           .from('unit_price_technical_annotation_accessories')
-          .select('annotation_id, accessory_id, sort_order')
+          .select('annotation_id, annotation_symbol, annotation_title, accessory_id, sort_order')
           .eq('image_key', normalizedKey)
           .order('annotation_id')
           .order('sort_order'),
@@ -761,6 +761,8 @@ export default function UnitPriceAnalysis({
         return {
           ...accessory,
           annotation_id: link.annotation_id,
+          annotation_symbol: link.annotation_symbol || '',
+          annotation_title: link.annotation_title || '',
           sort_order: link.sort_order ?? index,
         };
       })
@@ -1073,7 +1075,7 @@ export default function UnitPriceAnalysis({
 
     setTechnicalAnnotationBusy(true);
     try {
-      const { error } = await supabase.rpc('save_unit_price_technical_sheet_v36', {
+      const { error } = await supabase.rpc('save_unit_price_technical_sheet_v37', {
         p_image_key: imageKey,
         p_annotations: nextAnnotations,
         p_layout_settings: nextLayout,
@@ -1083,6 +1085,7 @@ export default function UnitPriceAnalysis({
       setTechnicalAnnotations(nextAnnotations);
       setTechnicalSheetLayout(nextLayout);
       setTechnicalAnnotationAccessoryLinks(nextAccessoryLinks);
+      await loadTechnicalAccessories(imageKey);
       showToast(
         nextAnnotations.length > 0
           ? `기술자료 지시선 ${nextAnnotations.length}개를 저장했습니다.`
@@ -1097,8 +1100,8 @@ export default function UnitPriceAnalysis({
       console.error('기술자료 지시선 저장 실패:', error);
       const message = String(error?.message || '');
       showToast(
-        message.includes('save_unit_price_technical_sheet_v36')
-          ? 'v52.48.5.36 Supabase SQL을 먼저 실행해주세요.'
+        message.includes('save_unit_price_technical_sheet_v37')
+          ? 'v52.48.5.37 Supabase SQL을 먼저 실행해주세요.'
           : message || '기술자료 지시선을 저장하지 못했습니다.',
         'error',
       );
@@ -1116,6 +1119,7 @@ export default function UnitPriceAnalysis({
     technicalSheetLayout,
     technicalAccessories,
     technicalAnnotationAccessoryLinks,
+    loadTechnicalAccessories,
     upsertTechnicalAccessoryFromEditor,
     deleteTechnicalAccessoryFromEditor,
   ]);
