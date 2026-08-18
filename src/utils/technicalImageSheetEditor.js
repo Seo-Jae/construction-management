@@ -122,6 +122,19 @@ const openPopup = (name, geometry) => window.open(
   ].join(','),
 );
 
+const getFixedPopupGeometry = (requestedWidth = 1125, requestedHeight = 1021) => {
+  const availableWidth = window.screen?.availWidth || window.innerWidth || requestedWidth;
+  const availableHeight = window.screen?.availHeight || window.innerHeight || requestedHeight;
+  const width = Math.max(860, Math.min(requestedWidth, availableWidth - 24));
+  const height = Math.max(700, Math.min(requestedHeight, availableHeight - 24));
+  return {
+    width,
+    height,
+    left: Math.max(0, Math.floor((availableWidth - width) / 2)),
+    top: Math.max(0, Math.floor((availableHeight - height) / 2)),
+  };
+};
+
 const getSharedPopupScript = () => String.raw`
       function esc(value) {
         return String(value || '').replace(/[&<>\"']/g, function (char) {
@@ -216,12 +229,28 @@ const normalizeTechnicalAccessories = (value) => (
         id: String(item?.id || `accessory-${index}`),
         name: String(item?.name || '').trim() || `부속자재 ${index + 1}`,
         imageUrl: String(item?.image_url || item?.imageUrl || '').trim(),
+        storagePath: String(item?.storage_path || item?.storagePath || '').trim(),
+        annotationId: String(item?.annotation_id || item?.annotationId || '').trim(),
         sortOrder: Number.isFinite(Number(item?.sort_order ?? item?.sortOrder))
           ? Number(item?.sort_order ?? item?.sortOrder)
           : index,
       }))
       .filter((item) => item.imageUrl)
       .sort((first, second) => first.sortOrder - second.sortOrder)
+    : []
+);
+
+const normalizeTechnicalAccessoryLinks = (value) => (
+  Array.isArray(value)
+    ? value
+      .map((item, index) => ({
+        annotationId: String(item?.annotation_id || item?.annotationId || '').trim(),
+        accessoryId: String(item?.accessory_id || item?.accessoryId || '').trim(),
+        sortOrder: Number.isFinite(Number(item?.sort_order ?? item?.sortOrder))
+          ? Number(item?.sort_order ?? item?.sortOrder)
+          : index,
+      }))
+      .filter((item) => item.annotationId && item.accessoryId)
     : []
 );
 
@@ -248,10 +277,10 @@ const viewerHtml = ({ imageUrl, title, annotations, layout, accessories }) => {
     .sub { margin-top: 3px; color: #64748b; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     button { height: 32px; padding: 0 11px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #334155; font-size: 12px; font-weight: 800; cursor: pointer; }
     button:hover { background: #f8fafc; }
-    .workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0,1fr) 320px; background: #0f172a; }
-    .viewer { min-width: 0; min-height: 0; overflow: auto; display: grid; place-items: center; padding: 16px; background: #0f172a; }
+    .workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0,1fr) 350px; background: #0f172a; }
+    .viewer { min-width: 0; min-height: 0; overflow: auto; display: grid; place-items: center; padding: 14px; background: #0f172a; }
     .sheet { background: #fff; box-shadow: 0 12px 36px rgba(0,0,0,.34); }
-    .sheet.fit { width: min(1040px, calc(100vw - 370px)); }
+    .sheet.fit { width: min(780px, calc(100vw - 390px)); }
     .sheet.original { width: max-content; }
     .image-stage { position: relative; width: 100%; line-height: 0; background: #fff; }
     .sheet.fit .image-stage img { display: block; width: 100%; height: auto; }
@@ -276,20 +305,21 @@ const viewerHtml = ({ imageUrl, title, annotations, layout, accessories }) => {
     .caption-item.dimmed { opacity: .26; }
     .empty-caption { color: #94a3b8; font-size: 12px; font-weight: 700; }
     .accessory-panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: #f8fafc; border-left: 1px solid #cbd5e1; }
-    .accessory-head { flex: 0 0 auto; padding: 12px 12px 10px; background: #fff; border-bottom: 1px solid #e2e8f0; }
-    .accessory-title { font-size: 13px; font-weight: 900; color: #0f172a; }
-    .accessory-help { margin-top: 3px; color: #64748b; font-size: 10px; line-height: 1.35; }
-    .accessory-list { flex: 1; min-height: 0; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 9px; }
-    .accessory-card { flex: 0 0 auto; overflow: hidden; border: 1px solid #dbe3ec; border-radius: 8px; background: #fff; box-shadow: 0 1px 2px rgba(15,23,42,.04); cursor: zoom-in; }
-    .accessory-card:hover { border-color: #93c5fd; box-shadow: 0 0 0 2px rgba(37,99,235,.08); }
-    .accessory-image-wrap { height: 150px; display: grid; place-items: center; padding: 7px; background: #fff; border-bottom: 1px solid #eef2f7; }
-    .accessory-image { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; }
-    .accessory-name { padding: 7px 9px 8px; color: #111827; font-size: 11px; font-weight: 900; line-height: 1.3; text-align: center; }
+    .accessory-head { flex: 0 0 auto; padding: 10px 10px 8px; background: #fff; border-bottom: 1px solid #e2e8f0; }
+    .accessory-head-row { display: flex; align-items: center; gap: 7px; }
+    .accessory-title { flex: 1; min-width: 0; font-size: 13px; font-weight: 900; color: #0f172a; }
+    .accessory-all-button { height: 27px; min-height: 27px; padding: 0 8px; font-size: 10px; color: #2563eb; border-color: #bfdbfe; }
+    .accessory-all-button.active { background: #2563eb; color: #fff; border-color: #2563eb; }
+    .accessory-help { margin-top: 4px; color: #64748b; font-size: 10px; line-height: 1.35; }
+    .accessory-context { margin-top: 5px; color: #2563eb; font-size: 10px; font-weight: 900; line-height: 1.3; min-height: 13px; }
+    .accessory-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 9px; display: flex; flex-direction: column; gap: 10px; }
+    .accessory-card { flex: 0 0 auto; overflow: hidden; border: 1px solid #dbe3ec; border-radius: 7px; background: #fff; box-shadow: 0 1px 2px rgba(15,23,42,.04); }
+    .accessory-name { padding: 7px 9px; color: #111827; font-size: 11px; font-weight: 900; line-height: 1.3; border-bottom: 1px solid #eef2f7; }
+    .accessory-image { display: block; width: 100%; height: auto; object-fit: contain; background: #fff; }
     .accessory-empty { margin: auto 8px; padding: 24px 10px; border: 1px dashed #cbd5e1; border-radius: 8px; background: #fff; color: #94a3b8; font-size: 11px; font-weight: 700; line-height: 1.55; text-align: center; }
-    @media (max-width: 1050px) {
-      .workspace { grid-template-columns: minmax(0,1fr) 260px; }
-      .sheet.fit { width: min(900px, calc(100vw - 310px)); }
-      .accessory-image-wrap { height: 120px; }
+    @media (max-width: 1000px) {
+      .workspace { grid-template-columns: minmax(0,1fr) 310px; }
+      .sheet.fit { width: min(720px, calc(100vw - 350px)); }
     }
   </style>
 </head>
@@ -318,8 +348,12 @@ const viewerHtml = ({ imageUrl, title, annotations, layout, accessories }) => {
     </div>
     <aside class="accessory-panel">
       <div class="accessory-head">
-        <div class="accessory-title">상세 부속자재</div>
-        <div class="accessory-help">현재 공법에 연결된 공통 부속자재입니다. 이미지를 클릭하면 원본 크기로 확인할 수 있습니다.</div>
+        <div class="accessory-head-row">
+          <div class="accessory-title">상세 부속자재</div>
+          <button id="allAccessoriesButton" class="accessory-all-button" type="button">전체보기</button>
+        </div>
+        <div class="accessory-help">도면의 번호 또는 하단 부재명을 클릭하면 해당 부위에 연결한 상세 부속자재가 표시됩니다.</div>
+        <div class="accessory-context" id="accessoryContext"></div>
       </div>
       <div class="accessory-list" id="accessoryList"></div>
     </aside>
@@ -329,13 +363,17 @@ const viewerHtml = ({ imageUrl, title, annotations, layout, accessories }) => {
       var annotations = ${annotationJson};
       var layout = ${layoutJson};
       var accessories = ${accessoryJson};
-      var activeId = '';
+      var selectedAnnotationId = '';
+      var hoverAnnotationId = '';
+      var showAllAccessories = false;
       var sheet = document.getElementById('sheet');
       var leaderLayer = document.getElementById('leaderLayer');
       var overlayLayer = document.getElementById('overlayLayer');
       var captionBox = document.getElementById('captionBox');
       var technicalImage = document.getElementById('technicalImage');
       var accessoryList = document.getElementById('accessoryList');
+      var accessoryContext = document.getElementById('accessoryContext');
+      var allAccessoriesButton = document.getElementById('allAccessoriesButton');
 ${getSharedPopupScript()}
 
       function applyLayout() {
@@ -350,13 +388,27 @@ ${getSharedPopupScript()}
         captionBox.style.setProperty('--box-width', layout.boxWidth + '%');
       }
 
-      function setActive(id) {
-        activeId = id || '';
+      function getActiveId() {
+        return hoverAnnotationId || selectedAnnotationId || '';
+      }
+
+      function setHover(id) {
+        hoverAnnotationId = id || '';
         renderOverlay();
         renderCaption();
       }
 
+      function selectAnnotation(id) {
+        selectedAnnotationId = id || '';
+        hoverAnnotationId = '';
+        showAllAccessories = false;
+        renderOverlay();
+        renderCaption();
+        renderAccessories();
+      }
+
       function renderOverlay() {
+        var activeId = getActiveId();
         leaderLayer.innerHTML = annotations.map(function (item) {
           var active = !activeId || activeId === item.id;
           return '<polyline class="leader-line ' + (activeId ? (active ? 'active' : 'dimmed') : '') + '" points="' + getLeaderPoints(item) + '" />';
@@ -370,8 +422,9 @@ ${getSharedPopupScript()}
         }).join('');
 
         Array.prototype.forEach.call(overlayLayer.querySelectorAll('.number-marker'), function (element) {
-          element.addEventListener('mouseenter', function () { setActive(element.getAttribute('data-id')); });
-          element.addEventListener('mouseleave', function () { setActive(''); });
+          element.addEventListener('mouseenter', function () { setHover(element.getAttribute('data-id')); });
+          element.addEventListener('mouseleave', function () { setHover(''); });
+          element.addEventListener('click', function () { selectAnnotation(element.getAttribute('data-id')); });
         });
       }
 
@@ -380,6 +433,7 @@ ${getSharedPopupScript()}
           captionBox.innerHTML = '<div class="empty-caption">등록된 하단 부재명이 없습니다.</div>';
           return;
         }
+        var activeId = getActiveId();
         var groups = buildColumnGroups(annotations, layout.columns);
         captionBox.innerHTML = groups.map(function (group) {
           return '<div class="caption-column">' + group.map(function (item) {
@@ -396,34 +450,72 @@ ${getSharedPopupScript()}
         }).join('');
 
         Array.prototype.forEach.call(captionBox.querySelectorAll('.caption-item'), function (element) {
-          element.addEventListener('mouseenter', function () { setActive(element.getAttribute('data-id')); });
-          element.addEventListener('mouseleave', function () { setActive(''); });
+          element.addEventListener('mouseenter', function () { setHover(element.getAttribute('data-id')); });
+          element.addEventListener('mouseleave', function () { setHover(''); });
+          element.addEventListener('click', function () { selectAnnotation(element.getAttribute('data-id')); });
+        });
+      }
+
+      function uniqueAccessories(items) {
+        var seen = {};
+        return items.filter(function (item) {
+          if (!item || !item.id || seen[item.id]) return false;
+          seen[item.id] = true;
+          return true;
         });
       }
 
       function renderAccessories() {
-        if (!accessories.length) {
-          accessoryList.innerHTML = '<div class="accessory-empty">현재 공법에 연결된<br/>상세 부속자재가 없습니다.</div>';
+        var visible = [];
+        var selectedAnnotation = annotations.find(function (item) {
+          return item.id === selectedAnnotationId;
+        }) || null;
+
+        if (showAllAccessories) {
+          visible = uniqueAccessories(accessories);
+          accessoryContext.textContent = visible.length
+            ? '현재 기술자료에 연결된 부속자재 전체'
+            : '';
+        } else if (selectedAnnotationId) {
+          visible = uniqueAccessories(accessories.filter(function (item) {
+            return item.annotationId === selectedAnnotationId;
+          }));
+          accessoryContext.textContent = selectedAnnotation
+            ? selectedAnnotation.symbol + '. ' + (selectedAnnotation.title || '명칭 미입력')
+            : '';
+        } else {
+          accessoryContext.textContent = '';
+        }
+
+        allAccessoriesButton.classList.toggle('active', showAllAccessories);
+        allAccessoriesButton.disabled = accessories.length === 0;
+
+        if (!showAllAccessories && !selectedAnnotationId) {
+          accessoryList.innerHTML = '<div class="accessory-empty">도면의 번호 또는<br/>하단 부재명을 클릭하세요.<br/><br/>선택한 부위에 연결된 상세이미지가<br/>이 영역에 그대로 표시됩니다.</div>';
           return;
         }
 
-        accessoryList.innerHTML = accessories.map(function (item) {
-          return '<div class="accessory-card" data-url="' + esc(item.imageUrl) + '" title="클릭하여 크게 보기">' +
-            '<div class="accessory-image-wrap">' +
-              '<img class="accessory-image" src="' + esc(item.imageUrl) + '" alt="' + esc(item.name) + '" />' +
-            '</div>' +
+        if (!visible.length) {
+          accessoryList.innerHTML = '<div class="accessory-empty">선택한 항목에 연결된<br/>상세 부속자재가 없습니다.</div>';
+          return;
+        }
+
+        accessoryList.innerHTML = visible.map(function (item) {
+          return '<div class="accessory-card">' +
             '<div class="accessory-name">' + esc(item.name) + '</div>' +
+            '<img class="accessory-image" src="' + esc(item.imageUrl) + '" alt="' + esc(item.name) + '" />' +
           '</div>';
         }).join('');
-
-        Array.prototype.forEach.call(accessoryList.querySelectorAll('.accessory-card'), function (element) {
-          element.addEventListener('click', function () {
-            var url = element.getAttribute('data-url');
-            if (!url) return;
-            window.open(url, '_blank', 'noopener,noreferrer');
-          });
-        });
       }
+
+      allAccessoriesButton.addEventListener('click', function () {
+        showAllAccessories = true;
+        selectedAnnotationId = '';
+        hoverAnnotationId = '';
+        renderOverlay();
+        renderCaption();
+        renderAccessories();
+      });
 
       document.getElementById('fitButton').addEventListener('click', function () {
         sheet.className = 'sheet fit';
@@ -457,7 +549,7 @@ export const openTechnicalSheetViewerWindow = ({
 
   const popup = openPopup(
     'unitPriceTechnicalSheetPreview',
-    getPopupGeometry({ widthRatio: 0.86, heightRatio: 0.92 }),
+    getFixedPopupGeometry(1125, 1021),
   );
   if (!popup) return null;
 
@@ -474,11 +566,21 @@ export const openTechnicalSheetViewerWindow = ({
   return popup;
 };
 
-const editorHtml = ({ imageUrl, title, annotations, layout, sessionId }) => {
+const editorHtml = ({
+  imageUrl,
+  title,
+  annotations,
+  layout,
+  accessories,
+  accessoryLinks,
+  sessionId,
+}) => {
   const safeImageUrl = escapeHtml(imageUrl);
   const safeTitle = escapeHtml(title);
   const annotationJson = serializeForInlineScript(normalizeTechnicalAnnotations(annotations));
   const layoutJson = serializeForInlineScript(normalizeTechnicalSheetLayout(layout));
+  const accessoryLibraryJson = serializeForInlineScript(normalizeTechnicalAccessories(accessories));
+  const accessoryLinksJson = serializeForInlineScript(normalizeTechnicalAccessoryLinks(accessoryLinks));
   const safeSessionId = serializeForInlineScript(sessionId);
 
   return `<!doctype html>
@@ -550,6 +652,29 @@ const editorHtml = ({ imageUrl, title, annotations, layout, sessionId }) => {
     .item-desc { margin-top: 2px; color: #64748b; font-size: 9px; line-height: 1.3; white-space: pre-wrap; }
     .empty { padding: 16px 8px; color: #94a3b8; font-size: 10px; text-align: center; line-height: 1.5; }
     .unsaved { color: #b45309; font-weight: 900; }
+    .panel-tabs { flex: 0 0 auto; display: grid; grid-template-columns: 1fr 1fr; gap: 0; border-bottom: 1px solid #cbd5e1; background: #fff; }
+    .panel-tab { min-height: 34px; border: 0; border-radius: 0; border-right: 1px solid #e2e8f0; background: #fff; color: #64748b; font-size: 11px; font-weight: 900; }
+    .panel-tab:last-child { border-right: 0; }
+    .panel-tab.active { color: #2563eb; background: #eff6ff; box-shadow: inset 0 -2px #2563eb; }
+    .tab-hidden { display: none !important; }
+    .accessory-editor-pane { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: #f8fafc; }
+    .accessory-editor-head { flex: 0 0 auto; padding: 9px 10px; border-bottom: 1px solid #e2e8f0; background: #fff; }
+    .accessory-selected { color: #0f172a; font-size: 11px; font-weight: 900; line-height: 1.35; }
+    .accessory-selected-help { margin-top: 3px; color: #64748b; font-size: 9px; line-height: 1.35; }
+    .accessory-upload-row { margin-top: 8px; display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 6px; }
+    .accessory-upload-row input { width: 100%; min-width: 0; border: 1px solid #cbd5e1; border-radius: 5px; padding: 6px 7px; font-size: 10px; outline: none; }
+    .accessory-upload-row input:focus { border-color: #2563eb; box-shadow: 0 0 0 2px rgba(37,99,235,.12); }
+    .accessory-editor-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 7px; }
+    .accessory-editor-card { margin-bottom: 6px; padding: 6px; display: grid; grid-template-columns: 24px 76px minmax(0,1fr); gap: 6px; align-items: center; border: 1px solid #dbe3ec; border-radius: 6px; background: #fff; }
+    .accessory-editor-card.linked { border-color: #93c5fd; background: #eff6ff; }
+    .accessory-editor-check { width: 17px; height: 17px; }
+    .accessory-editor-thumb { width: 76px; height: 60px; display: block; object-fit: contain; background: #fff; border: 1px solid #eef2f7; border-radius: 4px; }
+    .accessory-editor-info { min-width: 0; }
+    .accessory-editor-name { color: #0f172a; font-size: 10px; font-weight: 900; line-height: 1.3; overflow-wrap: anywhere; }
+    .accessory-editor-state { margin-top: 2px; color: #64748b; font-size: 9px; line-height: 1.3; }
+    .accessory-editor-actions { margin-top: 5px; display: flex; gap: 4px; flex-wrap: wrap; }
+    .accessory-editor-actions button { min-height: 24px; height: 24px; padding: 0 6px; font-size: 9px; }
+    .accessory-busy { opacity: .55; pointer-events: none; }
     @media (max-width: 1150px) { .main { grid-template-columns: minmax(0,1fr) 350px; } .sheet { width: min(900px, calc(100vw - 400px)); } }
   </style>
 </head>
@@ -557,7 +682,7 @@ const editorHtml = ({ imageUrl, title, annotations, layout, sessionId }) => {
   <div class="app">
     <div class="toolbar">
       <div class="title-wrap">
-        <div class="title">기술자료 편집기 v2 · ${safeTitle}</div>
+        <div class="title">기술자료 편집기 v2.1 · ${safeTitle}</div>
         <div class="sub">원본 이미지는 깨끗한 도식만 사용하고, 지시선·번호·하단 부재명은 시스템에서 작성합니다.</div>
       </div>
       <button id="addButton" type="button">+ 지시선 추가</button>
@@ -582,7 +707,11 @@ const editorHtml = ({ imageUrl, title, annotations, layout, sessionId }) => {
       </div>
       <aside class="panel">
         <div class="status" id="statusBox"></div>
-        <div class="panel-scroll">
+        <div class="panel-tabs">
+          <button id="annotationTabButton" class="panel-tab active" type="button">지시선 · 명칭</button>
+          <button id="accessoryTabButton" class="panel-tab" type="button">부속자재 연결</button>
+        </div>
+        <div class="panel-scroll" id="annotationPane">
           <div class="section">
             <div class="section-title">지시선 · 번호 · 부재명</div>
             <div class="fields">
@@ -680,6 +809,19 @@ const editorHtml = ({ imageUrl, title, annotations, layout, sessionId }) => {
           </div>
           <div class="list" id="itemList"></div>
         </div>
+
+        <div class="accessory-editor-pane tab-hidden" id="accessoryPane">
+          <div class="accessory-editor-head">
+            <div class="accessory-selected" id="accessorySelectedTitle">연결할 지시선 항목을 선택하세요.</div>
+            <div class="accessory-selected-help">공통 부속자재 이미지는 한 번만 업로드하고 여러 명칭에서 반복 연결할 수 있습니다.</div>
+            <div class="accessory-upload-row">
+              <input id="newAccessoryNameInput" type="text" maxlength="120" placeholder="새 공통 부속자재명" />
+              <button id="newAccessoryUploadButton" type="button">+ 이미지 업로드</button>
+            </div>
+            <input id="accessoryFileInput" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+          </div>
+          <div class="accessory-editor-list" id="accessoryEditorList"></div>
+        </div>
       </aside>
     </div>
   </div>
@@ -687,12 +829,17 @@ const editorHtml = ({ imageUrl, title, annotations, layout, sessionId }) => {
     (function () {
       var annotations = ${annotationJson};
       var layout = ${layoutJson};
+      var accessoryLibrary = ${accessoryLibraryJson};
+      var accessoryLinks = ${accessoryLinksJson};
       var sessionId = ${safeSessionId};
       var selectedId = annotations[0] ? annotations[0].id : '';
       var addStep = '';
       var pendingTarget = null;
       var dragState = null;
       var dirty = false;
+      var activePanelTab = 'annotation';
+      var accessoryRequestBusy = false;
+      var pendingAccessoryUpload = null;
 
       var imageStage = document.getElementById('imageStage');
       var leaderLayer = document.getElementById('leaderLayer');
@@ -716,6 +863,15 @@ const editorHtml = ({ imageUrl, title, annotations, layout, sessionId }) => {
       var boxTopInput = document.getElementById('boxTopInput');
       var boxWidthInput = document.getElementById('boxWidthInput');
       var showDescriptionInput = document.getElementById('showDescriptionInput');
+      var annotationTabButton = document.getElementById('annotationTabButton');
+      var accessoryTabButton = document.getElementById('accessoryTabButton');
+      var annotationPane = document.getElementById('annotationPane');
+      var accessoryPane = document.getElementById('accessoryPane');
+      var accessoryEditorList = document.getElementById('accessoryEditorList');
+      var accessorySelectedTitle = document.getElementById('accessorySelectedTitle');
+      var newAccessoryNameInput = document.getElementById('newAccessoryNameInput');
+      var newAccessoryUploadButton = document.getElementById('newAccessoryUploadButton');
+      var accessoryFileInput = document.getElementById('accessoryFileInput');
 
 ${getSharedPopupScript()}
 
@@ -879,6 +1035,176 @@ ${getSharedPopupScript()}
         });
       }
 
+      function setPanelTab(tab) {
+        activePanelTab = tab === 'accessory' ? 'accessory' : 'annotation';
+        var accessoryActive = activePanelTab === 'accessory';
+        annotationTabButton.classList.toggle('active', !accessoryActive);
+        accessoryTabButton.classList.toggle('active', accessoryActive);
+        annotationPane.classList.toggle('tab-hidden', accessoryActive);
+        accessoryPane.classList.toggle('tab-hidden', !accessoryActive);
+        if (accessoryActive) renderAccessoryEditor();
+      }
+
+      function getAccessoryLinkIds(annotationId) {
+        return accessoryLinks
+          .filter(function (link) { return link.annotationId === annotationId; })
+          .sort(function (first, second) { return first.sortOrder - second.sortOrder; })
+          .map(function (link) { return link.accessoryId; });
+      }
+
+      function setAccessoryLinked(annotationId, accessoryId, checked) {
+        if (!annotationId || !accessoryId) return;
+
+        accessoryLinks = accessoryLinks.filter(function (link) {
+          return !(link.annotationId === annotationId && link.accessoryId === accessoryId);
+        });
+
+        if (checked) {
+          var nextOrder = accessoryLinks.filter(function (link) {
+            return link.annotationId === annotationId;
+          }).length;
+          accessoryLinks.push({
+            annotationId: annotationId,
+            accessoryId: accessoryId,
+            sortOrder: nextOrder
+          });
+        }
+
+        markDirty();
+        renderAccessoryEditor();
+      }
+
+      function renderAccessoryEditor() {
+        var selected = current();
+        var linkedIds = selected ? getAccessoryLinkIds(selected.id) : [];
+
+        accessorySelectedTitle.textContent = selected
+          ? selected.symbol + '. ' + (selected.title || '부재명 미입력')
+          : '연결할 지시선 항목을 선택하세요.';
+
+        newAccessoryUploadButton.disabled = accessoryRequestBusy || !selected;
+        newAccessoryNameInput.disabled = accessoryRequestBusy || !selected;
+        accessoryEditorList.classList.toggle('accessory-busy', accessoryRequestBusy);
+
+        if (!accessoryLibrary.length) {
+          accessoryEditorList.innerHTML = '<div class="empty">등록된 공통 부속자재가 없습니다.<br/>위에서 부속자재명 입력 후 이미지를 업로드하세요.</div>';
+          return;
+        }
+
+        accessoryEditorList.innerHTML = accessoryLibrary.map(function (accessory) {
+          var linked = !!selected && linkedIds.indexOf(accessory.id) >= 0;
+          return '<div class="accessory-editor-card ' + (linked ? 'linked' : '') + '" data-id="' + esc(accessory.id) + '">' +
+            '<input class="accessory-editor-check" type="checkbox" ' + (linked ? 'checked' : '') + ' ' + (!selected || accessoryRequestBusy ? 'disabled' : '') + ' />' +
+            '<img class="accessory-editor-thumb" src="' + esc(accessory.imageUrl) + '" alt="' + esc(accessory.name) + '" />' +
+            '<div class="accessory-editor-info">' +
+              '<div class="accessory-editor-name">' + esc(accessory.name) + '</div>' +
+              '<div class="accessory-editor-state">' + (linked ? '현재 명칭에 연결됨' : '공통 라이브러리') + '</div>' +
+              '<div class="accessory-editor-actions">' +
+                '<button type="button" data-action="replace" ' + (accessoryRequestBusy ? 'disabled' : '') + '>이미지 교체</button>' +
+                '<button type="button" class="danger" data-action="delete" ' + (accessoryRequestBusy ? 'disabled' : '') + '>삭제</button>' +
+              '</div>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+
+        Array.prototype.forEach.call(accessoryEditorList.querySelectorAll('.accessory-editor-card'), function (card) {
+          var accessoryId = card.getAttribute('data-id');
+          var accessory = accessoryLibrary.find(function (item) { return item.id === accessoryId; });
+          var checkbox = card.querySelector('.accessory-editor-check');
+          if (checkbox) {
+            checkbox.addEventListener('change', function () {
+              if (!selectedId) return;
+              setAccessoryLinked(selectedId, accessoryId, checkbox.checked);
+            });
+          }
+
+          var replaceButton = card.querySelector('[data-action="replace"]');
+          if (replaceButton) {
+            replaceButton.addEventListener('click', function () {
+              if (!accessory || accessoryRequestBusy) return;
+              pendingAccessoryUpload = { mode: 'replace', accessory: accessory };
+              accessoryFileInput.value = '';
+              accessoryFileInput.click();
+            });
+          }
+
+          var deleteButton = card.querySelector('[data-action="delete"]');
+          if (deleteButton) {
+            deleteButton.addEventListener('click', function () {
+              if (!accessory || accessoryRequestBusy) return;
+              if (!window.confirm('"' + accessory.name + '" 공통 부속자재를 삭제하시겠습니까?\\n다른 명칭에서 연결한 내용도 함께 제거됩니다.')) return;
+              sendAccessoryRequest('delete', { accessory: accessory });
+            });
+          }
+        });
+      }
+
+      function sendAccessoryRequest(action, payload) {
+        if (!window.opener || window.opener.closed) {
+          window.alert('원래 일위대가 화면을 찾을 수 없습니다.');
+          return;
+        }
+
+        var requestId = 'accessory-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+        accessoryRequestBusy = true;
+        renderAccessoryEditor();
+
+        window.opener.postMessage(Object.assign({
+          type: 'unit-price-technical-accessory-request',
+          sessionId: sessionId,
+          requestId: requestId,
+          action: action
+        }, payload || {}), '*');
+      }
+
+      function handleAccessoryResult(event) {
+        if (!event.data || event.data.type !== 'unit-price-technical-accessory-result') return;
+        if (event.data.sessionId !== sessionId) return;
+
+        accessoryRequestBusy = false;
+
+        if (!event.data.ok) {
+          window.alert(event.data.message || '부속자재 작업을 완료하지 못했습니다.');
+          renderAccessoryEditor();
+          return;
+        }
+
+        if (event.data.action === 'upload' && event.data.accessory) {
+          var nextAccessory = event.data.accessory;
+          var existingIndex = accessoryLibrary.findIndex(function (item) {
+            return item.id === nextAccessory.id;
+          });
+
+          if (existingIndex >= 0) {
+            accessoryLibrary[existingIndex] = nextAccessory;
+          } else {
+            accessoryLibrary.push(nextAccessory);
+            accessoryLibrary.sort(function (first, second) {
+              return String(first.name || '').localeCompare(String(second.name || ''), 'ko');
+            });
+            if (selectedId) {
+              setAccessoryLinked(selectedId, nextAccessory.id, true);
+            }
+          }
+
+          newAccessoryNameInput.value = '';
+          pendingAccessoryUpload = null;
+          renderAccessoryEditor();
+          return;
+        }
+
+        if (event.data.action === 'delete' && event.data.accessoryId) {
+          accessoryLibrary = accessoryLibrary.filter(function (item) {
+            return item.id !== event.data.accessoryId;
+          });
+          accessoryLinks = accessoryLinks.filter(function (link) {
+            return link.accessoryId !== event.data.accessoryId;
+          });
+          markDirty();
+          renderAccessoryEditor();
+        }
+      }
+
       function renderButtons() {
         var index = annotations.findIndex(function (item) { return item.id === selectedId; });
         document.getElementById('deleteButton').disabled = index < 0;
@@ -893,6 +1219,7 @@ ${getSharedPopupScript()}
         renderCaption();
         renderList();
         renderButtons();
+        if (activePanelTab === 'accessory') renderAccessoryEditor();
       }
 
       function updateSelected(field, value) {
@@ -993,6 +1320,43 @@ ${getSharedPopupScript()}
       leaderAngleInput.addEventListener('change', function () { updateSelected('leaderAngle', Number(leaderAngleInput.value) || 90); });
       leaderStartInput.addEventListener('change', function () { updateSelected('leaderStart', leaderStartInput.value); });
 
+      annotationTabButton.addEventListener('click', function () { setPanelTab('annotation'); });
+      accessoryTabButton.addEventListener('click', function () { setPanelTab('accessory'); });
+
+      newAccessoryUploadButton.addEventListener('click', function () {
+        if (!selectedId || accessoryRequestBusy) return;
+        var name = String(newAccessoryNameInput.value || '').trim();
+        if (!name) {
+          window.alert('새 공통 부속자재명을 입력해주세요.');
+          newAccessoryNameInput.focus();
+          return;
+        }
+        pendingAccessoryUpload = { mode: 'new', name: name };
+        accessoryFileInput.value = '';
+        accessoryFileInput.click();
+      });
+
+      accessoryFileInput.addEventListener('change', function () {
+        var file = accessoryFileInput.files && accessoryFileInput.files[0];
+        if (!file || !pendingAccessoryUpload) return;
+
+        if (pendingAccessoryUpload.mode === 'replace') {
+          sendAccessoryRequest('upload', {
+            file: file,
+            name: pendingAccessoryUpload.accessory.name,
+            accessory: pendingAccessoryUpload.accessory
+          });
+        } else {
+          sendAccessoryRequest('upload', {
+            file: file,
+            name: pendingAccessoryUpload.name,
+            accessory: null
+          });
+        }
+      });
+
+      window.addEventListener('message', handleAccessoryResult);
+
       columnsInput.addEventListener('change', function () { updateLayout('columns', Number(columnsInput.value) || 2); });
       fontSizeInput.addEventListener('input', function () { updateLayout('fontSize', clamp(fontSizeInput.value, 11, 30)); });
       footerHeightInput.addEventListener('input', function () { updateLayout('footerHeight', clamp(footerHeightInput.value, 100, 360)); });
@@ -1042,11 +1406,19 @@ ${getSharedPopupScript()}
           return;
         }
 
+        var validAnnotationIds = annotations.map(function (item) { return item.id; });
+        var validAccessoryIds = accessoryLibrary.map(function (item) { return item.id; });
+        accessoryLinks = accessoryLinks.filter(function (link) {
+          return validAnnotationIds.indexOf(link.annotationId) >= 0
+            && validAccessoryIds.indexOf(link.accessoryId) >= 0;
+        });
+
         window.opener.postMessage({
           type: 'unit-price-technical-sheet-save',
           sessionId: sessionId,
           annotations: annotations,
-          layout: layout
+          layout: layout,
+          accessoryLinks: accessoryLinks
         }, '*');
 
         dirty = false;
@@ -1076,6 +1448,10 @@ export const openTechnicalSheetEditorWindow = ({
   title = '기술자료',
   annotations = [],
   layout = DEFAULT_TECHNICAL_SHEET_LAYOUT,
+  accessories = [],
+  accessoryLinks = [],
+  onAccessoryUpload,
+  onAccessoryDelete,
 }) => {
   const normalizedUrl = String(imageUrl || '').trim();
   if (!normalizedUrl) {
@@ -1095,6 +1471,8 @@ export const openTechnicalSheetEditorWindow = ({
     title,
     annotations,
     layout,
+    accessories,
+    accessoryLinks,
     sessionId,
   }));
   popup.document.close();
@@ -1115,16 +1493,76 @@ export const openTechnicalSheetEditorWindow = ({
       resolve(result);
     };
 
-    const handleMessage = (event) => {
+    const handleMessage = async (event) => {
       if (event.source !== popup) return;
-      if (event.data?.type !== 'unit-price-technical-sheet-save') return;
       if (event.data?.sessionId !== sessionId) return;
+
+      if (event.data?.type === 'unit-price-technical-accessory-request') {
+        const requestId = event.data?.requestId;
+        const action = event.data?.action;
+
+        try {
+          if (action === 'upload') {
+            if (typeof onAccessoryUpload !== 'function') {
+              throw new Error('부속자재 업로드 기능을 사용할 수 없습니다.');
+            }
+
+            const savedAccessory = await onAccessoryUpload({
+              file: event.data?.file,
+              name: event.data?.name,
+              accessory: event.data?.accessory || null,
+            });
+
+            popup.postMessage({
+              type: 'unit-price-technical-accessory-result',
+              sessionId,
+              requestId,
+              action,
+              ok: true,
+              accessory: normalizeTechnicalAccessories([savedAccessory])[0] || savedAccessory,
+            }, '*');
+            return;
+          }
+
+          if (action === 'delete') {
+            if (typeof onAccessoryDelete !== 'function') {
+              throw new Error('부속자재 삭제 기능을 사용할 수 없습니다.');
+            }
+
+            const accessoryId = String(event.data?.accessory?.id || '').trim();
+            await onAccessoryDelete(event.data?.accessory || null);
+
+            popup.postMessage({
+              type: 'unit-price-technical-accessory-result',
+              sessionId,
+              requestId,
+              action,
+              ok: true,
+              accessoryId,
+            }, '*');
+            return;
+          }
+        } catch (error) {
+          popup.postMessage({
+            type: 'unit-price-technical-accessory-result',
+            sessionId,
+            requestId,
+            action,
+            ok: false,
+            message: error?.message || '부속자재 작업을 완료하지 못했습니다.',
+          }, '*');
+          return;
+        }
+      }
+
+      if (event.data?.type !== 'unit-price-technical-sheet-save') return;
 
       finish({
         opened: true,
         saved: true,
         annotations: normalizeTechnicalAnnotations(event.data.annotations),
         layout: normalizeTechnicalSheetLayout(event.data.layout),
+        accessoryLinks: normalizeTechnicalAccessoryLinks(event.data.accessoryLinks),
         popup,
       });
     };
