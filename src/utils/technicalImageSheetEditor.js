@@ -1280,7 +1280,7 @@ ${getSharedPopupScript()}
           if (deleteButton) {
             deleteButton.addEventListener('click', function () {
               if (!accessory || accessoryRequestBusy) return;
-              if (!window.confirm('"' + accessory.name + '" 공통 부속자재를 삭제하시겠습니까?\n다른 명칭에서 연결한 내용도 함께 제거됩니다.')) return;
+              if (!window.confirm('"' + accessory.name + '" 공통 부속자재를 삭제하시겠습니까?\\n다른 명칭에서 연결한 내용도 함께 제거됩니다.')) return;
               sendAccessoryRequest('delete', { accessory: accessory });
             });
           }
