@@ -59,9 +59,13 @@ import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
 import {
   normalizeTechnicalAnnotations,
-  openTechnicalImageEditorWindow,
-  openTechnicalImageViewerWindow,
 } from '../utils/technicalImageAnnotations';
+import {
+  DEFAULT_TECHNICAL_SHEET_LAYOUT,
+  normalizeTechnicalSheetLayout,
+  openTechnicalSheetEditorWindow,
+  openTechnicalSheetViewerWindow,
+} from '../utils/technicalImageSheetEditor';
 
 const COST_TYPES = [
   { value: 'material', label: '재료비', color: '#0f766e' },
@@ -587,6 +591,9 @@ export default function UnitPriceAnalysis({
   const technicalImageInputRef = useRef(null);
   const [technicalImageBusy, setTechnicalImageBusy] = useState(false);
   const [technicalAnnotations, setTechnicalAnnotations] = useState([]);
+  const [technicalSheetLayout, setTechnicalSheetLayout] = useState(
+    DEFAULT_TECHNICAL_SHEET_LAYOUT,
+  );
   const [technicalAnnotationBusy, setTechnicalAnnotationBusy] = useState(false);
 
 
@@ -600,6 +607,7 @@ export default function UnitPriceAnalysis({
     const normalizedKey = String(imageKey || '').trim();
     if (!normalizedKey) {
       setTechnicalAnnotations([]);
+      setTechnicalSheetLayout(DEFAULT_TECHNICAL_SHEET_LAYOUT);
       return [];
     }
 
@@ -607,22 +615,26 @@ export default function UnitPriceAnalysis({
     try {
       const { data, error } = await supabase
         .from('unit_price_technical_annotations')
-        .select('annotations')
+        .select('annotations, layout_settings')
         .eq('image_key', normalizedKey)
         .maybeSingle();
       if (error) throw error;
       const next = normalizeTechnicalAnnotations(data?.annotations || []);
+      const nextLayout = normalizeTechnicalSheetLayout(data?.layout_settings);
       setTechnicalAnnotations(next);
+      setTechnicalSheetLayout(nextLayout);
       return next;
     } catch (error) {
       const message = String(error?.message || '');
       if (error?.code === '42P01' || /unit_price_technical_annotations/i.test(message)) {
         console.warn('기술자료 지시선 DB가 아직 준비되지 않았습니다:', error);
         setTechnicalAnnotations([]);
+        setTechnicalSheetLayout(DEFAULT_TECHNICAL_SHEET_LAYOUT);
         return [];
       }
       console.error('기술자료 지시선 조회 실패:', error);
       setTechnicalAnnotations([]);
+      setTechnicalSheetLayout(DEFAULT_TECHNICAL_SHEET_LAYOUT);
       return [];
     } finally {
       setTechnicalAnnotationBusy(false);
@@ -634,6 +646,7 @@ export default function UnitPriceAnalysis({
     if (!imageKey) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setTechnicalAnnotations([]);
+      setTechnicalSheetLayout(DEFAULT_TECHNICAL_SHEET_LAYOUT);
       return;
     }
     loadTechnicalAnnotations(imageKey);
@@ -753,10 +766,11 @@ export default function UnitPriceAnalysis({
       .filter(Boolean)
       .join(' · ') || '기술자료';
 
-    const previewWindow = openTechnicalImageViewerWindow({
+    const previewWindow = openTechnicalSheetViewerWindow({
       imageUrl,
       title: imageTitle,
       annotations: technicalAnnotations,
+      layout: technicalSheetLayout,
     });
 
     if (!previewWindow) {
@@ -768,6 +782,7 @@ export default function UnitPriceAnalysis({
     selectedSpec?.image_url,
     showToast,
     technicalAnnotations,
+    technicalSheetLayout,
   ]);
 
   const openTechnicalAnnotationEditor = useCallback(async () => {
@@ -787,10 +802,11 @@ export default function UnitPriceAnalysis({
       .filter(Boolean)
       .join(' · ') || '기술자료';
 
-    const result = await openTechnicalImageEditorWindow({
+    const result = await openTechnicalSheetEditorWindow({
       imageUrl,
       title: imageTitle,
       annotations: technicalAnnotations,
+      layout: technicalSheetLayout,
     });
 
     if (!result?.opened && result?.reason === 'blocked') {
@@ -800,14 +816,17 @@ export default function UnitPriceAnalysis({
     if (!result?.saved) return;
 
     const nextAnnotations = normalizeTechnicalAnnotations(result.annotations);
+    const nextLayout = normalizeTechnicalSheetLayout(result.layout);
     setTechnicalAnnotationBusy(true);
     try {
-      const { error } = await supabase.rpc('save_unit_price_technical_annotations', {
+      const { error } = await supabase.rpc('save_unit_price_technical_sheet', {
         p_image_key: imageKey,
         p_annotations: nextAnnotations,
+        p_layout_settings: nextLayout,
       });
       if (error) throw error;
       setTechnicalAnnotations(nextAnnotations);
+      setTechnicalSheetLayout(nextLayout);
       showToast(
         nextAnnotations.length > 0
           ? `기술자료 지시선 ${nextAnnotations.length}개를 저장했습니다.`
@@ -822,8 +841,8 @@ export default function UnitPriceAnalysis({
       console.error('기술자료 지시선 저장 실패:', error);
       const message = String(error?.message || '');
       showToast(
-        message.includes('save_unit_price_technical_annotations')
-          ? 'v52.48.5.32 Supabase SQL을 먼저 실행해주세요.'
+        message.includes('save_unit_price_technical_sheet')
+          ? 'v52.48.5.34 Supabase SQL을 먼저 실행해주세요.'
           : message || '기술자료 지시선을 저장하지 못했습니다.',
         'error',
       );
@@ -838,6 +857,7 @@ export default function UnitPriceAnalysis({
     selectedSpec?.image_url,
     showToast,
     technicalAnnotations,
+    technicalSheetLayout,
   ]);
 
   const accessibleProjects = useMemo(() => {
