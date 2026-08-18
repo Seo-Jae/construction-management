@@ -239,13 +239,13 @@ const viewerHtml = ({ imageUrl, title, annotations, layout }) => {
     .sheet.fit .image-stage img { display: block; width: 100%; height: auto; }
     .sheet.original .image-stage img { display: block; width: auto; height: auto; max-width: none; max-height: none; }
     .leader-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
-    .leader-line { stroke: #111827; stroke-width: .72; vector-effect: non-scaling-stroke; fill: none; transition: stroke-width .12s ease, opacity .12s ease; }
+    .leader-line { stroke: #2563eb; stroke-width: .78; vector-effect: non-scaling-stroke; fill: none; opacity: .82; transition: stroke-width .12s ease, opacity .12s ease; }
     .leader-line.dimmed { opacity: .22; }
-    .leader-line.active { stroke-width: 1.55; opacity: 1; }
-    .target-dot { position: absolute; width: 5px; height: 5px; border-radius: 50%; transform: translate(-50%,-50%); background: #111827; pointer-events: none; opacity: .76; }
+    .leader-line.active { stroke: #2563eb; stroke-width: 1.65; opacity: 1; }
+    .target-dot { position: absolute; width: 5px; height: 5px; border-radius: 50%; transform: translate(-50%,-50%); background: #2563eb; pointer-events: none; opacity: .82; }
     .target-dot.active { width: 8px; height: 8px; opacity: 1; }
-    .number-marker { position: absolute; width: 25px; height: 25px; transform: translate(-50%,-50%); border: 1.8px solid #111827; border-radius: 50%; display: grid; place-items: center; background: #fff; color: #111827; font-family: "Arial Narrow", Arial, "Malgun Gothic", sans-serif; font-size: 12px; font-weight: 800; line-height: 1; cursor: default; transition: transform .12s ease, border-width .12s ease; }
-    .number-marker.active { transform: translate(-50%,-50%) scale(1.12); border-width: 2.6px; z-index: 10; }
+    .number-marker { position: absolute; width: 25px; height: 25px; transform: translate(-50%,-50%); border: 1.8px solid #2563eb; border-radius: 50%; display: grid; place-items: center; background: #fff; color: #2563eb; font-family: "Arial Narrow", Arial, "Malgun Gothic", sans-serif; font-size: 12px; font-weight: 800; line-height: 1; cursor: default; transition: transform .12s ease, border-width .12s ease, box-shadow .12s ease; }
+    .number-marker.active { transform: translate(-50%,-50%) scale(1.12); border-width: 2.6px; box-shadow: 0 0 0 4px rgba(37,99,235,.14); z-index: 10; }
     .number-marker.dimmed { opacity: .3; }
     .footer { position: relative; width: 100%; height: var(--footer-height); background: #fff; overflow: hidden; }
     .caption-box { position: absolute; left: var(--box-left); top: var(--box-top); width: var(--box-width); display: grid; grid-template-columns: repeat(var(--columns), minmax(0,1fr)); column-gap: var(--column-gap); align-items: start; }
