@@ -360,12 +360,30 @@ const UNIT_PRICE_TECHNICAL_IMAGE_TYPES = new Set([
   'image/webp',
 ]);
 
+// v52.48.5.34.2 Supabase Storage object key는 ASCII 안전 문자열만 사용합니다.
+// image_key 자체(DB 연결키)는 기존 한글 값을 그대로 유지하고,
+// Storage에 파일을 저장할 때의 경로만 UTF-8 HEX로 변환합니다.
 const normalizeTechnicalImageStorageKey = (value) => {
   const normalized = String(value || '')
     .normalize('NFKC')
-    .trim()
-    .replace(/[^a-zA-Z0-9가-힣_-]+/g, '-');
-  return normalized || 'technical-image';
+    .trim();
+
+  if (!normalized) return 'technical-image';
+
+  // 기존 영문/숫자/_/- 키는 경로를 바꾸지 않아 기존 Storage 파일과 호환합니다.
+  if (/^[a-zA-Z0-9_-]+$/.test(normalized)) {
+    return normalized;
+  }
+
+  // 한글 등 Storage key에서 허용되지 않는 문자가 하나라도 있으면
+  // UTF-8 바이트를 HEX로 변환해 완전한 ASCII 경로로 만듭니다.
+  const bytes = new TextEncoder().encode(normalized);
+  const hex = Array.from(
+    bytes,
+    (byte) => byte.toString(16).padStart(2, '0'),
+  ).join('');
+
+  return `key-${hex}`;
 };
 
 const getTechnicalImageStoragePath = (imageKey) => (
