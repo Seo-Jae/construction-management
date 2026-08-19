@@ -257,6 +257,7 @@ const normalizeTechnicalAccessoryLinks = (value) => (
 );
 
 // v52.48.5.37 VIEW 선택연동 + 직관적 부속자재 연결 UI
+// v52.48.5.38 VIEW 마우스 이동/줌 기능
 const viewerHtml = ({ imageUrl, title, annotations, layout, accessories }) => {
   const safeImageUrl = escapeHtml(imageUrl);
   const safeTitle = escapeHtml(title);
@@ -281,8 +282,34 @@ const viewerHtml = ({ imageUrl, title, annotations, layout, accessories }) => {
     button { height: 32px; padding: 0 11px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #334155; font-size: 12px; font-weight: 800; cursor: pointer; }
     button:hover { background: #f8fafc; }
     .workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0,1fr) 350px; background: #0f172a; }
-    .viewer { min-width: 0; min-height: 0; overflow: auto; display: grid; place-items: center; padding: 14px; background: #0f172a; }
-    .sheet { background: #fff; box-shadow: 0 12px 36px rgba(0,0,0,.34); }
+    /* v52.48.5.38
+       기술자료 상세보기 마우스 VIEW:
+       휠 확대/축소 + 좌클릭 드래그 이동 + 더블클릭 화면맞춤 */
+    .viewer {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      display: grid;
+      place-items: center;
+      padding: 14px;
+      background: #0f172a;
+      cursor: grab;
+      touch-action: none;
+      user-select: none;
+    }
+    .viewer.dragging { cursor: grabbing; }
+    .sheet {
+      background: #fff;
+      box-shadow: 0 12px 36px rgba(0,0,0,.34);
+      transform:
+        translate3d(var(--view-pan-x, 0px), var(--view-pan-y, 0px), 0)
+        scale(var(--view-zoom, 1));
+      transform-origin: center center;
+      will-change: transform;
+      transition: transform 70ms ease-out;
+    }
+    .viewer.dragging .sheet { transition: none; }
     .sheet.fit { width: min(780px, calc(100vw - 390px)); }
     .sheet.original { width: max-content; }
 
@@ -310,6 +337,8 @@ const viewerHtml = ({ imageUrl, title, annotations, layout, accessories }) => {
       width: 100%;
       height: 100%;
       object-fit: contain;
+      user-select: none;
+      -webkit-user-drag: none;
     }
     .sheet.original .image-stage {
       display: block;
@@ -330,19 +359,50 @@ const viewerHtml = ({ imageUrl, title, annotations, layout, accessories }) => {
     .leader-line.active { stroke: #2563eb; stroke-width: 1.65; opacity: 1; }
     .target-dot { position: absolute; width: 5px; height: 5px; border-radius: 50%; transform: translate(-50%,-50%); background: #2563eb; pointer-events: none; opacity: .82; }
     .target-dot.active { width: 8px; height: 8px; opacity: 1; }
-    .number-marker { position: absolute; width: 25px; height: 25px; transform: translate(-50%,-50%); border: 1.8px solid #2563eb; border-radius: 50%; display: grid; place-items: center; background: #fff; color: #2563eb; font-family: "Arial Narrow", Arial, "Malgun Gothic", sans-serif; font-size: 12px; font-weight: 800; line-height: 1; cursor: default; transition: transform .12s ease, border-width .12s ease, box-shadow .12s ease; }
+    .number-marker { position: absolute; width: 25px; height: 25px; transform: translate(-50%,-50%); border: 1.8px solid #2563eb; border-radius: 50%; display: grid; place-items: center; background: #fff; color: #2563eb; font-family: "Arial Narrow", Arial, "Malgun Gothic", sans-serif; font-size: 12px; font-weight: 800; line-height: 1; cursor: pointer; transition: transform .12s ease, border-width .12s ease, box-shadow .12s ease; }
     .number-marker.active { transform: translate(-50%,-50%) scale(1.12); border-width: 2.6px; box-shadow: 0 0 0 4px rgba(37,99,235,.14); z-index: 10; }
     .number-marker.dimmed { opacity: .3; }
     .footer { position: relative; width: 100%; height: var(--footer-height); background: #fff; overflow: hidden; }
     .caption-box { position: absolute; left: var(--box-left); top: var(--box-top); width: var(--box-width); display: grid; grid-template-columns: repeat(var(--columns), minmax(0,1fr)); column-gap: var(--column-gap); align-items: start; }
     .caption-column { min-width: 0; display: flex; flex-direction: column; gap: var(--row-gap); }
-    .caption-item { min-width: 0; display: grid; grid-template-columns: auto minmax(0,1fr); align-items: start; gap: .35em; cursor: default; font-family: "Arial Narrow", "Roboto Condensed", Arial, "Malgun Gothic", sans-serif; font-stretch: condensed; font-size: var(--font-size); font-weight: 700; line-height: 1.18; letter-spacing: -.025em; color: #111; }
+    .caption-item { min-width: 0; display: grid; grid-template-columns: auto minmax(0,1fr); align-items: start; gap: .35em; cursor: pointer; font-family: "Arial Narrow", "Roboto Condensed", Arial, "Malgun Gothic", sans-serif; font-stretch: condensed; font-size: var(--font-size); font-weight: 700; line-height: 1.18; letter-spacing: -.025em; color: #111; }
     .caption-number { min-width: 1.55em; text-align: right; white-space: nowrap; }
     .caption-name { min-width: 0; overflow-wrap: anywhere; }
     .caption-desc { grid-column: 2; margin-top: 1px; color: #475569; font-family: Arial, "Malgun Gothic", sans-serif; font-size: .64em; font-weight: 500; line-height: 1.25; letter-spacing: 0; white-space: pre-wrap; }
     .caption-item.active { text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 3px; }
     .caption-item.dimmed { opacity: .26; }
     .empty-caption { color: #94a3b8; font-size: 12px; font-weight: 700; }
+    .zoom-status {
+      min-width: 52px;
+      height: 28px;
+      padding: 0 8px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #dbe3ec;
+      border-radius: 6px;
+      background: #f8fafc;
+      color: #334155;
+      font-size: 11px;
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+    }
+    .viewer-mouse-help {
+      position: absolute;
+      left: 12px;
+      bottom: 10px;
+      z-index: 30;
+      padding: 5px 8px;
+      border: 1px solid rgba(148,163,184,.35);
+      border-radius: 6px;
+      background: rgba(15,23,42,.78);
+      color: #cbd5e1;
+      font-size: 9px;
+      font-weight: 700;
+      line-height: 1.25;
+      pointer-events: none;
+      backdrop-filter: blur(2px);
+    }
     .accessory-panel { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: #f8fafc; border-left: 1px solid #cbd5e1; }
     .accessory-head { flex: 0 0 auto; padding: 10px 10px 8px; background: #fff; border-bottom: 1px solid #e2e8f0; }
     .accessory-head-row { display: flex; align-items: center; gap: 7px; }
@@ -410,16 +470,18 @@ const viewerHtml = ({ imageUrl, title, annotations, layout, accessories }) => {
       <div class="title">기술자료 상세보기</div>
       <div class="sub">${safeTitle} · 지시선과 하단 부재명은 시스템에서 작성된 기술자료입니다.</div>
     </div>
+    <span class="zoom-status" id="zoomStatus">100%</span>
     <button id="fitButton" type="button">화면 맞춤</button>
     <button id="originalButton" type="button">원본 크기</button>
     <button id="closeButton" type="button">닫기</button>
   </div>
   <div class="workspace">
     <div class="viewer" id="viewer">
+      <div class="viewer-mouse-help">마우스 휠 확대/축소 · 드래그 이동 · 더블클릭 화면맞춤</div>
       <div class="sheet fit" id="sheet">
         <div class="image-stage" id="imageStage">
           <div class="image-canvas" id="imageCanvas">
-            <img id="technicalImage" src="${safeImageUrl}" alt="${safeTitle}" />
+            <img id="technicalImage" src="${safeImageUrl}" alt="${safeTitle}" draggable="false" />
             <svg class="leader-layer" id="leaderLayer" viewBox="0 0 100 100" preserveAspectRatio="none"></svg>
             <div id="overlayLayer"></div>
           </div>
@@ -458,6 +520,23 @@ const viewerHtml = ({ imageUrl, title, annotations, layout, accessories }) => {
       var selectedAnnotationId = '';
       var hoverAnnotationId = '';
       var showAllAccessories = false;
+
+      // v52.48.5.38 mouse pan/zoom state
+      var viewZoom = 1;
+      var viewPanX = 0;
+      var viewPanY = 0;
+      var isViewPanning = false;
+      var viewPanPointerId = null;
+      var viewPanStartClientX = 0;
+      var viewPanStartClientY = 0;
+      var viewPanStartX = 0;
+      var viewPanStartY = 0;
+      var viewPanMoved = false;
+      var VIEW_MIN_ZOOM = 0.5;
+      var VIEW_MAX_ZOOM = 5;
+
+      var viewer = document.getElementById('viewer');
+      var zoomStatus = document.getElementById('zoomStatus');
       var sheet = document.getElementById('sheet');
       var imageStage = document.getElementById('imageStage');
       var imageCanvas = document.getElementById('imageCanvas');
@@ -473,6 +552,92 @@ const viewerHtml = ({ imageUrl, title, annotations, layout, accessories }) => {
       var accessoryPreviewImage = document.getElementById('accessoryPreviewImage');
       var accessoryPreviewClose = document.getElementById('accessoryPreviewClose');
 ${getSharedPopupScript()}
+
+      function clampViewZoom(value) {
+        return Math.max(
+          VIEW_MIN_ZOOM,
+          Math.min(VIEW_MAX_ZOOM, Number(value) || 1)
+        );
+      }
+
+      function applyViewTransform() {
+        sheet.style.setProperty('--view-zoom', String(viewZoom));
+        sheet.style.setProperty('--view-pan-x', viewPanX + 'px');
+        sheet.style.setProperty('--view-pan-y', viewPanY + 'px');
+        zoomStatus.textContent = Math.round(viewZoom * 100) + '%';
+      }
+
+      function resetViewTransform() {
+        viewZoom = 1;
+        viewPanX = 0;
+        viewPanY = 0;
+        applyViewTransform();
+      }
+
+      function setViewZoom(nextZoom, clientX, clientY) {
+        var normalizedZoom = clampViewZoom(nextZoom);
+        if (Math.abs(normalizedZoom - viewZoom) < 0.0001) return;
+
+        var rect = viewer.getBoundingClientRect();
+        var centerX = rect.left + (rect.width / 2);
+        var centerY = rect.top + (rect.height / 2);
+        var cursorX = Number.isFinite(clientX) ? clientX : centerX;
+        var cursorY = Number.isFinite(clientY) ? clientY : centerY;
+        var offsetX = cursorX - centerX;
+        var offsetY = cursorY - centerY;
+        var ratio = normalizedZoom / viewZoom;
+
+        // 마우스 커서 아래의 도면 위치가 확대/축소 후에도 그대로 유지되도록
+        // pan 값을 함께 보정합니다.
+        viewPanX = offsetX - ((offsetX - viewPanX) * ratio);
+        viewPanY = offsetY - ((offsetY - viewPanY) * ratio);
+        viewZoom = normalizedZoom;
+        applyViewTransform();
+      }
+
+      function shouldIgnorePanTarget(target) {
+        if (!target || !target.closest) return false;
+        return !!target.closest(
+          '.number-marker, .caption-item, button, input, select, textarea, a'
+        );
+      }
+
+      function stopViewPan(event) {
+        if (!isViewPanning) return;
+
+        if (
+          viewPanPointerId !== null
+          && event
+          && Number.isFinite(event.pointerId)
+          && event.pointerId !== viewPanPointerId
+        ) {
+          return;
+        }
+
+        isViewPanning = false;
+        viewer.classList.remove('dragging');
+
+        if (
+          viewPanPointerId !== null
+          && viewer.hasPointerCapture
+          && viewer.hasPointerCapture(viewPanPointerId)
+        ) {
+          try {
+            viewer.releasePointerCapture(viewPanPointerId);
+          } catch (_error) {
+            // 이미 해제된 경우 무시합니다.
+          }
+        }
+
+        viewPanPointerId = null;
+      }
+
+      function resetViewerToFit() {
+        sheet.className = 'sheet fit';
+        sheet.style.width = '';
+        resetViewTransform();
+        window.requestAnimationFrame(fitTechnicalImageCanvas);
+      }
 
       function fitTechnicalImageCanvas() {
         if (
@@ -930,13 +1095,73 @@ ${getSharedPopupScript()}
         renderAccessories();
       });
 
-      document.getElementById('fitButton').addEventListener('click', function () {
-        sheet.className = 'sheet fit';
-        sheet.style.width = '';
-        window.requestAnimationFrame(fitTechnicalImageCanvas);
+      viewer.addEventListener('wheel', function (event) {
+        event.preventDefault();
+
+        var delta = Number(event.deltaY) || 0;
+        var factor = Math.exp(-delta * 0.0015);
+        setViewZoom(
+          viewZoom * factor,
+          event.clientX,
+          event.clientY
+        );
+      }, { passive: false });
+
+      viewer.addEventListener('pointerdown', function (event) {
+        if (event.button !== 0) return;
+        if (shouldIgnorePanTarget(event.target)) return;
+
+        event.preventDefault();
+        isViewPanning = true;
+        viewPanPointerId = event.pointerId;
+        viewPanStartClientX = event.clientX;
+        viewPanStartClientY = event.clientY;
+        viewPanStartX = viewPanX;
+        viewPanStartY = viewPanY;
+        viewPanMoved = false;
+        viewer.classList.add('dragging');
+
+        if (viewer.setPointerCapture) {
+          try {
+            viewer.setPointerCapture(event.pointerId);
+          } catch (_error) {
+            // 브라우저가 capture를 거부하면 일반 pointer 이벤트로 계속 동작합니다.
+          }
+        }
       });
+
+      viewer.addEventListener('pointermove', function (event) {
+        if (!isViewPanning || event.pointerId !== viewPanPointerId) return;
+
+        var deltaX = event.clientX - viewPanStartClientX;
+        var deltaY = event.clientY - viewPanStartClientY;
+
+        if (!viewPanMoved && Math.hypot(deltaX, deltaY) >= 3) {
+          viewPanMoved = true;
+        }
+
+        viewPanX = viewPanStartX + deltaX;
+        viewPanY = viewPanStartY + deltaY;
+        applyViewTransform();
+      });
+
+      viewer.addEventListener('pointerup', stopViewPan);
+      viewer.addEventListener('pointercancel', stopViewPan);
+      viewer.addEventListener('lostpointercapture', stopViewPan);
+
+      viewer.addEventListener('dblclick', function (event) {
+        if (shouldIgnorePanTarget(event.target)) return;
+        event.preventDefault();
+        resetViewerToFit();
+      });
+
+      document.getElementById('fitButton').addEventListener('click', function () {
+        resetViewerToFit();
+      });
+
       document.getElementById('originalButton').addEventListener('click', function () {
         sheet.className = 'sheet original';
+        resetViewTransform();
         if (technicalImage.naturalWidth) {
           sheet.style.width = technicalImage.naturalWidth + 'px';
         }
@@ -955,6 +1180,7 @@ ${getSharedPopupScript()}
       renderOverlay();
       renderCaption();
       renderAccessories();
+      applyViewTransform();
 
       if (technicalImage.complete) {
         window.requestAnimationFrame(fitTechnicalImageCanvas);
