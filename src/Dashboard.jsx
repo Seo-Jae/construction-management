@@ -3865,6 +3865,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
       <Box
         component="main"
+        className="wooklim-admin-ui"
         sx={{
           flexGrow: 1,
           minWidth: 0,

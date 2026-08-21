@@ -31,6 +31,7 @@ import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded';
 import { supabase } from '../supabaseClient';
 import KoreanDatePicker from '../components/KoreanDatePicker.jsx';
+import SystemPageTitle from '../components/SystemPageTitle.jsx';
 
 const ROLE_OPTIONS = ['담당자', '안전관리자', '관리자', '최고관리자'];
 const ALL_PROJECTS_OPTION = '전체현장';
@@ -1565,14 +1566,10 @@ export default function UserManagement({ currentUserId = '' }) {
           gap: 1.2,
         }}
       >
-        <Box>
-          <Typography sx={{ color: '#0f172a', fontSize: '1rem', fontWeight: 900 }}>
-            회원관리
-          </Typography>
-          <Typography sx={{ mt: 0.2, color: '#64748b', fontSize: '0.68rem' }}>
-            왼쪽에서 회원을 선택한 뒤 오른쪽에서 기본정보와 접근현장을 설정합니다.
-          </Typography>
-        </Box>
+        <SystemPageTitle
+          title="회원관리"
+          help={'왼쪽 회원목록에서 계정을 선택한 뒤 기본정보, 현장배정, 직급 및 메뉴별 조회·수정 권한을 설정합니다.'}
+        />
 
         <Box sx={{ display: 'flex', gap: 0.8, flexWrap: 'wrap' }}>
           <Button
@@ -1720,7 +1717,7 @@ export default function UserManagement({ currentUserId = '' }) {
                       display: 'block',
                       border: '1px solid',
                       borderColor: isSelected ? '#0284c7' : '#e2e8f0',
-                      borderRadius: '10px',
+                      borderRadius: 1,
                       bgcolor: isSelected ? '#f0f9ff' : '#ffffff',
                       color: 'inherit',
                       textAlign: 'left',

@@ -28,6 +28,7 @@ import {
 } from '@mui/material';
 import { supabase } from '../supabaseClient';
 import { UI_FONT_FAMILY } from '../theme.js';
+import SystemPageTitle from '../components/SystemPageTitle.jsx';
 
 const TABLE_NAME = 'organization_chart_nodes';
 const ROOT_KEY = '__root__';
@@ -2483,36 +2484,15 @@ export default function OrganizationChart({
           flexWrap: 'wrap',
         }}
       >
-        <Stack direction="row" spacing={1.2} alignItems="center">
-          <Box
-            sx={{
-              width: 28,
-              height: 28,
-              borderRadius: 1,
-              bgcolor: '#ccfbf1',
-              color: '#0f766e',
-              display: 'grid',
-              placeItems: 'center',
-              fontSize: '0.68rem',
-              fontWeight: 900,
-            }}
-          >
-            조직
-          </Box>
-          <Box>
-            <Typography sx={{ color: '#0f172a', fontSize: '1rem', fontWeight: 900 }}>
-              욱림건설 조직도
-            </Typography>
-            <Typography sx={{ color: '#64748b', fontSize: '0.68rem' }}>
-              {layoutMode
-                ? '부서 제목을 끌면 하위 조직 전체가 함께 이동하고, 가로 분기선을 위·아래로 끌면 높이가 24px 격자에 맞춰 저장됩니다.'
-                : '빈 화면을 끌어 이동하고 마우스 위치에서 휠로 확대·축소할 수 있습니다.'}
-              {latestUpdatedAt
-                ? ` 최종 수정 ${formatDateTime(latestUpdatedAt)}`
-                : ''}
-            </Typography>
-          </Box>
-        </Stack>
+        <SystemPageTitle
+          title="욱림건설 조직도"
+          help={
+            layoutMode
+              ? '배치 편집에서는 부서 제목을 끌면 하위 조직 전체가 함께 이동합니다. 가로 분기선은 위·아래로 이동할 수 있으며 24px 격자에 맞춰 저장됩니다.'
+              : '빈 화면을 마우스로 끌어 이동하고, 마우스 위치에서 휠로 확대·축소할 수 있습니다. 최고관리자는 배치 편집과 조직정보 수정 기능을 사용할 수 있습니다.'
+          }
+          meta={latestUpdatedAt ? '최종 수정 ' + formatDateTime(latestUpdatedAt) : ''}
+        />
 
         <Stack direction="row" spacing={0.65} alignItems="center" flexWrap="wrap" useFlexGap>
           <Stack direction="row" spacing={0.2} alignItems="center">

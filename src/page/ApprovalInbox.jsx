@@ -32,6 +32,7 @@ import {
 import ApprovalReportViewer, {
   downloadApprovalReportExcel,
 } from './ApprovalReportViewer.jsx';
+import SystemPageTitle from '../components/SystemPageTitle.jsx';
 
 const REQUEST_STATUS = {
   pending: {
@@ -750,28 +751,11 @@ export default function ApprovalInbox() {
             gap: 1,
           }}
         >
-          <Box>
-            <Typography
-              sx={{
-                color: '#1e293b',
-                fontSize: '0.98rem',
-                fontWeight: 900,
-              }}
-            >
-              결재함
-            </Typography>
-            <Typography
-              sx={{
-                mt: 0.2,
-                color: '#64748b',
-                fontSize: '0.7rem',
-              }}
-            >
-              {userLabel || '-'} · 지금 처리할 결재{' '}
-              {pendingCount.toLocaleString()}건 · 처리 결과{' '}
-              {requesterResultCount.toLocaleString()}건
-            </Typography>
-          </Box>
+          <SystemPageTitle
+            title="결재함"
+            help={'내 결재 요청과 처리 결과를 상태별로 확인하고, 결재 문서를 미리보기·다운로드하거나 승인·반려 처리할 수 있습니다.'}
+            meta={`${userLabel || '-'} · 지금 처리할 결재 ${pendingCount.toLocaleString()}건 · 처리 결과 ${requesterResultCount.toLocaleString()}건`}
+          />
 
           <Tooltip title="결재함 새로고침">
             <IconButton
