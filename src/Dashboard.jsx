@@ -2238,8 +2238,9 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     clearDailyWorkerRows(worksheet);
 
     const selectedDateTime = parseReportDateKey(dateStr);
-    // v52.48.5.42.1: 전일누계는 월 경계에서 초기화하지 않고,
-    // 선택일 이전에 저장된 전체 출력일보 데이터를 분석해 누적합니다.
+    // v52.48.5.42.2: 단일 일자 출력 시 전일누계는 해당 월 안에서만 계산합니다.
+    // 월간 배포용 파일은 아래 월간 다운로드 로직에서 전일 시트 누계 수식으로 다시 연결합니다.
+    const selectedMonthPrefix = String(dateStr || '').slice(0, 6);
     const previousJobCounts = {};
 
     Object.entries(savedData).forEach(
@@ -2249,6 +2250,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         if (
           reportDateTime === null ||
           selectedDateTime === null ||
+          !String(reportDateKey).startsWith(selectedMonthPrefix) ||
           reportDateTime >= selectedDateTime
         ) {
           return;
@@ -2448,6 +2450,24 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           dateStr,
           dayName: dayNames[targetDate.getDay()],
           workers,
+        });
+
+        // v52.48.5.42.2: 월간 출력일보 전일누계는 월내 시트 수식으로 연결합니다.
+        // 1일은 0으로 시작하고, 2일부터는 바로 전날 시트의 누계 셀을 참조합니다.
+        cumulativeCellMap.forEach(({ previousCell, totalCell }) => {
+          if (day === 1) {
+            worksheet.getCell(previousCell).value = 0;
+            return;
+          }
+
+          const previousWorksheet = worksheets[day - 2];
+          const previousSheetName = String(
+            previousWorksheet?.name || `${month}.${day - 1}`,
+          ).replace(/'/g, "''");
+
+          worksheet.getCell(previousCell).value = {
+            formula: `'${previousSheetName}'!${totalCell}`,
+          };
         });
       }
 
