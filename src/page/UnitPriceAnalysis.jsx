@@ -2141,6 +2141,7 @@ export default function UnitPriceAnalysis({
   // v52.48.5.39 사용자 제공 일위대가 엑셀 양식 적용
   // v52.48.5.39.1 Excel 복구경고 개선 + 품명 A열 직접 입력
   // v52.48.5.39.2 ExcelJS 순수 생성 방식: 복구경고/템플릿 로드 오류 제거 + 품명 A열
+  // v52.48.5.39.3 Excel 세부서식 + PDF 동일양식 출력
   const exportDocumentExcel = async () => {
     const exportRows = draftRows.filter((row) => String(row.itemName || '').trim());
     if (exportRows.length === 0) {
@@ -2268,6 +2269,12 @@ export default function UnitPriceAnalysis({
           'N4:N5',
         ].forEach((range) => sheet.mergeCells(range));
 
+        // 원본 양식의 품명 영역처럼 A:B를 행별로 병합합니다.
+        // 값이 없는 행에서도 A/B 사이의 세로선이 생기지 않습니다.
+        for (let rowNumber = bodyStartRow; rowNumber <= bodyEndRow; rowNumber += 1) {
+          sheet.mergeCells(`A${rowNumber}:B${rowNumber}`);
+        }
+
         // 기본 글꼴/정렬/테두리
         for (let rowNumber = 1; rowNumber <= printEndRow; rowNumber += 1) {
           for (let columnNumber = 1; columnNumber <= 14; columnNumber += 1) {
@@ -2304,6 +2311,7 @@ export default function UnitPriceAnalysis({
         sheet.getCell('C1').alignment = {
           vertical: 'middle',
           horizontal: 'distributed',
+          indent: 8,
         };
         ['K1', 'K2', 'K3'].forEach((address) => {
           sheet.getCell(address).font = { ...baseFont, bold: true };
@@ -2369,10 +2377,9 @@ export default function UnitPriceAnalysis({
               )
               : getSubmittedUnitPrice(item, roundingAmount);
 
-            // 요청사항: A열에 실제 품명, B열은 공란.
+            // 요청사항: A:B 병합 영역에 실제 품명만 기록합니다.
             // 재료비/노무비/경비 구분 텍스트는 본문에 기록하지 않습니다.
             sheet.getCell(`A${rowNumber}`).value = item.itemName || '';
-            sheet.getCell(`B${rowNumber}`).value = null;
             sheet.getCell(`C${rowNumber}`).value = item.specification || '';
             sheet.getCell(`D${rowNumber}`).value = item.unit || '';
             sheet.getCell(`E${rowNumber}`).value = quantity;
@@ -2390,7 +2397,7 @@ export default function UnitPriceAnalysis({
               item.remarks || '',
             ].filter(Boolean).join(' · ');
           } else {
-            ['A', 'B', 'C', 'D', 'E', 'F', 'H', 'J', 'N'].forEach((column) => {
+            ['A', 'C', 'D', 'E', 'F', 'H', 'J', 'N'].forEach((column) => {
               sheet.getCell(`${column}${rowNumber}`).value = null;
             });
           }
@@ -2416,7 +2423,7 @@ export default function UnitPriceAnalysis({
           });
           sheet.getCell(`E${rowNumber}`).numFmt = quantityFormat;
 
-          ['A', 'B', 'C', 'N'].forEach((column) => {
+          ['A', 'C', 'N'].forEach((column) => {
             sheet.getCell(`${column}${rowNumber}`).alignment = {
               vertical: 'middle',
               horizontal: 'left',
@@ -2484,6 +2491,12 @@ export default function UnitPriceAnalysis({
           };
         }
 
+        // 특이사항 3개 행은 하나의 큰 박스처럼 보이도록 내부 셀 선을 모두 제거합니다.
+        for (let rowNumber = noteRow; rowNumber <= printEndRow; rowNumber += 1) {
+          for (let col = 1; col <= 14; col += 1) {
+            sheet.getRow(rowNumber).getCell(col).border = {};
+          }
+        }
         for (let col = 1; col <= 14; col += 1) {
           sheet.getRow(noteRow).getCell(col).border = {
             ...sheet.getRow(noteRow).getCell(col).border,
@@ -2492,6 +2505,16 @@ export default function UnitPriceAnalysis({
           sheet.getRow(printEndRow).getCell(col).border = {
             ...sheet.getRow(printEndRow).getCell(col).border,
             bottom: medium,
+          };
+        }
+        for (let rowNumber = noteRow; rowNumber <= printEndRow; rowNumber += 1) {
+          sheet.getCell(`A${rowNumber}`).border = {
+            ...sheet.getCell(`A${rowNumber}`).border,
+            left: medium,
+          };
+          sheet.getCell(`N${rowNumber}`).border = {
+            ...sheet.getCell(`N${rowNumber}`).border,
+            right: medium,
           };
         }
 
@@ -2531,11 +2554,298 @@ export default function UnitPriceAnalysis({
 
 
   const printDocument = () => {
-    if (draftRows.length === 0) {
+    const exportRows = draftRows.filter((row) => String(row.itemName || '').trim());
+    if (exportRows.length === 0) {
       showToast('출력할 일위대가 항목이 없습니다.', 'warning');
       return;
     }
-    window.print();
+
+    const printWindow = window.open('', '_blank', 'width=1400,height=900');
+    if (!printWindow) {
+      showToast('팝업이 차단되어 출력창을 열지 못했습니다.', 'warning');
+      return;
+    }
+
+    const isNet = printMode === 'net';
+    const baseCapacity = 20;
+    const bodyCapacity = Math.max(baseCapacity, exportRows.length);
+
+    const escapeHtml = (value) => String(value ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+
+    const printMoney = (value) => {
+      const number = Math.round(toNumber(value));
+      return Math.abs(number) < 0.000001 ? '-' : formatMoney(number);
+    };
+
+    const printQuantity = (value) => formatQuantity(toNumber(value));
+
+    const totalsForPrint = {
+      material: 0,
+      labor: 0,
+      expense: 0,
+      grand: 0,
+    };
+
+    const bodyRowsHtml = Array.from({ length: bodyCapacity }, (_, index) => {
+      const item = exportRows[index];
+      if (!item) {
+        return `
+          <tr class="body-row">
+            <td colspan="2" class="text-left"></td>
+            <td class="text-left"></td>
+            <td></td>
+            <td></td>
+            <td></td><td class="money">-</td>
+            <td></td><td class="money">-</td>
+            <td></td><td class="money">-</td>
+            <td class="money">-</td><td class="money">-</td>
+            <td class="text-left"></td>
+          </tr>`;
+      }
+
+      const ownerSupplied = isOwnerSuppliedMaterial(item);
+      const roundingAmount = roundingAmounts.get(item.clientId);
+      const summaryType = getSummaryCostType(item);
+      const quantity = isNet
+        ? toNumber(item.netQuantity)
+        : getSubmittedQuantity(item);
+      const unitPrice = isNet
+        ? (
+          ownerSupplied || isRoundingMaterial(item)
+            ? 0
+            : toNumber(item.unitPrice)
+        )
+        : getSubmittedUnitPrice(item, roundingAmount);
+
+      const materialUnit = summaryType === 'material' ? unitPrice : 0;
+      const laborUnit = summaryType === 'labor' ? unitPrice : 0;
+      const expenseUnit = summaryType === 'expense' ? unitPrice : 0;
+      const materialAmount = quantity * materialUnit;
+      const laborAmount = quantity * laborUnit;
+      const expenseAmount = quantity * expenseUnit;
+      const totalUnit = materialUnit + laborUnit + expenseUnit;
+      const totalAmount = materialAmount + laborAmount + expenseAmount;
+
+      totalsForPrint.material += materialAmount;
+      totalsForPrint.labor += laborAmount;
+      totalsForPrint.expense += expenseAmount;
+      totalsForPrint.grand += totalAmount;
+
+      const remarks = [
+        ownerSupplied ? '지급자재' : '',
+        item.remarks || '',
+      ].filter(Boolean).join(' · ');
+
+      return `
+        <tr class="body-row">
+          <td colspan="2" class="text-left">${escapeHtml(item.itemName || '')}</td>
+          <td class="text-left">${escapeHtml(item.specification || '')}</td>
+          <td>${escapeHtml(item.unit || '')}</td>
+          <td class="number">${escapeHtml(printQuantity(quantity))}</td>
+          <td class="money">${escapeHtml(printMoney(materialUnit))}</td>
+          <td class="money">${escapeHtml(printMoney(materialAmount))}</td>
+          <td class="money">${escapeHtml(printMoney(laborUnit))}</td>
+          <td class="money">${escapeHtml(printMoney(laborAmount))}</td>
+          <td class="money">${escapeHtml(printMoney(expenseUnit))}</td>
+          <td class="money">${escapeHtml(printMoney(expenseAmount))}</td>
+          <td class="money">${escapeHtml(printMoney(totalUnit))}</td>
+          <td class="money">${escapeHtml(printMoney(totalAmount))}</td>
+          <td class="text-left">${escapeHtml(remarks)}</td>
+        </tr>`;
+    }).join('');
+
+    const headerItemName = (
+      selectedMiddle
+      || documentState.documentName
+      || selectedDetail
+      || ''
+    );
+    const headerSpecification = selectedDetail || '';
+    const notes = String(documentState.notes || '').trim();
+
+    const html = `<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>${escapeHtml(documentState.documentName || selectedDetail || '일위대가')}</title>
+  <style>
+    @page {
+      size: A4 landscape;
+      margin: 5mm;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #fff;
+      color: #000;
+      font-family: "맑은 고딕", "Malgun Gothic", Arial, sans-serif;
+    }
+    body { width: 100%; }
+    .sheet-wrap {
+      width: 100%;
+      margin: 0 auto;
+    }
+    table.unit-price-sheet {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      border: 2px solid #000;
+      font-size: 9pt;
+    }
+    .unit-price-sheet td {
+      height: 18.75pt;
+      padding: 1.5pt 3pt;
+      border: 1px solid #000;
+      text-align: center;
+      vertical-align: middle;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+    .unit-price-sheet .text-left { text-align: left; }
+    .unit-price-sheet .number,
+    .unit-price-sheet .money { text-align: right; }
+    .unit-price-sheet .top-label { font-weight: 700; }
+    .unit-price-sheet .title-cell {
+      padding: 0 8%;
+      font-size: 16pt;
+      font-weight: 700;
+    }
+    .title-distributed {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .unit-price-sheet .header {
+      background: #ccffff;
+      font-weight: 700;
+    }
+    .unit-price-sheet .header-bottom td {
+      border-bottom: 3px double #000;
+    }
+    .unit-price-sheet .body-row td {
+      border-top: 0.5px solid #000;
+      border-bottom: 0.5px solid #000;
+    }
+    .unit-price-sheet .total-row td {
+      background: #ccffff;
+      font-weight: 700;
+      border-bottom: 2px solid #000;
+    }
+    .unit-price-sheet .note-cell {
+      height: 56.25pt;
+      padding: 4pt 3pt;
+      border: 2px solid #000;
+      text-align: left;
+      vertical-align: top;
+      white-space: normal;
+      overflow: visible;
+    }
+    .note-title {
+      display: inline-block;
+      margin-right: 8pt;
+      font-size: 11pt;
+      font-weight: 700;
+    }
+    .note-text { font-size: 9pt; }
+    @media print {
+      body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .sheet-wrap { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <div class="sheet-wrap">
+    <table class="unit-price-sheet">
+      <colgroup>
+        <col style="width:6.519%" />
+        <col style="width:6.519%" />
+        <col style="width:15.634%" />
+        <col style="width:4.240%" />
+        <col style="width:5.759%" />
+        <col style="width:6.139%" />
+        <col style="width:7.278%" />
+        <col style="width:6.139%" />
+        <col style="width:7.278%" />
+        <col style="width:6.139%" />
+        <col style="width:7.278%" />
+        <col style="width:6.519%" />
+        <col style="width:7.278%" />
+        <col style="width:7.278%" />
+      </colgroup>
+      <tbody>
+        <tr>
+          <td rowspan="3" class="top-label">NO</td>
+          <td rowspan="3" class="top-label">1</td>
+          <td rowspan="3" colspan="7" class="title-cell">
+            <div class="title-distributed"><span>일</span><span>위</span><span>대</span><span>가</span></div>
+          </td>
+          <td class="top-label">품&nbsp;&nbsp;&nbsp;&nbsp;명</td>
+          <td colspan="4" class="top-label">${escapeHtml(headerItemName)}</td>
+        </tr>
+        <tr>
+          <td class="top-label">규&nbsp;&nbsp;&nbsp;&nbsp;격</td>
+          <td colspan="4" class="top-label">${escapeHtml(headerSpecification)}</td>
+        </tr>
+        <tr>
+          <td class="top-label">단&nbsp;&nbsp;&nbsp;&nbsp;위</td>
+          <td colspan="4" class="top-label">M2</td>
+        </tr>
+        <tr class="header">
+          <td rowspan="2" colspan="2">품&nbsp;&nbsp;&nbsp;&nbsp;명</td>
+          <td rowspan="2">규&nbsp;&nbsp;&nbsp;&nbsp;격</td>
+          <td rowspan="2">단위</td>
+          <td rowspan="2">수량</td>
+          <td colspan="2">재료비</td>
+          <td colspan="2">노무비</td>
+          <td colspan="2">경비</td>
+          <td colspan="2">합계</td>
+          <td rowspan="2">비고</td>
+        </tr>
+        <tr class="header header-bottom">
+          <td>단가</td><td>금액</td>
+          <td>단가</td><td>금액</td>
+          <td>단가</td><td>금액</td>
+          <td>단가</td><td>금액</td>
+        </tr>
+        ${bodyRowsHtml}
+        <tr class="total-row">
+          <td colspan="2"></td>
+          <td></td><td></td><td></td>
+          <td></td><td class="money">${escapeHtml(printMoney(totalsForPrint.material))}</td>
+          <td></td><td class="money">${escapeHtml(printMoney(totalsForPrint.labor))}</td>
+          <td></td><td class="money">${escapeHtml(printMoney(totalsForPrint.expense))}</td>
+          <td></td><td class="money">${escapeHtml(printMoney(totalsForPrint.grand))}</td>
+          <td></td>
+        </tr>
+        <tr>
+          <td colspan="14" class="note-cell">
+            <span class="note-title">*특이사항</span>
+            ${notes ? `<span class="note-text">${escapeHtml(notes)}</span>` : ''}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <script>
+    window.addEventListener('load', function () {
+      window.focus();
+      setTimeout(function () { window.print(); }, 250);
+    });
+  </script>
+</body>
+</html>`;
+
+    printWindow.document.open();
+    printWindow.document.write(html);
+    printWindow.document.close();
   };
 
   const renderAuthoringTable = () => (
