@@ -256,6 +256,64 @@ const isRoundingMaterial = (row) => (
   row.costType === 'material_rounding' || row.costType === 'expense_rounding'
 );
 
+// v52.48.5.42.3 기본 잡자재 단수정리
+const DEFAULT_ROUNDING_ITEM_NAME = '잡자재';
+const DEFAULT_ROUNDING_SPECIFICATION = '피스 외';
+const DEFAULT_ROUNDING_UNIT = '식';
+
+const makeDefaultRoundingRow = (sortOrder = 0) => ({
+  ...makeBlankRow(sortOrder),
+  costType: 'material_rounding',
+  itemName: DEFAULT_ROUNDING_ITEM_NAME,
+  specification: DEFAULT_ROUNDING_SPECIFICATION,
+  unit: DEFAULT_ROUNDING_UNIT,
+  netQuantity: 0,
+  laborAmountPerM2: '',
+  unitPrice: 0,
+  itemMarkupPercent: '',
+  submittedQuantityOverride: '',
+  isOwnerSupplied: false,
+});
+
+const ensureDefaultRoundingRow = (rows) => {
+  const sourceRows = Array.isArray(rows) ? rows : [];
+  const nextRows = [];
+  let roundingAdded = false;
+
+  sourceRows.forEach((row) => {
+    if (!isRoundingMaterial(row)) {
+      nextRows.push(row);
+      return;
+    }
+
+    // 문서당 재료비(단수정리)는 한 개만 유지합니다.
+    if (roundingAdded) return;
+
+    roundingAdded = true;
+    nextRows.push({
+      ...row,
+      costType: 'material_rounding',
+      itemName: DEFAULT_ROUNDING_ITEM_NAME,
+      specification: DEFAULT_ROUNDING_SPECIFICATION,
+      unit: DEFAULT_ROUNDING_UNIT,
+      netQuantity: 0,
+      laborAmountPerM2: '',
+      itemMarkupPercent: '',
+      submittedQuantityOverride: '',
+      isOwnerSupplied: false,
+    });
+  });
+
+  if (!roundingAdded) {
+    nextRows.push(makeDefaultRoundingRow(nextRows.length));
+  }
+
+  return nextRows.map((row, index) => ({
+    ...row,
+    sortOrder: index,
+  }));
+};
+
 const getSummaryCostType = (row) => (
   isRoundingMaterial(row) ? 'material' : row.costType
 );
@@ -1243,12 +1301,15 @@ export default function UnitPriceAnalysis({
       sortOrder: item.sort_order ?? index,
     }));
 
-    if (target === 'template') setTemplateRows(nextRows);
-    else {
-      setDraftRows(nextRows);
-      setSelectedRowIds(new Set());
+    if (target === 'template') {
+      setTemplateRows(nextRows);
+      return nextRows;
     }
-    return nextRows;
+
+    const draftNextRows = ensureDefaultRoundingRow(nextRows);
+    setDraftRows(draftNextRows);
+    setSelectedRowIds(new Set());
+    return draftNextRows;
   }, []);
 
   useEffect(() => {
@@ -1305,8 +1366,12 @@ export default function UnitPriceAnalysis({
   );
 
   const updateDraftRow = (clientId, field, value) => {
-    setDraftRows((previous) => previous.map((row) => {
+    setDraftRows((previous) => ensureDefaultRoundingRow(previous.map((row) => {
       if (row.clientId !== clientId) return row;
+
+      if (isRoundingMaterial(row) && field === 'costType' && value !== 'material_rounding') {
+        return row;
+      }
 
       if (field === 'laborAmountPerM2') {
         const amount = value;
@@ -1346,9 +1411,9 @@ export default function UnitPriceAnalysis({
           return {
             ...row,
             costType: value,
-            itemName: '',
-            specification: '',
-            unit: '식',
+            itemName: DEFAULT_ROUNDING_ITEM_NAME,
+            specification: DEFAULT_ROUNDING_SPECIFICATION,
+            unit: DEFAULT_ROUNDING_UNIT,
             netQuantity: 0,
             laborAmountPerM2: '',
             unitPrice: 100,
@@ -1367,7 +1432,7 @@ export default function UnitPriceAnalysis({
       }
 
       return { ...row, [field]: value };
-    }));
+    })));
   };
 
   const updateTemplateRow = (clientId, field, value) => {
@@ -1475,10 +1540,18 @@ export default function UnitPriceAnalysis({
       return;
     }
 
-    setDraftRows((previous) => previous
-      .filter((row) => !selectedRowIds.has(row.clientId))
-      .map((row, index) => ({ ...row, sortOrder: index })));
+    const removingDefaultRounding = draftRows.some(
+      (row) => selectedRowIds.has(row.clientId) && isRoundingMaterial(row),
+    );
+
+    setDraftRows((previous) => ensureDefaultRoundingRow(
+      previous.filter((row) => !selectedRowIds.has(row.clientId)),
+    ));
     setSelectedRowIds(new Set());
+
+    if (removingDefaultRounding) {
+      showToast('잡자재 재료비(단수정리)는 모든 일위대가의 기본항목이라 삭제되지 않습니다.', 'info');
+    }
   };
 
   const moveSelectedDraftRows = (direction) => {
@@ -1601,7 +1674,8 @@ export default function UnitPriceAnalysis({
       showToast('벽체 또는 천정 규격을 선택해주세요.', 'warning');
       return false;
     }
-    if (draftRows.length === 0 || draftRows.every((row) => !row.itemName.trim())) {
+    const regularRows = draftRows.filter((row) => !isRoundingMaterial(row));
+    if (regularRows.length === 0 || regularRows.every((row) => !String(row.itemName || '').trim())) {
       showToast('일위대가 항목을 한 개 이상 입력해주세요.', 'warning');
       return false;
     }
@@ -1740,7 +1814,7 @@ export default function UnitPriceAnalysis({
       setSelectedSpec(spec);
       setDocumentState(nextDocument);
       setSelectedRowIds(new Set());
-      setDraftRows(mapStoredDocumentItems(data, nextDocument));
+      setDraftRows(ensureDefaultRoundingRow(mapStoredDocumentItems(data, nextDocument)));
       setMainTab(0);
       showToast('저장된 일위대가를 불러왔습니다.', 'info');
     } catch (error) {
@@ -1809,7 +1883,7 @@ export default function UnitPriceAnalysis({
     setSelectedSpec(spec);
     setDocumentState(nextDocument);
     setSelectedRowIds(new Set());
-    setDraftRows(mapStoredDocumentItems(snapshotItems, nextDocument));
+    setDraftRows(ensureDefaultRoundingRow(mapStoredDocumentItems(snapshotItems, nextDocument)));
     setRevisionDialog((previous) => ({ ...previous, open: false }));
     setMainTab(0);
     showToast(
