@@ -588,6 +588,7 @@ export default function MonthlyLaborManagement({
     useState(false);
   const [message, setMessage] =
     useState(null);
+  const [guideOpen, setGuideOpen] = useState(true);
 
   const [
     payrollEditor,
@@ -1825,23 +1826,24 @@ export default function MonthlyLaborManagement({
         </Stack>
       </Paper>
 
-      <Alert
-        severity="info"
-        sx={{
-          py: 0.2,
-          '& .MuiAlert-message':
-            {
-              py: 0.45,
-              fontSize:
-                '0.72rem',
-            },
+      <Snackbar
+        open={guideOpen}
+        autoHideDuration={5200}
+        onClose={(_event, reason) => {
+          if (reason !== 'clickaway') setGuideOpen(false);
         }}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        sx={{ top: '72px !important' }}
       >
-        현장과 작성월별로 필요한 근로자를 조회·선별하고
-        개인정보를 모아 Excel 다운로드 준비를 합니다.
-        실제 출역일자·일급·노임금액 입력과 노임 계산은
-        다운로드한 Excel에서 진행합니다.
-      </Alert>
+        <Alert
+          severity="info"
+          variant="filled"
+          onClose={() => setGuideOpen(false)}
+          sx={{ maxWidth: 760, fontSize: '0.72rem', lineHeight: 1.55 }}
+        >
+          현장과 작성월별로 필요한 근로자를 조회·선별하고 개인정보를 모아 Excel 다운로드 준비를 합니다. 실제 출역일자·일급·노임금액 입력과 노임 계산은 다운로드한 Excel에서 진행합니다.
+        </Alert>
+      </Snackbar>
 
       <Paper
         variant="outlined"

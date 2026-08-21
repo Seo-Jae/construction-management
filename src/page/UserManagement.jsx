@@ -33,6 +33,7 @@ import { supabase } from '../supabaseClient';
 import KoreanDatePicker from '../components/KoreanDatePicker.jsx';
 import SystemPageTitle from '../components/SystemPageTitle.jsx';
 
+import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 const ROLE_OPTIONS = ['담당자', '안전관리자', '관리자', '최고관리자'];
 const ALL_PROJECTS_OPTION = '전체현장';
 const ACCESS_SCOPE_OPTIONS = [
@@ -1572,14 +1573,12 @@ export default function UserManagement({ currentUserId = '' }) {
         />
 
         <Box sx={{ display: 'flex', gap: 0.8, flexWrap: 'wrap' }}>
-          <Button
-            variant="outlined"
-            size="small"
+          <SystemRefreshButton
             onClick={loadAccounts}
-            disabled={loading || bulkProcessing}
-          >
-            새로고침
-          </Button>
+            loading={loading}
+            disabled={bulkProcessing}
+            label="회원관리 새로고침"
+          />
           <Button
             color="error"
             variant="outlined"

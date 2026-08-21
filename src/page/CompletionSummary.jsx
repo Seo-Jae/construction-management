@@ -26,6 +26,7 @@ import {
 } from '../utils/buildingUnits.js';
 
 import SystemPageTitle from '../components/SystemPageTitle.jsx';
+import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 const PAGE_SIZE = 1000;
 
 const parseDateValue = (value) => {
@@ -383,14 +384,11 @@ export default function CompletionSummary({
             </Select>
           </FormControl>
 
-          <Button
-            variant="outlined"
-            startIcon={<RefreshIcon />}
+          <SystemRefreshButton
             onClick={() => setRefreshKey((previous) => previous + 1)}
-            disabled={loading}
-          >
-            새로고침
-          </Button>
+            loading={loading}
+            label={`${isMonthly ? '월별' : '주별'} 완료 집계 새로고침`}
+          />
 
           <Button
             variant="contained"

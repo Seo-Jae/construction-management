@@ -17,6 +17,8 @@ import {
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
 
+import SystemPageTitle from '../components/SystemPageTitle.jsx';
+import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 const TEMPLATE_PROJECTS = [
   {
     projectName: '디에이치 방배',
@@ -3510,27 +3512,12 @@ export default function WeeklyOverview({
           }}
         >
           <Box>
-            <Typography
-              sx={{
-                color: '#0f172a',
-                fontSize: '0.86rem',
-                fontWeight: 900,
-              }}
-            >
-              주간업무총괄 작성
-            </Typography>
+            <SystemPageTitle
+              title="주간업무총괄 작성"
+              help="각 현장의 주간업무를 총괄 양식으로 작성·저장하고 미리보기와 Excel 파일에 반영합니다. 행 추가 내용은 줄 단위로 반영됩니다."
+            />
 
-            <Typography
-              sx={{
-                mt: 0.15,
-                color: '#64748b',
-                fontSize: '0.66rem',
-                lineHeight: 1.45,
-              }}
-            >
-              행 추가 내용은 미리보기와 XLS에
-              줄 단위로 반영됩니다.
-            </Typography>
+            
           </Box>
 
           <Box
@@ -3578,23 +3565,11 @@ export default function WeeklyOverview({
               원본 불러오기
             </Button>
 
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={
-                handleManualReload
-              }
+            <SystemRefreshButton
+              onClick={handleManualReload}
               disabled={saving}
-              sx={{
-                minWidth: 58,
-                px: 0.7,
-                whiteSpace: 'nowrap',
-                fontSize: '0.62rem',
-                fontWeight: 800,
-              }}
-            >
-              새로고침
-            </Button>
+              label="주간업무총괄 새로고침"
+            />
 
             <Button
               size="small"

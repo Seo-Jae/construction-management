@@ -18,6 +18,7 @@ import WeeklyOverview from './WeeklyOverview.jsx';
 import KoreanMonthSelect from '../components/KoreanMonthSelect.jsx';
 
 import SystemPageTitle from '../components/SystemPageTitle.jsx';
+import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 const PAGE_SIZE = 1000;
 
 const getKoreaYearMonth = (
@@ -768,20 +769,11 @@ export default function WeeklyOverviewArchive({
             </Typography>
           </Box>
 
-          <Button
-            size="small"
-            variant="outlined"
+          <SystemRefreshButton
             onClick={loadItems}
-            disabled={loading}
-            sx={{
-              minWidth: 58,
-              px: 0.65,
-              fontSize: '0.62rem',
-              fontWeight: 900,
-            }}
-          >
-            새로고침
-          </Button>
+            loading={loading}
+            label="주간업무보관 새로고침"
+          />
         </Box>
 
         <Box

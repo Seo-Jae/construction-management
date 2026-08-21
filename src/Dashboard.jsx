@@ -2388,10 +2388,21 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
   const handleDownloadMonthlyExcel = async () => {
     try {
-      const year = todayMidnight.getFullYear();
-      const monthIndex = todayMidnight.getMonth();
+      // v52.48.5.42: 화면에서 선택한 월을 기준으로 월간 출력일보를 생성합니다.
+      // 현재월은 오늘까지, 과거/미래월은 해당 월 말일까지 생성합니다.
+      // 미래월은 savedData가 없으므로 자연스럽게 빈 출력일보 양식으로 생성됩니다.
+      const year = viewYear;
+      const monthIndex = viewMonth;
       const month = monthIndex + 1;
-      const lastDay = todayMidnight.getDate();
+      const currentYear = todayMidnight.getFullYear();
+      const currentMonthIndex = todayMidnight.getMonth();
+      const currentMonthValue = currentYear * 12 + currentMonthIndex;
+      const selectedMonthValue = year * 12 + monthIndex;
+      const isCurrentMonth = selectedMonthValue === currentMonthValue;
+      const isFutureMonth = selectedMonthValue > currentMonthValue;
+      const lastDay = isCurrentMonth
+        ? todayMidnight.getDate()
+        : new Date(year, monthIndex + 1, 0).getDate();
       const workbook = await loadDailyReportTemplate();
       const templateWorksheet = workbook.worksheets[0];
       const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
@@ -2420,7 +2431,9 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       for (let day = 1; day <= lastDay; day += 1) {
         const targetDate = new Date(year, monthIndex, day);
         const dateStr = formatYYMMDD(targetDate);
-        const workers = savedData[dateStr]?.workers || [];
+        const workers = isFutureMonth
+          ? []
+          : (savedData[dateStr]?.workers || []);
         const worksheet = worksheets[day - 1];
 
         fillDailyReportWorksheet({

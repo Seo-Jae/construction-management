@@ -49,6 +49,7 @@ import KoreanMonthSelect from '../components/KoreanMonthSelect.jsx';
 import KoreanDatePicker from '../components/KoreanDatePicker.jsx';
 
 import SystemPageTitle from '../components/SystemPageTitle.jsx';
+import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 const PAGE_SIZE = 1000;
 const INSERT_CHUNK_SIZE = 400;
 
@@ -4444,28 +4445,11 @@ export default function MaterialInputStatus({
             업로드 이력
           </Button>
 
-          <Button
-            variant="outlined"
-            startIcon={
-              loading
-                ? (
-                  <CircularProgress
-                    size={15}
-                  />
-                )
-                : (
-                  <RefreshIcon />
-                )
-            }
-            onClick={
-              loadActiveSnapshot
-            }
-            disabled={
-              loading
-            }
-          >
-            새로고침
-          </Button>
+          <SystemRefreshButton
+            onClick={loadActiveSnapshot}
+            loading={loading}
+            label="자재투입현황 새로고침"
+          />
         </Box>
       </Paper>
 

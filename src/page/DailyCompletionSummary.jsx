@@ -26,6 +26,7 @@ import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
 
 import SystemPageTitle from '../components/SystemPageTitle.jsx';
+import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 const PAGE_SIZE = 1000;
 const DATE_RANGE_OPTIONS = [
   14,
@@ -1718,21 +1719,11 @@ export default function DailyCompletionSummary({
             </Box>
           )}
 
-          <Button
-            variant="outlined"
-            startIcon={
-              <RefreshIcon />
-            }
-            onClick={() =>
-              setRefreshKey(
-                (previous) =>
-                  previous + 1,
-              )
-            }
-            disabled={loading}
-          >
-            새로고침
-          </Button>
+          <SystemRefreshButton
+            onClick={() => setRefreshKey((previous) => previous + 1)}
+            loading={loading}
+            label="일별 완료 집계 새로고침"
+          />
 
           <Button
             variant="contained"

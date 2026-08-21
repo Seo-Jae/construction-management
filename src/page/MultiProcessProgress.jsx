@@ -27,6 +27,7 @@ import {
 } from '../utils/buildingUnits.js';
 
 import SystemPageTitle from '../components/SystemPageTitle.jsx';
+import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 const PAGE_SIZE = 1000;
 const GRID_CELL_HEIGHT = 18;
 const GRID_ROW_GAP = 1;
@@ -1191,19 +1192,12 @@ export default function MultiProcessProgress({
           </IconButton>
         </Tooltip>
 
-        <Button
-          variant="outlined"
-          startIcon={<RefreshIcon />}
+        <SystemRefreshButton
           onClick={() => setRefreshKey((previous) => previous + 1)}
-          disabled={
-              loading ||
-              targetLoading ||
-              selectedProcesses.length === 0
-            }
-          sx={{ whiteSpace: 'nowrap' }}
-        >
-          새로고침
-        </Button>
+          loading={loading || targetLoading}
+          disabled={selectedProcesses.length === 0}
+          label="다중 공종 진척 현황 새로고침"
+        />
       </Paper>
 
       {errorMessage && <Alert severity="error">{errorMessage}</Alert>}

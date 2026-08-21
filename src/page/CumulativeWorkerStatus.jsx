@@ -24,6 +24,7 @@ import {
 import { supabase } from '../supabaseClient';
 
 import SystemPageTitle from '../components/SystemPageTitle.jsx';
+import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 const SUPABASE_PAGE_SIZE = 1000;
 const ALL_PROJECTS_OPTION = '전체현장';
 
@@ -1086,19 +1087,11 @@ export default function CumulativeWorkerStatus({
               )}
             />
 
-            <Button
-              size="small"
-              variant="outlined"
+            <SystemRefreshButton
               onClick={loadData}
-              sx={{
-                minWidth: 64,
-                whiteSpace: 'nowrap',
-                fontSize: '0.66rem',
-                fontWeight: 900,
-              }}
-            >
-              새로고침
-            </Button>
+              loading={loading}
+              label="누계투입조회 새로고침"
+            />
           </Box>
         </Box>
 

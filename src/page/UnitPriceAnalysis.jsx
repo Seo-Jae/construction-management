@@ -3166,7 +3166,10 @@ export default function UnitPriceAnalysis({
       <Paper sx={{ mb: 1.2, px: 2, py: 1.2, border: '1px solid #dbe3ec' }}>
         <Box sx={{ width: '100%', display: 'flex', alignItems: 'center', gap: 1, flexWrap: { xs: 'wrap', md: 'nowrap' } }}>
           <Stack direction="row" spacing={1.2} alignItems="center">
-            <Typography sx={{ fontSize: '1.22rem', fontWeight: 950, color: '#0f172a', whiteSpace: 'nowrap' }}>일위대가작성</Typography>
+            <SystemPageTitle
+              title="일위대가작성"
+              help="1㎡ 기준 재료비·노무비·경비를 산정하고 저장·공유·출력하며 기술자료를 함께 관리합니다."
+            />
             <Chip label={`현재 현장 · ${projectName || '미선택'}`} color="primary" variant="outlined" />
           </Stack>
           <Box sx={{ flex: 1, minWidth: 12 }} />

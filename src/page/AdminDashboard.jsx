@@ -16,6 +16,7 @@ import { countUniqueUnits } from '../utils/buildingUnits.js';
 import AdminDashboardReportPreview from './AdminDashboardReportPreview.jsx';
 import AdminDashboardScheduleBoard from './AdminDashboardScheduleBoard.jsx';
 
+import SystemPageTitle from '../components/SystemPageTitle.jsx';
 const PAGE_SIZE = 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -1392,17 +1393,10 @@ export default function AdminDashboard({
                 },
               }}
             >
-              <Typography
-                sx={{
-                  minWidth: 0,
-                  color: '#0f172a',
-                  fontSize: '0.82rem',
-                  fontWeight: 900,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                전체현장 Dashboard
-              </Typography>
+              <SystemPageTitle
+                title="전체현장 Dashboard"
+                help="전체 현장의 금일 출력·일보 등록·공정률·주요일정을 한 화면에서 확인합니다."
+              />
 
               <Typography
                 sx={{

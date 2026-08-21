@@ -68,6 +68,7 @@ import {
 } from '../utils/laborQuantityExcel.js';
 
 import SystemPageTitle from '../components/SystemPageTitle.jsx';
+import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 const DEFAULT_UNIT = '㎡';
 const DEFAULT_CHANGE_REASON = '실행 예산 기준 최초 등록';
 const GUIDE_PROCESS_OPTIONS = [
@@ -4320,22 +4321,16 @@ export default function LaborCostManagement({
               </Tooltip>
             )}
 
-            <Button
-              size="small"
-              startIcon={<RefreshRoundedIcon />}
+            <SystemRefreshButton
               onClick={() => {
                 loadOverview();
                 loadUnitTypes();
                 loadQuantities();
                 loadMonthly();
               }}
-              disabled={
-                overviewLoading || quantityLoading || monthlyLoading
-              }
-              sx={{ whiteSpace: 'nowrap' }}
-            >
-              새로고침
-            </Button>
+              loading={overviewLoading || quantityLoading || monthlyLoading}
+              label="공정별 노임작성 새로고침"
+            />
           </Stack>
         </Stack>
 

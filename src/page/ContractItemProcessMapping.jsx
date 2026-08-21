@@ -40,6 +40,7 @@ import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import { supabase } from '../supabaseClient';
 
 import SystemPageTitle from '../components/SystemPageTitle.jsx';
+import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 const PAGE_SIZE = 1000;
 const PROCESS_SEPARATOR = ' + ';
 const HOUSEHOLD_TYPE_PATTERN = /^(68A|68B|84A|84B|101)(?:_|$)/i;
@@ -823,14 +824,11 @@ function ContractItemProcessMapping({
             이전 계약 공정 승계
           </Button>
 
-          <Button
-            variant="outlined"
-            startIcon={<RefreshRoundedIcon />}
+          <SystemRefreshButton
             onClick={handleReload}
-            disabled={loading}
-          >
-            새로고침
-          </Button>
+            loading={loading}
+            label="계약품목 공정연결 새로고침"
+          />
 
           <Button
             variant="contained"

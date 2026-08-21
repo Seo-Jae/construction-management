@@ -62,6 +62,8 @@ import {
   getKoreaDateValue,
 } from '../utils/attendance';
 
+import SystemPageTitle from '../components/SystemPageTitle.jsx';
+import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 const tabItems = [
   { value: 'approval', label: '가입 승인', icon: <FactCheckRoundedIcon fontSize="small" /> },
   { value: 'records', label: '근태 기록', icon: <EditCalendarRoundedIcon fontSize="small" /> },
@@ -87,22 +89,7 @@ const addDateDays = (dateValue, days) => {
 };
 
 function RefreshIconButton({ onClick, loading = false, label = '새로고침' }) {
-  return (
-    <Tooltip title={label} arrow>
-      <span>
-        <IconButton
-          type="button"
-          onClick={onClick}
-          disabled={loading}
-          aria-label={label}
-        >
-          {loading
-            ? <CircularProgress size={22} color="inherit" />
-            : <RefreshRoundedIcon />}
-        </IconButton>
-      </span>
-    </Tooltip>
-  );
+  return <SystemRefreshButton onClick={onClick} loading={loading} label={label} />;
 }
 
 const emptyNoticeDraft = () => {
@@ -1240,7 +1227,10 @@ export default function AttendanceManagement({ projectName, canManage = false, o
         {tab === 'approval' && (
           <Paper variant="outlined" sx={{ borderColor: '#cbd5e1' }}>
             <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <Box><Typography sx={{ fontWeight: 900 }}>가입 승인 대기</Typography><Typography sx={{ color: '#64748b', fontSize: '0.72rem' }}>현장에서 본인과 휴대폰을 확인한 뒤 승인하세요.</Typography></Box>
+              <Box><SystemPageTitle
+                  title="가입 승인 대기"
+                  help="현장에서 본인과 휴대폰을 확인한 뒤 승인하고, 승인 대기 중인 근로자 계정을 관리합니다."
+                /></Box>
               <RefreshIconButton
                 onClick={() => loadDashboard()}
                 loading={loading}

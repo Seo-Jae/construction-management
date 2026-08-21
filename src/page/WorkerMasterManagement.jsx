@@ -342,6 +342,7 @@ export default function WorkerMasterManagement({
     useState(false);
   const [message, setMessage] =
     useState(null);
+  const [guideOpen, setGuideOpen] = useState(true);
 
   const loadWorkers = useCallback(
     async ({
@@ -762,20 +763,24 @@ export default function WorkerMasterManagement({
         gap: 1,
       }}
     >
-      <Alert
-        severity="info"
-        sx={{
-          '& .MuiAlert-message': {
-            fontSize: '0.72rem',
-          },
+      <Snackbar
+        open={guideOpen}
+        autoHideDuration={5200}
+        onClose={(_event, reason) => {
+          if (reason !== 'clickaway') setGuideOpen(false);
         }}
+        anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
+        sx={{ top: '72px !important' }}
       >
-        주민등록번호·전체 연락처·주소·국적·은행·
-        계좌번호·예금주는
-        보호정보로 암호화 저장합니다. 목록과
-        수정화면에는 기존 원문을 다시 표시하지
-        않습니다.
-      </Alert>
+        <Alert
+          severity="info"
+          variant="filled"
+          onClose={() => setGuideOpen(false)}
+          sx={{ maxWidth: 760, fontSize: '0.72rem', lineHeight: 1.55 }}
+        >
+          주민등록번호·전체 연락처·주소·국적·은행·계좌번호·예금주는 보호정보로 암호화 저장합니다. 목록과 수정화면에는 기존 원문을 다시 표시하지 않습니다.
+        </Alert>
+      </Snackbar>
 
       <Paper
         variant="outlined"
