@@ -257,6 +257,7 @@ const isRoundingMaterial = (row) => (
 );
 
 // v52.48.5.42.3 기본 잡자재 단수정리
+// v52.48.5.42.3.1 기본 잡자재 가산액 500원
 const DEFAULT_ROUNDING_ITEM_NAME = '잡자재';
 const DEFAULT_ROUNDING_SPECIFICATION = '피스 외';
 const DEFAULT_ROUNDING_UNIT = '식';
@@ -269,7 +270,7 @@ const makeDefaultRoundingRow = (sortOrder = 0) => ({
   unit: DEFAULT_ROUNDING_UNIT,
   netQuantity: 0,
   laborAmountPerM2: '',
-  unitPrice: 0,
+  unitPrice: 500,
   itemMarkupPercent: '',
   submittedQuantityOverride: '',
   isOwnerSupplied: false,
@@ -1416,7 +1417,7 @@ export default function UnitPriceAnalysis({
             unit: DEFAULT_ROUNDING_UNIT,
             netQuantity: 0,
             laborAmountPerM2: '',
-            unitPrice: 100,
+            unitPrice: 500,
             itemMarkupPercent: '',
             submittedQuantityOverride: '',
             isOwnerSupplied: false,
@@ -1479,7 +1480,7 @@ export default function UnitPriceAnalysis({
             unit: '식',
             netQuantity: 0,
             laborAmountPerM2: '',
-            unitPrice: 100,
+            unitPrice: 500,
             isOwnerSupplied: false,
           };
         }
