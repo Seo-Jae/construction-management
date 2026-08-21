@@ -2238,7 +2238,8 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     clearDailyWorkerRows(worksheet);
 
     const selectedDateTime = parseReportDateKey(dateStr);
-    const selectedMonthPrefix = String(dateStr || '').slice(0, 6);
+    // v52.48.5.42.1: 전일누계는 월 경계에서 초기화하지 않고,
+    // 선택일 이전에 저장된 전체 출력일보 데이터를 분석해 누적합니다.
     const previousJobCounts = {};
 
     Object.entries(savedData).forEach(
@@ -2248,7 +2249,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         if (
           reportDateTime === null ||
           selectedDateTime === null ||
-          !String(reportDateKey).startsWith(selectedMonthPrefix) ||
           reportDateTime >= selectedDateTime
         ) {
           return;
@@ -2435,6 +2435,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           ? []
           : (savedData[dateStr]?.workers || []);
         const worksheet = worksheets[day - 1];
+
+        // v52.48.5.42.1: Excel 하단의 날짜별 시트 탭에서 일요일은 빨간색으로 표시합니다.
+        if (targetDate.getDay() === 0) {
+          worksheet.properties.tabColor = { argb: 'FFFF0000' };
+        } else if (worksheet.properties?.tabColor) {
+          delete worksheet.properties.tabColor;
+        }
 
         fillDailyReportWorksheet({
           worksheet,
