@@ -2142,6 +2142,7 @@ export default function UnitPriceAnalysis({
   // v52.48.5.39.1 Excel 복구경고 개선 + 품명 A열 직접 입력
   // v52.48.5.39.2 ExcelJS 순수 생성 방식: 복구경고/템플릿 로드 오류 제거 + 품명 A열
   // v52.48.5.39.3 Excel 세부서식 + PDF 동일양식 출력
+  // v52.48.5.39.4 합계행 소계 표시
   const exportDocumentExcel = async () => {
     const exportRows = draftRows.filter((row) => String(row.itemName || '').trim());
     if (exportRows.length === 0) {
@@ -2445,6 +2446,15 @@ export default function UnitPriceAnalysis({
         }
 
         // 합계행
+        // 기본 20개 항목 기준 A26:B26이며, 항목이 늘어나면 합계행 위치에 맞춰 자동 이동합니다.
+        sheet.mergeCells(`A${totalRow}:B${totalRow}`);
+        sheet.getCell(`A${totalRow}`).value = '소계';
+        sheet.getCell(`A${totalRow}`).font = { ...baseFont, bold: true };
+        sheet.getCell(`A${totalRow}`).alignment = {
+          vertical: 'middle',
+          horizontal: 'center',
+        };
+
         sheet.getCell(`G${totalRow}`).value = {
           formula: `ROUND(SUM(G${bodyStartRow}:G${bodyEndRow}),0)`,
         };
@@ -2817,7 +2827,7 @@ export default function UnitPriceAnalysis({
         </tr>
         ${bodyRowsHtml}
         <tr class="total-row">
-          <td colspan="2"></td>
+          <td colspan="2">소계</td>
           <td></td><td></td><td></td>
           <td></td><td class="money">${escapeHtml(printMoney(totalsForPrint.material))}</td>
           <td></td><td class="money">${escapeHtml(printMoney(totalsForPrint.labor))}</td>
