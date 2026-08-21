@@ -2140,6 +2140,7 @@ export default function UnitPriceAnalysis({
 
   // v52.48.5.39 사용자 제공 일위대가 엑셀 양식 적용
   // v52.48.5.39.1 Excel 복구경고 개선 + 품명 A열 직접 입력
+  // v52.48.5.39.2 ExcelJS 순수 생성 방식: 복구경고/템플릿 로드 오류 제거 + 품명 A열
   const exportDocumentExcel = async () => {
     const exportRows = draftRows.filter((row) => String(row.itemName || '').trim());
     if (exportRows.length === 0) {
@@ -2148,142 +2149,139 @@ export default function UnitPriceAnalysis({
     }
 
     try {
-      const templateResponse = await fetch('/templates/unit_price_template.xlsx', {
-        cache: 'no-store',
-      });
-      if (!templateResponse.ok) {
-        throw new Error(
-          `일위대가 엑셀 양식을 불러오지 못했습니다. (${templateResponse.status})`,
-        );
-      }
-
+      // v52.48.5.39.2
+      // 외부 xlsx 템플릿을 ExcelJS로 다시 읽는 방식은 사용하지 않습니다.
+      // 제공받은 양식의 레이아웃/서식을 ExcelJS로 직접 생성하여
+      // "Cannot read properties of undefined (reading sheets)" 및 Excel 복구 경고를 차단합니다.
       const workbook = new ExcelJS.Workbook();
-      await workbook.xlsx.load(await templateResponse.arrayBuffer());
       workbook.creator = '욱림건설 공사관리시스템';
       workbook.lastModifiedBy = '욱림건설 공사관리시스템';
       workbook.created = new Date();
       workbook.modified = new Date();
+      workbook.calcProperties.fullCalcOnLoad = true;
+      workbook.calcProperties.forceFullCalc = true;
+      workbook.calcProperties.calcMode = 'auto';
 
-      if (workbook.calcProperties) {
-        workbook.calcProperties.fullCalcOnLoad = true;
-        workbook.calcProperties.forceFullCalc = true;
-        workbook.calcProperties.calcMode = 'auto';
-      }
-
-      const netSheet = workbook.worksheets[0];
-      if (!netSheet) {
-        throw new Error('일위대가 엑셀 양식의 첫 번째 시트를 찾지 못했습니다.');
-      }
-      netSheet.name = '정미값';
-
-      const templateMerges = [
-        'A1:A3',
-        'B1:B3',
-        'C1:I3',
-        'K1:N1',
-        'K2:N2',
-        'K3:N3',
-        'A4:B5',
-        'C4:C5',
-        'D4:D5',
-        'E4:E5',
-        'F4:G4',
-        'H4:I4',
-        'J4:K4',
-        'L4:M4',
-        'N4:N5',
+      const columnWidths = [
+        8.58203125,
+        8.58203125,
+        20.58203125,
+        5.58203125,
+        7.58203125,
+        8.08203125,
+        9.58203125,
+        8.08203125,
+        9.58203125,
+        8.08203125,
+        9.58203125,
+        8.58203125,
+        9.58203125,
+        9.58203125,
       ];
 
-      const clonePlainObject = (value, fallback = {}) => {
-        try {
-          return JSON.parse(JSON.stringify(value ?? fallback));
-        } catch (_error) {
-          return fallback;
+      const thin = { style: 'thin', color: { argb: 'FF000000' } };
+      const medium = { style: 'medium', color: { argb: 'FF000000' } };
+      const hair = { style: 'hair', color: { argb: 'FF000000' } };
+      const double = { style: 'double', color: { argb: 'FF000000' } };
+      const headerFill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFCCFFFF' },
+      };
+      const baseFont = { name: '맑은 고딕', size: 9 };
+      const moneyFormat = '_-* #,##0_-;\\-* #,##0_-;_-* "-"_-;_-@_-';
+      const quantityFormat = '#,##0.####';
+
+      const setBorder = (cell, {
+        top = thin,
+        bottom = thin,
+        left = thin,
+        right = thin,
+      } = {}) => {
+        cell.border = { top, bottom, left, right };
+      };
+
+      const applyOuterEdges = (sheet, startRow, endRow) => {
+        for (let rowNumber = startRow; rowNumber <= endRow; rowNumber += 1) {
+          const leftCell = sheet.getCell(`A${rowNumber}`);
+          const rightCell = sheet.getCell(`N${rowNumber}`);
+          leftCell.border = { ...leftCell.border, left: medium };
+          rightCell.border = { ...rightCell.border, right: medium };
         }
       };
 
-      const cloneTemplateSheet = (source, name) => {
-        const target = workbook.addWorksheet(name);
-
-        Object.assign(target.properties, clonePlainObject(source.properties));
-        Object.assign(target.headerFooter, clonePlainObject(source.headerFooter));
-        target.views = clonePlainObject(source.views, []);
-
-        for (let columnNumber = 1; columnNumber <= 14; columnNumber += 1) {
-          const sourceColumn = source.getColumn(columnNumber);
-          const targetColumn = target.getColumn(columnNumber);
-          targetColumn.width = sourceColumn.width;
-          targetColumn.hidden = sourceColumn.hidden;
-          targetColumn.outlineLevel = sourceColumn.outlineLevel;
-          targetColumn.style = clonePlainObject(sourceColumn.style);
-        }
-
-        const copyRowCount = Math.max(source.rowCount, 32);
-        for (let rowNumber = 1; rowNumber <= copyRowCount; rowNumber += 1) {
-          const sourceRow = source.getRow(rowNumber);
-          const targetRow = target.getRow(rowNumber);
-
-          if (sourceRow.height) targetRow.height = sourceRow.height;
-          targetRow.hidden = sourceRow.hidden;
-          targetRow.outlineLevel = sourceRow.outlineLevel;
-
-          for (let columnNumber = 1; columnNumber <= 14; columnNumber += 1) {
-            const sourceCell = sourceRow.getCell(columnNumber);
-            const targetCell = targetRow.getCell(columnNumber);
-
-            const sourceValue = sourceCell.value;
-            targetCell.value = (
-              sourceValue && typeof sourceValue === 'object'
-                ? clonePlainObject(sourceValue, sourceValue)
-                : sourceValue
-            );
-            targetCell.style = clonePlainObject(sourceCell.style);
-          }
-        }
-
-        templateMerges.forEach((range) => target.mergeCells(range));
-        return target;
-      };
-
-      const submittedSheet = cloneTemplateSheet(netSheet, '제출용');
-
-      const applyStablePageSetup = (sheet, printEndRow) => {
-        sheet.pageSetup = {
-          paperSize: 9,
-          orientation: 'landscape',
-          fitToPage: true,
-          fitToWidth: 1,
-          fitToHeight: 0,
-          margins: {
-            left: 0.19685039370078741,
-            right: 0.19685039370078741,
-            top: 0.19685039370078741,
-            bottom: 0.19685039370078741,
-            header: 0.31496062992125984,
-            footer: 0.31496062992125984,
-          },
-          printArea: `A1:N${printEndRow}`,
-        };
-      };
-
-      const fillTemplateSheet = (sheet, mode) => {
+      const buildSheet = (name, mode) => {
         const isNet = mode === 'net';
         const baseCapacity = 20;
         const extraRows = Math.max(0, exportRows.length - baseCapacity);
-
-        // 기본 양식은 6~25행 20칸입니다.
-        // 20개를 초과할 때만 25행의 모양을 복제하여 합계/특이사항 행을 아래로 이동합니다.
-        if (extraRows > 0) {
-          sheet.duplicateRow(25, extraRows, true);
-        }
-
         const bodyStartRow = 6;
         const bodyEndRow = 25 + extraRows;
         const totalRow = 26 + extraRows;
         const noteRow = 27 + extraRows;
         const printEndRow = 29 + extraRows;
 
-        // 상단 양식: NO / 일위대가 / 품명·규격·단위
+        const sheet = workbook.addWorksheet(name, {
+          properties: { defaultRowHeight: 18.75 },
+          pageSetup: {
+            paperSize: 9,
+            orientation: 'landscape',
+            fitToPage: true,
+            fitToWidth: 1,
+            fitToHeight: 0,
+            margins: {
+              left: 0.19685039370078741,
+              right: 0.19685039370078741,
+              top: 0.19685039370078741,
+              bottom: 0.19685039370078741,
+              header: 0.31496062992125984,
+              footer: 0.31496062992125984,
+            },
+          },
+        });
+
+        sheet.pageSetup.printArea = `A1:N${printEndRow}`;
+        sheet.views = [{ showGridLines: false }];
+
+        columnWidths.forEach((width, index) => {
+          sheet.getColumn(index + 1).width = width;
+        });
+
+        for (let rowNumber = 1; rowNumber <= printEndRow; rowNumber += 1) {
+          sheet.getRow(rowNumber).height = 18.75;
+        }
+
+        [
+          'A1:A3',
+          'B1:B3',
+          'C1:I3',
+          'K1:N1',
+          'K2:N2',
+          'K3:N3',
+          'A4:B5',
+          'C4:C5',
+          'D4:D5',
+          'E4:E5',
+          'F4:G4',
+          'H4:I4',
+          'J4:K4',
+          'L4:M4',
+          'N4:N5',
+        ].forEach((range) => sheet.mergeCells(range));
+
+        // 기본 글꼴/정렬/테두리
+        for (let rowNumber = 1; rowNumber <= printEndRow; rowNumber += 1) {
+          for (let columnNumber = 1; columnNumber <= 14; columnNumber += 1) {
+            const cell = sheet.getRow(rowNumber).getCell(columnNumber);
+            cell.font = { ...baseFont };
+            cell.alignment = {
+              vertical: 'middle',
+              horizontal: 'center',
+            };
+            setBorder(cell);
+          }
+        }
+
+        // 상단 제목부
         sheet.getCell('A1').value = 'NO';
         sheet.getCell('B1').value = 1;
         sheet.getCell('C1').value = '일위대가';
@@ -2299,11 +2297,61 @@ export default function UnitPriceAnalysis({
         sheet.getCell('K2').value = selectedDetail || '';
         sheet.getCell('K3').value = 'M2';
 
-        for (
-          let rowNumber = bodyStartRow;
-          rowNumber <= bodyEndRow;
-          rowNumber += 1
-        ) {
+        ['A1', 'B1', 'J1', 'J2', 'J3'].forEach((address) => {
+          sheet.getCell(address).font = { ...baseFont, bold: true };
+        });
+        sheet.getCell('C1').font = { name: '맑은 고딕', size: 16, bold: true };
+        sheet.getCell('C1').alignment = {
+          vertical: 'middle',
+          horizontal: 'distributed',
+        };
+        ['K1', 'K2', 'K3'].forEach((address) => {
+          sheet.getCell(address).font = { ...baseFont, bold: true };
+        });
+
+        // 상단 외곽선
+        for (let col = 1; col <= 14; col += 1) {
+          const row1Cell = sheet.getRow(1).getCell(col);
+          const row3Cell = sheet.getRow(3).getCell(col);
+          row1Cell.border = { ...row1Cell.border, top: medium };
+          row3Cell.border = { ...row3Cell.border, bottom: medium };
+        }
+
+        // 표 머리글
+        sheet.getCell('A4').value = '품    명';
+        sheet.getCell('C4').value = '규    격';
+        sheet.getCell('D4').value = '단위';
+        sheet.getCell('E4').value = '수량';
+        sheet.getCell('F4').value = '재료비';
+        sheet.getCell('H4').value = '노무비';
+        sheet.getCell('J4').value = '경비';
+        sheet.getCell('L4').value = '합계';
+        sheet.getCell('N4').value = '비고';
+        sheet.getCell('F5').value = '단가';
+        sheet.getCell('G5').value = '금액';
+        sheet.getCell('H5').value = '단가';
+        sheet.getCell('I5').value = '금액';
+        sheet.getCell('J5').value = '단가';
+        sheet.getCell('K5').value = '금액';
+        sheet.getCell('L5').value = '단가';
+        sheet.getCell('M5').value = '금액';
+
+        for (let rowNumber = 4; rowNumber <= 5; rowNumber += 1) {
+          for (let col = 1; col <= 14; col += 1) {
+            const cell = sheet.getRow(rowNumber).getCell(col);
+            cell.fill = headerFill;
+            cell.font = { ...baseFont, bold: true };
+            if (rowNumber === 4) {
+              cell.border = { ...cell.border, top: medium };
+            }
+            if (rowNumber === 5) {
+              cell.border = { ...cell.border, bottom: double };
+            }
+          }
+        }
+
+        // 본문
+        for (let rowNumber = bodyStartRow; rowNumber <= bodyEndRow; rowNumber += 1) {
           const item = exportRows[rowNumber - bodyStartRow];
 
           if (item) {
@@ -2321,15 +2369,13 @@ export default function UnitPriceAnalysis({
               )
               : getSubmittedUnitPrice(item, roundingAmount);
 
-            // v52.48.5.39.1
-            // A열은 구분(재료비/노무비/경비)이 아니라 실제 품명을 직접 표시합니다.
-            // 기존 B열 품명 값은 A열로 이동하고 B열은 비웁니다.
+            // 요청사항: A열에 실제 품명, B열은 공란.
+            // 재료비/노무비/경비 구분 텍스트는 본문에 기록하지 않습니다.
             sheet.getCell(`A${rowNumber}`).value = item.itemName || '';
             sheet.getCell(`B${rowNumber}`).value = null;
             sheet.getCell(`C${rowNumber}`).value = item.specification || '';
             sheet.getCell(`D${rowNumber}`).value = item.unit || '';
             sheet.getCell(`E${rowNumber}`).value = quantity;
-
             sheet.getCell(`F${rowNumber}`).value = summaryType === 'material'
               ? unitPrice
               : 0;
@@ -2339,7 +2385,6 @@ export default function UnitPriceAnalysis({
             sheet.getCell(`J${rowNumber}`).value = summaryType === 'expense'
               ? unitPrice
               : 0;
-
             sheet.getCell(`N${rowNumber}`).value = [
               ownerSupplied ? '지급자재' : '',
               item.remarks || '',
@@ -2350,7 +2395,6 @@ export default function UnitPriceAnalysis({
             });
           }
 
-          // 금액 및 합계는 제공받은 양식의 계산구조를 그대로 유지합니다.
           sheet.getCell(`G${rowNumber}`).value = {
             formula: `E${rowNumber}*F${rowNumber}`,
           };
@@ -2366,9 +2410,34 @@ export default function UnitPriceAnalysis({
           sheet.getCell(`M${rowNumber}`).value = {
             formula: `G${rowNumber}+I${rowNumber}+K${rowNumber}`,
           };
+
+          ['E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M'].forEach((column) => {
+            sheet.getCell(`${column}${rowNumber}`).numFmt = moneyFormat;
+          });
+          sheet.getCell(`E${rowNumber}`).numFmt = quantityFormat;
+
+          ['A', 'B', 'C', 'N'].forEach((column) => {
+            sheet.getCell(`${column}${rowNumber}`).alignment = {
+              vertical: 'middle',
+              horizontal: 'left',
+            };
+          });
+          sheet.getCell(`D${rowNumber}`).alignment = {
+            vertical: 'middle',
+            horizontal: 'center',
+          };
+
+          for (let col = 1; col <= 14; col += 1) {
+            const cell = sheet.getRow(rowNumber).getCell(col);
+            cell.border = {
+              ...cell.border,
+              top: rowNumber === bodyStartRow ? double : hair,
+              bottom: hair,
+            };
+          }
         }
 
-        // 합계행도 양식의 열 구성을 그대로 사용합니다.
+        // 합계행
         sheet.getCell(`G${totalRow}`).value = {
           formula: `ROUND(SUM(G${bodyStartRow}:G${bodyEndRow}),0)`,
         };
@@ -2382,17 +2451,56 @@ export default function UnitPriceAnalysis({
           formula: `SUM(M${bodyStartRow}:M${bodyEndRow})`,
         };
 
+        for (let col = 1; col <= 14; col += 1) {
+          const cell = sheet.getRow(totalRow).getCell(col);
+          cell.fill = headerFill;
+          cell.font = { ...baseFont, bold: true };
+          cell.border = {
+            ...cell.border,
+            top: hair,
+            bottom: medium,
+          };
+        }
+        ['G', 'I', 'K', 'M'].forEach((column) => {
+          sheet.getCell(`${column}${totalRow}`).numFmt = moneyFormat;
+        });
+
+        // 특이사항 영역
         sheet.getCell(`A${noteRow}`).value = '*특이사항';
+        sheet.getCell(`A${noteRow}`).font = {
+          name: '맑은 고딕',
+          size: 11,
+          bold: true,
+        };
+        sheet.getCell(`A${noteRow}`).alignment = {
+          vertical: 'middle',
+          horizontal: 'left',
+        };
         if (documentState.notes) {
           sheet.getCell(`B${noteRow}`).value = documentState.notes;
+          sheet.getCell(`B${noteRow}`).alignment = {
+            vertical: 'middle',
+            horizontal: 'left',
+          };
         }
 
-        // 외부 프린터 설정을 복제하지 않고 ExcelJS가 안전하게 생성하는 표준 인쇄설정만 사용합니다.
-        applyStablePageSetup(sheet, printEndRow);
+        for (let col = 1; col <= 14; col += 1) {
+          sheet.getRow(noteRow).getCell(col).border = {
+            ...sheet.getRow(noteRow).getCell(col).border,
+            top: medium,
+          };
+          sheet.getRow(printEndRow).getCell(col).border = {
+            ...sheet.getRow(printEndRow).getCell(col).border,
+            bottom: medium,
+          };
+        }
+
+        applyOuterEdges(sheet, 1, printEndRow);
+        return sheet;
       };
 
-      fillTemplateSheet(netSheet, 'net');
-      fillTemplateSheet(submittedSheet, 'submitted');
+      buildSheet('정미값', 'net');
+      buildSheet('제출용', 'submitted');
 
       const safeName = String(
         documentState.documentName
@@ -2411,9 +2519,9 @@ export default function UnitPriceAnalysis({
         `일위대가_${safeName}_${getToday()}.xlsx`,
       );
 
-      showToast('제공된 일위대가 양식으로 Excel을 다운로드했습니다.');
+      showToast('일위대가 양식으로 Excel을 다운로드했습니다.');
     } catch (error) {
-      console.error('일위대가 양식 Excel 다운로드 실패:', error);
+      console.error('일위대가 Excel 다운로드 실패:', error);
       showToast(
         error?.message || '일위대가 Excel을 생성하지 못했습니다.',
         'error',
