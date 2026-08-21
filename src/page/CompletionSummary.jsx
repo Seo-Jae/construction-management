@@ -25,6 +25,7 @@ import {
   getProjectCellKeys,
 } from '../utils/buildingUnits.js';
 
+import SystemPageTitle from '../components/SystemPageTitle.jsx';
 const PAGE_SIZE = 1000;
 
 const parseDateValue = (value) => {
@@ -358,12 +359,10 @@ export default function CompletionSummary({
         }}
       >
         <Box>
-          <Typography fontWeight={800} color="#334155">
-            {isMonthly ? '월별 완료 집계' : '주별 완료 집계'}
-          </Typography>
-          <Typography variant="caption" color="text.secondary">
-            공종별 작업완료 세대를 완료일 기준으로 집계합니다.
-          </Typography>
+          <SystemPageTitle
+            title={isMonthly ? '월별 완료 집계' : '주별 완료 집계'}
+            help="공정별 작업완료 세대를 완료일 기준으로 집계하고 기간별 완료 현황을 비교합니다."
+          />
         </Box>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

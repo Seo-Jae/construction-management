@@ -16,6 +16,7 @@ import {
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
+import SystemPageTitle from '../components/SystemPageTitle.jsx';
 const pad2 = (value) => String(value).padStart(2, '0');
 const TOTAL_DAY_COLUMNS = 31;
 
@@ -397,16 +398,10 @@ export default function MonthlyWorkerStatus({
               gap: 0.2,
             }}
           >
-            <Typography
-              sx={{
-                fontSize: '1.25rem',
-                fontWeight: 900,
-                letterSpacing: '0.12em',
-                color: '#0f172a',
-              }}
-            >
-              금월 투입현황
-            </Typography>
+            <SystemPageTitle
+              title="금월 투입현황"
+              help="선택한 월의 근로자별 투입일과 일자별 인원 소계를 조회합니다."
+            />
 
             <Box
               sx={{

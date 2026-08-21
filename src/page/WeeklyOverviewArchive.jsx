@@ -17,6 +17,7 @@ import { supabase } from '../supabaseClient';
 import WeeklyOverview from './WeeklyOverview.jsx';
 import KoreanMonthSelect from '../components/KoreanMonthSelect.jsx';
 
+import SystemPageTitle from '../components/SystemPageTitle.jsx';
 const PAGE_SIZE = 1000;
 
 const getKoreaYearMonth = (
@@ -748,15 +749,10 @@ export default function WeeklyOverviewArchive({
           }}
         >
           <Box>
-            <Typography
-              sx={{
-                color: '#0f172a',
-                fontSize: '0.86rem',
-                fontWeight: 900,
-              }}
-            >
-              주간업무보관
-            </Typography>
+            <SystemPageTitle
+              title="주간업무보관"
+              help="작성 완료된 주간업무 자료를 기간별로 조회하고 보관 내용을 확인합니다."
+            />
 
             <Typography
               sx={{

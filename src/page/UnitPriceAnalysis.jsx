@@ -67,6 +67,7 @@ import {
   openTechnicalSheetViewerWindow,
 } from '../utils/technicalImageSheetEditor';
 
+import SystemPageTitle from '../components/SystemPageTitle.jsx';
 const COST_TYPES = [
   { value: 'material', label: '재료비', color: '#0f766e' },
   { value: 'labor', label: '노무비', color: '#b45309' },
@@ -3128,7 +3129,10 @@ export default function UnitPriceAnalysis({
   if (!databaseReady) {
     return (
       <Paper sx={{ p: 3 }}>
-        <Typography variant="h5" sx={{ fontWeight: 900, mb: 2 }}>일위대가작성</Typography>
+        <SystemPageTitle
+              title="일위대가작성"
+              help="1㎡ 기준 재료비·노무비·경비를 산정하고 저장·공유·출력하며 기술자료를 함께 관리합니다."
+            />
         <Alert severity="warning" sx={{ mb: 2 }}>{loadError}</Alert>
         <Typography sx={{ color: '#475569', lineHeight: 1.8 }}>
           `v52.48.5.17_unit_price_analysis.sql`을 Supabase SQL Editor에서 전체 실행한 뒤 이 화면을 새로고침하면,

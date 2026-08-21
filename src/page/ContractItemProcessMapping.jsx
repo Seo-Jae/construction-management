@@ -39,6 +39,7 @@ import ContentCopyRoundedIcon from '@mui/icons-material/ContentCopyRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import { supabase } from '../supabaseClient';
 
+import SystemPageTitle from '../components/SystemPageTitle.jsx';
 const PAGE_SIZE = 1000;
 const PROCESS_SEPARATOR = ' + ';
 const HOUSEHOLD_TYPE_PATTERN = /^(68A|68B|84A|84B|101)(?:_|$)/i;
@@ -789,9 +790,10 @@ function ContractItemProcessMapping({
       <Paper variant="outlined" sx={{ p: 1.25, flexShrink: 0 }}>
         <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap" useFlexGap>
           <Box sx={{ minWidth: 240, mr: 'auto' }}>
-            <Typography sx={{ fontSize: '0.82rem', fontWeight: 900, color: '#0f172a' }}>
-              계약품목 공정연결
-            </Typography>
+            <SystemPageTitle
+              title="계약품목 공정연결"
+              help="계약 품목을 시스템 공정과 연결하여 기성 산정에 사용할 공정 기준을 설정합니다."
+            />
             <Typography sx={{ fontSize: '0.68rem', color: '#64748b' }}>
               {projectName}
             </Typography>

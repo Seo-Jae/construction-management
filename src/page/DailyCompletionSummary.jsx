@@ -25,6 +25,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
 
+import SystemPageTitle from '../components/SystemPageTitle.jsx';
 const PAGE_SIZE = 1000;
 const DATE_RANGE_OPTIONS = [
   14,
@@ -1551,19 +1552,12 @@ export default function DailyCompletionSummary({
         }}
       >
         <Box>
-          <Typography
-            fontWeight={800}
-            color="#334155"
-          >
-            일별 완료 집계
-          </Typography>
+          <SystemPageTitle
+              title="일별 완료 집계"
+              help="공정별 작업완료 세대를 완료일 기준으로 집계해 일자별 완료 현황을 확인합니다."
+            />
 
-          <Typography
-            variant="caption"
-            color="text.secondary"
-          >
-            오늘부터 과거 순으로 일별 완료수량과 선택 차수의 목표·잔여·D-day를 비교합니다.
-          </Typography>
+          
         </Box>
 
         <Box

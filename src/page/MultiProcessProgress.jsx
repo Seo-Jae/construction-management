@@ -26,6 +26,7 @@ import {
   getProjectCellKeys,
 } from '../utils/buildingUnits.js';
 
+import SystemPageTitle from '../components/SystemPageTitle.jsx';
 const PAGE_SIZE = 1000;
 const GRID_CELL_HEIGHT = 18;
 const GRID_ROW_GAP = 1;
@@ -1069,9 +1070,10 @@ export default function MultiProcessProgress({
           }}
         >
           <Box>
-            <Typography sx={{ fontSize: '1.05rem', fontWeight: 900 }}>
-              다중 공종 진척 현황
-            </Typography>
+            <SystemPageTitle
+              title="다중 공종 진척 현황"
+              help="세대별 여러 공정의 진척 상태를 한 화면에서 비교하고 공정별 진행상태를 확인합니다."
+            />
             <Typography sx={{ mt: 0.2, fontSize: '0.72rem', color: '#475569' }}>
               {projectName || '현장명 미등록'}
             </Typography>

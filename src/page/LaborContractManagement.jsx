@@ -54,6 +54,7 @@ import { supabase } from '../supabaseClient';
 import { createLaborContractPrintWindow } from '../utils/laborContractPrint';
 import KoreanMonthSelect from '../components/KoreanMonthSelect.jsx';
 
+import SystemPageTitle from '../components/SystemPageTitle.jsx';
 const PAGE_SIZE = 1000;
 const CONTRACT_TEMPLATE_VERSION = 'LABOR_CONTRACT_V1';
 const PERSONNEL_REGISTER_VERSION = 'LABOR_PERSONNEL_REGISTER_V1';
@@ -3014,15 +3015,10 @@ export default function LaborContractManagement({
               alignItems="center"
               flexWrap="wrap"
             >
-              <Typography
-                variant="h6"
-                sx={{
-                  fontWeight: 900,
-                  color: '#0f172a',
-                }}
-              >
-                근로계약서작성
-              </Typography>
+              <SystemPageTitle
+              title="근로계약서작성"
+              help="월별 근로계약 대상자를 확인하고 계약서 작성·출력·서명본 상태를 관리합니다."
+            />
 
               {accessInfo && (
                 <Chip

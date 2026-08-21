@@ -3,7 +3,6 @@ import {
   Box,
   IconButton,
   Popover,
-  Tooltip,
   Typography,
 } from '@mui/material';
 import ErrorOutlineRoundedIcon from '@mui/icons-material/ErrorOutlineRounded';
@@ -41,11 +40,13 @@ export default function SystemPageTitle({
 
         {hasHelp && (
           <>
-            <Tooltip title={help} arrow enterDelay={350}>
+            
               <IconButton
                 size="small"
                 className="wooklim-help-button"
                 aria-label={title + ' 화면 안내'}
+                aria-haspopup="dialog"
+                aria-expanded={Boolean(anchorEl) ? 'true' : undefined}
                 onClick={(event) => setAnchorEl(event.currentTarget)}
                 sx={{
                   width: '24px !important',
@@ -64,7 +65,7 @@ export default function SystemPageTitle({
               >
                 <ErrorOutlineRoundedIcon sx={{ fontSize: 16 }} />
               </IconButton>
-            </Tooltip>
+            
 
             <Popover
               open={Boolean(anchorEl)}

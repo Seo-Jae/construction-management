@@ -23,6 +23,7 @@ import {
 } from '@mui/material';
 import { supabase } from '../supabaseClient';
 
+import SystemPageTitle from '../components/SystemPageTitle.jsx';
 const SUPABASE_PAGE_SIZE = 1000;
 const ALL_PROJECTS_OPTION = '전체현장';
 
@@ -907,26 +908,12 @@ export default function CumulativeWorkerStatus({
               gap: 0.15,
             }}
           >
-            <Typography
-              sx={{
-                color: '#0f172a',
-                fontSize: '1.3rem',
-                fontWeight: 900,
-                letterSpacing: '0.1em',
-              }}
-            >
-              누계투입조회
-            </Typography>
+            <SystemPageTitle
+              title="누계투입조회"
+              help="근로자별 최근 월 투입 이력을 누계로 조회하고 장기 투입 여부를 확인합니다."
+            />
 
-            <Typography
-              sx={{
-                color: '#64748b',
-                fontSize: '0.68rem',
-                fontWeight: 700,
-              }}
-            >
-              최근 19개월 표시 · 해당 월에 1일 이상 출력 시 1로 집계
-            </Typography>
+            
           </Box>
         </Box>
 

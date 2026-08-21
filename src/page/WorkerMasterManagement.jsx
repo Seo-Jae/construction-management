@@ -38,6 +38,7 @@ import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import { supabase } from '../supabaseClient';
 import LaborWorkerExcelImportDialog from '../components/LaborWorkerExcelImportDialog.jsx';
 
+import SystemPageTitle from '../components/SystemPageTitle.jsx';
 const TRADE_OPTIONS = [
   '소장',
   '관리자',
@@ -800,26 +801,12 @@ export default function WorkerMasterManagement({
           }}
         >
           <Box sx={{ mr: 1 }}>
-            <Typography
-              sx={{
-                fontWeight: 900,
-                fontSize:
-                  '0.92rem',
-              }}
-            >
-              근로자 정보관리
-            </Typography>
+            <SystemPageTitle
+              title="근로자 정보관리"
+              help="근로자 기본정보를 등록하고 노임·근로계약에 사용하는 공통정보를 관리합니다."
+            />
 
-            <Typography
-              sx={{
-                mt: 0.1,
-                color: '#64748b',
-                fontSize:
-                  '0.68rem',
-              }}
-            >
-              회사 공통 근로자 마스터 · 보호정보 암호화 저장
-            </Typography>
+            
           </Box>
 
           <TextField

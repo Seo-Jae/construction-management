@@ -48,6 +48,7 @@ import { supabase } from '../supabaseClient';
 import KoreanMonthSelect from '../components/KoreanMonthSelect.jsx';
 import KoreanDatePicker from '../components/KoreanDatePicker.jsx';
 
+import SystemPageTitle from '../components/SystemPageTitle.jsx';
 const PAGE_SIZE = 1000;
 const INSERT_CHUNK_SIZE = 400;
 
@@ -4374,26 +4375,12 @@ export default function MaterialInputStatus({
         }}
       >
         <Box>
-          <Typography
-            sx={{
-              color: '#1e293b',
-              fontSize: '1rem',
-              fontWeight: 900,
-            }}
-          >
-            자재투입현황
-          </Typography>
+          <SystemPageTitle
+              title="자재투입현황"
+              help="자재 품목의 현장 투입현황을 조회하고 기간·품목별 사용내역을 확인합니다."
+            />
 
-          <Typography
-            sx={{
-              mt: 0.15,
-              color: '#64748b',
-              fontSize:
-                '0.7rem',
-            }}
-          >
-            본사 자재부 원장을 업로드하고 월별 금액과 품목별 누계수량을 조회합니다.
-          </Typography>
+          
         </Box>
 
         <Box

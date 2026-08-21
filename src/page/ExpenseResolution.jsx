@@ -48,6 +48,7 @@ import { supabase } from '../supabaseClient';
 import { downloadExpenseResolutionExcel } from '../utils/expenseResolutionExcel';
 import { parseHiPlusReceiptPdf } from '../utils/highpassReceiptPdf';
 
+import SystemPageTitle from '../components/SystemPageTitle.jsx';
 const CATEGORY_OPTIONS = [
   { value: 'fuel', label: '유류대' },
   { value: 'toll', label: '통행료' },
@@ -2290,12 +2291,11 @@ function ExpenseList({ userProfile, onCreate, onEdit }) {
         }}
       >
         <Box>
-          <Typography sx={{ fontSize: '1.05rem', fontWeight: 900, color: '#1e293b' }}>
-            지출결의서 작성
-          </Typography>
-          <Typography sx={{ mt: 0.15, fontSize: '0.7rem', color: '#64748b' }}>
-            월별 지출결의서를 작성하고 기존 문서를 수정할 수 있습니다.
-          </Typography>
+          <SystemPageTitle
+              title="지출결의서 작성"
+              help="사용내역과 증빙자료를 입력하여 지출결의서를 작성하고 결재·출력 자료를 관리합니다."
+            />
+          
         </Box>
         <Stack direction="row" spacing={0.8} alignItems="center">
           <NumericMonthField
