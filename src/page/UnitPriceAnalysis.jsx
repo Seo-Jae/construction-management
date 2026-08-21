@@ -2139,6 +2139,7 @@ export default function UnitPriceAnalysis({
   };
 
   // v52.48.5.39 사용자 제공 일위대가 엑셀 양식 적용
+  // v52.48.5.39.1 Excel 복구경고 개선 + 품명 A열 직접 입력
   const exportDocumentExcel = async () => {
     const exportRows = draftRows.filter((row) => String(row.itemName || '').trim());
     if (exportRows.length === 0) {
@@ -2205,7 +2206,6 @@ export default function UnitPriceAnalysis({
         const target = workbook.addWorksheet(name);
 
         Object.assign(target.properties, clonePlainObject(source.properties));
-        Object.assign(target.pageSetup, clonePlainObject(source.pageSetup));
         Object.assign(target.headerFooter, clonePlainObject(source.headerFooter));
         target.views = clonePlainObject(source.views, []);
 
@@ -2247,11 +2247,23 @@ export default function UnitPriceAnalysis({
 
       const submittedSheet = cloneTemplateSheet(netSheet, '제출용');
 
-      const costTypeLabel = (row) => {
-        if (isRoundingMaterial(row)) return '재료비';
-        if (row.costType === 'labor') return '노무비';
-        if (row.costType === 'expense') return '경비';
-        return '재료비';
+      const applyStablePageSetup = (sheet, printEndRow) => {
+        sheet.pageSetup = {
+          paperSize: 9,
+          orientation: 'landscape',
+          fitToPage: true,
+          fitToWidth: 1,
+          fitToHeight: 0,
+          margins: {
+            left: 0.19685039370078741,
+            right: 0.19685039370078741,
+            top: 0.19685039370078741,
+            bottom: 0.19685039370078741,
+            header: 0.31496062992125984,
+            footer: 0.31496062992125984,
+          },
+          printArea: `A1:N${printEndRow}`,
+        };
       };
 
       const fillTemplateSheet = (sheet, mode) => {
@@ -2260,7 +2272,7 @@ export default function UnitPriceAnalysis({
         const extraRows = Math.max(0, exportRows.length - baseCapacity);
 
         // 기본 양식은 6~25행 20칸입니다.
-        // 20개를 초과할 때만 25행의 모양을 복제하여 합계/특이사항 행을 아래로 밀어냅니다.
+        // 20개를 초과할 때만 25행의 모양을 복제하여 합계/특이사항 행을 아래로 이동합니다.
         if (extraRows > 0) {
           sheet.duplicateRow(25, extraRows, true);
         }
@@ -2309,8 +2321,11 @@ export default function UnitPriceAnalysis({
               )
               : getSubmittedUnitPrice(item, roundingAmount);
 
-            sheet.getCell(`A${rowNumber}`).value = costTypeLabel(item);
-            sheet.getCell(`B${rowNumber}`).value = item.itemName || '';
+            // v52.48.5.39.1
+            // A열은 구분(재료비/노무비/경비)이 아니라 실제 품명을 직접 표시합니다.
+            // 기존 B열 품명 값은 A열로 이동하고 B열은 비웁니다.
+            sheet.getCell(`A${rowNumber}`).value = item.itemName || '';
+            sheet.getCell(`B${rowNumber}`).value = null;
             sheet.getCell(`C${rowNumber}`).value = item.specification || '';
             sheet.getCell(`D${rowNumber}`).value = item.unit || '';
             sheet.getCell(`E${rowNumber}`).value = quantity;
@@ -2372,11 +2387,8 @@ export default function UnitPriceAnalysis({
           sheet.getCell(`B${noteRow}`).value = documentState.notes;
         }
 
-        // 사용자 양식의 인쇄방향/여백은 그대로 두고 인쇄영역만 항목수에 맞춰 확장합니다.
-        sheet.pageSetup = {
-          ...sheet.pageSetup,
-          printArea: `A1:N${printEndRow}`,
-        };
+        // 외부 프린터 설정을 복제하지 않고 ExcelJS가 안전하게 생성하는 표준 인쇄설정만 사용합니다.
+        applyStablePageSetup(sheet, printEndRow);
       };
 
       fillTemplateSheet(netSheet, 'net');
@@ -2408,6 +2420,7 @@ export default function UnitPriceAnalysis({
       );
     }
   };
+
 
   const printDocument = () => {
     if (draftRows.length === 0) {
