@@ -258,6 +258,7 @@ const normalizeTechnicalAccessoryLinks = (value) => (
 
 // v52.48.5.37 VIEW 선택연동 + 직관적 부속자재 연결 UI
 // v52.48.5.38 VIEW 마우스 이동/줌 기능
+// v52.48.5.43.1 VIEW 화면맞춤 가용영역 최대화
 const viewerHtml = ({ imageUrl, title, annotations, layout, accessories }) => {
   const safeImageUrl = escapeHtml(imageUrl);
   const safeTitle = escapeHtml(title);
@@ -310,7 +311,7 @@ const viewerHtml = ({ imageUrl, title, annotations, layout, accessories }) => {
       transition: transform 70ms ease-out;
     }
     .viewer.dragging .sheet { transition: none; }
-    .sheet.fit { width: min(780px, calc(100vw - 390px)); }
+    .sheet.fit { width: calc(100% - 20px); max-width: none; }
     .sheet.original { width: max-content; }
 
     /* v52.48.5.37.4
@@ -460,7 +461,7 @@ const viewerHtml = ({ imageUrl, title, annotations, layout, accessories }) => {
     }
     @media (max-width: 1000px) {
       .workspace { grid-template-columns: minmax(0,1fr) 310px; }
-      .sheet.fit { width: min(720px, calc(100vw - 350px)); }
+      .sheet.fit { width: calc(100% - 16px); max-width: none; }
     }
   </style>
 </head>
@@ -658,6 +659,22 @@ ${getSharedPopupScript()}
 
         imageStage.style.removeProperty('height');
         imageStage.style.removeProperty('aspect-ratio');
+
+        // v52.48.5.43.1
+        // VIEW 창과 우측 부속자재 패널 크기는 일정하게 유지하고,
+        // 기술자료 시트만 좌측 가용영역의 약 96%까지 자동 확대/축소합니다.
+        // 3:2 도면 영역 + 고정 하단 부재명 영역이 세로로도 잘리지 않도록
+        // 가로/세로 제한 중 더 작은 값을 최종 시트 폭으로 사용합니다.
+        var viewerUsableWidth = Math.max(1, viewer.clientWidth - 20);
+        var viewerUsableHeight = Math.max(1, viewer.clientHeight - 20);
+        var targetFillRatio = 0.96;
+        var availableSheetWidth = viewerUsableWidth * targetFillRatio;
+        var availableSheetHeight = viewerUsableHeight * targetFillRatio;
+        var fixedFooterHeight = Math.max(0, Number(layout.footerHeight) || 0);
+        var widthByHeight = Math.max(1, (availableSheetHeight - fixedFooterHeight) * 1.5);
+        var fittedSheetWidth = Math.max(1, Math.min(availableSheetWidth, widthByHeight));
+
+        sheet.style.width = Math.floor(fittedSheetWidth) + 'px';
 
         var stageRect = imageStage.getBoundingClientRect();
         var stageWidth = Math.max(1, stageRect.width);
@@ -1203,7 +1220,7 @@ export const openTechnicalSheetViewerWindow = ({
 
   const popup = openPopup(
     'unitPriceTechnicalSheetPreview',
-    getFixedPopupGeometry(1125, 1021),
+    getFixedPopupGeometry(1480, 1000),
   );
   if (!popup) return null;
 
