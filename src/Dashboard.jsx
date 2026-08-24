@@ -4190,6 +4190,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                 projectName={activeProjectName}
                 userProfile={activeUserProfile}
                 projectOptions={accessibleProjectNames}
+                isSuperAdmin={isSuperAdmin}
                 canManage={Boolean(
                   isSuperAdmin ||
                     hasPermission(

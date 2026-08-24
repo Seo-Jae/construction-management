@@ -258,6 +258,7 @@ const isRoundingMaterial = (row) => (
 
 // v52.48.5.42.3 기본 잡자재 단수정리
 // v52.48.5.42.3.1 기본 잡자재 가산액 500원
+// v52.48.5.43 중분류 최고관리자 관리
 const DEFAULT_ROUNDING_ITEM_NAME = '잡자재';
 const DEFAULT_ROUNDING_SPECIFICATION = '피스 외';
 const DEFAULT_ROUNDING_UNIT = '식';
@@ -611,6 +612,7 @@ export default function UnitPriceAnalysis({
   projectOptions = [],
   canManage = false,
   canManageTechnicalImages = false,
+  isSuperAdmin = false,
 }) {
   const [mainTab, setMainTab] = useState(0);
   const [managementTab, setManagementTab] = useState(0);
@@ -631,6 +633,12 @@ export default function UnitPriceAnalysis({
   const [printMode, setPrintMode] = useState('submitted');
   const [documentScope, setDocumentScope] = useState('current');
   const [documentSearch, setDocumentSearch] = useState('');
+  const [middleCategoryDialog, setMiddleCategoryDialog] = useState({
+    open: false,
+    original: '',
+    value: '',
+    saving: false,
+  });
   const [materialSearch, setMaterialSearch] = useState('');
   const [selectedTemplateSpecId, setSelectedTemplateSpecId] = useState('');
   const [templateRows, setTemplateRows] = useState([]);
@@ -1664,6 +1672,126 @@ export default function UnitPriceAnalysis({
     setSelectedSpec(spec || null);
     setDocumentState(EMPTY_DOCUMENT);
     if (spec) await loadTemplateRows(spec.id);
+  };
+
+  const openMiddleCategoryDialog = () => {
+    if (!isSuperAdmin || !selectedMajor || !selectedMiddle) return;
+
+    setMiddleCategoryDialog({
+      open: true,
+      original: selectedMiddle,
+      value: selectedMiddle,
+      saving: false,
+    });
+  };
+
+  const closeMiddleCategoryDialog = () => {
+    if (middleCategoryDialog.saving) return;
+    setMiddleCategoryDialog({
+      open: false,
+      original: '',
+      value: '',
+      saving: false,
+    });
+  };
+
+  const saveMiddleCategoryName = async () => {
+    if (!isSuperAdmin) {
+      showToast('중분류 수정은 최고관리자만 가능합니다.', 'warning');
+      return;
+    }
+
+    const originalMiddle = String(middleCategoryDialog.original || '').trim();
+    const nextMiddle = String(middleCategoryDialog.value || '').trim();
+
+    if (!selectedMajor || !originalMiddle) {
+      showToast('수정할 중분류를 선택해주세요.', 'warning');
+      return;
+    }
+
+    if (!nextMiddle) {
+      showToast('변경할 중분류명을 입력해주세요.', 'warning');
+      return;
+    }
+
+    if (nextMiddle.length > 60) {
+      showToast('중분류명은 60자 이하로 입력해주세요.', 'warning');
+      return;
+    }
+
+    if (nextMiddle === originalMiddle) {
+      closeMiddleCategoryDialog();
+      return;
+    }
+
+    const isMerge = specs.some((item) => (
+      item.major_category === selectedMajor &&
+      item.middle_category === nextMiddle &&
+      item.middle_category !== originalMiddle
+    ));
+
+    setMiddleCategoryDialog((previous) => ({
+      ...previous,
+      saving: true,
+    }));
+
+    try {
+      const { data, error } = await supabase.rpc(
+        'rename_unit_price_middle_category_v1',
+        {
+          p_major_category: selectedMajor,
+          p_old_middle_category: originalMiddle,
+          p_new_middle_category: nextMiddle,
+        },
+      );
+
+      if (error) throw error;
+
+      setSpecs((previous) => previous.map((item) => (
+        item.major_category === selectedMajor &&
+        item.middle_category === originalMiddle
+          ? { ...item, middle_category: nextMiddle }
+          : item
+      )));
+
+      setSelectedMiddle(nextMiddle);
+      setSelectedSpec((previous) => (
+        previous?.major_category === selectedMajor &&
+        previous?.middle_category === originalMiddle
+          ? { ...previous, middle_category: nextMiddle }
+          : previous
+      ));
+
+      await loadDocuments();
+
+      setMiddleCategoryDialog({
+        open: false,
+        original: '',
+        value: '',
+        saving: false,
+      });
+
+      const renamedSpecs = toNumber(data?.renamed_specs);
+      const updatedDocuments = toNumber(data?.updated_documents);
+      showToast(
+        isMerge
+          ? `중분류 “${originalMiddle}”을(를) “${nextMiddle}”에 통합했습니다. 기준규격 ${renamedSpecs}개 · 기존문서 ${updatedDocuments}건 반영`
+          : `중분류명을 “${originalMiddle}” → “${nextMiddle}”로 변경했습니다. 기준규격 ${renamedSpecs}개 · 기존문서 ${updatedDocuments}건 반영`,
+      );
+    } catch (error) {
+      console.error('일위대가 중분류 수정 실패:', error);
+      const message = String(error?.message || '');
+      showToast(
+        message.includes('rename_unit_price_middle_category_v1')
+          ? 'v52.48.5.43 Supabase SQL을 먼저 실행해주세요.'
+          : message || '중분류명을 변경하지 못했습니다.',
+        'error',
+      );
+      setMiddleCategoryDialog((previous) => ({
+        ...previous,
+        saving: false,
+      }));
+    }
   };
 
   const validateDocumentForSave = () => {
@@ -3306,15 +3434,39 @@ export default function UnitPriceAnalysis({
                         handleSpecChange(detail, major, middle);
                       }}
                     >{majorOptions.map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}</TextField>
-                    <TextField
-                      select label="중분류" value={selectedMiddle} size="small"
-                      sx={compactFilterFieldSx}
-                      onChange={(event) => {
-                        const middle = event.target.value;
-                        const detail = specs.find((item) => item.major_category === selectedMajor && item.middle_category === middle)?.detail_category || '';
-                        handleSpecChange(detail, selectedMajor, middle);
-                      }}
-                    >{middleOptions.map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}</TextField>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.35, minWidth: 0 }}>
+                      <TextField
+                        select label="중분류" value={selectedMiddle} size="small"
+                        sx={{ ...compactFilterFieldSx, flex: 1, minWidth: 0 }}
+                        onChange={(event) => {
+                          const middle = event.target.value;
+                          const detail = specs.find((item) => item.major_category === selectedMajor && item.middle_category === middle)?.detail_category || '';
+                          handleSpecChange(detail, selectedMajor, middle);
+                        }}
+                      >{middleOptions.map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}</TextField>
+                      {isSuperAdmin && (
+                        <Tooltip title="중분류 관리" arrow>
+                          <span>
+                            <IconButton
+                              size="small"
+                              aria-label="중분류 관리"
+                              disabled={!selectedMajor || !selectedMiddle}
+                              onClick={openMiddleCategoryDialog}
+                              sx={{
+                                width: 30,
+                                height: 30,
+                                flexShrink: 0,
+                                border: '1px solid #cbd5e1',
+                                borderRadius: 1,
+                                bgcolor: '#ffffff',
+                              }}
+                            >
+                              <EditNoteRoundedIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      )}
+                    </Box>
                     <TextField select label="세부규격" value={selectedDetail} size="small" sx={compactFilterFieldSx} onChange={(event) => handleSpecChange(event.target.value)}>
                       {detailOptions.map((item) => <MenuItem key={item} value={item}>{item}</MenuItem>)}
                     </TextField>
@@ -3720,6 +3872,83 @@ export default function UnitPriceAnalysis({
           적용
         </Button>
       </Popover>
+
+      <Dialog
+        open={middleCategoryDialog.open}
+        onClose={closeMiddleCategoryDialog}
+        fullWidth
+        maxWidth="xs"
+      >
+        <DialogTitle>중분류 관리</DialogTitle>
+        <DialogContent sx={{ pt: '10px !important' }}>
+          <Stack spacing={1.2}>
+            <Alert severity="info" sx={{ fontSize: '0.72rem' }}>
+              중분류는 모든 현장이 함께 사용하는 일위대가 기준정보입니다. 이름을 변경하면 해당 중분류의 기준규격과 기존 문서의 현재 분류명도 함께 변경됩니다. 과거 버전 이력은 그대로 보존됩니다.
+            </Alert>
+            <TextField
+              size="small"
+              label="대분류"
+              value={selectedMajor}
+              disabled
+            />
+            <TextField
+              size="small"
+              label="현재 중분류"
+              value={middleCategoryDialog.original}
+              disabled
+            />
+            <TextField
+              autoFocus
+              size="small"
+              label="변경할 중분류명"
+              value={middleCategoryDialog.value}
+              onChange={(event) => setMiddleCategoryDialog((previous) => ({
+                ...previous,
+                value: event.target.value,
+              }))}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !middleCategoryDialog.saving) {
+                  event.preventDefault();
+                  saveMiddleCategoryName();
+                }
+              }}
+              inputProps={{ maxLength: 60 }}
+            />
+            {Boolean(
+              String(middleCategoryDialog.value || '').trim() &&
+              String(middleCategoryDialog.value || '').trim() !== middleCategoryDialog.original &&
+              specs.some((item) => (
+                item.major_category === selectedMajor &&
+                item.middle_category === String(middleCategoryDialog.value || '').trim()
+              ))
+            ) && (
+              <Alert severity="warning" sx={{ fontSize: '0.72rem' }}>
+                이미 존재하는 중분류명입니다. 동일한 세부규격이 겹치지 않으면 두 중분류가 하나로 통합됩니다. 동일 세부규격이 있으면 데이터 보호를 위해 저장을 중단합니다.
+              </Alert>
+            )}
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeMiddleCategoryDialog} disabled={middleCategoryDialog.saving}>
+            취소
+          </Button>
+          <Button
+            variant="contained"
+            onClick={saveMiddleCategoryName}
+            disabled={
+              middleCategoryDialog.saving ||
+              !String(middleCategoryDialog.value || '').trim()
+            }
+            startIcon={middleCategoryDialog.saving ? <CircularProgress size={15} /> : <SaveRoundedIcon />}
+          >
+            {specs.some((item) => (
+              item.major_category === selectedMajor &&
+              item.middle_category === String(middleCategoryDialog.value || '').trim() &&
+              String(middleCategoryDialog.value || '').trim() !== middleCategoryDialog.original
+            )) ? '통합 적용' : '이름 변경'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={nameGuideDialogOpen}
