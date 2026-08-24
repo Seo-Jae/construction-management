@@ -64,6 +64,7 @@ import ProgressClaimManagement from './page/ProgressClaimManagement.jsx';
 import ContractItemProcessMapping from './page/ContractItemProcessMapping.jsx';
 import AdminDashboard from './page/AdminDashboard.jsx';
 import UserManagementWithAccessHistory from './page/UserManagementWithAccessHistory.jsx';
+import ProjectManagement from './page/ProjectManagement.jsx';
 import OrganizationChart from './page/OrganizationChart.jsx';
 import DrawingQuantityAnalysis from './page/DrawingQuantityAnalysis.jsx';
 import Messenger from './page/Messenger.jsx';
@@ -85,6 +86,7 @@ const PROJECT_DISPLAY_ORDER = [
 const PROJECT_FREE_VIEWS = [
   'admin-dashboard',
   'user-management',
+  'project-management',
   'organization-chart',
   'messenger',
   'approval-inbox',
@@ -326,6 +328,7 @@ const viewTitles = {
   main: 'Main',
   'admin-dashboard': '전체 현장 Dashboard',
   'user-management': '회원관리',
+  'project-management': '현장관리',
   'organization-chart': '조직도',
   messenger: '메신저',
   daily: '출력일보작성',
@@ -734,7 +737,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   };
 
   const legacyCanAccessView = (view) => {
-    if (view === 'user-management') return isSuperAdmin;
+    if (view === 'user-management' || view === 'project-management') return isSuperAdmin;
     if (
       [
         'admin-dashboard',
@@ -752,7 +755,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     projectName = '',
   ) => {
     if (view === 'messenger') return true;
-    if (view === 'user-management') return isSuperAdmin;
+    if (view === 'user-management' || view === 'project-management') return isSuperAdmin;
 
     if (
       view === 'admin-dashboard' &&
@@ -1180,10 +1183,12 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     };
 
     window.addEventListener('focus', handleFocus);
+    window.addEventListener('project-registry-changed', handleFocus);
 
     return () => {
       active = false;
       window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('project-registry-changed', handleFocus);
     };
   }, [
     accessibleProjectNames.join('\u0001'),
@@ -1384,7 +1389,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
   const handleSidebarViewChange = (nextView) => {
     if (
-      nextView === 'user-management' &&
+      ['user-management', 'project-management'].includes(nextView) &&
       !isSuperAdmin
     ) {
       return;
@@ -3989,6 +3994,10 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
           {currentView === 'user-management' && isSuperAdmin && (
             <UserManagementWithAccessHistory currentUserId={user?.id || ''} />
+          )}
+
+          {currentView === 'project-management' && isSuperAdmin && (
+            <ProjectManagement />
           )}
 
           {currentView === 'attendance' && activeProjectName &&

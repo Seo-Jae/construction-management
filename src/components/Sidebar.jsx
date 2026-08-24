@@ -18,6 +18,7 @@ import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
 import RequestQuoteOutlinedIcon from '@mui/icons-material/RequestQuoteOutlined';
 import BadgeOutlinedIcon from '@mui/icons-material/BadgeOutlined';
 import ManageAccountsOutlinedIcon from '@mui/icons-material/ManageAccountsOutlined';
+import DomainAddRoundedIcon from '@mui/icons-material/DomainAddRounded';
 import PunchClockRoundedIcon from '@mui/icons-material/PunchClockRounded';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -578,6 +579,38 @@ export default function Sidebar({
                   currentView === 'admin-dashboard' ? 700 : 500,
               }}
               sx={{ opacity: drawerOpen ? 1 : 0 }}
+            />
+          </ListItemButton>
+        </Tooltip>
+      )}
+
+      {isSuperAdmin && (
+        <Tooltip
+          title={drawerOpen ? '' : '현장관리'}
+          placement="right"
+          arrow
+        >
+          <ListItemButton
+            selected={currentView === 'project-management'}
+            onClick={() => handleViewChange('project-management')}
+            sx={topMenuSx(currentView === 'project-management')}
+          >
+            <ListItemIcon
+              sx={{
+                minWidth: 34,
+                color: 'inherit',
+                justifyContent: 'center',
+              }}
+            >
+              <DomainAddRoundedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText
+              primary="현장관리"
+              primaryTypographyProps={{
+                noWrap: true,
+                fontSize: '0.8rem',
+                fontWeight: currentView === 'project-management' ? 700 : 500,
+              }}
             />
           </ListItemButton>
         </Tooltip>
