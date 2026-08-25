@@ -1,3 +1,4 @@
+// v52.48.5.44.7.6.3 기성삭제 후 계약마스터 강제동기화 보완
 // v52.48.5.44.7.6 기성삭제-계약품목 공정연결 완전초기화
 // v52.48.5.44.7.5 기성양식-계약품목 공정연결 즉시 동기화
 // v52.48.5.44.7.4 기성회차 삭제 시 표준계약 잔여데이터 정리
@@ -3257,6 +3258,48 @@ export default function ProgressClaimManagement({
         );
       }
 
+      /*
+        메인 삭제 RPC 이후 한 번 더 계약마스터 초기화 RPC를 호출합니다.
+        이미 정상 삭제된 경우에는 already_clean으로 끝나고,
+        과거 source_key 형식/중복 계약버전 때문에 잔여자료가 생겨도
+        같은 현장+계약버전명의 등록 회차가 0건이면 확실히 정리합니다.
+      */
+      let contractResetResult = null;
+
+      try {
+        const {
+          data: resetData,
+          error: resetError,
+        } = await supabase.rpc(
+          'admin_reset_progress_contract_master_v2',
+          {
+            p_project_name:
+              projectName,
+            p_version_label:
+              data?.contract_version_label ||
+              getClaimVersionLabel(
+                claim,
+              ) ||
+              contractVersionLabel,
+          },
+        );
+
+        if (resetError) {
+          console.warn(
+            '기성 삭제 후 계약마스터 보완 초기화 오류:',
+            resetError,
+          );
+        } else {
+          contractResetResult =
+            resetData;
+        }
+      } catch (resetException) {
+        console.warn(
+          '기성 삭제 후 계약마스터 보완 초기화 예외:',
+          resetException,
+        );
+      }
+
       const refreshedClaims =
         await loadClaimList();
 
@@ -3303,9 +3346,20 @@ export default function ProgressClaimManagement({
         severity: 'success',
         text:
           `${data?.claim_no || targetClaimNo}회차 등록 기성자료를 삭제했습니다.` +
-          (data?.contract_master_deleted
-            ? ` 이 회차가 사용하던 "${data?.contract_version_label || contractVersionLabel}" 표준 계약품목도 더 이상 사용되지 않아 함께 초기화했습니다. 계약품목 공정연결에서도 동일하게 제거됩니다. 다음 양식 다운로드는 빈 최초계약 양식으로 시작됩니다.`
-            : ' 다른 등록 회차가 사용하는 계약원본 또는 기존 외부 계약원본은 그대로 보존했습니다.'),
+          (
+            data?.contract_master_deleted ||
+            Number(
+              contractResetResult?.deleted_contract_item_rows ||
+                0,
+            ) > 0 ||
+            Number(
+              contractResetResult?.deleted_contract_version_rows ||
+                0,
+            ) > 0 ||
+            contractResetResult?.already_clean
+              ? ` 이 회차가 사용하던 "${data?.contract_version_label || getClaimVersionLabel(claim) || contractVersionLabel}" 계약품목과 공정연결도 함께 초기화했습니다. 다음 양식 다운로드는 빈 최초계약 양식으로 시작됩니다.`
+              : ' 다른 등록 회차가 같은 계약버전을 사용하고 있어 계약품목/공정연결 원본은 유지했습니다.'
+          ),
       });
 
       if (
