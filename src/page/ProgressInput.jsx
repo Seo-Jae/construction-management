@@ -1,3 +1,4 @@
+// v52.48.5.44.5.2 타입현황 공정선택 뒤배치 + 폭 축소
 // v52.48.5.44.5.1 타입현황 위치·최소화·닫기 동작 보정
 // v52.48.5.44.5 공정별 현황 입력 타입별 세대현황 플로팅 패널
 import React, {
@@ -231,13 +232,14 @@ const TYPE_SUMMARY_COLORS = [
   '#65a30d',
 ];
 
-const TYPE_SUMMARY_PANEL_WIDTH = 328;
+// 328px에서 약 23% 축소합니다. 기존 가운데 여백은 약 1/3 수준만 남깁니다.
+const TYPE_SUMMARY_PANEL_WIDTH = 252;
 const TYPE_SUMMARY_PANEL_MIN_WIDTH = TYPE_SUMMARY_PANEL_WIDTH;
 
 const getTypeSummaryPreferenceStorageKey = (projectName) =>
   `progress-input:${encodeURIComponent(
     String(projectName || 'default'),
-  )}:type-summary-panel-v2`;
+  )}:type-summary-panel-v3`;
 
 const getDefaultTypeSummaryPanelState = () => {
   const viewportWidth =
@@ -2923,7 +2925,11 @@ export default function ProgressInput({
                 : TYPE_SUMMARY_PANEL_WIDTH,
             maxWidth:
               'calc(100vw - 16px)',
-            zIndex: 1350,
+            /*
+              MUI Autocomplete/Menu 팝업(기본 modal 계층)보다 아래에 둡니다.
+              위치가 겹쳐도 공정 선택 드롭다운이 항상 타입현황 위로 표시됩니다.
+            */
+            zIndex: 1200,
             overflow: 'hidden',
             bgcolor: '#ffffff',
             border:
@@ -3051,7 +3057,7 @@ export default function ProgressInput({
           {!typeSummaryPanelState.minimized && (
             <Box
               sx={{
-                px: 1,
+                px: 0.75,
                 py: 0.8,
                 maxHeight:
                   'min(390px, calc(100vh - 190px))',
@@ -3092,11 +3098,11 @@ export default function ProgressInput({
                           display:
                             'grid',
                           gridTemplateColumns:
-                            '12px minmax(58px, 0.8fr) minmax(118px, 1.4fr)',
+                            '12px minmax(46px, auto) minmax(108px, 1fr)',
                           alignItems:
                             'center',
                           columnGap:
-                            0.55,
+                            0.35,
                         }}
                       >
                         <Box
