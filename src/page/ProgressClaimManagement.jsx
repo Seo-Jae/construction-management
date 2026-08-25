@@ -1,3 +1,4 @@
+// v52.48.5.44.7.1 최초계약 빈양식 다운로드
 // v52.48.5.44.7 기성 표준양식 다운로드·업로드 v1
 import React, {
   useCallback,
@@ -101,6 +102,7 @@ const STANDARD_CLAIM_SHEET_NAME = '기성입력양식';
 const STANDARD_CLAIM_SYSTEM_SHEET_NAME = '_SYSTEM';
 const STANDARD_CLAIM_DATA_START_ROW = 7;
 const STANDARD_CLAIM_ITEM_KEY_COLUMN = 31; // AE
+const STANDARD_CLAIM_NEW_CONTRACT_ROW_COUNT = 500;
 
 const EXCLUDED_CLAIM_PROCESS_OPTIONS = new Set(['허리먹']);
 
@@ -580,20 +582,32 @@ const parseStandardClaimWorkbook = (workbook) => {
     rowNumber += 1
   ) {
     const row = worksheet.getRow(rowNumber);
-    const sourceKey = String(
+    const itemLabel = readText(row, 4);
+
+    // 신규 최초계약용 빈 양식은 미사용 행에도 SYSTEM_ITEM_KEY가 들어가므로
+    // 실제 품명이 입력된 행만 계약품목으로 읽습니다.
+    if (!itemLabel) continue;
+
+    const hiddenSourceKey = String(
       unwrapCellValue(row.getCell(STANDARD_CLAIM_ITEM_KEY_COLUMN)) ?? '',
     ).trim();
 
-    if (!sourceKey) continue;
+    const sourceKey =
+      hiddenSourceKey ||
+      `template:${metadata.project_name || 'project'}:${metadata.contract_version || 'contract'}:${rowNumber}`;
 
-    const rawClassification = readText(row, 2);
-    const itemLabel = readText(row, 4);
+    const rawClassification =
+      readText(row, 2) || '미분류';
     const specification = readText(row, 5);
     const unit = readText(row, 6);
     const optionType =
       readText(row, 3) || (itemLabel.includes('<확장>') ? '확장' : '기본');
 
-    if (!rawClassification || !itemLabel || !unit) continue;
+    if (!unit) {
+      throw new Error(
+        `${rowNumber}행 "${itemLabel}" 품목의 단위가 비어 있습니다.`,
+      );
+    }
 
     const {
       normalizedClassification,
@@ -605,9 +619,14 @@ const parseStandardClaimWorkbook = (workbook) => {
     const materialUnitPrice = readNumber(row, 8);
     const laborUnitPrice = readNumber(row, 9);
     const expenseUnitPrice = readNumber(row, 10);
-    const contractMaterialAmount = readNumber(row, 11);
-    const contractLaborAmount = readNumber(row, 12);
-    const contractExpenseAmount = readNumber(row, 13);
+
+    // 표준양식은 엑셀 수식 결과값에 의존하지 않고 시스템에서 다시 계산합니다.
+    const contractMaterialAmount =
+      contractQuantity * materialUnitPrice;
+    const contractLaborAmount =
+      contractQuantity * laborUnitPrice;
+    const contractExpenseAmount =
+      contractQuantity * expenseUnitPrice;
     const previousQuantity = readNumber(row, 15);
     const previousMaterialAmount = readNumber(row, 16);
     const previousLaborAmount = readNumber(row, 17);
@@ -1810,11 +1829,8 @@ export default function ProgressClaimManagement({
         versionLabel: contractVersionLabel,
       });
 
-      if (contractRows.length === 0) {
-        throw new Error(
-          `"${contractVersionLabel}" 계약버전의 품목이 없습니다. 먼저 계약내역을 등록해주세요.`,
-        );
-      }
+      const isNewContractTemplate =
+        contractRows.length === 0;
 
       const previousClaim = [...claims]
         .filter(
@@ -1867,6 +1883,10 @@ export default function ProgressClaimManagement({
         ['claim_no', String(claimNo)],
         ['base_month', baseMonth],
         ['contract_version', contractVersionLabel.trim()],
+        [
+          'template_mode',
+          isNewContractTemplate ? 'new_contract' : 'claim_only',
+        ],
         ['generated_at', new Date().toISOString()],
       ]);
 
@@ -1901,7 +1921,9 @@ export default function ProgressClaimManagement({
       worksheet.getCell('A3').value = '작성방법';
       worksheet.mergeCells('B3:K3');
       worksheet.getCell('B3').value =
-        '노란색 금회수량 셀만 입력합니다. 금액·누계·누계율은 자동 계산됩니다.';
+        isNewContractTemplate
+          ? '최초계약 등록용 양식입니다. 노란색 품목정보·계약수량·단가·금회수량 셀을 입력합니다. 미사용 행은 비워두세요.'
+          : '노란색 금회수량 셀만 입력합니다. 금액·누계·누계율은 자동 계산됩니다.';
       worksheet.getCell('B3').fill = {
         type: 'pattern',
         pattern: 'solid',
@@ -2018,7 +2040,112 @@ export default function ProgressClaimManagement({
           Number(left.sort_order || 0) - Number(right.sort_order || 0),
       );
 
-      orderedContractRows.forEach((contractRow, index) => {
+      if (isNewContractTemplate) {
+        for (
+          let index = 0;
+          index < STANDARD_CLAIM_NEW_CONTRACT_ROW_COUNT;
+          index += 1
+        ) {
+          const rowNumber =
+            STANDARD_CLAIM_DATA_START_ROW + index;
+          const row = worksheet.getRow(rowNumber);
+
+          const sourceKey =
+            `new-contract:${encodeURIComponent(projectName)}:${encodeURIComponent(
+              contractVersionLabel.trim(),
+            )}:${String(index + 1).padStart(4, '0')}`;
+
+          row.values = [
+            index + 1,
+            '',
+            '기본',
+            '',
+            '',
+            '',
+            0,
+            0,
+            0,
+            0,
+            { formula: `G${rowNumber}*H${rowNumber}` },
+            { formula: `G${rowNumber}*I${rowNumber}` },
+            { formula: `G${rowNumber}*J${rowNumber}` },
+            { formula: `SUM(K${rowNumber}:M${rowNumber})` },
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            { formula: `T${rowNumber}*H${rowNumber}` },
+            { formula: `T${rowNumber}*I${rowNumber}` },
+            { formula: `T${rowNumber}*J${rowNumber}` },
+            { formula: `SUM(U${rowNumber}:W${rowNumber})` },
+            { formula: `O${rowNumber}+T${rowNumber}` },
+            { formula: `P${rowNumber}+U${rowNumber}` },
+            { formula: `Q${rowNumber}+V${rowNumber}` },
+            { formula: `R${rowNumber}+W${rowNumber}` },
+            { formula: `SUM(Z${rowNumber}:AB${rowNumber})` },
+            { formula: `IF(N${rowNumber}=0,0,AC${rowNumber}/N${rowNumber})` },
+            sourceKey,
+          ];
+
+          row.height = 20;
+
+          for (let column = 1; column <= 30; column += 1) {
+            const cell = row.getCell(column);
+            cell.font = {
+              name: '맑은 고딕',
+              size: 9,
+            };
+            cell.alignment = {
+              vertical: 'middle',
+            };
+            cell.border = borderStyle;
+          }
+
+          // 최초계약 등록시 사용자가 입력해야 하는 영역
+          [2, 3, 4, 5, 6, 7, 8, 9, 10, 20].forEach((column) => {
+            row.getCell(column).fill = {
+              type: 'pattern',
+              pattern: 'solid',
+              fgColor: { argb: 'FFFFF2CC' },
+            };
+          });
+
+          row.getCell(3).dataValidation = {
+            type: 'list',
+            allowBlank: true,
+            formulae: ['"기본,확장"'],
+          };
+
+          [7, 8, 9, 10, 20].forEach((column) => {
+            row.getCell(column).dataValidation = {
+              type: 'decimal',
+              operator: 'greaterThanOrEqual',
+              formulae: [0],
+              allowBlank: true,
+              showErrorMessage: true,
+              errorTitle: '입력값 확인',
+              error: '0 이상의 숫자를 입력해주세요.',
+            };
+          });
+
+          [7, 20, 25].forEach((column) => {
+            row.getCell(column).numFmt = '#,##0.####';
+          });
+
+          [
+            8, 9, 10, 11, 12, 13, 14,
+            16, 17, 18, 19, 21, 22, 23, 24,
+            26, 27, 28, 29,
+          ].forEach((column) => {
+            row.getCell(column).numFmt = '#,##0';
+          });
+
+          row.getCell(30).numFmt = '0.00%';
+        }
+      } else {
+        orderedContractRows.forEach((contractRow, index) => {
         const rowNumber = STANDARD_CLAIM_DATA_START_ROW + index;
         const row = worksheet.getRow(rowNumber);
 
@@ -2170,10 +2297,16 @@ export default function ProgressClaimManagement({
         });
 
         row.getCell(30).numFmt = '0.00%';
-      });
+        });
+      }
+
+      const outputRowCount =
+        isNewContractTemplate
+          ? STANDARD_CLAIM_NEW_CONTRACT_ROW_COUNT
+          : orderedContractRows.length;
 
       const lastRow =
-        STANDARD_CLAIM_DATA_START_ROW + orderedContractRows.length - 1;
+        STANDARD_CLAIM_DATA_START_ROW + outputRowCount - 1;
 
       if (lastRow >= STANDARD_CLAIM_DATA_START_ROW) {
         worksheet.autoFilter = {
@@ -2221,8 +2354,9 @@ export default function ProgressClaimManagement({
 
       setMessage({
         severity: 'success',
-        text:
-          `${claimNo}회차 기성 표준양식을 다운로드했습니다. 노란색 금회수량 셀만 작성한 뒤 다시 업로드해주세요.`,
+        text: isNewContractTemplate
+          ? `"${contractVersionLabel}" 계약품목이 아직 없어 최초계약 등록용 빈 양식을 다운로드했습니다. 노란색 셀에 계약내역을 입력한 뒤 업로드해주세요.`
+          : `${claimNo}회차 기성 표준양식을 다운로드했습니다. 노란색 금회수량 셀만 작성한 뒤 다시 업로드해주세요.`,
       });
     } catch (error) {
       console.error('기성 표준양식 생성 오류:', error);
