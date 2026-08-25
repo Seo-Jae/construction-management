@@ -1,4 +1,3 @@
-// v52.48.5.44.9.5 계약품목 선택 노무비 단가열·열폭 조정
 // v52.48.5.44.9.4 계약 노무비 인라인 묶음 셀 우측정렬
 // v52.48.5.44.9.3 계약 노무비 우측정렬·아이콘 금액 높이통일
 // v52.48.5.44.9.2 계약 노무비 링크 아이콘 단일행 전면배치
@@ -5228,33 +5227,29 @@ export default function LaborCostManagement({
             variant="outlined"
             sx={{ maxHeight: '55vh', borderColor: '#cbd5e1' }}
           >
-            <Table
-              stickyHeader
-              size="small"
-              sx={{ minWidth: 1020, tableLayout: 'fixed' }}
-            >
+            <Table stickyHeader size="small" sx={{ minWidth: 980 }}>
               <TableHead>
                 <TableRow>
-                  <TableCell
-                    padding="checkbox"
-                    sx={{ ...headerCellSx, width: 40 }}
-                  />
+                  <TableCell padding="checkbox" sx={headerCellSx} />
                   {[
-                    { label: '구분', width: 90, align: 'center' },
-                    { label: '품명', width: 260, align: 'center' },
-                    { label: '규격', width: 210, align: 'center' },
-                    { label: '단위', width: 52, align: 'center' },
-                    { label: '계약수량', width: 78, align: 'right' },
-                    { label: '노무비 단가', width: 90, align: 'right' },
-                    { label: '계약 노무비', width: 120, align: 'right' },
-                    { label: '연결 공정', width: 108, align: 'center' },
-                  ].map((column) => (
+                    '구분',
+                    '품명',
+                    '규격',
+                    '단위',
+                    '계약수량',
+                    '계약 노무비',
+                    '연결 공정',
+                  ].map((label) => (
                     <TableCell
-                      key={column.label}
-                      sx={{ ...headerCellSx, width: column.width }}
-                      align={column.align}
+                      key={label}
+                      sx={headerCellSx}
+                      align={
+                        ['계약수량', '계약 노무비'].includes(label)
+                          ? 'right'
+                          : 'center'
+                      }
                     >
-                      {column.label}
+                      {label}
                     </TableCell>
                   ))}
                 </TableRow>
@@ -5267,14 +5262,6 @@ export default function LaborCostManagement({
                     item,
                     contractPickerProcess,
                   );
-                  const contractQuantity = toNumber(
-                    item.contract_quantity,
-                  );
-                  const laborUnitPrice =
-                    contractQuantity > 0
-                      ? toNumber(item.contract_labor_amount) /
-                        contractQuantity
-                      : null;
 
                   return (
                     <TableRow
@@ -5294,66 +5281,29 @@ export default function LaborCostManagement({
                           onClick={(event) => event.stopPropagation()}
                         />
                       </TableCell>
-                      <TableCell
-                        sx={{ ...bodyCellSx, width: 90 }}
-                        align="center"
-                      >
+                      <TableCell sx={bodyCellSx} align="center">
                         {item.classification ||
                           item.housing_type ||
                           '미분류'}
                       </TableCell>
                       <TableCell
-                        title={item.item_name || item.base_item_name || '-'}
-                        sx={{
-                          ...bodyCellSx,
-                          width: 260,
-                          fontWeight: 800,
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}
+                        sx={{ ...bodyCellSx, fontWeight: 800 }}
                       >
                         {item.item_name || item.base_item_name || '-'}
                       </TableCell>
-                      <TableCell
-                        title={item.specification || '-'}
-                        sx={{
-                          ...bodyCellSx,
-                          width: 210,
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}
-                      >
+                      <TableCell sx={bodyCellSx}>
                         {item.specification || '-'}
                       </TableCell>
-                      <TableCell
-                        sx={{ ...bodyCellSx, width: 52, px: 0.45 }}
-                        align="center"
-                      >
+                      <TableCell sx={bodyCellSx} align="center">
                         {item.unit || '-'}
                       </TableCell>
-                      <TableCell
-                        sx={{ ...numberCellSx, width: 78, px: 0.75 }}
-                      >
-                        {formatQuantity(contractQuantity)}
+                      <TableCell sx={numberCellSx}>
+                        {formatQuantity(item.contract_quantity)}
                       </TableCell>
-                      <TableCell
-                        sx={{ ...numberCellSx, width: 90, px: 0.75 }}
-                      >
-                        {laborUnitPrice === null
-                          ? '-'
-                          : `${formatMoney(laborUnitPrice)}원`}
-                      </TableCell>
-                      <TableCell
-                        sx={{ ...numberCellSx, width: 120, px: 0.75 }}
-                      >
+                      <TableCell sx={numberCellSx}>
                         {formatMoney(item.contract_labor_amount)}원
                       </TableCell>
-                      <TableCell
-                        sx={{ ...bodyCellSx, width: 108 }}
-                        align="center"
-                      >
+                      <TableCell sx={bodyCellSx} align="center">
                         <Stack
                           direction="row"
                           spacing={0.4}
@@ -5393,7 +5343,7 @@ export default function LaborCostManagement({
 
                 {contractPickerRows.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={9} align="center" sx={{ py: 6 }}>
+                    <TableCell colSpan={8} align="center" sx={{ py: 6 }}>
                       <Typography
                         sx={{
                           fontSize: '0.78rem',
