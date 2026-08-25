@@ -1,4 +1,3 @@
-// v52.48.5.44.9.2 계약 노무비 링크 아이콘 단일행 전면배치
 // v52.48.5.44.9.1 계약품목 검색 normalizeText 참조오류 긴급수정
 // v52.48.5.44.9 공정별 노임단가-최초계약 품목 연결
 import React, {
@@ -3232,31 +3231,8 @@ export default function LaborCostManagement({
         />
       </TableCell>
       <TableCell sx={{ ...bodyCellSx, minWidth: 174, p: 0.45 }}>
-        <Stack
-          direction="row"
-          spacing={0.25}
-          alignItems="center"
-          justifyContent="flex-end"
-          sx={{ flexWrap: 'nowrap', whiteSpace: 'nowrap' }}
-        >
-          <Tooltip title="최초계약 품목에서 불러오기" arrow>
-            <span>
-              <IconButton
-                size="small"
-                color="primary"
-                onClick={() => openContractItemPicker()}
-                disabled={contractSourceLoading}
-                aria-label="최초계약 품목 선택"
-                sx={{ p: 0.35, flex: '0 0 auto' }}
-              >
-                {contractSourceLoading ? (
-                  <CircularProgress size={15} />
-                ) : (
-                  <LinkRoundedIcon sx={{ fontSize: 18 }} />
-                )}
-              </IconButton>
-            </span>
-          </Tooltip>
+        <Stack spacing={0.2}>
+          <Stack direction="row" spacing={0.25} alignItems="center">
             <InputBase
               value={formatNumericInput(editor.contractLaborAmount)}
               onChange={(event) =>
@@ -3278,27 +3254,60 @@ export default function LaborCostManagement({
               }}
               sx={{
                 ...editorCellInputSx,
-                flex: 1,
-                minWidth: 0,
                 bgcolor:
                   editorContractItemIds.size > 0
                     ? '#eff6ff'
                     : editorCellInputSx.bgcolor,
               }}
             />
-          {editorContractItemIds.size > 0 && (
-            <Tooltip title="계약품목 연결 해제" arrow>
-              <IconButton
-                size="small"
-                color="error"
-                onClick={handleUnlinkContractItems}
-                aria-label="계약품목 연결 해제"
-                sx={{ p: 0.35, flex: '0 0 auto' }}
-              >
-                <LinkOffRoundedIcon sx={{ fontSize: 17 }} />
-              </IconButton>
+            <Tooltip title="최초계약 품목에서 불러오기" arrow>
+              <span>
+                <IconButton
+                  size="small"
+                  color="primary"
+                  onClick={() => openContractItemPicker()}
+                  disabled={contractSourceLoading}
+                  aria-label="최초계약 품목 선택"
+                  sx={{ p: 0.35 }}
+                >
+                  {contractSourceLoading ? (
+                    <CircularProgress size={15} />
+                  ) : (
+                    <LinkRoundedIcon sx={{ fontSize: 18 }} />
+                  )}
+                </IconButton>
+              </span>
             </Tooltip>
-          )}
+            {editorContractItemIds.size > 0 && (
+              <Tooltip title="계약품목 연결 해제" arrow>
+                <IconButton
+                  size="small"
+                  color="error"
+                  onClick={handleUnlinkContractItems}
+                  aria-label="계약품목 연결 해제"
+                  sx={{ p: 0.35 }}
+                >
+                  <LinkOffRoundedIcon sx={{ fontSize: 17 }} />
+                </IconButton>
+              </Tooltip>
+            )}
+          </Stack>
+          <Typography
+            sx={{
+              minHeight: 12,
+              fontSize: '0.58rem',
+              color:
+                editorContractItemIds.size > 0
+                  ? '#2563eb'
+                  : '#94a3b8',
+              textAlign: 'right',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {editorContractItemIds.size > 0
+              ? `${editorContractItemIds.size.toLocaleString()}개 품목 연결`
+              : '직접입력 또는 계약품목 선택'}
+          </Typography>
         </Stack>
       </TableCell>
       <TableCell sx={{ ...bodyCellSx, minWidth: 122, p: 0.45 }}>
@@ -3686,42 +3695,7 @@ export default function LaborCostManagement({
                     {setting?.unit || processRow?.unit || '-'}
                   </TableCell>
                   <TableCell sx={numberCellSx}>
-                    <Stack
-                      direction="row"
-                      alignItems="center"
-                      justifyContent="flex-end"
-                      spacing={0.35}
-                      sx={{ flexWrap: 'nowrap', whiteSpace: 'nowrap' }}
-                    >
-                      <Tooltip
-                        title={
-                          (contractLinksByProcess[processType] || [])
-                            .length > 0
-                            ? `연결 계약품목 보기 (${(
-                                contractLinksByProcess[processType] || []
-                              ).length.toLocaleString()}개)`
-                            : '최초계약 품목 선택'
-                        }
-                        arrow
-                      >
-                        <span>
-                          <IconButton
-                            size="small"
-                            color="primary"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openContractItemPickerForProcess(processType);
-                            }}
-                            disabled={
-                              !rateEditable || contractSourceLoading
-                            }
-                            aria-label="최초계약 품목 선택"
-                            sx={{ p: 0.25 }}
-                          >
-                            <LinkRoundedIcon sx={{ fontSize: 16 }} />
-                          </IconButton>
-                        </span>
-                      </Tooltip>
+                    <Stack alignItems="flex-end" spacing={0.15}>
                       <span>
                         {processRow
                           ? `${formatMoney(
@@ -3729,6 +3703,28 @@ export default function LaborCostManagement({
                             )}원`
                           : '-'}
                       </span>
+                      <Button
+                        size="small"
+                        startIcon={<LinkRoundedIcon />}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          openContractItemPickerForProcess(processType);
+                        }}
+                        disabled={!rateEditable || contractSourceLoading}
+                        sx={{
+                          minWidth: 0,
+                          p: 0,
+                          fontSize: '0.58rem',
+                          lineHeight: 1.2,
+                        }}
+                      >
+                        {(contractLinksByProcess[processType] || []).length >
+                        0
+                          ? `${(
+                              contractLinksByProcess[processType] || []
+                            ).length.toLocaleString()}개 품목`
+                          : '품목 선택'}
+                      </Button>
                     </Stack>
                   </TableCell>
                   <TableCell sx={numberCellSx}>
