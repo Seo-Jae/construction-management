@@ -1,3 +1,4 @@
+// v52.48.5.44.8 현장 시작일·종료일 관리 + Dashboard/Main 연동
 // v52.48.5.44.2 현장삭제 비밀번호확인 + 층별 타입예외
 // v52.48.5.44.1 현장관리 동별 호별 타입
 // v52.48.5.44 최고관리자 현장관리
@@ -31,6 +32,82 @@ import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 import { countUniqueUnits } from '../utils/buildingUnits.js';
 
 const EMPTY_MESSAGE = null;
+
+const LEGACY_PROJECT_SCHEDULES = {
+  '한라건설 용인금어지구': {
+    startDate: '2025-06-30',
+    endDate: '2026-12-31',
+  },
+  '현대건설 용인마크밸리': {
+    startDate: '2025-10-31',
+    endDate: '2027-12-07',
+  },
+  '대우건설 용인현장': {
+    startDate: '2026-04-15',
+    endDate: '2028-02-29',
+  },
+};
+
+const normalizeProjectDate = (value) => {
+  const text = String(value || '').trim();
+
+  if (!text) return '';
+
+  const normalized = text.replace(/\./g, '-');
+
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalized)
+    ? normalized
+    : '';
+};
+
+const getProjectDatesFromBuildings = (
+  projectName,
+  buildings,
+) => {
+  const configs = (
+    Array.isArray(buildings) ? buildings : []
+  ).map((building) => (
+    building?.rawConfig &&
+    typeof building.rawConfig === 'object' &&
+    !Array.isArray(building.rawConfig)
+      ? building.rawConfig
+      : {}
+  ));
+
+  const configuredStartDate = configs
+    .map((config) =>
+      normalizeProjectDate(
+        config.projectStartDate ||
+          config.project_start_date ||
+          config.startDate ||
+          config.start_date,
+      ),
+    )
+    .find(Boolean);
+
+  const configuredEndDate = configs
+    .map((config) =>
+      normalizeProjectDate(
+        config.projectEndDate ||
+          config.project_end_date ||
+          config.endDate ||
+          config.end_date,
+      ),
+    )
+    .find(Boolean);
+
+  const legacy =
+    LEGACY_PROJECT_SCHEDULES[projectName] || {};
+
+  return {
+    startDate:
+      configuredStartDate ||
+      normalizeProjectDate(legacy.startDate),
+    endDate:
+      configuredEndDate ||
+      normalizeProjectDate(legacy.endDate),
+  };
+};
 
 const safeObject = (value) => {
   if (value && typeof value === 'object' && !Array.isArray(value)) return value;
@@ -223,14 +300,47 @@ const normalizeBuilding = (row, index) => {
 
 const normalizeProjects = (value) => (
   (Array.isArray(value) ? value : [])
-    .map((item) => ({
-      projectName: String(item?.project_name || item?.projectName || '').trim(),
-      buildings: (Array.isArray(item?.buildings) ? item.buildings : [])
+    .map((item) => {
+      const projectName = String(
+        item?.project_name ||
+          item?.projectName ||
+          '',
+      ).trim();
+
+      const buildings = (
+        Array.isArray(item?.buildings)
+          ? item.buildings
+          : []
+      )
         .map(normalizeBuilding)
-        .filter((building) => building.buildingName),
-    }))
+        .filter(
+          (building) =>
+            building.buildingName,
+        );
+
+      const projectDates =
+        getProjectDatesFromBuildings(
+          projectName,
+          buildings,
+        );
+
+      return {
+        projectName,
+        startDate:
+          projectDates.startDate,
+        endDate:
+          projectDates.endDate,
+        buildings,
+      };
+    })
     .filter((item) => item.projectName)
-    .sort((first, second) => first.projectName.localeCompare(second.projectName, 'ko', { numeric: true }))
+    .sort((first, second) =>
+      first.projectName.localeCompare(
+        second.projectName,
+        'ko',
+        { numeric: true },
+      ),
+    )
 );
 
 const buildConfig = (building) => {
@@ -377,6 +487,8 @@ export default function ProjectManagement() {
         setDraft({
           originalProjectName: selected.projectName,
           projectName: selected.projectName,
+          startDate: selected.startDate || '',
+          endDate: selected.endDate || '',
           buildings: selected.buildings,
         });
       } else {
@@ -428,6 +540,8 @@ export default function ProjectManagement() {
     setDraft({
       originalProjectName: project.projectName,
       projectName: project.projectName,
+      startDate: project.startDate || '',
+      endDate: project.endDate || '',
       buildings: project.buildings.map((item) => ({
         ...item,
         rawConfig: { ...safeObject(item.rawConfig) },
@@ -442,6 +556,8 @@ export default function ProjectManagement() {
     setDraft({
       originalProjectName: '',
       projectName: '',
+      startDate: '',
+      endDate: '',
       buildings: [createEmptyBuilding(0)],
     });
     setEditExisting(false);
@@ -454,6 +570,15 @@ export default function ProjectManagement() {
   const updateDraftProjectName = (value) => {
     setDraft((previous) => previous
       ? { ...previous, projectName: value }
+      : previous);
+  };
+
+  const updateDraftProjectDate = (
+    field,
+    value,
+  ) => {
+    setDraft((previous) => previous
+      ? { ...previous, [field]: value }
       : previous);
   };
 
@@ -708,6 +833,33 @@ export default function ProjectManagement() {
       setMessage({ severity: 'warning', text: '본사/전체현장은 현장명으로 사용할 수 없습니다.' });
       return;
     }
+    const startDate =
+      normalizeProjectDate(
+        draft.startDate,
+      );
+    const endDate =
+      normalizeProjectDate(
+        draft.endDate,
+      );
+
+    if (!startDate || !endDate) {
+      setMessage({
+        severity: 'warning',
+        text:
+          '현장 시작일과 종료일을 모두 지정해주세요.',
+      });
+      return;
+    }
+
+    if (startDate > endDate) {
+      setMessage({
+        severity: 'warning',
+        text:
+          '종료일은 시작일보다 빠를 수 없습니다.',
+      });
+      return;
+    }
+
     if (!Array.isArray(draft.buildings) || draft.buildings.length === 0) {
       setMessage({ severity: 'warning', text: '최소 1개 동을 등록해주세요.' });
       return;
@@ -719,7 +871,13 @@ export default function ProjectManagement() {
         if (!buildingName) throw new Error('동명을 입력해주세요.');
         return {
           building_name: buildingName,
-          config_json: buildConfig(building),
+          config_json: {
+            ...buildConfig(building),
+            projectStartDate:
+              startDate,
+            projectEndDate:
+              endDate,
+          },
         };
       });
 
@@ -739,7 +897,15 @@ export default function ProjectManagement() {
       if (error) throw error;
 
       window.dispatchEvent(new CustomEvent('project-registry-changed', {
-        detail: { projectName },
+        detail: {
+          projectName,
+          startDate,
+          endDate,
+          action:
+            draft.originalProjectName
+              ? 'updated'
+              : 'created',
+        },
       }));
 
       await loadProjects(projectName);
@@ -776,7 +942,7 @@ export default function ProjectManagement() {
       >
         <SystemPageTitle
           title="현장관리"
-          help="최고관리자가 시스템 안에서 새 현장을 등록하고 동·층·세대·호별 타입을 관리합니다. 펜트하우스처럼 특정 층의 타입만 달라지는 경우 층별 타입 예외를 사용할 수 있습니다. 현장 삭제는 최고관리자 본인의 로그인 비밀번호를 다시 확인한 뒤 실행됩니다."
+          help="최고관리자가 시스템 안에서 현장명·시작일·종료일과 동·층·세대·호별 타입을 관리합니다. 시작일·종료일은 Main 및 전체 현장 Dashboard의 공사기간과 D-Day에 공통 적용됩니다. 펜트하우스처럼 특정 층의 타입만 달라지는 경우 층별 타입 예외를 사용할 수 있습니다. 현장 삭제는 최고관리자 본인의 로그인 비밀번호를 다시 확인한 뒤 실행됩니다."
         />
         <Chip size="small" variant="outlined" label={`등록현장 ${projects.length}`} />
         <Box sx={{ flex: 1 }} />
@@ -925,7 +1091,7 @@ export default function ProjectManagement() {
                       startIcon={<EditRoundedIcon />}
                       onClick={() => setEditExisting(true)}
                     >
-                      구조 수정
+                      현장정보·구조 수정
                     </Button>
                   </>
                 )}
@@ -951,16 +1117,27 @@ export default function ProjectManagement() {
               <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto', p: 1.5 }}>
                 {isExisting && !editExisting && (
                   <Alert severity="info" sx={{ mb: 1.2 }}>
-                    기존 현장은 조회 상태입니다. 변경이 필요할 때만 우측 상단의 「구조 수정」을 눌러주세요.
+                    기존 현장은 조회 상태입니다. 시작일·종료일 또는 동 구성을 변경할 때 우측 상단의 「현장정보·구조 수정」을 눌러주세요.
                   </Alert>
                 )}
                 {isExisting && editExisting && (
                   <Alert severity="warning" sx={{ mb: 1.2 }}>
-                    최고층·호수·예외층 변경은 공정진척의 세대 구조에 영향을 줍니다. 기존 현장명과 이미 저장된 동명은 데이터 연결 보호를 위해 변경할 수 없습니다.
+                    시작일·종료일은 Dashboard와 Main에 즉시 연동됩니다. 최고층·호수·예외층 변경은 공정진척의 세대 구조에 영향을 줍니다. 기존 현장명과 이미 저장된 동명은 데이터 연결 보호를 위해 변경할 수 없습니다.
                   </Alert>
                 )}
 
-                <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'minmax(280px, 520px) 1fr' }, gap: 1.2, mb: 1.5 }}>
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: {
+                      xs: '1fr',
+                      md:
+                        'minmax(280px, 1.4fr) minmax(160px, .7fr) minmax(160px, .7fr)',
+                    },
+                    gap: 1.2,
+                    mb: 1.5,
+                  }}
+                >
                   <TextField
                     label="현장명"
                     size="small"
@@ -969,8 +1146,57 @@ export default function ProjectManagement() {
                     disabled={isExisting || !editable}
                     placeholder="예: ○○건설 ○○현장"
                   />
-                  <Box sx={{ display: 'flex', alignItems: 'center', color: '#64748b', fontSize: '0.68rem' }}>
-                    현장명은 저장 후 과거자료 연결키로 사용되므로 변경하지 않습니다.
+
+                  <TextField
+                    label="시작일"
+                    type="date"
+                    size="small"
+                    value={draft.startDate || ''}
+                    onChange={(event) =>
+                      updateDraftProjectDate(
+                        'startDate',
+                        event.target.value,
+                      )
+                    }
+                    disabled={!editable}
+                    InputLabelProps={{
+                      shrink: true,
+                    }}
+                  />
+
+                  <TextField
+                    label="종료일"
+                    type="date"
+                    size="small"
+                    value={draft.endDate || ''}
+                    onChange={(event) =>
+                      updateDraftProjectDate(
+                        'endDate',
+                        event.target.value,
+                      )
+                    }
+                    disabled={!editable}
+                    InputLabelProps={{
+                      shrink: true,
+                    }}
+                    inputProps={{
+                      min:
+                        draft.startDate ||
+                        undefined,
+                    }}
+                  />
+
+                  <Box
+                    sx={{
+                      gridColumn: {
+                        xs: '1',
+                        md: '1 / -1',
+                      },
+                      color: '#64748b',
+                      fontSize: '0.68rem',
+                    }}
+                  >
+                    현장명은 저장 후 과거자료 연결키로 사용되므로 변경하지 않습니다. 시작일·종료일은 Dashboard와 Main의 공사기간 표시에 사용됩니다.
                   </Box>
                 </Box>
 

@@ -1,3 +1,5 @@
+// v52.48.5.44.8.1 Admin Dashboard 날짜 parser 안전수정
+// v52.48.5.44.8 현장관리 시작일·종료일 연동
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -20,7 +22,7 @@ import SystemPageTitle from '../components/SystemPageTitle.jsx';
 const PAGE_SIZE = 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const PROJECT_SCHEDULES = {
+const LEGACY_PROJECT_SCHEDULES = {
   '한라건설 용인금어지구': {
     startDate: '25.06.30',
     endDate: '26.12.31',
@@ -35,10 +37,50 @@ const PROJECT_SCHEDULES = {
   },
 };
 
+const formatAdminScheduleDate = (
+  value,
+) => {
+  const text =
+    String(value || '').trim();
+
+  if (!text) return '';
+
+  const normalized =
+    text.replace(/-/g, '.');
+  const parts =
+    normalized.split('.');
+
+  if (parts.length !== 3) {
+    return '';
+  }
+
+  const [
+    year,
+    month,
+    day,
+  ] = parts;
+
+  const yy =
+    year.length === 4
+      ? year.slice(2)
+      : year;
+
+  if (
+    !/^\d{2}$/.test(yy) ||
+    !/^\d{2}$/.test(month) ||
+    !/^\d{2}$/.test(day)
+  ) {
+    return '';
+  }
+
+  return `${yy}.${month}.${day}`;
+};
+
 const pad2 = (value) => String(value).padStart(2, '0');
 
 const parseDateKeyToUtc = (dateKey) => {
   const parts = String(dateKey || '')
+    .replace(/-/g, '.')
     .split('.')
     .map(Number);
 
@@ -55,36 +97,121 @@ const parseDateKeyToUtc = (dateKey) => {
   return Date.UTC(fullYear, month - 1, day);
 };
 
-const getProjectSchedule = (projectName, todayKey) => {
-  const schedule = PROJECT_SCHEDULES[projectName];
+const getProjectSchedule = (
+  projectName,
+  todayKey,
+  projectBuildings = [],
+) => {
+  const configs = (
+    Array.isArray(
+      projectBuildings,
+    )
+      ? projectBuildings
+      : []
+  )
+    .map(
+      (row) =>
+        row?.config_json || {},
+    )
+    .filter(Boolean);
 
-  if (!schedule) {
+  const configuredStartDate =
+    configs
+      .map((config) =>
+        formatAdminScheduleDate(
+          config.projectStartDate ||
+            config.project_start_date ||
+            config.startDate ||
+            config.start_date,
+        ),
+      )
+      .find(Boolean);
+
+  const configuredEndDate =
+    configs
+      .map((config) =>
+        formatAdminScheduleDate(
+          config.projectEndDate ||
+            config.project_end_date ||
+            config.endDate ||
+            config.end_date,
+        ),
+      )
+      .find(Boolean);
+
+  const legacy =
+    LEGACY_PROJECT_SCHEDULES[
+      projectName
+    ] || {};
+
+  const schedule = {
+    startDate:
+      configuredStartDate ||
+      formatAdminScheduleDate(
+        legacy.startDate,
+      ),
+    endDate:
+      configuredEndDate ||
+      formatAdminScheduleDate(
+        legacy.endDate,
+      ),
+  };
+
+  if (
+    !schedule.startDate ||
+    !schedule.endDate
+  ) {
     return {
       startDate: '-',
       endDate: '-',
-      startSort: Number.MAX_SAFE_INTEGER,
+      startSort:
+        Number.MAX_SAFE_INTEGER,
       dDayLabel: '일정 미등록',
       dDayState: 'unknown',
     };
   }
 
-  const todayUtc = parseDateKeyToUtc(todayKey);
-  const startUtc = parseDateKeyToUtc(schedule.startDate);
-  const endUtc = parseDateKeyToUtc(schedule.endDate);
+  const todayUtc =
+    parseDateKeyToUtc(todayKey);
+  const startUtc =
+    parseDateKeyToUtc(
+      schedule.startDate,
+    );
+  const endUtc =
+    parseDateKeyToUtc(
+      schedule.endDate,
+    );
 
   let dDayLabel = 'D-000';
   let dDayState = 'active';
 
-  if (todayUtc !== null && endUtc !== null) {
-    const remainingDays = Math.round((endUtc - todayUtc) / DAY_MS);
+  if (
+    todayUtc !== null &&
+    endUtc !== null
+  ) {
+    const remainingDays =
+      Math.round(
+        (endUtc - todayUtc) /
+          DAY_MS,
+      );
 
     if (remainingDays > 0) {
-      dDayLabel = `D-${String(remainingDays).padStart(3, '0')}`;
-    } else if (remainingDays === 0) {
+      dDayLabel =
+        `D-${String(
+          remainingDays,
+        ).padStart(3, '0')}`;
+    } else if (
+      remainingDays === 0
+    ) {
       dDayLabel = 'D-DAY';
       dDayState = 'today';
     } else {
-      dDayLabel = `D+${String(Math.abs(remainingDays)).padStart(3, '0')}`;
+      dDayLabel =
+        `D+${String(
+          Math.abs(
+            remainingDays,
+          ),
+        ).padStart(3, '0')}`;
       dDayState = 'expired';
     }
   }
@@ -92,7 +219,9 @@ const getProjectSchedule = (projectName, todayKey) => {
   return {
     ...schedule,
     startSort:
-      startUtc === null ? Number.MAX_SAFE_INTEGER : startUtc,
+      startUtc === null
+        ? Number.MAX_SAFE_INTEGER
+        : startUtc,
     dDayLabel,
     dDayState,
   };
@@ -1001,13 +1130,14 @@ export default function AdminDashboard({
 
       const projectList = Array.from(projectNames)
         .map((projectName) => {
+          const projectBuildings = buildingRows.filter(
+            (row) => row.project_name === projectName,
+          );
+
           const projectSchedule = getProjectSchedule(
             projectName,
             todayKey,
-          );
-
-          const projectBuildings = buildingRows.filter(
-            (row) => row.project_name === projectName,
+            projectBuildings,
           );
           const todayDateNumber = dateKeyToNumber(todayKey);
 

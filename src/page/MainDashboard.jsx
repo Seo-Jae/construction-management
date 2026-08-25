@@ -1,3 +1,4 @@
+// v52.48.5.44.8 현장관리 시작일·종료일 연동
 import React, {
   useCallback,
   useEffect,
@@ -87,19 +88,62 @@ const getProgressChangedAt = (projectName) => {
   }
 };
 
-const PROJECT_SCHEDULES = {
+const LEGACY_PROJECT_SCHEDULES = {
   '한라건설 용인금어지구': {
-    startDate: '2025.06.30',
-    endDate: '2026.12.31',
+    startDate: '2025-06-30',
+    endDate: '2026-12-31',
   },
   '현대건설 용인마크밸리': {
-    startDate: '2025.10.31',
-    endDate: '2027.12.07',
+    startDate: '2025-10-31',
+    endDate: '2027-12-07',
   },
   '대우건설 용인현장': {
-    startDate: '2026.04.15',
-    endDate: '2028.02.29',
+    startDate: '2026-04-15',
+    endDate: '2028-02-29',
   },
+};
+
+const formatProjectScheduleDate = (
+  value,
+) => {
+  const text = String(value || '').trim();
+
+  if (!text) return '';
+
+  const normalized =
+    text.replace(/\./g, '-');
+  const matched =
+    normalized.match(
+      /^(\d{4})-(\d{2})-(\d{2})$/,
+    );
+
+  if (!matched) return '';
+
+  return [
+    matched[1],
+    matched[2],
+    matched[3],
+  ].join('.');
+};
+
+const getLegacyProjectSchedule = (
+  projectName,
+) => {
+  const schedule =
+    LEGACY_PROJECT_SCHEDULES[
+      projectName
+    ] || {};
+
+  return {
+    startDate:
+      formatProjectScheduleDate(
+        schedule.startDate,
+      ) || '일정 미등록',
+    endDate:
+      formatProjectScheduleDate(
+        schedule.endDate,
+      ) || '일정 미등록',
+  };
 };
 
 const DEFAULT_NOTICES = [
@@ -2267,6 +2311,14 @@ export default function MainDashboard({
 }) {
   const [progressSummaryRows, setProgressSummaryRows] =
     useState([]);
+  const [
+    projectSchedule,
+    setProjectSchedule,
+  ] = useState(() =>
+    getLegacyProjectSchedule(
+      projectName,
+    ),
+  );
   const [laborSummary, setLaborSummary] = useState(
     EMPTY_LABOR_SUMMARY,
   );
@@ -2308,6 +2360,134 @@ export default function MainDashboard({
   const laborRequestIdRef = useRef(0);
 
   const isSuperAdmin = userRole === '최고관리자';
+
+  const loadProjectSchedule =
+    useCallback(async () => {
+      if (!projectName) {
+        setProjectSchedule({
+          startDate: '일정 미등록',
+          endDate: '일정 미등록',
+        });
+        return;
+      }
+
+      const fallback =
+        getLegacyProjectSchedule(
+          projectName,
+        );
+
+      try {
+        const { data, error } =
+          await supabase
+            .from('building_settings')
+            .select(
+              'building_name, config_json',
+            )
+            .eq(
+              'project_name',
+              projectName,
+            )
+            .order(
+              'building_name',
+              { ascending: true },
+            )
+            .limit(50);
+
+        if (error) throw error;
+
+        const configs = (
+          Array.isArray(data)
+            ? data
+            : []
+        )
+          .map(
+            (row) =>
+              row?.config_json || {},
+          )
+          .filter(Boolean);
+
+        const configuredStartDate =
+          configs
+            .map((config) =>
+              formatProjectScheduleDate(
+                config.projectStartDate ||
+                  config.project_start_date ||
+                  config.startDate ||
+                  config.start_date,
+              ),
+            )
+            .find(Boolean);
+
+        const configuredEndDate =
+          configs
+            .map((config) =>
+              formatProjectScheduleDate(
+                config.projectEndDate ||
+                  config.project_end_date ||
+                  config.endDate ||
+                  config.end_date,
+              ),
+            )
+            .find(Boolean);
+
+        setProjectSchedule({
+          startDate:
+            configuredStartDate ||
+            fallback.startDate,
+          endDate:
+            configuredEndDate ||
+            fallback.endDate,
+        });
+      } catch (error) {
+        console.error(
+          'Main 현장 공사기간 조회 오류:',
+          error,
+        );
+        setProjectSchedule(
+          fallback,
+        );
+      }
+    }, [projectName]);
+
+  useEffect(() => {
+    loadProjectSchedule();
+
+    const handleProjectRegistryChanged = (
+      event,
+    ) => {
+      const changedProjectName =
+        String(
+          event?.detail
+            ?.projectName || '',
+        ).trim();
+
+      if (
+        changedProjectName &&
+        changedProjectName !==
+          projectName
+      ) {
+        return;
+      }
+
+      loadProjectSchedule();
+    };
+
+    window.addEventListener(
+      'project-registry-changed',
+      handleProjectRegistryChanged,
+    );
+
+    return () => {
+      window.removeEventListener(
+        'project-registry-changed',
+        handleProjectRegistryChanged,
+      );
+    };
+  }, [
+    loadProjectSchedule,
+    projectName,
+  ]);
+
   const calendarMonthBounds = useMemo(
     () => getMonthBounds(viewYear, viewMonth),
     [viewMonth, viewYear],
@@ -2902,10 +3082,7 @@ export default function MainDashboard({
       : (completedCount / totalCount) * 100;
 
   const schedule =
-    PROJECT_SCHEDULES[projectName] || {
-      startDate: '일정 미등록',
-      endDate: '일정 미등록',
-    };
+    projectSchedule;
 
   return (
     <Box
