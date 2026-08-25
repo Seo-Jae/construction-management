@@ -1,3 +1,4 @@
+// v52.48.5.44.6.3 타입윤곽선 복원 + 골구도 셀 1.2배
 // v52.48.5.44.6.2 타입행 높이통일 + 박스제거 + 타입색상
 // v52.48.5.44.6.1 예외타입 동일행 압축 + hover 설명 제거
 // v52.48.5.44.6 층별 예외타입 하단 다단표시
@@ -12,8 +13,8 @@ import {
   getUnitType,
 } from './utils/buildingUnits.js';
 
-const CELL_WIDTH = 34;
-const CELL_HEIGHT = 18;
+const CELL_WIDTH = 41;
+const CELL_HEIGHT = 22;
 const CELL_GAP = 2;
 const ROW_GAP = 1;
 
@@ -95,9 +96,9 @@ function PilotiCell({ span = 1 }) {
           content: '""',
           position: 'absolute',
           left: '50%',
-          top: '-12px',
+          top: '-15px',
           width: '1px',
-          height: 48,
+          height: 58,
           bgcolor: '#94a3b8',
           transformOrigin: 'center',
         },
@@ -1002,6 +1003,10 @@ export default function BuildingGrid({
                         'center',
                       justifyContent:
                         'center',
+                      border:
+                        '1px solid #cbd5e1',
+                      bgcolor:
+                        'transparent',
                       boxSizing:
                         'border-box',
                       color:
@@ -1055,6 +1060,12 @@ export default function BuildingGrid({
                     'center',
                   justifyContent:
                     'center',
+                  border:
+                    unitType
+                      ? '1px solid #cbd5e1'
+                      : '1px solid transparent',
+                  bgcolor:
+                    'transparent',
                   boxSizing:
                     'border-box',
                   color:
