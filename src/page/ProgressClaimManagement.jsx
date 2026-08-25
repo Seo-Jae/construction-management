@@ -1,3 +1,4 @@
+// v52.48.5.44.7.5 기성양식-계약품목 공정연결 즉시 동기화
 // v52.48.5.44.7.4 기성회차 삭제 시 표준계약 잔여데이터 정리
 // v52.48.5.44.7.3 기성회차 삭제 + 구분 누락 진단
 // v52.48.5.44.7.2 최초계약 양식 구분 안내
@@ -2447,6 +2448,7 @@ export default function ProgressClaimManagement({
 
       let parsedItems;
       let projectLabel;
+      let standardContractSyncMessage = '';
 
       if (standardTemplate) {
         const metadata = standardTemplate.metadata;
@@ -2495,6 +2497,75 @@ export default function ProgressClaimManagement({
 
         parsedItems = standardTemplate.items;
         projectLabel = templateProjectName;
+
+        const syncableContractItems = parsedItems.filter(
+          (item) =>
+            (item.validation_errors || []).length === 0,
+        );
+
+        if (
+          syncableContractItems.length === parsedItems.length &&
+          syncableContractItems.length > 0
+        ) {
+          const {
+            data: syncResult,
+            error: syncError,
+          } = await supabase.rpc(
+            'sync_progress_contract_master_v1',
+            {
+              p_project_name: projectName,
+              p_contract_version_label:
+                contractVersionLabel.trim(),
+              p_effective_date: `${baseMonth}-01`,
+              p_source_file_name: file.name,
+              p_items: syncableContractItems.map(
+                ({ validation_errors, ...item }) => ({
+                  ...item,
+                  process_type:
+                    encodeProcessTypes(
+                      decodeProcessTypes(
+                        item.process_type,
+                      ),
+                    ),
+                }),
+              ),
+            },
+          );
+
+          if (syncError) {
+            throw new Error(
+              `계약품목 공정연결 자동 동기화 실패: ${syncError.message}`,
+            );
+          }
+
+          standardContractSyncMessage =
+            ` 계약품목 공정연결에 ${Number(
+              syncResult?.item_count ||
+                syncableContractItems.length,
+            ).toLocaleString()}건을 즉시 반영했습니다.`;
+
+          if (
+            typeof window !== 'undefined'
+          ) {
+            window.dispatchEvent(
+              new CustomEvent(
+                'progress-contract-master-changed',
+                {
+                  detail: {
+                    projectName,
+                    versionLabel:
+                      contractVersionLabel.trim(),
+                    source:
+                      'progress-claim-upload',
+                  },
+                },
+              ),
+            );
+          }
+        } else {
+          standardContractSyncMessage =
+            ' 검산오류가 있어 계약품목 공정연결 자동반영은 보류했습니다.';
+        }
       } else {
         const worksheet =
           workbook.worksheets.find((sheet) =>
@@ -2607,6 +2678,7 @@ export default function ProgressClaimManagement({
         severity: parsedErrorCount > 0 || Boolean(inheritanceWarning) ? 'warning' : 'success',
         text:
           `${file.name}에서 직접비 ${nextItems.length.toLocaleString()}개 품목을 읽었습니다. 간접비는 제외했습니다.` +
+          standardContractSyncMessage +
           inheritanceSummary +
           inheritanceWarning +
           (missingClassificationCount > 0
@@ -3198,9 +3270,29 @@ export default function ProgressClaimManagement({
         text:
           `${data?.claim_no || targetClaimNo}회차 등록 기성자료를 삭제했습니다.` +
           (data?.contract_master_deleted
-            ? ` 이 회차가 사용하던 "${data?.contract_version_label || contractVersionLabel}" 표준 계약품목도 더 이상 사용되지 않아 함께 초기화했습니다. 다음 양식 다운로드는 빈 최초계약 양식으로 시작됩니다.`
+            ? ` 이 회차가 사용하던 "${data?.contract_version_label || contractVersionLabel}" 표준 계약품목도 더 이상 사용되지 않아 함께 초기화했습니다. 계약품목 공정연결에서도 동일하게 제거됩니다. 다음 양식 다운로드는 빈 최초계약 양식으로 시작됩니다.`
             : ' 다른 등록 회차가 사용하는 계약원본 또는 기존 외부 계약원본은 그대로 보존했습니다.'),
       });
+
+      if (
+        typeof window !== 'undefined'
+      ) {
+        window.dispatchEvent(
+          new CustomEvent(
+            'progress-contract-master-changed',
+            {
+              detail: {
+                projectName,
+                versionLabel:
+                  data?.contract_version_label ||
+                  contractVersionLabel,
+                source:
+                  'progress-claim-delete',
+              },
+            },
+          ),
+        );
+      }
     } catch (error) {
       console.error(
         '등록 기성 회차 삭제 오류:',

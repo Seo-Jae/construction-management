@@ -1,3 +1,4 @@
+// v52.48.5.44.7.5 기성양식-계약품목 공정연결 실시간 연동
 import React, {
   useCallback,
   useDeferredValue,
@@ -116,9 +117,36 @@ const getProcessLabel = (value) => {
 };
 
 const getTypeLabel = (item) => {
-  const raw = String(item?.housing_type || item?.classification || '미분류').trim();
-  if (!raw) return '미분류';
-  return HOUSEHOLD_TYPE_PATTERN.test(raw) ? '세대' : raw;
+  /*
+    표준 기성양식 B열은 이제 '구분'이며 classification이 원본값입니다.
+    과거에는 housing_type을 먼저 보면서 classification을 '세대/공용'으로
+    수정해도 계약품목 공정연결 화면에 이전값이 남을 수 있었습니다.
+  */
+  const classification = String(
+    item?.classification || '',
+  ).trim();
+
+  if (classification) {
+    return HOUSEHOLD_TYPE_PATTERN.test(
+      classification,
+    )
+      ? '세대'
+      : classification;
+  }
+
+  const housingType = String(
+    item?.housing_type || '',
+  ).trim();
+
+  if (!housingType) {
+    return '미분류';
+  }
+
+  return HOUSEHOLD_TYPE_PATTERN.test(
+    housingType,
+  )
+    ? '세대'
+    : housingType;
 };
 
 const getSameItemKey = (item) =>
@@ -259,6 +287,10 @@ function ContractItemProcessMapping({
   const [originalMappings, setOriginalMappings] = useState(new Map());
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [
+    contractMasterRefreshTick,
+    setContractMasterRefreshTick,
+  ] = useState(0);
   const [keyword, setKeyword] = useState('');
   const deferredKeyword = useDeferredValue(keyword);
   const [typeFilter, setTypeFilter] = useState('전체');
@@ -362,11 +394,62 @@ function ContractItemProcessMapping({
 
   useEffect(() => {
     loadVersions();
-  }, [loadVersions]);
+  }, [
+    loadVersions,
+    contractMasterRefreshTick,
+  ]);
 
   useEffect(() => {
     loadItems();
-  }, [loadItems]);
+  }, [
+    loadItems,
+    contractMasterRefreshTick,
+  ]);
+
+  useEffect(() => {
+    if (
+      typeof window === 'undefined'
+    ) {
+      return undefined;
+    }
+
+    const handleContractMasterChanged = (
+      event,
+    ) => {
+      const detail =
+        event?.detail || {};
+
+      if (
+        detail.source ===
+        'contract-item-process-mapping'
+      ) {
+        return;
+      }
+
+      if (
+        detail.projectName &&
+        detail.projectName !== projectName
+      ) {
+        return;
+      }
+
+      setContractMasterRefreshTick(
+        (previous) => previous + 1,
+      );
+    };
+
+    window.addEventListener(
+      'progress-contract-master-changed',
+      handleContractMasterChanged,
+    );
+
+    return () => {
+      window.removeEventListener(
+        'progress-contract-master-changed',
+        handleContractMasterChanged,
+      );
+    };
+  }, [projectName]);
 
   const typeOptions = useMemo(
     () =>
@@ -692,6 +775,26 @@ function ContractItemProcessMapping({
         severity: 'success',
         text: `계약 품목 공정 연결 ${Number(data || changedItems.length).toLocaleString()}건을 저장했습니다.`,
       });
+
+      if (
+        typeof window !== 'undefined'
+      ) {
+        window.dispatchEvent(
+          new CustomEvent(
+            'progress-contract-master-changed',
+            {
+              detail: {
+                projectName,
+                versionLabel:
+                  selectedVersion?.version_label ||
+                  '',
+                source:
+                  'contract-item-process-mapping',
+              },
+            },
+          ),
+        );
+      }
     } catch (error) {
       console.error(error);
       setErrorMessage(`공정 연결을 저장하지 못했습니다: ${error.message}`);
@@ -866,7 +969,7 @@ function ContractItemProcessMapping({
           <TextField
             select
             size="small"
-            label="타입"
+            label="구분"
             value={typeFilter}
             onChange={(event) => setTypeFilter(event.target.value)}
             sx={{ width: 135 }}
@@ -914,7 +1017,7 @@ function ContractItemProcessMapping({
                 }}
               />
             }
-            label="동일 타입·품명 묶기"
+            label="동일 구분·품명 묶기"
             sx={{ ml: 0.5, '& .MuiFormControlLabel-label': { fontSize: '0.72rem' } }}
           />
 
@@ -979,7 +1082,7 @@ function ContractItemProcessMapping({
                 </TableCell>
                 {[
                   ['행', 55],
-                  ['타입·공구', 110],
+                  ['구분', 110],
                   ['옵션', 65],
                   ['품명', 210],
                   ['규격', 250],
@@ -1183,7 +1286,7 @@ function ContractItemProcessMapping({
             {processDialogTitle}
           </Typography>
           <Typography sx={{ mt: 0.25, color: '#64748b', fontSize: '0.7rem' }}>
-            타입을 고르고 품명 또는 규격을 검색한 뒤, 필요한 계약 품목을
+            구분을 고르고 품명 또는 규격을 검색한 뒤, 필요한 계약 품목을
             선택해 공정을 한 번에 연결합니다.
           </Typography>
         </DialogTitle>
@@ -1208,7 +1311,7 @@ function ContractItemProcessMapping({
                 fontWeight: 900,
               }}
             >
-              타입 구분
+              구분
             </Typography>
             <Stack direction="row" spacing={0.55} useFlexGap flexWrap="wrap">
               <Chip
@@ -1423,7 +1526,7 @@ function ContractItemProcessMapping({
                   </TableCell>
                   {[
                     ['행', 65],
-                    ['타입·공구', 125],
+                    ['구분', 125],
                     ['품명', 220],
                     ['규격', 300],
                     ['현재 공정', 170],
