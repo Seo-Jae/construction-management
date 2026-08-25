@@ -1,3 +1,4 @@
+// v52.48.5.44.7.3 기성회차 삭제 + 구분 누락 진단
 // v52.48.5.44.7.2 최초계약 양식 구분 안내
 // v52.48.5.44.7.1 최초계약 빈양식 다운로드
 // v52.48.5.44.7 기성 표준양식 다운로드·업로드 v1
@@ -45,6 +46,7 @@ import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
 import KoreanMonthSelect from '../components/KoreanMonthSelect.jsx';
@@ -126,7 +128,7 @@ const DEFAULT_CLAIM_PROCESS_OPTIONS = [
 const CLAIM_TABLE_COLUMNS = [
   { key: 'selected', label: '선택', width: 40, min: 36, max: 50, align: 'center' },
   { key: 'row', label: '행', width: 44, min: 40, max: 70, align: 'left' },
-  { key: 'classification', label: '타입·공구', width: 88, min: 72, max: 180, align: 'left' },
+  { key: 'classification', label: '구분', width: 88, min: 72, max: 180, align: 'left' },
   { key: 'option', label: '옵션', width: 50, min: 46, max: 90, align: 'left' },
   { key: 'item', label: '품명', width: 145, min: 105, max: 360, align: 'left' },
   { key: 'specification', label: '규격', width: 200, min: 120, max: 420, align: 'left' },
@@ -598,8 +600,10 @@ const parseStandardClaimWorkbook = (workbook) => {
       hiddenSourceKey ||
       `template:${metadata.project_name || 'project'}:${metadata.contract_version || 'contract'}:${rowNumber}`;
 
+    const classificationInput =
+      readText(row, 2);
     const rawClassification =
-      readText(row, 2) || '미분류';
+      classificationInput || '미분류';
     const specification = readText(row, 5);
     const unit = readText(row, 6);
     const optionType =
@@ -654,6 +658,15 @@ const parseStandardClaimWorkbook = (workbook) => {
       cumulativeExpenseAmount;
 
     const validationErrors = [];
+
+    /*
+      B열(구분)을 비워둔 채 품명만 입력하면 이전에는 조용히 '미분류'로
+      저장되어 원인을 찾기 어려웠습니다.
+      실제 미분류 품목은 B열에 '미분류'라고 직접 입력하면 정상 저장됩니다.
+    */
+    if (!classificationInput) {
+      validationErrors.push('구분 미입력');
+    }
 
     if (currentQuantity < 0) {
       validationErrors.push('금회수량 음수');
@@ -1286,6 +1299,7 @@ export default function ProgressClaimManagement({
   const [saving, setSaving] = useState(false);
   const [draftSaving, setDraftSaving] = useState(false);
   const [statusChanging, setStatusChanging] = useState(false);
+  const [deletingClaimId, setDeletingClaimId] = useState(null);
   const [message, setMessage] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -1296,6 +1310,18 @@ export default function ProgressClaimManagement({
   const deferredKeyword = useDeferredValue(keyword);
   const deferredUnmappedKeyword = useDeferredValue(unmappedKeyword);
   const isClaimLocked = activeClaimStatus === 'completed';
+  const latestRegisteredClaimNo = useMemo(
+    () =>
+      claims.reduce(
+        (latest, claim) =>
+          Math.max(
+            latest,
+            Number(claim?.claim_no || 0),
+          ),
+        0,
+      ),
+    [claims],
+  );
 
   const loadClaimList = useCallback(async () => {
     if (!projectName) {
@@ -2570,12 +2596,21 @@ export default function ProgressClaimManagement({
       const parsedErrorCount = nextItems.filter(
         (item) => item.validation_errors.length > 0,
       ).length;
+      const missingClassificationCount = nextItems.filter(
+        (item) =>
+          (item.validation_errors || []).includes(
+            '구분 미입력',
+          ),
+      ).length;
       setMessage({
         severity: parsedErrorCount > 0 || Boolean(inheritanceWarning) ? 'warning' : 'success',
         text:
           `${file.name}에서 직접비 ${nextItems.length.toLocaleString()}개 품목을 읽었습니다. 간접비는 제외했습니다.` +
           inheritanceSummary +
           inheritanceWarning +
+          (missingClassificationCount > 0
+            ? ` 구분(B열) 미입력 ${missingClassificationCount.toLocaleString()}건은 화면에 미분류로 표시되지만 저장에서 제외됩니다. 실제 미분류 품목은 B열에 "미분류"라고 직접 입력해주세요.`
+            : '') +
           (parsedErrorCount > 0
             ? ` 검산 오류 ${parsedErrorCount.toLocaleString()}개 행은 저장에서 제외됩니다.`
             : ''),
@@ -3030,6 +3065,158 @@ export default function ProgressClaimManagement({
       setErrorMessage(`저장하지 못했습니다: ${error?.message || '알 수 없는 오류'}`);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleDeleteClaim = async (event, claim) => {
+    event?.stopPropagation?.();
+
+    if (!claim?.id) return;
+
+    const targetClaimNo = Number(
+      claim.claim_no || 0,
+    );
+
+    if (
+      targetClaimNo !==
+      latestRegisteredClaimNo
+    ) {
+      setErrorMessage(
+        `누계 연결 보호를 위해 가장 최근 회차부터 삭제해야 합니다. 현재 최근 회차는 ${latestRegisteredClaimNo}회차입니다.`,
+      );
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `${projectName} ${targetClaimNo}회차 등록자료를 삭제하시겠습니까?\n\n- 해당 회차의 기성 품목/연결자료가 삭제됩니다.\n- 계약버전과 계약품목 원본은 보존됩니다.\n- 삭제 후에는 되돌릴 수 없습니다.`,
+      )
+    ) {
+      return;
+    }
+
+    setDeletingClaimId(claim.id);
+    setMessage(null);
+    setErrorMessage('');
+
+    try {
+      const { data, error } =
+        await supabase.rpc(
+          'admin_delete_progress_claim_v1',
+          {
+            p_claim_id: String(
+              claim.id,
+            ),
+          },
+        );
+
+      if (error) throw error;
+
+      /*
+        일부 과거 DB에서는 임시저장 테이블명이 다를 수 있으므로
+        기존 RPC도 한 번 더 호출해 잔여 draft를 안전하게 정리합니다.
+      */
+      try {
+        const {
+          error: draftDeleteError,
+        } = await supabase.rpc(
+          'delete_progress_claim_work_draft',
+          {
+            p_project_name:
+              projectName,
+            p_claim_no:
+              targetClaimNo,
+          },
+        );
+
+        if (
+          draftDeleteError &&
+          !String(
+            draftDeleteError.message ||
+              '',
+          ).includes(
+            'delete_progress_claim_work_draft',
+          )
+        ) {
+          console.warn(
+            '기성 회차 삭제 후 임시저장 정리 오류:',
+            draftDeleteError,
+          );
+        }
+      } catch (draftDeleteError) {
+        console.warn(
+          '기성 회차 삭제 후 임시저장 정리 예외:',
+          draftDeleteError,
+        );
+      }
+
+      const refreshedClaims =
+        await loadClaimList();
+
+      if (
+        activeClaimId === claim.id
+      ) {
+        const nextDefaults =
+          getNextClaimDefaults(
+            refreshedClaims,
+          );
+
+        setActiveClaimId(null);
+        setActiveClaimStatus(
+          'draft',
+        );
+        setHasUnsavedChanges(
+          false,
+        );
+        setClaimNo(
+          nextDefaults.claimNo,
+        );
+        setBaseMonth(
+          nextDefaults.baseMonth,
+        );
+        setContractVersionLabel(
+          nextDefaults.contractVersionLabel,
+        );
+        setSourceFileName('');
+        setSourceProjectLabel('');
+        setItems([]);
+        setSelectedKeys(new Set());
+        setUnmappedSelectedKeys(
+          new Set(),
+        );
+        setKeyword('');
+        setMainTypeFilter('전체');
+        setOptionFilter('전체');
+        setSummaryView('contract');
+        setApplySameItem(false);
+        setOnlyUnmapped(false);
+      }
+
+      setMessage({
+        severity: 'success',
+        text:
+          `${data?.claim_no || targetClaimNo}회차 등록 기성자료를 삭제했습니다. 계약버전/계약품목 원본은 그대로 보존됩니다.`,
+      });
+    } catch (error) {
+      console.error(
+        '등록 기성 회차 삭제 오류:',
+        error,
+      );
+
+      const rawMessage =
+        String(
+          error?.message || '',
+        );
+
+      setErrorMessage(
+        rawMessage.includes(
+          'admin_delete_progress_claim_v1',
+        )
+          ? '기성 회차 삭제용 Supabase SQL이 아직 적용되지 않았습니다. v52.48.5.44.7.3 SQL을 먼저 실행해주세요.'
+          : `기성 회차를 삭제하지 못했습니다: ${rawMessage || '알 수 없는 오류'}`,
+      );
+    } finally {
+      setDeletingClaimId(null);
     }
   };
 
@@ -4301,7 +4488,7 @@ export default function ProgressClaimManagement({
           </Stack>
 
           <TableContainer sx={{ flexGrow: 1, minHeight: 0, overflow: 'auto' }}>
-            <Table stickyHeader size="small" sx={{ minWidth: 1240 }}>
+            <Table stickyHeader size="small" sx={{ minWidth: 1320 }}>
               <TableHead>
                 <TableRow>
                   {[
@@ -4317,6 +4504,7 @@ export default function ProgressClaimManagement({
                     '등록·수정자',
                     '최종 수정일',
                     '상태',
+                    '관리',
                   ].map((label) => (
                     <TableCell
                       key={label}
@@ -4332,7 +4520,7 @@ export default function ProgressClaimManagement({
                 {claims.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={12}
+                      colSpan={13}
                       align="center"
                       sx={{ py: 5, color: '#94a3b8' }}
                     >
@@ -4445,6 +4633,71 @@ export default function ProgressClaimManagement({
                             variant="outlined"
                             sx={{ height: 21, fontSize: '0.59rem' }}
                           />
+                        </TableCell>
+                        <TableCell
+                          align="center"
+                          sx={{
+                            ...bodyCellSx,
+                            px: 0.45,
+                            minWidth: 78,
+                          }}
+                        >
+                          <Button
+                            size="small"
+                            color="error"
+                            variant="outlined"
+                            startIcon={
+                              deletingClaimId === claim.id ? (
+                                <CircularProgress
+                                  size={12}
+                                  color="inherit"
+                                />
+                              ) : (
+                                <DeleteOutlineRoundedIcon
+                                  sx={{
+                                    fontSize:
+                                      '15px !important',
+                                  }}
+                                />
+                              )
+                            }
+                            disabled={
+                              Boolean(
+                                deletingClaimId,
+                              ) ||
+                              Number(
+                                claim.claim_no ||
+                                  0,
+                              ) !==
+                                latestRegisteredClaimNo
+                            }
+                            onClick={(event) =>
+                              handleDeleteClaim(
+                                event,
+                                claim,
+                              )
+                            }
+                            title={
+                              Number(
+                                claim.claim_no ||
+                                  0,
+                              ) ===
+                              latestRegisteredClaimNo
+                                ? `${claim.claim_no}회차 삭제`
+                                : '누계 보호를 위해 최근 회차부터 삭제할 수 있습니다.'
+                            }
+                            sx={{
+                              minWidth: 62,
+                              height: 25,
+                              px: 0.7,
+                              fontSize:
+                                '0.61rem',
+                              whiteSpace:
+                                'nowrap',
+                            }}
+                          >
+                            삭제
+                          </Button>
                         </TableCell>
                       </TableRow>
                     );
@@ -4563,7 +4816,7 @@ export default function ProgressClaimManagement({
         >
           <Box sx={{ mb: 1.1 }}>
             <Typography sx={{ mb: 0.55, color: '#475569', fontSize: '0.7rem', fontWeight: 900 }}>
-              타입 구분
+              구분
             </Typography>
             <Stack direction="row" spacing={0.55} useFlexGap flexWrap="wrap">
               <Chip
@@ -4732,7 +4985,7 @@ export default function ProgressClaimManagement({
                   </TableCell>
                   <TableCell sx={{ ...headerCellSx, width: 58 }}>행</TableCell>
                   <TableCell sx={{ ...headerCellSx, width: 130 }}>
-                    타입·공구
+                    구분
                   </TableCell>
                   <TableCell sx={{ ...headerCellSx, minWidth: 210 }}>
                     품명
