@@ -1,4 +1,3 @@
-// v52.48.5.44.9 공정별 노임단가-최초계약 품목 연결
 import React, {
   useCallback,
   useEffect,
@@ -50,8 +49,6 @@ import DeleteSweepRoundedIcon from '@mui/icons-material/DeleteSweepRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import FilterAltOffRoundedIcon from '@mui/icons-material/FilterAltOffRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
-import LinkRoundedIcon from '@mui/icons-material/LinkRounded';
-import LinkOffRoundedIcon from '@mui/icons-material/LinkOffRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import RemoveCircleOutlineRoundedIcon from '@mui/icons-material/RemoveCircleOutlineRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
@@ -102,7 +99,6 @@ const RATE_EDITABLE_FIELDS = [
 ];
 const SUPABASE_WRITE_CHUNK_SIZE = 500;
 const SUPABASE_READ_PAGE_SIZE = 1000;
-const INITIAL_CONTRACT_VERSION_LABEL = '최초계약';
 const createEmptyQuantityColumnFilters = () => ({
   building: [],
   floor: [],
@@ -236,38 +232,6 @@ const formatNumericInput = (value) => {
 const formatDate = (value) => {
   const text = String(value || '').slice(0, 10);
   return text || '-';
-};
-
-const normalizeContractProcessType = (value) => {
-  const processType = String(value || '').trim();
-  if (processType === '경량골조' || processType === '경량석고') {
-    return '경량벽체';
-  }
-  if (processType === '1차몰딩' || processType === '2차몰딩') {
-    return '몰딩';
-  }
-  if (processType === '1차 걸레받이' || processType === '2차 걸레받이') {
-    return '걸레받이';
-  }
-  return processType;
-};
-
-const decodeContractProcessTypes = (value) =>
-  Array.from(
-    new Set(
-      String(value || '')
-        .split(/\s*\+\s*|\s*,\s*/g)
-        .map(normalizeContractProcessType)
-        .filter(Boolean),
-    ),
-  );
-
-const contractItemMatchesProcess = (item, processType) => {
-  const normalizedProcess = normalizeContractProcessType(processType);
-  if (!normalizedProcess) return false;
-  return decodeContractProcessTypes(item?.process_type).includes(
-    normalizedProcess,
-  );
 };
 
 const mergeMonthlyStatusResults = (monthlyResults) => {
@@ -766,20 +730,6 @@ export default function LaborCostManagement({
   const [, setActiveEditorField] = useState('');
   const [editor, setEditor] = useState(() => createEditor(''));
   const rateInputRefs = useRef({});
-  const [contractSourceLoading, setContractSourceLoading] =
-    useState(false);
-  const [contractSourceVersion, setContractSourceVersion] =
-    useState(null);
-  const [contractSourceItems, setContractSourceItems] = useState([]);
-  const [contractItemLinks, setContractItemLinks] = useState([]);
-  const [editorContractItemIds, setEditorContractItemIds] = useState(
-    () => new Set(),
-  );
-  const [contractPickerOpen, setContractPickerOpen] = useState(false);
-  const [contractPickerProcess, setContractPickerProcess] = useState('');
-  const [contractPickerKeyword, setContractPickerKeyword] = useState('');
-  const [contractPickerSelectedIds, setContractPickerSelectedIds] =
-    useState(() => new Set());
 
   const [quantityProcess, setQuantityProcess] = useState('');
   const [quantities, setQuantities] = useState({});
@@ -837,117 +787,6 @@ export default function LaborCostManagement({
       }, {}),
     [processCatalog],
   );
-
-  const contractItemById = useMemo(
-    () =>
-      new Map(
-        contractSourceItems.map((item) => [String(item.id), item]),
-      ),
-    [contractSourceItems],
-  );
-
-  const contractLinksByProcess = useMemo(
-    () =>
-      contractItemLinks.reduce((result, link) => {
-        const processType = String(link.process_type || '').trim();
-        if (!processType) return result;
-        if (!result[processType]) result[processType] = [];
-        result[processType].push(link);
-        return result;
-      }, {}),
-    [contractItemLinks],
-  );
-
-  const selectedEditorContractItems = useMemo(
-    () =>
-      Array.from(editorContractItemIds)
-        .map((id) => contractItemById.get(String(id)))
-        .filter(Boolean),
-    [contractItemById, editorContractItemIds],
-  );
-
-  const selectedEditorContractUnit = useMemo(() => {
-    const units = Array.from(
-      new Set(
-        selectedEditorContractItems
-          .map((item) => String(item.unit || '').trim())
-          .filter(Boolean),
-      ),
-    );
-    return units.length === 1 ? units[0] : '';
-  }, [selectedEditorContractItems]);
-
-  const contractPickerRows = useMemo(() => {
-    const normalizedKeyword = normalizeText(
-      contractPickerKeyword,
-    ).toLowerCase();
-
-    return contractSourceItems.filter((item) => {
-      const selected = contractPickerSelectedIds.has(String(item.id));
-      const processMatched = contractItemMatchesProcess(
-        item,
-        contractPickerProcess,
-      );
-
-      if (!selected && !processMatched) return false;
-      if (!normalizedKeyword) return true;
-
-      return normalizeText(
-        [
-          item.classification,
-          item.housing_type,
-          item.item_name,
-          item.base_item_name,
-          item.specification,
-          item.unit,
-          item.process_type,
-        ].join(' '),
-      )
-        .toLowerCase()
-        .includes(normalizedKeyword);
-    });
-  }, [
-    contractPickerKeyword,
-    contractPickerProcess,
-    contractPickerSelectedIds,
-    contractSourceItems,
-  ]);
-
-  const contractPickerSelectedItems = useMemo(
-    () =>
-      Array.from(contractPickerSelectedIds)
-        .map((id) => contractItemById.get(String(id)))
-        .filter(Boolean),
-    [contractItemById, contractPickerSelectedIds],
-  );
-
-  const contractPickerSummary = useMemo(() => {
-    const units = Array.from(
-      new Set(
-        contractPickerSelectedItems
-          .map((item) => String(item.unit || '').trim())
-          .filter(Boolean),
-      ),
-    );
-
-    return {
-      count: contractPickerSelectedItems.length,
-      units,
-      unmatchedCount: contractPickerSelectedItems.filter(
-        (item) =>
-          !contractItemMatchesProcess(item, contractPickerProcess),
-      ).length,
-      quantity: contractPickerSelectedItems.reduce(
-        (total, item) => total + toNumber(item.contract_quantity),
-        0,
-      ),
-      laborAmount: contractPickerSelectedItems.reduce(
-        (total, item) =>
-          total + toNumber(item.contract_labor_amount),
-        0,
-      ),
-    };
-  }, [contractPickerProcess, contractPickerSelectedItems]);
 
   const allProcessOptions = useMemo(() => {
     if (!overviewLoaded) return [];
@@ -1329,140 +1168,6 @@ export default function LaborCostManagement({
       setOverviewLoading(false);
     }
   }, [projectName, quantityProcess]);
-
-  const loadContractSources = useCallback(async () => {
-    if (!projectName) {
-      setContractSourceVersion(null);
-      setContractSourceItems([]);
-      setContractItemLinks([]);
-      return;
-    }
-
-    setContractSourceLoading(true);
-
-    try {
-      const { data: versionRows, error: versionError } = await supabase
-        .from('progress_contract_versions')
-        .select(
-          'id, project_name, version_label, effective_date, source_file_name, created_at',
-        )
-        .eq('project_name', projectName)
-        .eq('version_label', INITIAL_CONTRACT_VERSION_LABEL)
-        .order('created_at', { ascending: false })
-        .limit(1);
-
-      if (versionError) throw versionError;
-
-      const versionRow = versionRows?.[0] || null;
-      setContractSourceVersion(versionRow);
-
-      if (!versionRow?.id) {
-        setContractSourceItems([]);
-        setContractItemLinks([]);
-        return;
-      }
-
-      const itemRows = [];
-      let itemOffset = 0;
-
-      while (true) {
-        const { data, error } = await supabase
-          .from('progress_contract_items')
-          .select(
-            [
-              'id',
-              'contract_version_id',
-              'project_name',
-              'source_key',
-              'source_row_no',
-              'sort_order',
-              'classification',
-              'housing_type',
-              'option_type',
-              'item_name',
-              'base_item_name',
-              'specification',
-              'unit',
-              'process_type',
-              'contract_quantity',
-              'contract_labor_amount',
-            ].join(','),
-          )
-          .eq('project_name', projectName)
-          .eq('contract_version_id', versionRow.id)
-          .order('sort_order', { ascending: true })
-          .order('source_row_no', { ascending: true })
-          .range(
-            itemOffset,
-            itemOffset + SUPABASE_READ_PAGE_SIZE - 1,
-          );
-
-        if (error) throw error;
-
-        const pageRows = data || [];
-        itemRows.push(...pageRows);
-
-        if (pageRows.length < SUPABASE_READ_PAGE_SIZE) break;
-        itemOffset += SUPABASE_READ_PAGE_SIZE;
-      }
-
-      setContractSourceItems(itemRows);
-
-      const linkRows = [];
-      let linkOffset = 0;
-
-      while (true) {
-        const { data, error } = await supabase
-          .from('labor_process_contract_item_links')
-          .select(
-            'id, project_name, process_type, contract_version_id, contract_item_id, source_key_snapshot, item_name_snapshot, specification_snapshot, unit_snapshot, contract_quantity_snapshot, contract_labor_amount_snapshot, updated_at',
-          )
-          .eq('project_name', projectName)
-          .eq('contract_version_id', versionRow.id)
-          .order('process_type', { ascending: true })
-          .range(
-            linkOffset,
-            linkOffset + SUPABASE_READ_PAGE_SIZE - 1,
-          );
-
-        if (error) {
-          if (
-            String(error.message || '').includes(
-              'labor_process_contract_item_links',
-            )
-          ) {
-            console.warn(
-              '계약품목 연결 DB가 아직 설치되지 않았습니다.',
-              error,
-            );
-            setContractItemLinks([]);
-            break;
-          }
-          throw error;
-        }
-
-        const pageRows = data || [];
-        linkRows.push(...pageRows);
-
-        if (pageRows.length < SUPABASE_READ_PAGE_SIZE) break;
-        linkOffset += SUPABASE_READ_PAGE_SIZE;
-      }
-
-      setContractItemLinks(linkRows);
-    } catch (error) {
-      console.error('최초계약 품목 불러오기 오류:', error);
-      setContractSourceVersion(null);
-      setContractSourceItems([]);
-      setContractItemLinks([]);
-      setErrorMessage(
-        `최초계약 품목을 불러오지 못했습니다: ${
-          error?.message || '알 수 없는 오류'
-        }`,
-      );
-    } finally {
-      setContractSourceLoading(false);
-    }
-  }, [projectName]);
 
   const loadUnitTypes = useCallback(async () => {
     if (!projectName) {
@@ -1868,18 +1573,9 @@ export default function LaborCostManagement({
     setIsAddingProcess(false);
     setActiveEditorField('');
     setEditor(createEditor(''));
-    setContractSourceVersion(null);
-    setContractSourceItems([]);
-    setContractItemLinks([]);
-    setEditorContractItemIds(new Set());
-    setContractPickerOpen(false);
-    setContractPickerProcess('');
-    setContractPickerKeyword('');
-    setContractPickerSelectedIds(new Set());
     setMessage(null);
     setErrorMessage('');
     loadOverview();
-    loadContractSources();
     loadUnitTypes();
     loadProgressMappings();
   }, [projectName]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1962,13 +1658,6 @@ export default function LaborCostManagement({
         catalogByProcess[processType],
       ),
     );
-    setEditorContractItemIds(
-      new Set(
-        (contractLinksByProcess[processType] || [])
-          .map((link) => String(link.contract_item_id || ''))
-          .filter((itemId) => contractItemById.has(itemId)),
-      ),
-    );
     setMessage(null);
     setErrorMessage('');
     focusRateField(focusField);
@@ -1991,7 +1680,6 @@ export default function LaborCostManagement({
       ...createEditor(''),
       sortOrder: allProcessOptions.length + 1,
     });
-    setEditorContractItemIds(new Set());
     setMessage(null);
     setErrorMessage('');
     focusRateField('processType');
@@ -2002,118 +1690,7 @@ export default function LaborCostManagement({
     setIsAddingProcess(false);
     setActiveEditorField('');
     setEditor(createEditor(''));
-    setEditorContractItemIds(new Set());
-    setContractPickerOpen(false);
     rateInputRefs.current = {};
-  };
-
-  const openContractItemPicker = (processType = editor.processType) => {
-    const normalizedProcess = String(processType || '').trim();
-
-    if (!normalizedProcess) {
-      setErrorMessage('공정을 먼저 입력해주세요.');
-      focusRateField('processType');
-      return;
-    }
-
-    if (!contractSourceVersion?.id) {
-      setErrorMessage(
-        '기성내역서작성에 최초계약 품목을 먼저 등록해주세요.',
-      );
-      return;
-    }
-
-    setContractPickerProcess(normalizedProcess);
-    setContractPickerSelectedIds(new Set(editorContractItemIds));
-    setContractPickerKeyword('');
-    setContractPickerOpen(true);
-    setErrorMessage('');
-  };
-
-  const openContractItemPickerForProcess = (processType) => {
-    if (!rateEditable) {
-      setErrorMessage('공정별 노임단가를 설정할 권한이 없습니다.');
-      return;
-    }
-
-    if (!contractSourceVersion?.id) {
-      setErrorMessage(
-        '기성내역서작성에 최초계약 품목을 먼저 등록해주세요.',
-      );
-      return;
-    }
-
-    beginInlineEdit(processType, 'contractLaborAmount', true);
-    const linkedIds = new Set(
-      (contractLinksByProcess[processType] || [])
-        .map((link) => String(link.contract_item_id || ''))
-        .filter((itemId) => contractItemById.has(itemId)),
-    );
-    setContractPickerProcess(processType);
-    setContractPickerSelectedIds(linkedIds);
-    setContractPickerKeyword('');
-    setContractPickerOpen(true);
-  };
-
-  const handleToggleContractPickerItem = (itemId) => {
-    const normalizedId = String(itemId);
-    setContractPickerSelectedIds((previous) => {
-      const next = new Set(previous);
-      if (next.has(normalizedId)) next.delete(normalizedId);
-      else next.add(normalizedId);
-      return next;
-    });
-  };
-
-  const handleApplyContractItems = () => {
-    if (contractPickerSummary.count === 0) {
-      setErrorMessage('불러올 계약품목을 선택해주세요.');
-      return;
-    }
-
-    if (contractPickerSummary.units.length !== 1) {
-      setErrorMessage(
-        '단위가 서로 다른 품목은 총 예정물량으로 합산할 수 없습니다. 같은 단위의 품목만 선택해주세요.',
-      );
-      return;
-    }
-
-    if (contractPickerSummary.unmatchedCount > 0) {
-      setErrorMessage(
-        '현재 공정 연결이 해제된 기존 품목이 포함되어 있습니다. 해당 품목을 선택 해제해주세요.',
-      );
-      return;
-    }
-
-    setEditorContractItemIds(new Set(contractPickerSelectedIds));
-    setEditor((previous) => ({
-      ...previous,
-      unit: contractPickerSummary.units[0],
-      contractLaborAmount: normalizeNumericInput(
-        contractPickerSummary.laborAmount,
-        0,
-      ),
-      plannedQuantity: normalizeNumericInput(
-        contractPickerSummary.quantity,
-        4,
-      ),
-    }));
-    setContractPickerOpen(false);
-    setMessage({
-      severity: 'info',
-      text: `${contractPickerSummary.count.toLocaleString()}개 최초계약 품목에서 계약 노무비와 총 예정물량을 불러왔습니다. 행 저장을 눌러 확정해주세요.`,
-    });
-    setErrorMessage('');
-  };
-
-  const handleUnlinkContractItems = () => {
-    setEditorContractItemIds(new Set());
-    setContractPickerSelectedIds(new Set());
-    setContractPickerOpen(false);
-    setMessage({
-      severity: 'info',
-      text: '계약품목 연결을 해제했습니다. 현재 금액과 물량은 유지되며 직접 수정할 수 있습니다.',
-    });
   };
 
   const updateEditorField = (fieldName, value) => {
@@ -2220,26 +1797,6 @@ export default function LaborCostManagement({
       return;
     }
 
-    if (
-      editorContractItemIds.size > 0 &&
-      selectedEditorContractItems.length !== editorContractItemIds.size
-    ) {
-      setErrorMessage(
-        '연결된 계약품목 일부를 찾을 수 없습니다. 계약품목을 다시 선택해주세요.',
-      );
-      return;
-    }
-
-    if (
-      editorContractItemIds.size > 0 &&
-      !selectedEditorContractUnit
-    ) {
-      setErrorMessage(
-        '단위가 서로 다른 계약품목은 함께 저장할 수 없습니다. 같은 단위의 품목만 선택해주세요.',
-      );
-      return;
-    }
-
     if (executionUnitPrice <= 0) {
       setErrorMessage(
         '실행 노임총액과 총 예정물량을 확인해주세요.',
@@ -2274,7 +1831,7 @@ export default function LaborCostManagement({
 
     try {
       const { error } = await supabase.rpc(
-        'save_labor_process_inline_with_contract_items_v1',
+        'save_labor_process_inline',
         {
           p_project_name: projectName,
           p_original_process_type: originalProcess || null,
@@ -2293,16 +1850,6 @@ export default function LaborCostManagement({
           ),
           p_effective_from: editor.effectiveFrom,
           p_change_reason: editor.changeReason.trim(),
-          p_contract_version_id:
-            editorContractItemIds.size > 0
-              ? contractSourceVersion?.id || null
-              : null,
-          p_contract_item_ids: Array.from(editorContractItemIds),
-          p_saved_by_name:
-            userProfile?.manager_name ||
-            userProfile?.name ||
-            userProfile?.email ||
-            '',
         },
       );
 
@@ -2311,13 +1858,9 @@ export default function LaborCostManagement({
       handleCancelInlineEdit();
       setMessage({
         severity: 'success',
-        text:
-          editorContractItemIds.size > 0
-            ? `${processName} 공정의 노임단가와 최초계약 품목 ${editorContractItemIds.size.toLocaleString()}개 연결을 저장했습니다.`
-            : `${processName} 공정의 노임단가를 저장했습니다.`,
+        text: `${processName} 공정의 노임단가를 저장했습니다.`,
       });
       await loadOverview();
-      await loadContractSources();
       await loadMonthly();
 
       if (followRenamedQuantityProcess) {
@@ -3225,153 +2768,48 @@ export default function LaborCostManagement({
           )}
         />
       </TableCell>
-      <TableCell sx={{ ...bodyCellSx, minWidth: 174, p: 0.45 }}>
-        <Stack spacing={0.2}>
-          <Stack direction="row" spacing={0.25} alignItems="center">
-            <InputBase
-              value={formatNumericInput(editor.contractLaborAmount)}
-              onChange={(event) =>
-                updateEditorField(
-                  'contractLaborAmount',
-                  normalizeNumericInput(event.target.value, 0),
-                )
-              }
-              onFocus={() => setActiveEditorField('contractLaborAmount')}
-              onKeyDown={(event) =>
-                handleRateEditorKeyDown(event, 'contractLaborAmount')
-              }
-              inputRef={registerRateInput('contractLaborAmount')}
-              readOnly={editorContractItemIds.size > 0}
-              inputProps={{
-                inputMode: 'numeric',
-                style: { textAlign: 'right' },
-                'aria-label': '계약 노무비',
-              }}
-              sx={{
-                ...editorCellInputSx,
-                bgcolor:
-                  editorContractItemIds.size > 0
-                    ? '#eff6ff'
-                    : editorCellInputSx.bgcolor,
-              }}
-            />
-            <Tooltip title="최초계약 품목에서 불러오기" arrow>
-              <span>
-                <IconButton
-                  size="small"
-                  color="primary"
-                  onClick={() => openContractItemPicker()}
-                  disabled={contractSourceLoading}
-                  aria-label="최초계약 품목 선택"
-                  sx={{ p: 0.35 }}
-                >
-                  {contractSourceLoading ? (
-                    <CircularProgress size={15} />
-                  ) : (
-                    <LinkRoundedIcon sx={{ fontSize: 18 }} />
-                  )}
-                </IconButton>
-              </span>
-            </Tooltip>
-            {editorContractItemIds.size > 0 && (
-              <Tooltip title="계약품목 연결 해제" arrow>
-                <IconButton
-                  size="small"
-                  color="error"
-                  onClick={handleUnlinkContractItems}
-                  aria-label="계약품목 연결 해제"
-                  sx={{ p: 0.35 }}
-                >
-                  <LinkOffRoundedIcon sx={{ fontSize: 17 }} />
-                </IconButton>
-              </Tooltip>
-            )}
-          </Stack>
-          <Typography
-            sx={{
-              minHeight: 12,
-              fontSize: '0.58rem',
-              color:
-                editorContractItemIds.size > 0
-                  ? '#2563eb'
-                  : '#94a3b8',
-              textAlign: 'right',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {editorContractItemIds.size > 0
-              ? `${editorContractItemIds.size.toLocaleString()}개 품목 연결`
-              : '직접입력 또는 계약품목 선택'}
-          </Typography>
-        </Stack>
-      </TableCell>
-      <TableCell sx={{ ...bodyCellSx, minWidth: 122, p: 0.45 }}>
-        <InputBase
-          value={formatNumericInput(editor.executionLaborTotal)}
-          onChange={(event) =>
-            updateEditorField(
-              'executionLaborTotal',
-              normalizeNumericInput(event.target.value, 0),
-            )
-          }
-          onFocus={() => setActiveEditorField('executionLaborTotal')}
-          onKeyDown={(event) =>
-            handleRateEditorKeyDown(event, 'executionLaborTotal')
-          }
-          inputRef={registerRateInput('executionLaborTotal')}
-          inputProps={{
-            inputMode: 'numeric',
-            style: { textAlign: 'right' },
-          }}
-          sx={editorCellInputSx}
-        />
-      </TableCell>
-      <TableCell sx={{ ...bodyCellSx, minWidth: 138, p: 0.45 }}>
-        <Stack spacing={0.2}>
+      {[
+        {
+          field: 'contractLaborAmount',
+          digits: 0,
+          inputMode: 'numeric',
+        },
+        {
+          field: 'executionLaborTotal',
+          digits: 0,
+          inputMode: 'numeric',
+        },
+        {
+          field: 'plannedQuantity',
+          digits: 4,
+          inputMode: 'decimal',
+        },
+      ].map(({ field, digits, inputMode }) => (
+        <TableCell
+          key={field}
+          sx={{ ...bodyCellSx, minWidth: 122, p: 0.45 }}
+        >
           <InputBase
-            value={formatNumericInput(editor.plannedQuantity)}
+            value={formatNumericInput(editor[field])}
             onChange={(event) =>
               updateEditorField(
-                'plannedQuantity',
-                normalizeNumericInput(event.target.value, 4),
+                field,
+                normalizeNumericInput(event.target.value, digits),
               )
             }
-            onFocus={() => setActiveEditorField('plannedQuantity')}
+            onFocus={() => setActiveEditorField(field)}
             onKeyDown={(event) =>
-              handleRateEditorKeyDown(event, 'plannedQuantity')
+              handleRateEditorKeyDown(event, field)
             }
-            inputRef={registerRateInput('plannedQuantity')}
-            readOnly={editorContractItemIds.size > 0}
+            inputRef={registerRateInput(field)}
             inputProps={{
-              inputMode: 'decimal',
+              inputMode,
               style: { textAlign: 'right' },
             }}
-            sx={{
-              ...editorCellInputSx,
-              bgcolor:
-                editorContractItemIds.size > 0
-                  ? '#eff6ff'
-                  : editorCellInputSx.bgcolor,
-            }}
+            sx={editorCellInputSx}
           />
-          <Typography
-            sx={{
-              minHeight: 12,
-              fontSize: '0.58rem',
-              color:
-                editorContractItemIds.size > 0
-                  ? '#2563eb'
-                  : '#94a3b8',
-              textAlign: 'right',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            {editorContractItemIds.size > 0
-              ? `계약수량 합계 · ${selectedEditorContractUnit || '-'}`
-              : '직접입력'}
-          </Typography>
-        </Stack>
-      </TableCell>
+        </TableCell>
+      ))}
       <TableCell
         sx={{
           ...numberCellSx,
@@ -3690,37 +3128,11 @@ export default function LaborCostManagement({
                     {setting?.unit || processRow?.unit || '-'}
                   </TableCell>
                   <TableCell sx={numberCellSx}>
-                    <Stack alignItems="flex-end" spacing={0.15}>
-                      <span>
-                        {processRow
-                          ? `${formatMoney(
-                              processRow.contract_labor_amount,
-                            )}원`
-                          : '-'}
-                      </span>
-                      <Button
-                        size="small"
-                        startIcon={<LinkRoundedIcon />}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          openContractItemPickerForProcess(processType);
-                        }}
-                        disabled={!rateEditable || contractSourceLoading}
-                        sx={{
-                          minWidth: 0,
-                          p: 0,
-                          fontSize: '0.58rem',
-                          lineHeight: 1.2,
-                        }}
-                      >
-                        {(contractLinksByProcess[processType] || []).length >
-                        0
-                          ? `${(
-                              contractLinksByProcess[processType] || []
-                            ).length.toLocaleString()}개 품목`
-                          : '품목 선택'}
-                      </Button>
-                    </Stack>
+                    {processRow
+                      ? `${formatMoney(
+                          processRow.contract_labor_amount,
+                        )}원`
+                      : '-'}
                   </TableCell>
                   <TableCell sx={numberCellSx}>
                     {setting
@@ -4912,17 +4324,11 @@ export default function LaborCostManagement({
             <SystemRefreshButton
               onClick={() => {
                 loadOverview();
-                loadContractSources();
                 loadUnitTypes();
                 loadQuantities();
                 loadMonthly();
               }}
-              loading={
-                overviewLoading ||
-                contractSourceLoading ||
-                quantityLoading ||
-                monthlyLoading
-              }
+              loading={overviewLoading || quantityLoading || monthlyLoading}
               label="공정별 노임작성 새로고침"
             />
           </Stack>
@@ -5096,263 +4502,6 @@ export default function LaborCostManagement({
           });
         }}
       />
-
-      <Dialog
-        open={contractPickerOpen}
-        onClose={() => !saving && setContractPickerOpen(false)}
-        fullWidth
-        maxWidth="lg"
-      >
-        <DialogTitle sx={{ fontWeight: 900 }}>
-          최초계약 품목 선택 · {contractPickerProcess || '-'}
-        </DialogTitle>
-        <DialogContent dividers sx={{ p: 1.5 }}>
-          <Alert severity="info" sx={{ mb: 1.2 }}>
-            계약품목 공정연결에서 <strong>{contractPickerProcess}</strong>
-            으로 분류한 품목만 표시합니다. 선택한 품목의 계약 노무비와
-            계약수량 합계가 공정별 노임단가에 함께 반영됩니다.
-          </Alert>
-
-          <Stack
-            direction={{ xs: 'column', md: 'row' }}
-            spacing={0.8}
-            alignItems={{ xs: 'stretch', md: 'center' }}
-            sx={{ mb: 1 }}
-          >
-            <TextField
-              size="small"
-              value={contractPickerKeyword}
-              onChange={(event) =>
-                setContractPickerKeyword(event.target.value)
-              }
-              placeholder="품명·규격·구분 검색"
-              sx={{ minWidth: { md: 280 } }}
-            />
-            <Chip
-              size="small"
-              variant="outlined"
-              label={`계약버전 ${
-                contractSourceVersion?.version_label || '-'
-              }`}
-            />
-            <Chip
-              size="small"
-              color="primary"
-              label={`선택 ${contractPickerSummary.count.toLocaleString()}개`}
-            />
-            <Chip
-              size="small"
-              variant="outlined"
-              label={`수량 ${formatQuantity(
-                contractPickerSummary.quantity,
-              )} ${
-                contractPickerSummary.units.length === 1
-                  ? contractPickerSummary.units[0]
-                  : contractPickerSummary.units.length > 1
-                    ? '혼합단위'
-                    : ''
-              }`}
-            />
-            <Chip
-              size="small"
-              variant="outlined"
-              label={`노무비 ${formatMoney(
-                contractPickerSummary.laborAmount,
-              )}원`}
-            />
-          </Stack>
-
-          {contractPickerSummary.units.length > 1 && (
-            <Alert severity="warning" sx={{ mb: 1 }}>
-              선택한 품목의 단위가 서로 다릅니다. 총 예정물량을 정확히
-              계산하려면 같은 단위의 품목만 선택해주세요.
-            </Alert>
-          )}
-
-          {contractPickerSummary.unmatchedCount > 0 && (
-            <Alert severity="warning" sx={{ mb: 1 }}>
-              현재 공정 분류에서 빠진 기존 연결 품목이{' '}
-              {contractPickerSummary.unmatchedCount.toLocaleString()}개
-              포함되어 있습니다. 해당 품목을 선택 해제한 뒤 저장해주세요.
-            </Alert>
-          )}
-
-          <TableContainer
-            component={Paper}
-            variant="outlined"
-            sx={{ maxHeight: '55vh', borderColor: '#cbd5e1' }}
-          >
-            <Table stickyHeader size="small" sx={{ minWidth: 980 }}>
-              <TableHead>
-                <TableRow>
-                  <TableCell padding="checkbox" sx={headerCellSx} />
-                  {[
-                    '구분',
-                    '품명',
-                    '규격',
-                    '단위',
-                    '계약수량',
-                    '계약 노무비',
-                    '연결 공정',
-                  ].map((label) => (
-                    <TableCell
-                      key={label}
-                      sx={headerCellSx}
-                      align={
-                        ['계약수량', '계약 노무비'].includes(label)
-                          ? 'right'
-                          : 'center'
-                      }
-                    >
-                      {label}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {contractPickerRows.map((item) => {
-                  const itemId = String(item.id);
-                  const selected = contractPickerSelectedIds.has(itemId);
-                  const currentlyMatched = contractItemMatchesProcess(
-                    item,
-                    contractPickerProcess,
-                  );
-
-                  return (
-                    <TableRow
-                      key={itemId}
-                      hover
-                      selected={selected}
-                      onClick={() => handleToggleContractPickerItem(itemId)}
-                      sx={{ cursor: 'pointer' }}
-                    >
-                      <TableCell padding="checkbox">
-                        <Checkbox
-                          size="small"
-                          checked={selected}
-                          onChange={() =>
-                            handleToggleContractPickerItem(itemId)
-                          }
-                          onClick={(event) => event.stopPropagation()}
-                        />
-                      </TableCell>
-                      <TableCell sx={bodyCellSx} align="center">
-                        {item.classification ||
-                          item.housing_type ||
-                          '미분류'}
-                      </TableCell>
-                      <TableCell
-                        sx={{ ...bodyCellSx, fontWeight: 800 }}
-                      >
-                        {item.item_name || item.base_item_name || '-'}
-                      </TableCell>
-                      <TableCell sx={bodyCellSx}>
-                        {item.specification || '-'}
-                      </TableCell>
-                      <TableCell sx={bodyCellSx} align="center">
-                        {item.unit || '-'}
-                      </TableCell>
-                      <TableCell sx={numberCellSx}>
-                        {formatQuantity(item.contract_quantity)}
-                      </TableCell>
-                      <TableCell sx={numberCellSx}>
-                        {formatMoney(item.contract_labor_amount)}원
-                      </TableCell>
-                      <TableCell sx={bodyCellSx} align="center">
-                        <Stack
-                          direction="row"
-                          spacing={0.4}
-                          justifyContent="center"
-                          useFlexGap
-                          flexWrap="wrap"
-                        >
-                          {decodeContractProcessTypes(item.process_type).map(
-                            (processType) => (
-                              <Chip
-                                key={processType}
-                                size="small"
-                                label={processType}
-                                color={
-                                  normalizeContractProcessType(processType) ===
-                                  normalizeContractProcessType(
-                                    contractPickerProcess,
-                                  )
-                                    ? 'primary'
-                                    : 'default'
-                                }
-                              />
-                            ),
-                          )}
-                          {!currentlyMatched && selected && (
-                            <Chip
-                              size="small"
-                              color="warning"
-                              label="기존 연결"
-                            />
-                          )}
-                        </Stack>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-
-                {contractPickerRows.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={8} align="center" sx={{ py: 6 }}>
-                      <Typography
-                        sx={{
-                          fontSize: '0.78rem',
-                          fontWeight: 800,
-                          color: '#475569',
-                        }}
-                      >
-                        해당 공정으로 연결된 최초계약 품목이 없습니다.
-                      </Typography>
-                      <Typography
-                        sx={{
-                          mt: 0.35,
-                          fontSize: '0.68rem',
-                          color: '#94a3b8',
-                        }}
-                      >
-                        기성관리 &gt; 계약품목 공정연결에서 먼저 공정을
-                        연결해주세요.
-                      </Typography>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </DialogContent>
-        <DialogActions>
-          {editorContractItemIds.size > 0 && (
-            <Button
-              color="error"
-              startIcon={<LinkOffRoundedIcon />}
-              onClick={handleUnlinkContractItems}
-            >
-              연결 해제
-            </Button>
-          )}
-          <Box sx={{ flex: 1 }} />
-          <Button onClick={() => setContractPickerOpen(false)}>
-            취소
-          </Button>
-          <Button
-            variant="contained"
-            startIcon={<LinkRoundedIcon />}
-            onClick={handleApplyContractItems}
-            disabled={
-              contractPickerSummary.count === 0 ||
-              contractPickerSummary.units.length !== 1 ||
-              contractPickerSummary.unmatchedCount > 0
-            }
-          >
-            선택값 불러오기
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       <Dialog
         open={deleteDialogOpen}
