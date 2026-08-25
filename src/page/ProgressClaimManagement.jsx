@@ -1,3 +1,4 @@
+// v52.48.5.44.7 기성 표준양식 다운로드·업로드 v1
 import React, {
   useCallback,
   useDeferredValue,
@@ -36,6 +37,7 @@ import {
   Typography,
 } from '@mui/material';
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
+import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
@@ -92,6 +94,13 @@ const DIALOG_ROW_HEIGHT = 38;
 const TABLE_OVERSCAN = 8;
 const GROUP_HEADER_HEIGHT = 30;
 const SUPABASE_PAGE_SIZE = 1000;
+
+const STANDARD_CLAIM_TEMPLATE_ID = 'CM_PROGRESS_CLAIM_TEMPLATE';
+const STANDARD_CLAIM_TEMPLATE_VERSION = '1';
+const STANDARD_CLAIM_SHEET_NAME = '기성입력양식';
+const STANDARD_CLAIM_SYSTEM_SHEET_NAME = '_SYSTEM';
+const STANDARD_CLAIM_DATA_START_ROW = 7;
+const STANDARD_CLAIM_ITEM_KEY_COLUMN = 31; // AE
 
 const EXCLUDED_CLAIM_PROCESS_OPTIONS = new Set(['허리먹']);
 
@@ -461,6 +470,226 @@ const inheritPreviousProcessMappings = (nextItems, previousItems) => {
     exactMatchCount,
     sameItemMatchCount,
     totalMatchCount: exactMatchCount + sameItemMatchCount,
+  };
+};
+
+
+const normalizeExcelFileName = (value) =>
+  String(value || '')
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+const getFirstNumber = (row, keys = [], fallback = 0) => {
+  for (const key of keys) {
+    const raw = row?.[key];
+    if (raw === null || raw === undefined || raw === '') continue;
+    const numberValue = Number(raw);
+    if (Number.isFinite(numberValue)) return numberValue;
+  }
+  return fallback;
+};
+
+const getFirstText = (row, keys = [], fallback = '') => {
+  for (const key of keys) {
+    const text = String(row?.[key] ?? '').trim();
+    if (text) return text;
+  }
+  return fallback;
+};
+
+const fetchContractTemplateItems = async ({ projectName, versionLabel }) => {
+  const normalizedProjectName = String(projectName || '').trim();
+  const normalizedVersionLabel = String(versionLabel || '').trim();
+
+  if (!normalizedProjectName || !normalizedVersionLabel) return [];
+
+  const { data: versionRows, error: versionError } = await supabase
+    .from('progress_contract_versions')
+    .select('id')
+    .eq('project_name', normalizedProjectName)
+    .eq('version_label', normalizedVersionLabel)
+    .limit(1);
+
+  if (versionError) throw versionError;
+
+  const versionRow = versionRows?.[0];
+  if (!versionRow?.id) return [];
+
+  const rows = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('progress_contract_items')
+      .select('*')
+      .eq('project_name', normalizedProjectName)
+      .eq('contract_version_id', versionRow.id)
+      .order('sort_order', { ascending: true })
+      .range(from, from + SUPABASE_PAGE_SIZE - 1);
+
+    if (error) throw error;
+
+    const pageRows = data || [];
+    rows.push(...pageRows);
+
+    if (pageRows.length < SUPABASE_PAGE_SIZE) break;
+    from += SUPABASE_PAGE_SIZE;
+  }
+
+  return rows;
+};
+
+const parseStandardClaimWorkbook = (workbook) => {
+  const systemSheet = workbook.getWorksheet(STANDARD_CLAIM_SYSTEM_SHEET_NAME);
+  if (!systemSheet) return null;
+
+  const metadata = {};
+
+  for (
+    let rowNumber = 1;
+    rowNumber <= Math.max(20, systemSheet.rowCount);
+    rowNumber += 1
+  ) {
+    const row = systemSheet.getRow(rowNumber);
+    const key = String(unwrapCellValue(row.getCell(1)) ?? '').trim();
+    const value = String(unwrapCellValue(row.getCell(2)) ?? '').trim();
+    if (key) metadata[key] = value;
+  }
+
+  if (metadata.template_id !== STANDARD_CLAIM_TEMPLATE_ID) {
+    throw new Error('시스템 표준 기성양식 식별값이 올바르지 않습니다.');
+  }
+
+  if (metadata.template_version !== STANDARD_CLAIM_TEMPLATE_VERSION) {
+    throw new Error(
+      `지원하지 않는 기성양식 버전입니다. 현재 지원 버전: ${STANDARD_CLAIM_TEMPLATE_VERSION}`,
+    );
+  }
+
+  const worksheet = workbook.getWorksheet(STANDARD_CLAIM_SHEET_NAME);
+  if (!worksheet) {
+    throw new Error(`"${STANDARD_CLAIM_SHEET_NAME}" 시트를 찾지 못했습니다.`);
+  }
+
+  const parsedItems = [];
+
+  for (
+    let rowNumber = STANDARD_CLAIM_DATA_START_ROW;
+    rowNumber <= worksheet.rowCount;
+    rowNumber += 1
+  ) {
+    const row = worksheet.getRow(rowNumber);
+    const sourceKey = String(
+      unwrapCellValue(row.getCell(STANDARD_CLAIM_ITEM_KEY_COLUMN)) ?? '',
+    ).trim();
+
+    if (!sourceKey) continue;
+
+    const rawClassification = readText(row, 2);
+    const itemLabel = readText(row, 4);
+    const specification = readText(row, 5);
+    const unit = readText(row, 6);
+    const optionType =
+      readText(row, 3) || (itemLabel.includes('<확장>') ? '확장' : '기본');
+
+    if (!rawClassification || !itemLabel || !unit) continue;
+
+    const {
+      normalizedClassification,
+      housingType,
+      workZone,
+    } = parseClassification(rawClassification);
+
+    const contractQuantity = readNumber(row, 7);
+    const materialUnitPrice = readNumber(row, 8);
+    const laborUnitPrice = readNumber(row, 9);
+    const expenseUnitPrice = readNumber(row, 10);
+    const contractMaterialAmount = readNumber(row, 11);
+    const contractLaborAmount = readNumber(row, 12);
+    const contractExpenseAmount = readNumber(row, 13);
+    const previousQuantity = readNumber(row, 15);
+    const previousMaterialAmount = readNumber(row, 16);
+    const previousLaborAmount = readNumber(row, 17);
+    const previousExpenseAmount = readNumber(row, 18);
+    const currentQuantity = readNumber(row, 20);
+
+    const currentMaterialAmount = currentQuantity * materialUnitPrice;
+    const currentLaborAmount = currentQuantity * laborUnitPrice;
+    const currentExpenseAmount = currentQuantity * expenseUnitPrice;
+
+    const cumulativeQuantity = previousQuantity + currentQuantity;
+    const cumulativeMaterialAmount =
+      previousMaterialAmount + currentMaterialAmount;
+    const cumulativeLaborAmount = previousLaborAmount + currentLaborAmount;
+    const cumulativeExpenseAmount =
+      previousExpenseAmount + currentExpenseAmount;
+
+    const contractTotal =
+      contractMaterialAmount + contractLaborAmount + contractExpenseAmount;
+    const cumulativeTotal =
+      cumulativeMaterialAmount +
+      cumulativeLaborAmount +
+      cumulativeExpenseAmount;
+
+    const validationErrors = [];
+
+    if (currentQuantity < 0) {
+      validationErrors.push('금회수량 음수');
+    }
+
+    if (
+      contractQuantity >= 0 &&
+      cumulativeQuantity > contractQuantity + 0.0001
+    ) {
+      validationErrors.push('계약수량 초과');
+    }
+
+    parsedItems.push({
+      source_key: sourceKey,
+      source_row_no: rowNumber,
+      sort_order: parsedItems.length + 1,
+      classification: normalizedClassification,
+      housing_type: housingType,
+      option_type: optionType,
+      work_zone: workZone,
+      item_name: itemLabel,
+      base_item_name: itemLabel.replace(/<확장>/g, '').trim(),
+      specification,
+      unit,
+      process_type: '',
+      contract_quantity: contractQuantity,
+      material_unit_price: materialUnitPrice,
+      labor_unit_price: laborUnitPrice,
+      expense_unit_price: expenseUnitPrice,
+      contract_material_amount: contractMaterialAmount,
+      contract_labor_amount: contractLaborAmount,
+      contract_expense_amount: contractExpenseAmount,
+      previous_quantity: previousQuantity,
+      previous_material_amount: previousMaterialAmount,
+      previous_labor_amount: previousLaborAmount,
+      previous_expense_amount: previousExpenseAmount,
+      current_quantity: currentQuantity,
+      current_material_amount: currentMaterialAmount,
+      current_labor_amount: currentLaborAmount,
+      current_expense_amount: currentExpenseAmount,
+      cumulative_quantity: cumulativeQuantity,
+      cumulative_material_amount: cumulativeMaterialAmount,
+      cumulative_labor_amount: cumulativeLaborAmount,
+      cumulative_expense_amount: cumulativeExpenseAmount,
+      cumulative_rate: contractTotal > 0 ? cumulativeTotal / contractTotal : 0,
+      validation_errors: validationErrors,
+    });
+  }
+
+  if (parsedItems.length === 0) {
+    throw new Error('표준 기성양식에서 읽을 수 있는 품목이 없습니다.');
+  }
+
+  return {
+    metadata,
+    worksheet,
+    items: parsedItems,
   };
 };
 
@@ -1559,6 +1788,452 @@ export default function ProgressClaimManagement({
     setMainTableViewport((previous) => ({ ...previous, scrollTop: 0 }));
   }, []);
 
+
+  const handleDownloadClaimTemplate = async () => {
+    if (!projectName) {
+      setErrorMessage('양식을 만들 현장을 먼저 선택해주세요.');
+      return;
+    }
+
+    if (!baseMonth || !contractVersionLabel.trim() || Number(claimNo) < 1) {
+      setErrorMessage('회차, 기준월, 계약 버전을 모두 확인해주세요.');
+      return;
+    }
+
+    setLoading(true);
+    setMessage(null);
+    setErrorMessage('');
+
+    try {
+      const contractRows = await fetchContractTemplateItems({
+        projectName,
+        versionLabel: contractVersionLabel,
+      });
+
+      if (contractRows.length === 0) {
+        throw new Error(
+          `"${contractVersionLabel}" 계약버전의 품목이 없습니다. 먼저 계약내역을 등록해주세요.`,
+        );
+      }
+
+      const previousClaim = [...claims]
+        .filter(
+          (claim) =>
+            Number(claim.claim_no || 0) < Number(claimNo || 1),
+        )
+        .sort(
+          (left, right) =>
+            Number(right.claim_no || 0) - Number(left.claim_no || 0),
+        )[0];
+
+      let previousItems = [];
+
+      if (previousClaim?.id) {
+        const { data: previousDetail, error: previousError } =
+          await supabase.rpc('get_progress_claim_detail', {
+            p_claim_id: previousClaim.id,
+          });
+
+        if (previousError) throw previousError;
+        previousItems = previousDetail?.items || [];
+      }
+
+      const previousBySourceKey = new Map(
+        previousItems
+          .filter((item) => item?.source_key)
+          .map((item) => [item.source_key, item]),
+      );
+
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'Construction Management';
+      workbook.created = new Date();
+      workbook.modified = new Date();
+      workbook.calcProperties.fullCalcOnLoad = true;
+      workbook.calcProperties.forceFullCalc = true;
+
+      const worksheet = workbook.addWorksheet(STANDARD_CLAIM_SHEET_NAME, {
+        views: [{ state: 'frozen', ySplit: 6 }],
+      });
+
+      const systemSheet = workbook.addWorksheet(
+        STANDARD_CLAIM_SYSTEM_SHEET_NAME,
+      );
+      systemSheet.state = 'veryHidden';
+
+      systemSheet.addRows([
+        ['template_id', STANDARD_CLAIM_TEMPLATE_ID],
+        ['template_version', STANDARD_CLAIM_TEMPLATE_VERSION],
+        ['project_name', projectName],
+        ['claim_no', String(claimNo)],
+        ['base_month', baseMonth],
+        ['contract_version', contractVersionLabel.trim()],
+        ['generated_at', new Date().toISOString()],
+      ]);
+
+      worksheet.mergeCells('A1:AD1');
+      worksheet.getCell('A1').value = '기성내역서 표준 입력양식';
+      worksheet.getCell('A1').font = {
+        name: '맑은 고딕',
+        size: 16,
+        bold: true,
+        color: { argb: 'FFFFFFFF' },
+      };
+      worksheet.getCell('A1').alignment = {
+        horizontal: 'center',
+        vertical: 'middle',
+      };
+      worksheet.getCell('A1').fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FF1F4E78' },
+      };
+      worksheet.getRow(1).height = 28;
+
+      worksheet.getCell('A2').value = '현장명';
+      worksheet.getCell('B2').value = projectName;
+      worksheet.getCell('D2').value = '회차';
+      worksheet.getCell('E2').value = Number(claimNo);
+      worksheet.getCell('G2').value = '기준월';
+      worksheet.getCell('H2').value = baseMonth;
+      worksheet.getCell('J2').value = '계약버전';
+      worksheet.getCell('K2').value = contractVersionLabel.trim();
+
+      worksheet.getCell('A3').value = '작성방법';
+      worksheet.mergeCells('B3:K3');
+      worksheet.getCell('B3').value =
+        '노란색 금회수량 셀만 입력합니다. 금액·누계·누계율은 자동 계산됩니다.';
+      worksheet.getCell('B3').fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFFFF2CC' },
+      };
+
+      [
+        ['A5:F5', '품목정보'],
+        ['G5:N5', '계약내역'],
+        ['O5:S5', '전회누계'],
+        ['T5:X5', '금회기성'],
+        ['Y5:AD5', '누계기성'],
+      ].forEach(([range, label]) => {
+        worksheet.mergeCells(range);
+        worksheet.getCell(range.split(':')[0]).value = label;
+      });
+
+      const headers = [
+        'NO',
+        '타입·공구',
+        '옵션',
+        '품명',
+        '규격',
+        '단위',
+        '계약수량',
+        '재료비단가',
+        '노무비단가',
+        '경비단가',
+        '재료비',
+        '노무비',
+        '경비',
+        '합계',
+        '수량',
+        '재료비',
+        '노무비',
+        '경비',
+        '합계',
+        '금회수량',
+        '재료비',
+        '노무비',
+        '경비',
+        '합계',
+        '수량',
+        '재료비',
+        '노무비',
+        '경비',
+        '합계',
+        '누계율',
+        'SYSTEM_ITEM_KEY',
+      ];
+
+      worksheet.getRow(6).values = headers;
+
+      const borderStyle = {
+        top: { style: 'thin', color: { argb: 'FFD9E1F2' } },
+        left: { style: 'thin', color: { argb: 'FFD9E1F2' } },
+        bottom: { style: 'thin', color: { argb: 'FFD9E1F2' } },
+        right: { style: 'thin', color: { argb: 'FFD9E1F2' } },
+      };
+
+      for (let column = 1; column <= 30; column += 1) {
+        const cell = worksheet.getRow(6).getCell(column);
+        cell.font = {
+          name: '맑은 고딕',
+          size: 9,
+          bold: true,
+        };
+        cell.alignment = {
+          horizontal: 'center',
+          vertical: 'middle',
+          wrapText: true,
+        };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFD9EAF7' },
+        };
+        cell.border = borderStyle;
+      }
+
+      for (let column = 1; column <= 30; column += 1) {
+        const cell = worksheet.getRow(5).getCell(column);
+        cell.font = {
+          name: '맑은 고딕',
+          size: 9,
+          bold: true,
+        };
+        cell.alignment = {
+          horizontal: 'center',
+          vertical: 'middle',
+        };
+        cell.fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFB4C7E7' },
+        };
+        cell.border = borderStyle;
+      }
+
+      const widths = [
+        6, 12, 9, 24, 18, 7, 11, 11, 11, 10,
+        12, 12, 11, 13, 11, 12, 12, 11, 13, 11,
+        12, 12, 11, 13, 11, 12, 12, 11, 13, 10, 2,
+      ];
+
+      widths.forEach((width, index) => {
+        worksheet.getColumn(index + 1).width = width;
+      });
+
+      worksheet.getColumn(STANDARD_CLAIM_ITEM_KEY_COLUMN).hidden = true;
+
+      const orderedContractRows = [...contractRows].sort(
+        (left, right) =>
+          Number(left.sort_order || 0) - Number(right.sort_order || 0),
+      );
+
+      orderedContractRows.forEach((contractRow, index) => {
+        const rowNumber = STANDARD_CLAIM_DATA_START_ROW + index;
+        const row = worksheet.getRow(rowNumber);
+
+        const sourceKey = String(contractRow.source_key || '').trim();
+        const previousItem = previousBySourceKey.get(sourceKey);
+
+        const classification = getFirstText(
+          contractRow,
+          ['classification', 'housing_type'],
+          '미분류',
+        );
+        const itemName = getFirstText(
+          contractRow,
+          ['item_name', 'base_item_name'],
+        );
+        const specification = getFirstText(
+          contractRow,
+          ['specification', 'spec'],
+        );
+        const unit = getFirstText(contractRow, ['unit']);
+        const optionType = getFirstText(
+          contractRow,
+          ['option_type'],
+          itemName.includes('<확장>') ? '확장' : '기본',
+        );
+
+        const contractQuantity = getFirstNumber(
+          contractRow,
+          ['contract_quantity', 'quantity'],
+        );
+        const materialUnitPrice = getFirstNumber(
+          contractRow,
+          ['material_unit_price'],
+        );
+        const laborUnitPrice = getFirstNumber(
+          contractRow,
+          ['labor_unit_price'],
+        );
+        const expenseUnitPrice = getFirstNumber(
+          contractRow,
+          ['expense_unit_price'],
+        );
+
+        const contractMaterialAmount = getFirstNumber(
+          contractRow,
+          ['contract_material_amount', 'material_amount'],
+          contractQuantity * materialUnitPrice,
+        );
+        const contractLaborAmount = getFirstNumber(
+          contractRow,
+          ['contract_labor_amount', 'labor_amount'],
+          contractQuantity * laborUnitPrice,
+        );
+        const contractExpenseAmount = getFirstNumber(
+          contractRow,
+          ['contract_expense_amount', 'expense_amount'],
+          contractQuantity * expenseUnitPrice,
+        );
+
+        const previousQuantity = Number(
+          previousItem?.cumulative_quantity || 0,
+        );
+        const previousMaterialAmount = Number(
+          previousItem?.cumulative_material_amount || 0,
+        );
+        const previousLaborAmount = Number(
+          previousItem?.cumulative_labor_amount || 0,
+        );
+        const previousExpenseAmount = Number(
+          previousItem?.cumulative_expense_amount || 0,
+        );
+
+        row.values = [
+          index + 1,
+          classification,
+          optionType,
+          itemName,
+          specification,
+          unit,
+          contractQuantity,
+          materialUnitPrice,
+          laborUnitPrice,
+          expenseUnitPrice,
+          contractMaterialAmount,
+          contractLaborAmount,
+          contractExpenseAmount,
+          { formula: `SUM(K${rowNumber}:M${rowNumber})` },
+          previousQuantity,
+          previousMaterialAmount,
+          previousLaborAmount,
+          previousExpenseAmount,
+          { formula: `SUM(P${rowNumber}:R${rowNumber})` },
+          0,
+          { formula: `T${rowNumber}*H${rowNumber}` },
+          { formula: `T${rowNumber}*I${rowNumber}` },
+          { formula: `T${rowNumber}*J${rowNumber}` },
+          { formula: `SUM(U${rowNumber}:W${rowNumber})` },
+          { formula: `O${rowNumber}+T${rowNumber}` },
+          { formula: `P${rowNumber}+U${rowNumber}` },
+          { formula: `Q${rowNumber}+V${rowNumber}` },
+          { formula: `R${rowNumber}+W${rowNumber}` },
+          { formula: `SUM(Z${rowNumber}:AB${rowNumber})` },
+          { formula: `IF(N${rowNumber}=0,0,AC${rowNumber}/N${rowNumber})` },
+          sourceKey,
+        ];
+
+        row.height = 20;
+
+        for (let column = 1; column <= 30; column += 1) {
+          const cell = row.getCell(column);
+          cell.font = {
+            name: '맑은 고딕',
+            size: 9,
+          };
+          cell.alignment = { vertical: 'middle' };
+          cell.border = borderStyle;
+        }
+
+        row.getCell(20).fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFFFF2CC' },
+        };
+        row.getCell(20).font = {
+          name: '맑은 고딕',
+          size: 9,
+          bold: true,
+          color: { argb: 'FF9C5700' },
+        };
+        row.getCell(20).dataValidation = {
+          type: 'decimal',
+          operator: 'greaterThanOrEqual',
+          formulae: [0],
+          showErrorMessage: true,
+          errorTitle: '금회수량 확인',
+          error: '금회수량은 0 이상으로 입력해주세요.',
+        };
+
+        [7, 15, 20, 25].forEach((column) => {
+          row.getCell(column).numFmt = '#,##0.####';
+        });
+
+        [
+          8, 9, 10, 11, 12, 13, 14,
+          16, 17, 18, 19, 21, 22, 23, 24,
+          26, 27, 28, 29,
+        ].forEach((column) => {
+          row.getCell(column).numFmt = '#,##0';
+        });
+
+        row.getCell(30).numFmt = '0.00%';
+      });
+
+      const lastRow =
+        STANDARD_CLAIM_DATA_START_ROW + orderedContractRows.length - 1;
+
+      if (lastRow >= STANDARD_CLAIM_DATA_START_ROW) {
+        worksheet.autoFilter = {
+          from: { row: 6, column: 1 },
+          to: { row: lastRow, column: 30 },
+        };
+      }
+
+      worksheet.pageSetup = {
+        orientation: 'landscape',
+        paperSize: 9,
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        margins: {
+          left: 0.25,
+          right: 0.25,
+          top: 0.4,
+          bottom: 0.4,
+          header: 0.2,
+          footer: 0.2,
+        },
+      };
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], {
+        type:
+          'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+
+      const safeProjectName = normalizeExcelFileName(projectName);
+      const safeVersion = normalizeExcelFileName(contractVersionLabel);
+
+      link.href = url;
+      link.download =
+        `${safeProjectName}_${claimNo}회차_${baseMonth}_${safeVersion}_기성입력양식.xlsx`;
+
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+
+      setMessage({
+        severity: 'success',
+        text:
+          `${claimNo}회차 기성 표준양식을 다운로드했습니다. 노란색 금회수량 셀만 작성한 뒤 다시 업로드해주세요.`,
+      });
+    } catch (error) {
+      console.error('기성 표준양식 생성 오류:', error);
+      setErrorMessage(
+        `기성 양식을 만들지 못했습니다: ${error?.message || '알 수 없는 오류'}`,
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleExcelFile = async (event) => {
     const file = event.target.files?.[0];
     event.target.value = '';
@@ -1574,18 +2249,74 @@ export default function ProgressClaimManagement({
       const buffer = await file.arrayBuffer();
       await workbook.xlsx.load(buffer);
 
-      const worksheet =
-        workbook.worksheets.find((sheet) => sheet.name.includes('기성내역서')) ||
-        workbook.worksheets[0];
+      const standardTemplate =
+        parseStandardClaimWorkbook(workbook);
 
-      if (!worksheet) {
-        throw new Error('엑셀 안에 읽을 수 있는 시트가 없습니다.');
+      let parsedItems;
+      let projectLabel;
+
+      if (standardTemplate) {
+        const metadata = standardTemplate.metadata;
+
+        const templateProjectName = String(
+          metadata.project_name || '',
+        ).trim();
+        const templateClaimNo = Number(metadata.claim_no || 0);
+        const templateBaseMonth = String(metadata.base_month || '')
+          .trim()
+          .slice(0, 7);
+        const templateContractVersion = String(
+          metadata.contract_version || '',
+        ).trim();
+
+        if (
+          templateProjectName !== String(projectName || '').trim()
+        ) {
+          throw new Error(
+            `다른 현장의 기성양식입니다. 현재 현장: ${projectName} / 양식 현장: ${templateProjectName || '-'}`,
+          );
+        }
+
+        if (templateClaimNo !== Number(claimNo)) {
+          throw new Error(
+            `현재 작성 회차는 ${claimNo}회차이나 업로드 파일은 ${templateClaimNo || '-'}회차 양식입니다.`,
+          );
+        }
+
+        if (
+          templateBaseMonth !==
+          String(baseMonth || '').trim().slice(0, 7)
+        ) {
+          throw new Error(
+            `현재 기준월은 ${baseMonth}이나 업로드 파일은 ${templateBaseMonth || '-'} 양식입니다.`,
+          );
+        }
+
+        if (
+          templateContractVersion !== contractVersionLabel.trim()
+        ) {
+          throw new Error(
+            `현재 계약버전은 "${contractVersionLabel}"이나 업로드 파일은 "${templateContractVersion || '-'}" 양식입니다.`,
+          );
+        }
+
+        parsedItems = standardTemplate.items;
+        projectLabel = templateProjectName;
+      } else {
+        const worksheet =
+          workbook.worksheets.find((sheet) =>
+            sheet.name.includes('기성내역서'),
+          ) || workbook.worksheets[0];
+
+        if (!worksheet) {
+          throw new Error('엑셀 안에 읽을 수 있는 시트가 없습니다.');
+        }
+
+        parsedItems = parseDirectCostWorksheet(worksheet);
+        projectLabel = readText(worksheet.getRow(2), 2)
+          .replace(/^현장명\s*:\s*/, '')
+          .trim();
       }
-
-      const parsedItems = parseDirectCostWorksheet(worksheet);
-      const projectLabel = readText(worksheet.getRow(2), 2)
-        .replace(/^현장명\s*:\s*/, '')
-        .trim();
 
       const previousClaim = [...claims]
         .filter((claim) => Number(claim.claim_no || 0) < Number(claimNo || 1))
@@ -2543,6 +3274,34 @@ export default function ProgressClaimManagement({
                   size="small"
                   variant="outlined"
                   startIcon={
+                    loading ? <CircularProgress size={14} /> : <DownloadRoundedIcon />
+                  }
+                  disabled={
+                    loading ||
+                    saving ||
+                    draftSaving ||
+                    statusChanging ||
+                    isClaimLocked ||
+                    !projectName
+                  }
+                  onClick={handleDownloadClaimTemplate}
+                  sx={{
+                    minWidth: 128,
+                    height: 38,
+                    px: 1.2,
+                    whiteSpace: 'nowrap',
+                    fontSize: '0.72rem',
+                    borderColor: '#2563eb',
+                    color: '#1d4ed8',
+                  }}
+                >
+                  기성 양식 다운로드
+                </Button>
+
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={
                     loading ? <CircularProgress size={14} /> : <UploadFileRoundedIcon />
                   }
                   disabled={loading || saving || draftSaving || statusChanging || isClaimLocked}
@@ -2555,7 +3314,7 @@ export default function ProgressClaimManagement({
                     fontSize: '0.72rem',
                   }}
                 >
-                  기성 엑셀 업로드
+                  기성 양식 업로드
                 </Button>
 
                 <Button
@@ -3069,7 +3828,7 @@ export default function ProgressClaimManagement({
                       sx={{ py: 6, color: '#94a3b8' }}
                     >
                       {items.length === 0
-                        ? '상단의 기성 엑셀 업로드 버튼으로 기존 기성내역서를 불러와주세요.'
+                        ? '상단의 기성 양식 다운로드로 표준양식을 받은 뒤 금회수량을 작성하여 업로드해주세요.'
                         : '현재 필터에 해당하는 품목이 없습니다.'}
                     </TableCell>
                   </TableRow>
