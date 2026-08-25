@@ -1,3 +1,4 @@
+// v52.48.5.44.6.3.2 필로티 X 모서리 정합
 // v52.48.5.44.6.3 타입윤곽선 복원 + 골구도 셀 1.2배
 // v52.48.5.44.6.2 타입행 높이통일 + 박스제거 + 타입색상
 // v52.48.5.44.6.1 예외타입 동일행 압축 + hover 설명 제거
@@ -92,24 +93,42 @@ function PilotiCell({ span = 1 }) {
         boxSizing: 'border-box',
         overflow: 'hidden',
         userSelect: 'none',
-        '&::before, &::after': {
-          content: '""',
-          position: 'absolute',
-          left: '50%',
-          top: '-15px',
-          width: '1px',
-          height: 58,
-          bgcolor: '#94a3b8',
-          transformOrigin: 'center',
-        },
-        '&::before': {
-          transform: 'translateX(-50%) rotate(62deg)',
-        },
-        '&::after': {
-          transform: 'translateX(-50%) rotate(-62deg)',
-        },
       }}
-    />
+    >
+      <Box
+        component="svg"
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+        sx={{
+          position: 'absolute',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          display: 'block',
+          pointerEvents: 'none',
+        }}
+      >
+        <line
+          x1="0"
+          y1="0"
+          x2="100"
+          y2="100"
+          stroke="#94a3b8"
+          strokeWidth="1"
+          vectorEffect="non-scaling-stroke"
+        />
+        <line
+          x1="100"
+          y1="0"
+          x2="0"
+          y2="100"
+          stroke="#94a3b8"
+          strokeWidth="1"
+          vectorEffect="non-scaling-stroke"
+        />
+      </Box>
+    </Box>
   );
 }
 
