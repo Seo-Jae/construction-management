@@ -1,7 +1,9 @@
+// v52.48.5.44.5 공정별 현황 입력 타입별 세대현황 플로팅 패널
 import React, {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -15,6 +17,7 @@ import {
   DialogContent,
   DialogTitle,
   Fade,
+  IconButton,
   LinearProgress,
   Menu,
   MenuItem,
@@ -22,12 +25,19 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
+import DragIndicatorRoundedIcon from '@mui/icons-material/DragIndicatorRounded';
+import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
+import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded';
 import BuildingGrid from '../BuildingGrid';
 import { supabase } from '../supabaseClient';
 import KoreanDatePicker from '../components/KoreanDatePicker.jsx';
 import {
+  buildFloorVisualCells,
+  getCellKey,
   getFloorCellKeys,
   getProjectCellKeys,
+  getUnitType,
 } from '../utils/buildingUnits.js';
 
 const STATUS_OPTIONS = ['작업전', '작업중', '작업완료'];
@@ -204,6 +214,148 @@ const storeHiddenTargetSequences = (
       error,
     );
   }
+};
+
+const TYPE_SUMMARY_COLORS = [
+  '#2563eb',
+  '#16a34a',
+  '#ea580c',
+  '#9333ea',
+  '#0891b2',
+  '#dc2626',
+  '#4f46e5',
+  '#0f766e',
+  '#ca8a04',
+  '#be123c',
+  '#0284c7',
+  '#65a30d',
+];
+
+const TYPE_SUMMARY_PANEL_WIDTH = 328;
+const TYPE_SUMMARY_PANEL_MIN_WIDTH = 286;
+
+const getTypeSummaryPreferenceStorageKey = (projectName) =>
+  `progress-input:${encodeURIComponent(
+    String(projectName || 'default'),
+  )}:type-summary-panel`;
+
+const getDefaultTypeSummaryPanelState = () => {
+  const viewportWidth =
+    typeof window !== 'undefined'
+      ? window.innerWidth
+      : 1440;
+
+  return {
+    minimized: false,
+    closed: false,
+    x: Math.max(
+      12,
+      viewportWidth -
+        TYPE_SUMMARY_PANEL_WIDTH -
+        18,
+    ),
+    y: 128,
+  };
+};
+
+const readStoredTypeSummaryPanelState = (projectName) => {
+  const fallback = getDefaultTypeSummaryPanelState();
+
+  if (
+    typeof window === 'undefined' ||
+    !projectName
+  ) {
+    return fallback;
+  }
+
+  try {
+    const raw = window.localStorage.getItem(
+      getTypeSummaryPreferenceStorageKey(
+        projectName,
+      ),
+    );
+
+    if (!raw) return fallback;
+
+    const parsed = JSON.parse(raw);
+
+    return {
+      minimized:
+        parsed?.minimized === true,
+      closed:
+        parsed?.closed === true,
+      x: Number.isFinite(Number(parsed?.x))
+        ? Number(parsed.x)
+        : fallback.x,
+      y: Number.isFinite(Number(parsed?.y))
+        ? Number(parsed.y)
+        : fallback.y,
+    };
+  } catch (error) {
+    console.warn(
+      '타입별 세대현황 창 상태 조회 실패:',
+      error,
+    );
+    return fallback;
+  }
+};
+
+const storeTypeSummaryPanelState = (
+  projectName,
+  panelState,
+) => {
+  if (
+    typeof window === 'undefined' ||
+    !projectName
+  ) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      getTypeSummaryPreferenceStorageKey(
+        projectName,
+      ),
+      JSON.stringify({
+        minimized:
+          panelState?.minimized === true,
+        closed:
+          panelState?.closed === true,
+        x: Number(panelState?.x) || 0,
+        y: Number(panelState?.y) || 0,
+      }),
+    );
+  } catch (error) {
+    console.warn(
+      '타입별 세대현황 창 상태 저장 실패:',
+      error,
+    );
+  }
+};
+
+const formatTypeSummaryPercentage = (
+  completedCount,
+  totalCount,
+) => {
+  if (!totalCount) return '0%';
+
+  const percentage =
+    (Number(completedCount || 0) /
+      Number(totalCount)) *
+    100;
+
+  if (
+    Math.abs(
+      percentage -
+        Math.round(percentage),
+    ) < 0.05
+  ) {
+    return `${Math.round(
+      percentage,
+    )}%`;
+  }
+
+  return `${percentage.toFixed(1)}%`;
 };
 
 const normalizeUnitTypeBuildingName = (value) => {
@@ -1007,6 +1159,18 @@ export default function ProgressInput({
     setUnitTypeError,
   ] = useState('');
 
+  const [
+    typeSummaryPanelState,
+    setTypeSummaryPanelState,
+  ] = useState(() =>
+    readStoredTypeSummaryPanelState(
+      projectName,
+    ),
+  );
+
+  const typeSummaryDragRef =
+    useRef(null);
+
   const selectionCount =
     selectedCells?.size ?? 0;
 
@@ -1028,6 +1192,193 @@ export default function ProgressInput({
         numeric: true,
       }),
   );
+
+  const typeHouseholdSummary =
+    useMemo(() => {
+      const groupedByType =
+        new Map();
+      const allCellKeys =
+        getProjectCellKeys(
+          buildingConfigs,
+        );
+
+      Object.entries(
+        buildingConfigs || {},
+      ).forEach(
+        ([
+          buildingName,
+          config,
+        ]) => {
+          const floors =
+            Number(
+              config?.floors,
+            ) || 0;
+
+          for (
+            let floor = 1;
+            floor <= floors;
+            floor += 1
+          ) {
+            buildFloorVisualCells(
+              config,
+              floor,
+            ).forEach(
+              (cell) => {
+                if (
+                  cell?.type !==
+                    'valid' ||
+                  !cell?.unitCode
+                ) {
+                  return;
+                }
+
+                const cellKey =
+                  getCellKey(
+                    buildingName,
+                    cell.unitCode,
+                  );
+
+                const configType =
+                  getUnitType(
+                    config,
+                    floor,
+                    cell.visualStart,
+                  );
+
+                const legacyType =
+                  String(
+                    unitTypeData?.[
+                      cellKey
+                    ] || '',
+                  ).trim();
+
+                const unitType =
+                  String(
+                    configType ||
+                      legacyType ||
+                      '미지정',
+                  ).trim();
+
+                if (
+                  !groupedByType.has(
+                    unitType,
+                  )
+                ) {
+                  groupedByType.set(
+                    unitType,
+                    {
+                      typeName:
+                        unitType,
+                      totalCount: 0,
+                      completedCount:
+                        0,
+                    },
+                  );
+                }
+
+                const summary =
+                  groupedByType.get(
+                    unitType,
+                  );
+
+                summary.totalCount +=
+                  1;
+
+                if (
+                  unitProgressData?.[
+                    cellKey
+                  ]?.status ===
+                  '작업완료'
+                ) {
+                  summary.completedCount +=
+                    1;
+                }
+              },
+            );
+          }
+        },
+      );
+
+      const rows = Array.from(
+        groupedByType.values(),
+      )
+        .sort(
+          (first, second) => {
+            if (
+              first.typeName ===
+              '미지정'
+            ) {
+              return 1;
+            }
+
+            if (
+              second.typeName ===
+              '미지정'
+            ) {
+              return -1;
+            }
+
+            return first.typeName.localeCompare(
+              second.typeName,
+              'ko',
+              {
+                numeric: true,
+                sensitivity:
+                  'base',
+              },
+            );
+          },
+        )
+        .map(
+          (row, index) => ({
+            ...row,
+            color:
+              TYPE_SUMMARY_COLORS[
+                index %
+                  TYPE_SUMMARY_COLORS.length
+              ],
+            percentageLabel:
+              formatTypeSummaryPercentage(
+                row.completedCount,
+                row.totalCount,
+              ),
+          }),
+        );
+
+      let aggregateCompletedCount =
+        0;
+
+      allCellKeys.forEach(
+        (cellKey) => {
+          if (
+            unitProgressData?.[
+              cellKey
+            ]?.status ===
+            '작업완료'
+          ) {
+            aggregateCompletedCount +=
+              1;
+          }
+        },
+      );
+
+      return {
+        rows,
+        totalCount:
+          allCellKeys.size,
+        completedCount:
+          aggregateCompletedCount,
+        percentageLabel:
+          formatTypeSummaryPercentage(
+            aggregateCompletedCount,
+            allCellKeys.size,
+          ),
+      };
+    }, [
+      buildingConfigs,
+      unitProgressData,
+      unitTypeData,
+    ]);
 
   const loadProjectUnitTypes =
     useCallback(async () => {
@@ -1094,6 +1445,78 @@ export default function ProgressInput({
   useEffect(() => {
     loadProjectUnitTypes();
   }, [loadProjectUnitTypes]);
+
+  useEffect(() => {
+    setTypeSummaryPanelState(
+      readStoredTypeSummaryPanelState(
+        projectName,
+      ),
+    );
+    typeSummaryDragRef.current =
+      null;
+  }, [projectName]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setTypeSummaryPanelState(
+        (previous) => {
+          const width =
+            previous.minimized
+              ? TYPE_SUMMARY_PANEL_MIN_WIDTH
+              : TYPE_SUMMARY_PANEL_WIDTH;
+          const next = {
+            ...previous,
+            x: Math.min(
+              Math.max(
+                8,
+                Number(
+                  previous.x,
+                ) || 8,
+              ),
+              Math.max(
+                8,
+                window.innerWidth -
+                  width -
+                  8,
+              ),
+            ),
+            y: Math.min(
+              Math.max(
+                8,
+                Number(
+                  previous.y,
+                ) || 8,
+              ),
+              Math.max(
+                8,
+                window.innerHeight -
+                  48,
+              ),
+            ),
+          };
+
+          storeTypeSummaryPanelState(
+            projectName,
+            next,
+          );
+
+          return next;
+        },
+      );
+    };
+
+    window.addEventListener(
+      'resize',
+      handleResize,
+    );
+
+    return () => {
+      window.removeEventListener(
+        'resize',
+        handleResize,
+      );
+    };
+  }, [projectName]);
 
   const loadProgressTargets =
     useCallback(async () => {
@@ -1949,6 +2372,172 @@ export default function ProgressInput({
     setSelectedCells?.(new Set());
   };
 
+  const updateTypeSummaryPanelState =
+    (updater) => {
+      setTypeSummaryPanelState(
+        (previous) => {
+          const next =
+            typeof updater ===
+            'function'
+              ? updater(previous)
+              : updater;
+
+          storeTypeSummaryPanelState(
+            projectName,
+            next,
+          );
+
+          return next;
+        },
+      );
+    };
+
+  const handleTypeSummaryPointerDown =
+    (event) => {
+      if (
+        event.button !== 0 ||
+        event.target.closest(
+          'button',
+        )
+      ) {
+        return;
+      }
+
+      const panel =
+        event.currentTarget.closest(
+          '[data-type-summary-panel="true"]',
+        );
+
+      if (!panel) return;
+
+      const rect =
+        panel.getBoundingClientRect();
+
+      typeSummaryDragRef.current = {
+        pointerId:
+          event.pointerId,
+        offsetX:
+          event.clientX -
+          rect.left,
+        offsetY:
+          event.clientY -
+          rect.top,
+        width:
+          rect.width,
+      };
+
+      event.currentTarget
+        .setPointerCapture?.(
+          event.pointerId,
+        );
+
+      event.preventDefault();
+    };
+
+  const handleTypeSummaryPointerMove =
+    (event) => {
+      const drag =
+        typeSummaryDragRef.current;
+
+      if (
+        !drag ||
+        drag.pointerId !==
+          event.pointerId
+      ) {
+        return;
+      }
+
+      const maxX =
+        Math.max(
+          8,
+          window.innerWidth -
+            drag.width -
+            8,
+        );
+      const maxY =
+        Math.max(
+          8,
+          window.innerHeight -
+            48,
+        );
+
+      updateTypeSummaryPanelState(
+        (previous) => ({
+          ...previous,
+          x: Math.min(
+            Math.max(
+              8,
+              event.clientX -
+                drag.offsetX,
+            ),
+            maxX,
+          ),
+          y: Math.min(
+            Math.max(
+              8,
+              event.clientY -
+                drag.offsetY,
+            ),
+            maxY,
+          ),
+        }),
+      );
+    };
+
+  const handleTypeSummaryPointerUp =
+    (event) => {
+      const drag =
+        typeSummaryDragRef.current;
+
+      if (
+        !drag ||
+        drag.pointerId !==
+          event.pointerId
+      ) {
+        return;
+      }
+
+      typeSummaryDragRef.current =
+        null;
+
+      event.currentTarget
+        .releasePointerCapture?.(
+          event.pointerId,
+        );
+    };
+
+  const toggleTypeSummaryMinimized =
+    () => {
+      updateTypeSummaryPanelState(
+        (previous) => ({
+          ...previous,
+          minimized:
+            !previous.minimized,
+        }),
+      );
+    };
+
+  const closeTypeSummaryPanel =
+    () => {
+      updateTypeSummaryPanelState(
+        (previous) => ({
+          ...previous,
+          closed: true,
+        }),
+      );
+    };
+
+  const reopenTypeSummaryPanel =
+    () => {
+      updateTypeSummaryPanelState(
+        (previous) => ({
+          ...previous,
+          closed: false,
+          minimized: false,
+        }),
+      );
+    };
+
   const toggleTargetPanelMinimized =
     () => {
       setTargetPanelMinimized(
@@ -2322,6 +2911,354 @@ export default function ProgressInput({
           />
         </Box>
       </Paper>
+
+      {!typeSummaryPanelState.closed ? (
+        <Paper
+          data-type-summary-panel="true"
+          elevation={8}
+          sx={{
+            position: 'fixed',
+            left:
+              typeSummaryPanelState.x,
+            top:
+              typeSummaryPanelState.y,
+            width:
+              typeSummaryPanelState.minimized
+                ? TYPE_SUMMARY_PANEL_MIN_WIDTH
+                : TYPE_SUMMARY_PANEL_WIDTH,
+            maxWidth:
+              'calc(100vw - 16px)',
+            zIndex: 1350,
+            overflow: 'hidden',
+            bgcolor: '#ffffff',
+            border:
+              '1px solid #cbd5e1',
+            borderRadius: 1.5,
+            boxShadow:
+              '0 12px 30px rgba(15, 23, 42, 0.18)',
+            userSelect: 'none',
+          }}
+        >
+          <Box
+            onPointerDown={
+              handleTypeSummaryPointerDown
+            }
+            onPointerMove={
+              handleTypeSummaryPointerMove
+            }
+            onPointerUp={
+              handleTypeSummaryPointerUp
+            }
+            onPointerCancel={
+              handleTypeSummaryPointerUp
+            }
+            sx={{
+              minHeight: 36,
+              px: 0.75,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 0.45,
+              bgcolor: '#f8fafc',
+              borderBottom:
+                typeSummaryPanelState.minimized
+                  ? 'none'
+                  : '1px solid #e2e8f0',
+              cursor: 'move',
+              touchAction: 'none',
+            }}
+          >
+            <DragIndicatorRoundedIcon
+              sx={{
+                color: '#94a3b8',
+                fontSize: 18,
+                flexShrink: 0,
+              }}
+            />
+
+            <Box
+              sx={{
+                minWidth: 0,
+                flex: 1,
+              }}
+            >
+              <Typography
+                noWrap
+                sx={{
+                  color: '#0f172a',
+                  fontSize: '0.72rem',
+                  lineHeight: 1.2,
+                  fontWeight: 900,
+                }}
+              >
+                타입별 세대 현황
+              </Typography>
+              <Typography
+                noWrap
+                sx={{
+                  mt: 0.1,
+                  color: '#64748b',
+                  fontSize: '0.58rem',
+                  lineHeight: 1.1,
+                }}
+              >
+                {selectedProcess ||
+                  '공정 미선택'}
+              </Typography>
+            </Box>
+
+            <IconButton
+              size="small"
+              aria-label={
+                typeSummaryPanelState.minimized
+                  ? '타입별 세대 현황 펼치기'
+                  : '타입별 세대 현황 최소화'
+              }
+              onClick={
+                toggleTypeSummaryMinimized
+              }
+              sx={{
+                width: 25,
+                height: 25,
+                color: '#475569',
+              }}
+            >
+              <RemoveRoundedIcon
+                sx={{
+                  fontSize: 17,
+                }}
+              />
+            </IconButton>
+
+            <IconButton
+              size="small"
+              aria-label="타입별 세대 현황 닫기"
+              onClick={
+                closeTypeSummaryPanel
+              }
+              sx={{
+                width: 25,
+                height: 25,
+                color: '#64748b',
+                '&:hover': {
+                  color: '#dc2626',
+                  bgcolor: '#fef2f2',
+                },
+              }}
+            >
+              <CloseRoundedIcon
+                sx={{
+                  fontSize: 17,
+                }}
+              />
+            </IconButton>
+          </Box>
+
+          {!typeSummaryPanelState.minimized && (
+            <Box
+              sx={{
+                px: 1,
+                py: 0.8,
+                maxHeight:
+                  'min(390px, calc(100vh - 190px))',
+                overflowY: 'auto',
+              }}
+            >
+              {typeHouseholdSummary.rows
+                .length === 0 ? (
+                <Typography
+                  sx={{
+                    py: 1.1,
+                    textAlign:
+                      'center',
+                    color:
+                      '#94a3b8',
+                    fontSize:
+                      '0.66rem',
+                  }}
+                >
+                  등록된 세대 타입이
+                  없습니다.
+                </Typography>
+              ) : (
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gap: 0.35,
+                  }}
+                >
+                  {typeHouseholdSummary.rows.map(
+                    (row) => (
+                      <Box
+                        key={
+                          row.typeName
+                        }
+                        sx={{
+                          minHeight: 23,
+                          display:
+                            'grid',
+                          gridTemplateColumns:
+                            '12px minmax(58px, 0.8fr) minmax(118px, 1.4fr)',
+                          alignItems:
+                            'center',
+                          columnGap:
+                            0.55,
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            width: 9,
+                            height: 9,
+                            borderRadius:
+                              '2px',
+                            bgcolor:
+                              row.color,
+                            border:
+                              '1px solid rgba(15,23,42,0.14)',
+                          }}
+                        />
+
+                        <Typography
+                          noWrap
+                          sx={{
+                            color:
+                              '#334155',
+                            fontSize:
+                              '0.68rem',
+                            fontWeight:
+                              800,
+                          }}
+                        >
+                          {
+                            row.typeName
+                          }
+                        </Typography>
+
+                        <Typography
+                          noWrap
+                          sx={{
+                            color:
+                              '#475569',
+                            fontSize:
+                              '0.66rem',
+                            fontWeight:
+                              700,
+                            textAlign:
+                              'right',
+                            fontVariantNumeric:
+                              'tabular-nums',
+                          }}
+                        >
+                          {
+                            row.completedCount
+                          }
+                          /
+                          {
+                            row.totalCount
+                          }
+                          세대 (
+                          {
+                            row.percentageLabel
+                          }
+                          )
+                        </Typography>
+                      </Box>
+                    ),
+                  )}
+                </Box>
+              )}
+
+              <Box
+                sx={{
+                  mt: 0.7,
+                  pt: 0.7,
+                  borderTop:
+                    '1px solid #cbd5e1',
+                  display: 'flex',
+                  justifyContent:
+                    'space-between',
+                  gap: 1,
+                }}
+              >
+                <Typography
+                  sx={{
+                    color: '#0f172a',
+                    fontSize:
+                      '0.7rem',
+                    fontWeight: 900,
+                  }}
+                >
+                  합계
+                </Typography>
+
+                <Typography
+                  noWrap
+                  sx={{
+                    color: '#0f172a',
+                    fontSize:
+                      '0.7rem',
+                    fontWeight: 900,
+                    fontVariantNumeric:
+                      'tabular-nums',
+                  }}
+                >
+                  {
+                    typeHouseholdSummary.completedCount
+                  }
+                  /
+                  {
+                    typeHouseholdSummary.totalCount
+                  }
+                  세대 (
+                  {
+                    typeHouseholdSummary.percentageLabel
+                  }
+                  )
+                </Typography>
+              </Box>
+            </Box>
+          )}
+        </Paper>
+      ) : (
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={
+            <GridViewRoundedIcon
+              sx={{
+                fontSize:
+                  '15px !important',
+              }}
+            />
+          }
+          onClick={
+            reopenTypeSummaryPanel
+          }
+          sx={{
+            position: 'fixed',
+            right: 14,
+            top: 128,
+            zIndex: 1350,
+            minWidth: 0,
+            px: 0.9,
+            py: 0.4,
+            color: '#475569',
+            borderColor:
+              '#cbd5e1',
+            bgcolor: '#ffffff',
+            fontSize: '0.65rem',
+            fontWeight: 800,
+            boxShadow:
+              '0 6px 16px rgba(15,23,42,0.12)',
+            '&:hover': {
+              bgcolor: '#f8fafc',
+              borderColor:
+                '#94a3b8',
+            },
+          }}
+        >
+          타입 현황
+        </Button>
+      )}
 
       <Paper
         elevation={1}
