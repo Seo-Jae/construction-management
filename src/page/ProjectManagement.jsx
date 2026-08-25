@@ -1,3 +1,4 @@
+// v52.48.5.44.1 현장관리 동별 호별 타입
 // v52.48.5.44 최고관리자 현장관리
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -118,6 +119,23 @@ const formatExceptions = (value) => {
     .join('; ');
 };
 
+const normalizeUnitTypes = (value) => {
+  const source = safeObject(value);
+
+  return Object.fromEntries(
+    Object.entries(source)
+      .map(([unitNumber, typeName]) => [
+        String(Number(unitNumber)),
+        String(typeName ?? '').trim(),
+      ])
+      .filter(([unitNumber, typeName]) => (
+        Number.isInteger(Number(unitNumber))
+        && Number(unitNumber) > 0
+        && Boolean(typeName)
+      )),
+  );
+};
+
 const createEmptyBuilding = (index = 0) => ({
   clientId: `new-${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
   persisted: false,
@@ -126,6 +144,7 @@ const createEmptyBuilding = (index = 0) => ({
   unitsPerFloor: '4',
   pilotiFloorsText: '1',
   exceptionsText: '',
+  unitTypes: {},
   rawConfig: {},
 });
 
@@ -140,6 +159,7 @@ const normalizeBuilding = (row, index) => {
     unitsPerFloor: String(rawConfig.unitsPerFloor ?? ''),
     pilotiFloorsText: formatNumberList(rawConfig.pilotiFloors),
     exceptionsText: formatExceptions(rawConfig.exceptions),
+    unitTypes: normalizeUnitTypes(rawConfig.unitTypes),
     rawConfig,
   };
 };
@@ -164,6 +184,10 @@ const buildConfig = (building) => {
   );
   const pilotiFloors = parseNumberList(building.pilotiFloorsText);
   const exceptions = parseExceptionsText(building.exceptionsText);
+  const unitTypes = Object.fromEntries(
+    Object.entries(normalizeUnitTypes(building.unitTypes))
+      .filter(([unitNumber]) => Number(unitNumber) <= unitsPerFloor),
+  );
 
   Object.keys(exceptions).forEach((floorKey) => {
     const floor = Number(floorKey);
@@ -191,6 +215,7 @@ const buildConfig = (building) => {
     unitsPerFloor,
     pilotiFloors,
     exceptions,
+    unitTypes,
   };
 };
 
@@ -327,6 +352,37 @@ export default function ProjectManagement() {
     });
   };
 
+  const updateUnitType = (clientId, unitNumber, value) => {
+    const unitKey = String(unitNumber);
+
+    setDraft((previous) => {
+      if (!previous) return previous;
+
+      return {
+        ...previous,
+        buildings: previous.buildings.map((building) => {
+          if (building.clientId !== clientId) return building;
+
+          const nextUnitTypes = {
+            ...normalizeUnitTypes(building.unitTypes),
+          };
+          const preparedValue = String(value ?? '').trimStart();
+
+          if (preparedValue) {
+            nextUnitTypes[unitKey] = preparedValue;
+          } else {
+            delete nextUnitTypes[unitKey];
+          }
+
+          return {
+            ...building,
+            unitTypes: nextUnitTypes,
+          };
+        }),
+      };
+    });
+  };
+
   const addBuilding = () => {
     setDraft((previous) => {
       if (!previous) return previous;
@@ -443,7 +499,7 @@ export default function ProjectManagement() {
       >
         <SystemPageTitle
           title="현장관리"
-          help="최고관리자가 시스템 안에서 새 현장을 등록하고 동·층·세대 기본구조를 관리합니다. 현장명 변경과 기존 동 삭제는 과거 데이터 연결 보호를 위해 제한합니다."
+          help="최고관리자가 시스템 안에서 새 현장을 등록하고 동·층·세대·호별 타입 기본구조를 관리합니다. 현장명 변경과 기존 동 삭제는 과거 데이터 연결 보호를 위해 제한합니다."
         />
         <Chip size="small" variant="outlined" label={`등록현장 ${projects.length}`} />
         <Box sx={{ flex: 1 }} />
@@ -723,6 +779,66 @@ export default function ProjectManagement() {
                           helperText="상층부 세대 감소 또는 1층 일부 세대만 존재하는 경우 사용합니다. 기존 aliasUnits 등 고급설정 값은 수정 저장해도 보존됩니다."
                           onChange={(event) => updateBuilding(building.clientId, 'exceptionsText', event.target.value)}
                         />
+
+                        <Box
+                          sx={{
+                            mt: 0.9,
+                            p: 1,
+                            border: '1px solid #e2e8f0',
+                            borderRadius: 1,
+                            bgcolor: '#f8fafc',
+                          }}
+                        >
+                          <Box sx={{ mb: 0.75 }}>
+                            <Typography sx={{ color: '#0f172a', fontSize: '0.72rem', fontWeight: 900 }}>
+                              호별 타입
+                            </Typography>
+                            <Typography sx={{ mt: 0.15, color: '#64748b', fontSize: '0.62rem', lineHeight: 1.45 }}>
+                              이 동의 기준 호수 라인별 타입을 입력합니다. 예: 1호 84A · 2호 84B · 3호 59A. 예외층에서도 존재하는 동일 호수는 이 타입을 사용합니다.
+                            </Typography>
+                          </Box>
+
+                          <Box
+                            sx={{
+                              display: 'grid',
+                              gridTemplateColumns: {
+                                xs: 'repeat(2, minmax(0,1fr))',
+                                sm: 'repeat(3, minmax(0,1fr))',
+                                md: 'repeat(auto-fit, minmax(120px, 1fr))',
+                              },
+                              gap: 0.7,
+                            }}
+                          >
+                            {Array.from(
+                              {
+                                length: Math.max(
+                                  0,
+                                  Number.isInteger(Number(building.unitsPerFloor))
+                                    ? Number(building.unitsPerFloor)
+                                    : 0,
+                                ),
+                              },
+                              (_unused, unitIndex) => {
+                                const unitNumber = unitIndex + 1;
+                                return (
+                                  <TextField
+                                    key={unitNumber}
+                                    size="small"
+                                    label={`${unitNumber}호 타입`}
+                                    value={building.unitTypes?.[String(unitNumber)] || ''}
+                                    disabled={!rowEditable}
+                                    placeholder="예: 84A"
+                                    onChange={(event) => updateUnitType(
+                                      building.clientId,
+                                      unitNumber,
+                                      event.target.value,
+                                    )}
+                                  />
+                                );
+                              },
+                            )}
+                          </Box>
+                        </Box>
                       </Paper>
                     );
                   })}
