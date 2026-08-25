@@ -1,3 +1,4 @@
+// v52.48.5.44.7.4 기성회차 삭제 시 표준계약 잔여데이터 정리
 // v52.48.5.44.7.3 기성회차 삭제 + 구분 누락 진단
 // v52.48.5.44.7.2 최초계약 양식 구분 안내
 // v52.48.5.44.7.1 최초계약 빈양식 다운로드
@@ -3089,7 +3090,7 @@ export default function ProgressClaimManagement({
 
     if (
       !window.confirm(
-        `${projectName} ${targetClaimNo}회차 등록자료를 삭제하시겠습니까?\n\n- 해당 회차의 기성 품목/연결자료가 삭제됩니다.\n- 계약버전과 계약품목 원본은 보존됩니다.\n- 삭제 후에는 되돌릴 수 없습니다.`,
+        `${projectName} ${targetClaimNo}회차 등록자료를 삭제하시겠습니까?\n\n- 해당 회차의 기성 품목/연결자료가 삭제됩니다.\n- 이 계약버전을 사용하는 등록 회차가 더 없으면, 표준양식에서 생성된 계약품목 원본도 함께 초기화됩니다.\n- 기존 외부 계약원본은 자동 삭제하지 않습니다.\n- 삭제 후에는 되돌릴 수 없습니다.`,
       )
     ) {
       return;
@@ -3195,7 +3196,10 @@ export default function ProgressClaimManagement({
       setMessage({
         severity: 'success',
         text:
-          `${data?.claim_no || targetClaimNo}회차 등록 기성자료를 삭제했습니다. 계약버전/계약품목 원본은 그대로 보존됩니다.`,
+          `${data?.claim_no || targetClaimNo}회차 등록 기성자료를 삭제했습니다.` +
+          (data?.contract_master_deleted
+            ? ` 이 회차가 사용하던 "${data?.contract_version_label || contractVersionLabel}" 표준 계약품목도 더 이상 사용되지 않아 함께 초기화했습니다. 다음 양식 다운로드는 빈 최초계약 양식으로 시작됩니다.`
+            : ' 다른 등록 회차가 사용하는 계약원본 또는 기존 외부 계약원본은 그대로 보존했습니다.'),
       });
     } catch (error) {
       console.error(
