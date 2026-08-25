@@ -1,3 +1,4 @@
+// v52.48.5.44.6.2 타입행 공통높이·색상 연동
 // v52.48.5.44.5.2 타입현황 공정선택 뒤배치 + 폭 축소
 // v52.48.5.44.5.1 타입현황 위치·최소화·닫기 동작 보정
 // v52.48.5.44.5 공정별 현황 입력 타입별 세대현황 플로팅 패널
@@ -35,6 +36,7 @@ import { supabase } from '../supabaseClient';
 import KoreanDatePicker from '../components/KoreanDatePicker.jsx';
 import {
   buildFloorVisualCells,
+  getCanonicalUnitNumber,
   getCellKey,
   getFloorCellKeys,
   getProjectCellKeys,
@@ -354,6 +356,181 @@ const formatTypeSummaryPercentage = (
   }
 
   return `${percentage.toFixed(1)}%`;
+};
+
+/*
+  층별 타입 예외가 화면 하단에서 실제 몇 줄을 차지하는지 계산합니다.
+  BuildingGrid의 예외타입 압축 규칙과 동일합니다.
+
+  - 같은 층에서 인접한 동일 타입은 하나의 segment
+  - 동일 패턴 반복층은 1회만 표시
+  - 서로 차지하는 호 범위가 겹치지 않으면 같은 행에 배치
+*/
+const getPackedTypeExceptionRowCount = (config) => {
+  const baseTypes = config?.unitTypes || {};
+  const exceptionRows = [];
+  const seenSignatures = new Set();
+
+  Object.entries(config?.floorUnitTypes || {})
+    .map(([floorKey, floorMap]) => [
+      Number(floorKey),
+      floorMap,
+    ])
+    .filter(
+      ([floor, floorMap]) =>
+        Number.isInteger(floor) &&
+        floor > 0 &&
+        floorMap &&
+        typeof floorMap === 'object',
+    )
+    .sort(
+      ([firstFloor], [secondFloor]) =>
+        secondFloor - firstFloor,
+    )
+    .forEach(([floor, floorMap]) => {
+      const rawSegments = [];
+
+      buildFloorVisualCells(config, floor).forEach((cell) => {
+        if (cell?.type !== 'valid') return;
+
+        const canonicalUnitNumber =
+          getCanonicalUnitNumber(
+            config,
+            floor,
+            cell.visualStart,
+          );
+
+        const overrideType =
+          floorMap?.[canonicalUnitNumber] ??
+          floorMap?.[String(canonicalUnitNumber)] ??
+          floorMap?.[cell.visualStart] ??
+          floorMap?.[String(cell.visualStart)];
+
+        const normalizedOverrideType =
+          String(overrideType || '').trim();
+
+        if (!normalizedOverrideType) return;
+
+        const baseType =
+          String(
+            baseTypes?.[canonicalUnitNumber] ??
+              baseTypes?.[String(canonicalUnitNumber)] ??
+              baseTypes?.[cell.visualStart] ??
+              baseTypes?.[String(cell.visualStart)] ??
+              '',
+          ).trim();
+
+        if (
+          normalizedOverrideType ===
+          baseType
+        ) {
+          return;
+        }
+
+        rawSegments.push({
+          start: cell.visualStart,
+          end: cell.visualEnd,
+          typeName:
+            normalizedOverrideType,
+        });
+      });
+
+      rawSegments.sort(
+        (first, second) =>
+          first.start - second.start,
+      );
+
+      const mergedSegments = [];
+
+      rawSegments.forEach((segment) => {
+        const previous =
+          mergedSegments[
+            mergedSegments.length - 1
+          ];
+
+        if (
+          previous &&
+          previous.typeName ===
+            segment.typeName &&
+          previous.end + 1 ===
+            segment.start
+        ) {
+          previous.end = segment.end;
+          return;
+        }
+
+        mergedSegments.push({
+          ...segment,
+        });
+      });
+
+      const signature =
+        mergedSegments
+          .map(
+            (segment) =>
+              `${segment.start}-${segment.end}:${segment.typeName}`,
+          )
+          .join('|');
+
+      if (
+        !signature ||
+        seenSignatures.has(signature)
+      ) {
+        return;
+      }
+
+      seenSignatures.add(signature);
+      exceptionRows.push({
+        segments: mergedSegments,
+      });
+    });
+
+  const packedRows = [];
+
+  exceptionRows.forEach((sourceRow) => {
+    let targetRow = null;
+
+    for (
+      let rowIndex = 0;
+      rowIndex < packedRows.length;
+      rowIndex += 1
+    ) {
+      const candidate =
+        packedRows[rowIndex];
+
+      const overlaps =
+        sourceRow.segments.some(
+          (segment) =>
+            candidate.segments.some(
+              (existing) =>
+                !(
+                  segment.end <
+                    existing.start ||
+                  segment.start >
+                    existing.end
+                ),
+            ),
+        );
+
+      if (!overlaps) {
+        targetRow = candidate;
+        break;
+      }
+    }
+
+    if (!targetRow) {
+      targetRow = {
+        segments: [],
+      };
+      packedRows.push(targetRow);
+    }
+
+    targetRow.segments.push(
+      ...sourceRow.segments,
+    );
+  });
+
+  return packedRows.length;
 };
 
 const normalizeUnitTypeBuildingName = (value) => {
@@ -1388,6 +1565,49 @@ export default function ProgressInput({
       unitProgressData,
       unitTypeData,
     ]);
+
+  /*
+    우측 타입별 세대현황의 색상을 하단 타입 글자색에도 동일하게 사용합니다.
+    색상은 배경/박스가 아니라 글자에만 적용합니다.
+  */
+  const typeColorMap = useMemo(
+    () =>
+      Object.fromEntries(
+        typeHouseholdSummary.rows.map(
+          (row) => [
+            row.typeName,
+            row.color,
+          ],
+        ),
+      ),
+    [typeHouseholdSummary.rows],
+  );
+
+  /*
+    동별 타입표의 실제 표시행 수를 현장 전체에서 동일하게 맞춥니다.
+    기본 타입 1행 + 가장 많은 예외타입 행수를 공통 슬롯으로 사용하므로
+    어느 동이든 1층의 수직 위치가 동일하게 유지됩니다.
+  */
+  const typeFooterRowSlots = useMemo(() => {
+    let maxRows = 1;
+
+    Object.values(
+      buildingConfigs || {},
+    ).forEach((config) => {
+      const rowCount =
+        1 +
+        getPackedTypeExceptionRowCount(
+          config,
+        );
+
+      maxRows = Math.max(
+        maxRows,
+        rowCount,
+      );
+    });
+
+    return maxRows;
+  }, [buildingConfigs]);
 
   const loadProjectUnitTypes =
     useCallback(async () => {
@@ -4123,6 +4343,10 @@ export default function ProgressInput({
                   }
                   unitData={unitProgressData}
                   unitTypeData={unitTypeData}
+                  typeColorMap={typeColorMap}
+                  typeFooterRowSlots={
+                    typeFooterRowSlots
+                  }
                   onFloorClick={
                     handleEffectiveFloorClick
                   }

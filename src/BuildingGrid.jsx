@@ -1,3 +1,4 @@
+// v52.48.5.44.6.2 타입행 높이통일 + 박스제거 + 타입색상
 // v52.48.5.44.6.1 예외타입 동일행 압축 + hover 설명 제거
 // v52.48.5.44.6 층별 예외타입 하단 다단표시
 // v52.48.5.44.3 현장관리 호별타입 공정진척 연동
@@ -118,6 +119,8 @@ export default function BuildingGrid({
   onCellClick,
   unitData = {},
   unitTypeData = {},
+  typeColorMap = {},
+  typeFooterRowSlots = 1,
   onFloorClick,
   protectCompleted = false,
   targetLines = [],
@@ -528,11 +531,6 @@ export default function BuildingGrid({
 
     return {
       columnCount,
-      lineLabels: Array.from(
-        { length: columnCount },
-        (_, index) =>
-          `${index + 1}호`,
-      ),
       baseLabels,
       exceptionRows:
         packedExceptionRows,
@@ -940,177 +938,148 @@ export default function BuildingGrid({
           })}
       </Box>
 
-      {unitTypeSummary.hasLabels && (
+      <Box
+        sx={{
+          mt: 0.35,
+          display: 'grid',
+          gap: `${ROW_GAP}px`,
+        }}
+      >
+        {/*
+          현장 전체의 최대 타입행 수만큼 동일한 높이를 확보합니다.
+          예외타입이 없는 동은 위쪽에 빈 행을 두므로
+          모든 동의 1층 위치가 동일하게 정렬됩니다.
+        */}
+        {Array.from({
+          length: Math.max(
+            0,
+            Number(typeFooterRowSlots || 1) -
+              (
+                unitTypeSummary.exceptionRows.length +
+                1
+              ),
+          ),
+        }).map((_, blankIndex) => (
+          <Box
+            key={`${buildingName}-unit-type-blank-${blankIndex}`}
+            aria-hidden="true"
+            sx={{
+              height: 17,
+            }}
+          />
+        ))}
+
+        {/* 층별 특수/예외 타입 */}
+        {unitTypeSummary.exceptionRows.map(
+          (row, rowIndex) => (
+            <Box
+              key={`${buildingName}-unit-type-exception-row-${rowIndex}`}
+              sx={{
+                display: 'grid',
+                gridTemplateColumns:
+                  `21px repeat(${unitTypeSummary.columnCount}, ${CELL_WIDTH}px)`,
+                columnGap:
+                  `${CELL_GAP}px`,
+                alignItems:
+                  'center',
+                minHeight: 17,
+              }}
+            >
+              <Box aria-hidden="true" />
+
+              {row.segments.map(
+                (segment, segmentIndex) => (
+                  <Typography
+                    key={`${buildingName}-unit-type-exception-${segment.floor}-${segment.start}-${segmentIndex}`}
+                    component="div"
+                    sx={{
+                      gridColumn:
+                        `${segment.start + 1} / span ${segment.end - segment.start + 1}`,
+                      height: 17,
+                      display:
+                        'flex',
+                      alignItems:
+                        'center',
+                      justifyContent:
+                        'center',
+                      boxSizing:
+                        'border-box',
+                      color:
+                        typeColorMap?.[
+                          segment.typeName
+                        ] ||
+                        '#475569',
+                      fontSize:
+                        '0.54rem',
+                      fontWeight: 900,
+                      lineHeight: 1,
+                      whiteSpace:
+                        'nowrap',
+                      overflow:
+                        'hidden',
+                      textOverflow:
+                        'ellipsis',
+                    }}
+                  >
+                    {segment.typeName}
+                  </Typography>
+                ),
+              )}
+            </Box>
+          ),
+        )}
+
+        {/* 기본 호별 타입 */}
         <Box
           sx={{
-            mt: 0.35,
             display: 'grid',
-            gap: `${ROW_GAP}px`,
+            gridTemplateColumns:
+              `21px repeat(${unitTypeSummary.columnCount}, ${CELL_WIDTH}px)`,
+            columnGap:
+              `${CELL_GAP}px`,
+            alignItems: 'center',
+            minHeight: 17,
           }}
         >
-          {/* 호 라인 */}
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns:
-                `21px repeat(${unitTypeSummary.columnCount}, ${CELL_WIDTH}px)`,
-              columnGap:
-                `${CELL_GAP}px`,
-              alignItems: 'center',
-            }}
-          >
-            <Box aria-hidden="true" />
+          <Box aria-hidden="true" />
 
-            {unitTypeSummary.lineLabels.map(
-              (lineLabel, index) => (
-                <Typography
-                  key={`${buildingName}-unit-line-${index + 1}`}
-                  component="div"
-                  sx={{
-                    height: 16,
-                    display: 'flex',
-                    alignItems:
-                      'center',
-                    justifyContent:
-                      'center',
-                    border:
-                      '1px solid #cbd5e1',
-                    bgcolor:
-                      '#f8fafc',
-                    boxSizing:
-                      'border-box',
-                    color:
-                      '#475569',
-                    fontSize:
-                      '0.52rem',
-                    fontWeight: 800,
-                    lineHeight: 1,
-                    whiteSpace:
-                      'nowrap',
-                  }}
-                >
-                  {lineLabel}
-                </Typography>
-              ),
-            )}
-          </Box>
-
-          {/* 층별 특수/예외 타입: 기본 타입행 위에 추가 */}
-          {unitTypeSummary.exceptionRows.map(
-            (row, rowIndex) => (
-              <Box
-                key={`${buildingName}-unit-type-exception-row-${rowIndex}`}
+          {unitTypeSummary.baseLabels.map(
+            (unitType, index) => (
+              <Typography
+                key={`${buildingName}-unit-type-${index + 1}`}
+                component="div"
                 sx={{
-                  display: 'grid',
-                  gridTemplateColumns:
-                    `21px repeat(${unitTypeSummary.columnCount}, ${CELL_WIDTH}px)`,
-                  columnGap:
-                    `${CELL_GAP}px`,
+                  height: 17,
+                  display: 'flex',
                   alignItems:
                     'center',
+                  justifyContent:
+                    'center',
+                  boxSizing:
+                    'border-box',
+                  color:
+                    typeColorMap?.[
+                      unitType
+                    ] ||
+                    '#475569',
+                  fontSize:
+                    '0.54rem',
+                  fontWeight: 900,
+                  lineHeight: 1,
+                  whiteSpace:
+                    'nowrap',
+                  overflow:
+                    'hidden',
+                  textOverflow:
+                    'ellipsis',
                 }}
               >
-                <Box aria-hidden="true" />
-
-                {row.segments.map(
-                  (segment, segmentIndex) => (
-                    <Typography
-                      key={`${buildingName}-unit-type-exception-${segment.floor}-${segment.start}-${segmentIndex}`}
-                      component="div"
-                      sx={{
-                        gridColumn:
-                          `${segment.start + 1} / span ${segment.end - segment.start + 1}`,
-                        height: 17,
-                        display:
-                          'flex',
-                        alignItems:
-                          'center',
-                        justifyContent:
-                          'center',
-                        border:
-                          '1px solid #94a3b8',
-                        bgcolor:
-                          '#f1f5f9',
-                        boxSizing:
-                          'border-box',
-                        color:
-                          '#334155',
-                        fontSize:
-                          '0.54rem',
-                        fontWeight: 900,
-                        lineHeight: 1,
-                        whiteSpace:
-                          'nowrap',
-                        overflow:
-                          'hidden',
-                        textOverflow:
-                          'ellipsis',
-                      }}
-                    >
-                      {segment.typeName}
-                    </Typography>
-                  ),
-                )}
-              </Box>
+                {unitType}
+              </Typography>
             ),
           )}
-
-          {/* 기본 호별 타입 */}
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns:
-                `21px repeat(${unitTypeSummary.columnCount}, ${CELL_WIDTH}px)`,
-              columnGap:
-                `${CELL_GAP}px`,
-              alignItems: 'center',
-            }}
-          >
-            <Box aria-hidden="true" />
-
-            {unitTypeSummary.baseLabels.map(
-              (unitType, index) => (
-                <Typography
-                  key={`${buildingName}-unit-type-${index + 1}`}
-                  component="div"
-                  sx={{
-                    height: 17,
-                    display: 'flex',
-                    alignItems:
-                      'center',
-                    justifyContent:
-                      'center',
-                    border:
-                      unitType
-                        ? '1px solid #cbd5e1'
-                        : '1px solid transparent',
-                    bgcolor:
-                      unitType
-                        ? '#ffffff'
-                        : 'transparent',
-                    boxSizing:
-                      'border-box',
-                    color:
-                      '#475569',
-                    fontSize:
-                      '0.54rem',
-                    fontWeight: 900,
-                    lineHeight: 1,
-                    whiteSpace:
-                      'nowrap',
-                    overflow:
-                      'hidden',
-                    textOverflow:
-                      'ellipsis',
-                  }}
-                >
-                  {unitType}
-                </Typography>
-              ),
-            )}
-          </Box>
         </Box>
-      )}
+      </Box>
 
       <Typography
         sx={{
