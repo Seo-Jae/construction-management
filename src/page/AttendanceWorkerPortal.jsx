@@ -1,3 +1,4 @@
+// v52.48.5.44.4 현장마스터 회원가입·근태회원가입 연동
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -41,7 +42,6 @@ import AttendanceCheckoutProgressDialog from '../components/AttendanceCheckoutPr
 import AttendanceWorkAssignmentDialog from '../components/AttendanceWorkAssignmentDialog.jsx';
 import { supabase } from '../supabaseClient';
 import {
-  ATTENDANCE_PROJECTS,
   ATTENDANCE_SESSION_STORAGE_KEY,
   ATTENDANCE_TRADE_OPTIONS,
   extractAttendanceQrToken,
@@ -444,7 +444,7 @@ const getCameraErrorMessage = (error, t) => {
 
 const readInitialProject = () => {
   const requested = new URLSearchParams(window.location.search).get('project');
-  return ATTENDANCE_PROJECTS.includes(requested) ? requested : '';
+  return String(requested || '').trim();
 };
 
 const getStatusMeta = (t) => ({
@@ -730,6 +730,9 @@ export default function AttendanceWorkerPortal() {
     ...initialSignup,
     projectName: readInitialProject(),
   }));
+  const [projectOptions, setProjectOptions] = useState([]);
+  const [projectOptionsLoading, setProjectOptionsLoading] = useState(true);
+  const [projectOptionsError, setProjectOptionsError] = useState('');
   const [login, setLogin] = useState(initialLogin);
   const [sessionToken, setSessionToken] = useState(() =>
     window.localStorage.getItem(ATTENDANCE_SESSION_STORAGE_KEY) || '',
@@ -777,6 +780,70 @@ export default function AttendanceWorkerPortal() {
     [language],
   );
   const locale = getAttendanceLocale(language);
+
+  const loadProjectOptions = useCallback(async () => {
+    setProjectOptionsLoading(true);
+    setProjectOptionsError('');
+
+    const { data, error } = await supabase.rpc(
+      'list_registration_projects',
+    );
+
+    if (error) {
+      console.error('근태 회원가입 현장목록 조회 오류:', error);
+      setProjectOptions([]);
+      setProjectOptionsError(
+        '현장목록을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.',
+      );
+      setProjectOptionsLoading(false);
+      return;
+    }
+
+    const nextOptions = [...new Set(
+      (Array.isArray(data) ? data : [])
+        .map((row) => String(row?.project_name || row || '').trim())
+        .filter(
+          (projectName) =>
+            projectName &&
+            projectName !== '본사' &&
+            projectName !== '전체현장',
+        ),
+    )].sort((first, second) =>
+      first.localeCompare(second, 'ko', { numeric: true }),
+    );
+
+    setProjectOptions(nextOptions);
+    setProjectOptionsLoading(false);
+
+    setSignup((previous) => {
+      const currentProject = String(previous.projectName || '').trim();
+
+      if (!currentProject || nextOptions.includes(currentProject)) {
+        return previous;
+      }
+
+      return {
+        ...previous,
+        projectName: '',
+      };
+    });
+  }, []);
+
+  useEffect(() => {
+    loadProjectOptions();
+
+    const handleFocus = () => {
+      loadProjectOptions();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('project-registry-changed', handleFocus);
+
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('project-registry-changed', handleFocus);
+    };
+  }, [loadProjectOptions]);
 
   const handleLanguageChange = (event) => {
     const nextLanguage = saveAttendanceLanguage(
@@ -990,7 +1057,7 @@ export default function AttendanceWorkerPortal() {
     const nameKo = signup.nameKo.trim();
     const nameEn = signup.nameEn.trim();
 
-    if (!ATTENDANCE_PROJECTS.includes(signup.projectName)) {
+    if (!projectOptions.includes(signup.projectName)) {
       setMessage({ severity: 'warning', text: t('selectProject') });
       return;
     }
@@ -2638,11 +2705,46 @@ export default function AttendanceWorkerPortal() {
               },
             } : undefined}
           >
-            <FormControl fullWidth>
+            <FormControl fullWidth error={Boolean(projectOptionsError)}>
               <InputLabel>{t('workSite')}</InputLabel>
-              <Select label={t('workSite')} value={signup.projectName} onChange={(event) => setSignup((prev) => ({ ...prev, projectName: event.target.value }))}>
-                {ATTENDANCE_PROJECTS.map((project) => <MenuItem key={project} value={project}>{project}</MenuItem>)}
+              <Select
+                label={t('workSite')}
+                value={signup.projectName}
+                disabled={projectOptionsLoading}
+                onChange={(event) => setSignup((prev) => ({
+                  ...prev,
+                  projectName: event.target.value,
+                }))}
+              >
+                {projectOptionsLoading && (
+                  <MenuItem disabled value="">
+                    현장목록 불러오는 중...
+                  </MenuItem>
+                )}
+                {!projectOptionsLoading && projectOptions.length === 0 && (
+                  <MenuItem disabled value="">
+                    선택 가능한 현장이 없습니다.
+                  </MenuItem>
+                )}
+                {projectOptions.map((project) => (
+                  <MenuItem key={project} value={project}>
+                    {project}
+                  </MenuItem>
+                ))}
               </Select>
+              {projectOptionsError && (
+                <Typography
+                  sx={{
+                    mt: 0.45,
+                    ml: 1.75,
+                    color: '#d32f2f',
+                    fontSize: appMode ? '0.86rem' : '0.65rem',
+                    lineHeight: 1.35,
+                  }}
+                >
+                  {projectOptionsError}
+                </Typography>
+              )}
             </FormControl>
             <TextField
               label={t('koreanName')}
