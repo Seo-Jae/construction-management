@@ -1,3 +1,4 @@
+// v52.48.5.44.7.2 최초계약 양식 구분 안내
 // v52.48.5.44.7.1 최초계약 빈양식 다운로드
 // v52.48.5.44.7 기성 표준양식 다운로드·업로드 v1
 import React, {
@@ -103,6 +104,7 @@ const STANDARD_CLAIM_SYSTEM_SHEET_NAME = '_SYSTEM';
 const STANDARD_CLAIM_DATA_START_ROW = 7;
 const STANDARD_CLAIM_ITEM_KEY_COLUMN = 31; // AE
 const STANDARD_CLAIM_NEW_CONTRACT_ROW_COUNT = 500;
+const STANDARD_CLAIM_NEW_CONTRACT_DATA_START_ROW = 8;
 
 const EXCLUDED_CLAIM_PROCESS_OPTIONS = new Set(['허리먹']);
 
@@ -1922,7 +1924,7 @@ export default function ProgressClaimManagement({
       worksheet.mergeCells('B3:K3');
       worksheet.getCell('B3').value =
         isNewContractTemplate
-          ? '최초계약 등록용 양식입니다. 노란색 품목정보·계약수량·단가·금회수량 셀을 입력합니다. 미사용 행은 비워두세요.'
+          ? '최초계약 등록용 양식입니다. 구분은 세대·공용 등으로 입력하고, 노란색 품목정보·계약수량·단가·금회수량 셀을 작성합니다. 미사용 행은 비워두세요.'
           : '노란색 금회수량 셀만 입력합니다. 금액·누계·누계율은 자동 계산됩니다.';
       worksheet.getCell('B3').fill = {
         type: 'pattern',
@@ -1943,7 +1945,7 @@ export default function ProgressClaimManagement({
 
       const headers = [
         'NO',
-        '타입·공구',
+        '구분',
         '옵션',
         '품명',
         '규격',
@@ -2041,13 +2043,39 @@ export default function ProgressClaimManagement({
       );
 
       if (isNewContractTemplate) {
+        // B7은 입력값이 아니라 '구분'의 의미를 알려주는 예시 전용 행입니다.
+        // 실제 최초계약 입력은 8행부터 시작합니다.
+        const exampleRow = worksheet.getRow(
+          STANDARD_CLAIM_DATA_START_ROW,
+        );
+        exampleRow.height = 20;
+        exampleRow.getCell(2).value =
+          '예: 세대 / 공용';
+        exampleRow.getCell(2).font = {
+          name: '맑은 고딕',
+          size: 9,
+          italic: true,
+          color: { argb: 'FF64748B' },
+        };
+        exampleRow.getCell(2).alignment = {
+          horizontal: 'center',
+          vertical: 'middle',
+        };
+        exampleRow.getCell(2).fill = {
+          type: 'pattern',
+          pattern: 'solid',
+          fgColor: { argb: 'FFF1F5F9' },
+        };
+        exampleRow.getCell(2).border =
+          borderStyle;
+
         for (
           let index = 0;
           index < STANDARD_CLAIM_NEW_CONTRACT_ROW_COUNT;
           index += 1
         ) {
           const rowNumber =
-            STANDARD_CLAIM_DATA_START_ROW + index;
+            STANDARD_CLAIM_NEW_CONTRACT_DATA_START_ROW + index;
           const row = worksheet.getRow(rowNumber);
 
           const sourceKey =
@@ -2306,7 +2334,11 @@ export default function ProgressClaimManagement({
           : orderedContractRows.length;
 
       const lastRow =
-        STANDARD_CLAIM_DATA_START_ROW + outputRowCount - 1;
+        (isNewContractTemplate
+          ? STANDARD_CLAIM_NEW_CONTRACT_DATA_START_ROW
+          : STANDARD_CLAIM_DATA_START_ROW) +
+        outputRowCount -
+        1;
 
       if (lastRow >= STANDARD_CLAIM_DATA_START_ROW) {
         worksheet.autoFilter = {
