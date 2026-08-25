@@ -1,4 +1,3 @@
-// v52.48.5.44.10 복합공정 계약품목 노무비 단가 배분
 // v52.48.5.44.9.5 계약품목 선택 노무비 단가열·열폭 조정
 // v52.48.5.44.9.4 계약 노무비 인라인 묶음 셀 우측정렬
 // v52.48.5.44.9.3 계약 노무비 우측정렬·아이콘 금액 높이통일
@@ -281,23 +280,6 @@ const normalizeContractSearchText = (value) =>
     .replace(/\s+/g, '')
     .trim()
     .toLowerCase();
-
-const getContractProcessSignature = (value) =>
-  decodeContractProcessTypes(value)
-    .slice()
-    .sort((first, second) =>
-      first.localeCompare(second, 'ko', { numeric: true }),
-    )
-    .join(' + ');
-
-const getContractItemSourceUnitPrice = (item) => {
-  const quantity = toNumber(item?.contract_quantity);
-  if (quantity <= 0) return null;
-  return toNumber(item?.contract_labor_amount) / quantity;
-};
-
-const getContractAllocationKey = (itemId, processType) =>
-  `${String(itemId || '')}::${normalizeContractProcessType(processType)}`;
 
 const mergeMonthlyStatusResults = (monthlyResults) => {
   const results = monthlyResults || [];
@@ -801,11 +783,6 @@ export default function LaborCostManagement({
     useState(null);
   const [contractSourceItems, setContractSourceItems] = useState([]);
   const [contractItemLinks, setContractItemLinks] = useState([]);
-  const [contractItemAllocations, setContractItemAllocations] = useState(
-    [],
-  );
-  const [contractAllocationStorageReady, setContractAllocationStorageReady] =
-    useState(false);
   const [editorContractItemIds, setEditorContractItemIds] = useState(
     () => new Set(),
   );
@@ -814,12 +791,6 @@ export default function LaborCostManagement({
   const [contractPickerKeyword, setContractPickerKeyword] = useState('');
   const [contractPickerSelectedIds, setContractPickerSelectedIds] =
     useState(() => new Set());
-  const [contractAllocationDialogOpen, setContractAllocationDialogOpen] =
-    useState(false);
-  const [contractAllocationDraftGroups, setContractAllocationDraftGroups] =
-    useState([]);
-  const [contractAllocationSaving, setContractAllocationSaving] =
-    useState(false);
 
   const [quantityProcess, setQuantityProcess] = useState('');
   const [quantities, setQuantities] = useState({});
@@ -898,76 +869,6 @@ export default function LaborCostManagement({
     [contractItemLinks],
   );
 
-  const contractAllocationByItemProcess = useMemo(
-    () =>
-      new Map(
-        contractItemAllocations.map((allocation) => [
-          getContractAllocationKey(
-            allocation.contract_item_id,
-            allocation.process_type,
-          ),
-          allocation,
-        ]),
-      ),
-    [contractItemAllocations],
-  );
-
-  const resolveContractItemLabor = useCallback(
-    (item, processType) => {
-      const processTypes = decodeContractProcessTypes(item?.process_type);
-      const quantity = toNumber(item?.contract_quantity);
-      const sourceUnitPrice = getContractItemSourceUnitPrice(item);
-      const isComposite = processTypes.length > 1;
-
-      if (!isComposite) {
-        return {
-          processTypes,
-          isComposite: false,
-          isAllocated: true,
-          sourceUnitPrice,
-          appliedUnitPrice: sourceUnitPrice,
-          appliedLaborAmount: toNumber(item?.contract_labor_amount),
-        };
-      }
-
-      const allocation = contractAllocationByItemProcess.get(
-        getContractAllocationKey(item?.id, processType),
-      );
-      const currentSignature = getContractProcessSignature(
-        item?.process_type,
-      );
-      const savedSignature = getContractProcessSignature(
-        allocation?.source_process_type_snapshot,
-      );
-      const savedSourceUnitPrice = toNumber(
-        allocation?.source_labor_unit_price_snapshot,
-      );
-      const sourcePriceMatched =
-        sourceUnitPrice !== null &&
-        Math.abs(savedSourceUnitPrice - sourceUnitPrice) <= 0.0001;
-      const isAllocated = Boolean(
-        allocation &&
-          currentSignature &&
-          currentSignature === savedSignature &&
-          sourcePriceMatched,
-      );
-      const appliedUnitPrice = isAllocated
-        ? toNumber(allocation.allocated_labor_unit_price)
-        : null;
-
-      return {
-        processTypes,
-        isComposite: true,
-        isAllocated,
-        sourceUnitPrice,
-        appliedUnitPrice,
-        appliedLaborAmount:
-          appliedUnitPrice === null ? null : appliedUnitPrice * quantity,
-      };
-    },
-    [contractAllocationByItemProcess],
-  );
-
   const selectedEditorContractItems = useMemo(
     () =>
       Array.from(editorContractItemIds)
@@ -986,15 +887,6 @@ export default function LaborCostManagement({
     );
     return units.length === 1 ? units[0] : '';
   }, [selectedEditorContractItems]);
-
-  const selectedEditorUnallocatedCompositeCount = useMemo(
-    () =>
-      selectedEditorContractItems.filter(
-        (item) =>
-          !resolveContractItemLabor(item, editor.processType).isAllocated,
-      ).length,
-    [editor.processType, resolveContractItemLabor, selectedEditorContractItems],
-  );
 
   const contractPickerRows = useMemo(() => {
     const normalizedKeyword = normalizeContractSearchText(
@@ -1038,14 +930,6 @@ export default function LaborCostManagement({
     [contractItemById, contractPickerSelectedIds],
   );
 
-  const contractPickerSelectedCompositeItems = useMemo(
-    () =>
-      contractPickerSelectedItems.filter(
-        (item) => decodeContractProcessTypes(item.process_type).length > 1,
-      ),
-    [contractPickerSelectedItems],
-  );
-
   const contractPickerSummary = useMemo(() => {
     const units = Array.from(
       new Set(
@@ -1054,11 +938,6 @@ export default function LaborCostManagement({
           .filter(Boolean),
       ),
     );
-
-    const resolvedRows = contractPickerSelectedItems.map((item) => ({
-      item,
-      labor: resolveContractItemLabor(item, contractPickerProcess),
-    }));
 
     return {
       count: contractPickerSelectedItems.length,
@@ -1071,23 +950,13 @@ export default function LaborCostManagement({
         (total, item) => total + toNumber(item.contract_quantity),
         0,
       ),
-      compositeCount: resolvedRows.filter(
-        ({ labor }) => labor.isComposite,
-      ).length,
-      unallocatedCompositeCount: resolvedRows.filter(
-        ({ labor }) => labor.isComposite && !labor.isAllocated,
-      ).length,
-      laborAmount: resolvedRows.reduce(
-        (total, { labor }) =>
-          total + toNumber(labor.appliedLaborAmount),
+      laborAmount: contractPickerSelectedItems.reduce(
+        (total, item) =>
+          total + toNumber(item.contract_labor_amount),
         0,
       ),
     };
-  }, [
-    contractPickerProcess,
-    contractPickerSelectedItems,
-    resolveContractItemLabor,
-  ]);
+  }, [contractPickerProcess, contractPickerSelectedItems]);
 
   const allProcessOptions = useMemo(() => {
     if (!overviewLoaded) return [];
@@ -1475,8 +1344,6 @@ export default function LaborCostManagement({
       setContractSourceVersion(null);
       setContractSourceItems([]);
       setContractItemLinks([]);
-      setContractItemAllocations([]);
-      setContractAllocationStorageReady(false);
       return;
     }
 
@@ -1501,8 +1368,6 @@ export default function LaborCostManagement({
       if (!versionRow?.id) {
         setContractSourceItems([]);
         setContractItemLinks([]);
-        setContractItemAllocations([]);
-        setContractAllocationStorageReady(false);
         return;
       }
 
@@ -1593,57 +1458,11 @@ export default function LaborCostManagement({
       }
 
       setContractItemLinks(linkRows);
-
-      const allocationRows = [];
-      let allocationOffset = 0;
-      let allocationStorageReady = true;
-
-      while (true) {
-        const { data, error } = await supabase
-          .from('labor_contract_item_process_allocations')
-          .select(
-            'id, project_name, contract_version_id, contract_item_id, process_type, allocated_labor_unit_price, source_labor_unit_price_snapshot, source_process_type_snapshot, updated_at',
-          )
-          .eq('project_name', projectName)
-          .eq('contract_version_id', versionRow.id)
-          .order('contract_item_id', { ascending: true })
-          .range(
-            allocationOffset,
-            allocationOffset + SUPABASE_READ_PAGE_SIZE - 1,
-          );
-
-        if (error) {
-          if (
-            String(error.message || '').includes(
-              'labor_contract_item_process_allocations',
-            )
-          ) {
-            console.warn(
-              '복합공정 노무비 배분 DB가 아직 설치되지 않았습니다.',
-              error,
-            );
-            allocationStorageReady = false;
-            break;
-          }
-          throw error;
-        }
-
-        const pageRows = data || [];
-        allocationRows.push(...pageRows);
-
-        if (pageRows.length < SUPABASE_READ_PAGE_SIZE) break;
-        allocationOffset += SUPABASE_READ_PAGE_SIZE;
-      }
-
-      setContractItemAllocations(allocationRows);
-      setContractAllocationStorageReady(allocationStorageReady);
     } catch (error) {
       console.error('최초계약 품목 불러오기 오류:', error);
       setContractSourceVersion(null);
       setContractSourceItems([]);
       setContractItemLinks([]);
-      setContractItemAllocations([]);
-      setContractAllocationStorageReady(false);
       setErrorMessage(
         `최초계약 품목을 불러오지 못했습니다: ${
           error?.message || '알 수 없는 오류'
@@ -2061,16 +1880,11 @@ export default function LaborCostManagement({
     setContractSourceVersion(null);
     setContractSourceItems([]);
     setContractItemLinks([]);
-    setContractItemAllocations([]);
-    setContractAllocationStorageReady(false);
     setEditorContractItemIds(new Set());
     setContractPickerOpen(false);
     setContractPickerProcess('');
     setContractPickerKeyword('');
     setContractPickerSelectedIds(new Set());
-    setContractAllocationDialogOpen(false);
-    setContractAllocationDraftGroups([]);
-    setContractAllocationSaving(false);
     setMessage(null);
     setErrorMessage('');
     loadOverview();
@@ -2260,233 +2074,6 @@ export default function LaborCostManagement({
     });
   };
 
-  const openContractAllocationDialog = () => {
-    if (!contractAllocationStorageReady) {
-      setErrorMessage(
-        '복합공정 노무비 배분 SQL을 먼저 적용해주세요.',
-      );
-      return;
-    }
-
-    if (contractPickerSelectedCompositeItems.length === 0) {
-      setErrorMessage(
-        '연결 공정이 2개 이상인 품목을 먼저 체크해주세요.',
-      );
-      return;
-    }
-
-    const groupsByKey = new Map();
-
-    contractPickerSelectedCompositeItems.forEach((item) => {
-      const processTypes = decodeContractProcessTypes(
-        item.process_type,
-      ).sort((first, second) =>
-        first.localeCompare(second, 'ko', { numeric: true }),
-      );
-      const processSignature = processTypes.join(' + ');
-      const sourceUnitPrice = getContractItemSourceUnitPrice(item);
-      const groupKey = `${processSignature}::${
-        sourceUnitPrice === null ? 'invalid' : sourceUnitPrice.toFixed(6)
-      }`;
-
-      if (!groupsByKey.has(groupKey)) {
-        groupsByKey.set(groupKey, {
-          key: groupKey,
-          processTypes,
-          processSignature,
-          sourceUnitPrice,
-          itemIds: [],
-          itemNames: [],
-          items: [],
-          values: {},
-        });
-      }
-
-      const group = groupsByKey.get(groupKey);
-      group.itemIds.push(String(item.id));
-      group.itemNames.push(item.item_name || item.base_item_name || '-');
-      group.items.push(item);
-    });
-
-    const nextGroups = Array.from(groupsByKey.values()).map((group) => {
-      const values = {};
-
-      group.processTypes.forEach((processType) => {
-        const savedValues = group.items.map((item) => {
-          const allocation = contractAllocationByItemProcess.get(
-            getContractAllocationKey(item.id, processType),
-          );
-          const savedSignature = getContractProcessSignature(
-            allocation?.source_process_type_snapshot,
-          );
-          const sourcePriceMatched =
-            group.sourceUnitPrice !== null &&
-            Math.abs(
-              toNumber(allocation?.source_labor_unit_price_snapshot) -
-                group.sourceUnitPrice,
-            ) <= 0.0001;
-
-          return allocation &&
-            savedSignature === group.processSignature &&
-            sourcePriceMatched
-            ? toNumber(allocation.allocated_labor_unit_price)
-            : null;
-        });
-        const firstValue = savedValues[0];
-        const allSame =
-          firstValue !== null &&
-          savedValues.every(
-            (value) => value !== null && Math.abs(value - firstValue) <= 0.0001,
-          );
-
-        values[processType] = allSame
-          ? normalizeNumericInput(firstValue, 4)
-          : '';
-      });
-
-      return { ...group, values };
-    });
-
-    setContractAllocationDraftGroups(nextGroups);
-    setContractAllocationDialogOpen(true);
-    setErrorMessage('');
-  };
-
-  const updateContractAllocationDraft = (
-    groupKey,
-    processType,
-    value,
-  ) => {
-    const nextValue = normalizeNumericInput(value, 4);
-
-    setContractAllocationDraftGroups((previous) =>
-      previous.map((group) => {
-        if (group.key !== groupKey) return group;
-
-        const nextValues = {
-          ...group.values,
-          [processType]: nextValue,
-        };
-        const isCurrentProcess =
-          normalizeContractProcessType(processType) ===
-          normalizeContractProcessType(contractPickerProcess);
-
-        if (
-          isCurrentProcess &&
-          group.processTypes.length === 2 &&
-          group.sourceUnitPrice !== null &&
-          nextValue !== ''
-        ) {
-          const otherProcess = group.processTypes.find(
-            (candidate) => candidate !== processType,
-          );
-          const remainder = group.sourceUnitPrice - toNumber(nextValue);
-
-          if (otherProcess) {
-            nextValues[otherProcess] =
-              remainder >= 0
-                ? normalizeNumericInput(remainder, 4)
-                : '';
-          }
-        }
-
-        return { ...group, values: nextValues };
-      }),
-    );
-  };
-
-  const handleSaveContractAllocations = async () => {
-    if (contractAllocationSaving) return;
-
-    const allocationPayload = [];
-
-    for (const group of contractAllocationDraftGroups) {
-      if (group.sourceUnitPrice === null) {
-        setErrorMessage(
-          '계약수량이 0인 복합공정 품목은 단가를 배분할 수 없습니다.',
-        );
-        return;
-      }
-
-      const blankProcess = group.processTypes.find(
-        (processType) =>
-          String(group.values[processType] ?? '').trim() === '',
-      );
-
-      if (blankProcess) {
-        setErrorMessage(
-          `${group.processSignature} 조합의 ${blankProcess} 단가를 입력해주세요.`,
-        );
-        return;
-      }
-
-      const allocatedTotal = group.processTypes.reduce(
-        (total, processType) =>
-          total + toNumber(group.values[processType]),
-        0,
-      );
-
-      if (Math.abs(allocatedTotal - group.sourceUnitPrice) > 0.01) {
-        setErrorMessage(
-          `${group.processSignature} 조합의 배분합계가 원 노무비 단가 ${formatMoney(
-            group.sourceUnitPrice,
-          )}원과 일치해야 합니다.`,
-        );
-        return;
-      }
-
-      group.itemIds.forEach((itemId) => {
-        group.processTypes.forEach((processType) => {
-          allocationPayload.push({
-            contract_item_id: itemId,
-            process_type: processType,
-            allocated_labor_unit_price: toNumber(
-              group.values[processType],
-            ),
-          });
-        });
-      });
-    }
-
-    setContractAllocationSaving(true);
-    setErrorMessage('');
-
-    try {
-      const { error } = await supabase.rpc(
-        'save_labor_contract_item_allocations_v1',
-        {
-          p_project_name: projectName,
-          p_contract_version_id: contractSourceVersion?.id || null,
-          p_allocations: allocationPayload,
-          p_saved_by_name:
-            userProfile?.manager_name ||
-            userProfile?.name ||
-            userProfile?.email ||
-            '',
-        },
-      );
-
-      if (error) throw error;
-
-      await loadContractSources();
-      setContractAllocationDialogOpen(false);
-      setContractAllocationDraftGroups([]);
-      setMessage({
-        severity: 'success',
-        text: `복합공정 품목 ${contractPickerSelectedCompositeItems.length.toLocaleString()}개의 공정별 노무비 단가를 저장했습니다.`,
-      });
-    } catch (error) {
-      console.error('복합공정 노무비 배분 저장 오류:', error);
-      setErrorMessage(
-        `복합공정 노무비 배분을 저장하지 못했습니다: ${
-          error?.message || '알 수 없는 오류'
-        }`,
-      );
-    } finally {
-      setContractAllocationSaving(false);
-    }
-  };
-
   const handleApplyContractItems = () => {
     if (contractPickerSummary.count === 0) {
       setErrorMessage('불러올 계약품목을 선택해주세요.');
@@ -2503,13 +2090,6 @@ export default function LaborCostManagement({
     if (contractPickerSummary.unmatchedCount > 0) {
       setErrorMessage(
         '현재 공정 연결이 해제된 기존 품목이 포함되어 있습니다. 해당 품목을 선택 해제해주세요.',
-      );
-      return;
-    }
-
-    if (contractPickerSummary.unallocatedCompositeCount > 0) {
-      setErrorMessage(
-        '복합공정 품목의 공정별 노무비 단가를 먼저 배분해주세요.',
       );
       return;
     }
@@ -2665,16 +2245,6 @@ export default function LaborCostManagement({
     ) {
       setErrorMessage(
         '단위가 서로 다른 계약품목은 함께 저장할 수 없습니다. 같은 단위의 품목만 선택해주세요.',
-      );
-      return;
-    }
-
-    if (
-      editorContractItemIds.size > 0 &&
-      selectedEditorUnallocatedCompositeCount > 0
-    ) {
-      setErrorMessage(
-        '연결된 복합공정 계약품목의 노무비 단가 배분을 먼저 완료해주세요.',
       );
       return;
     }
@@ -5586,8 +5156,7 @@ export default function LaborCostManagement({
           <Alert severity="info" sx={{ mb: 1.2 }}>
             계약품목 공정연결에서 <strong>{contractPickerProcess}</strong>
             으로 분류한 품목만 표시합니다. 선택한 품목의 계약 노무비와
-            계약수량 합계가 공정별 노임단가에 함께 반영됩니다. 연결
-            공정이 2개 이상이면 공정별 단가 배분 후 선택할 수 있습니다.
+            계약수량 합계가 공정별 노임단가에 함께 반영됩니다.
           </Alert>
 
           <Stack
@@ -5635,24 +5204,8 @@ export default function LaborCostManagement({
               variant="outlined"
               label={`노무비 ${formatMoney(
                 contractPickerSummary.laborAmount,
-                )}원`}
+              )}원`}
             />
-            <Button
-              size="small"
-              variant="outlined"
-              color="warning"
-              onClick={openContractAllocationDialog}
-              disabled={
-                contractPickerSelectedCompositeItems.length === 0 ||
-                !contractAllocationStorageReady
-              }
-              sx={{ whiteSpace: 'nowrap' }}
-            >
-              복합공정 단가 배분
-              {contractPickerSelectedCompositeItems.length > 0
-                ? ` (${contractPickerSelectedCompositeItems.length.toLocaleString()})`
-                : ''}
-            </Button>
           </Stack>
 
           {contractPickerSummary.units.length > 1 && (
@@ -5667,15 +5220,6 @@ export default function LaborCostManagement({
               현재 공정 분류에서 빠진 기존 연결 품목이{' '}
               {contractPickerSummary.unmatchedCount.toLocaleString()}개
               포함되어 있습니다. 해당 품목을 선택 해제한 뒤 저장해주세요.
-            </Alert>
-          )}
-
-          {contractPickerSummary.unallocatedCompositeCount > 0 && (
-            <Alert severity="warning" sx={{ mb: 1 }}>
-              선택한 품목 중 복합공정 단가 배분이 필요한 항목이{' '}
-              {contractPickerSummary.unallocatedCompositeCount.toLocaleString()}
-              개 있습니다. 위의 <strong>복합공정 단가 배분</strong>을
-              눌러 현재 공정에 적용할 단가를 확정해주세요.
             </Alert>
           )}
 
@@ -5726,14 +5270,11 @@ export default function LaborCostManagement({
                   const contractQuantity = toNumber(
                     item.contract_quantity,
                   );
-                  const laborResolution = resolveContractItemLabor(
-                    item,
-                    contractPickerProcess,
-                  );
                   const laborUnitPrice =
-                    laborResolution.appliedUnitPrice;
-                  const appliedLaborAmount =
-                    laborResolution.appliedLaborAmount;
+                    contractQuantity > 0
+                      ? toNumber(item.contract_labor_amount) /
+                        contractQuantity
+                      : null;
 
                   return (
                     <TableRow
@@ -5801,15 +5342,13 @@ export default function LaborCostManagement({
                         sx={{ ...numberCellSx, width: 90, px: 0.75 }}
                       >
                         {laborUnitPrice === null
-                          ? '배분 필요'
+                          ? '-'
                           : `${formatMoney(laborUnitPrice)}원`}
                       </TableCell>
                       <TableCell
                         sx={{ ...numberCellSx, width: 120, px: 0.75 }}
                       >
-                        {appliedLaborAmount === null
-                          ? '배분 필요'
-                          : `${formatMoney(appliedLaborAmount)}원`}
+                        {formatMoney(item.contract_labor_amount)}원
                       </TableCell>
                       <TableCell
                         sx={{ ...bodyCellSx, width: 108 }}
@@ -5844,21 +5383,6 @@ export default function LaborCostManagement({
                               size="small"
                               color="warning"
                               label="기존 연결"
-                            />
-                          )}
-                          {laborResolution.isComposite && (
-                            <Chip
-                              size="small"
-                              color={
-                                laborResolution.isAllocated
-                                  ? 'success'
-                                  : 'warning'
-                              }
-                              label={
-                                laborResolution.isAllocated
-                                  ? '배분완료'
-                                  : '배분필요'
-                              }
                             />
                           )}
                         </Stack>
@@ -5917,191 +5441,10 @@ export default function LaborCostManagement({
             disabled={
               contractPickerSummary.count === 0 ||
               contractPickerSummary.units.length !== 1 ||
-              contractPickerSummary.unmatchedCount > 0 ||
-              contractPickerSummary.unallocatedCompositeCount > 0
+              contractPickerSummary.unmatchedCount > 0
             }
           >
             선택값 불러오기
-          </Button>
-        </DialogActions>
-      </Dialog>
-
-      <Dialog
-        open={contractAllocationDialogOpen}
-        onClose={() =>
-          !contractAllocationSaving && setContractAllocationDialogOpen(false)
-        }
-        fullWidth
-        maxWidth="md"
-      >
-        <DialogTitle sx={{ fontWeight: 900 }}>
-          복합공정 노무비 단가 배분
-        </DialogTitle>
-        <DialogContent dividers sx={{ p: 1.5 }}>
-          <Alert severity="info" sx={{ mb: 1.2 }}>
-            같은 <strong>연결 공정 조합과 원 노무비 단가</strong>를 가진
-            체크 품목은 한 번에 배분합니다. 각 공정의 입력 단가 합계는 원
-            노무비 단가와 정확히 일치해야 합니다. 공정이 2개이면 현재 공정
-            단가 입력 시 나머지 공정 단가는 자동 계산됩니다.
-          </Alert>
-
-          <Stack spacing={1.2}>
-            {contractAllocationDraftGroups.map((group) => {
-              const allocatedTotal = group.processTypes.reduce(
-                (total, processType) =>
-                  total + toNumber(group.values[processType]),
-                0,
-              );
-              const difference =
-                toNumber(group.sourceUnitPrice) - allocatedTotal;
-              const allocationMatched =
-                group.sourceUnitPrice !== null &&
-                group.processTypes.every(
-                  (processType) =>
-                    String(group.values[processType] ?? '').trim() !== '',
-                ) &&
-                Math.abs(difference) <= 0.01;
-
-              return (
-                <Paper
-                  key={group.key}
-                  variant="outlined"
-                  sx={{ p: 1.25, borderColor: '#cbd5e1' }}
-                >
-                  <Stack
-                    direction={{ xs: 'column', sm: 'row' }}
-                    spacing={0.8}
-                    alignItems={{ xs: 'flex-start', sm: 'center' }}
-                    sx={{ mb: 1 }}
-                  >
-                    <Typography sx={{ fontWeight: 900, fontSize: '0.86rem' }}>
-                      {group.processSignature}
-                    </Typography>
-                    <Chip
-                      size="small"
-                      color="primary"
-                      variant="outlined"
-                      label={`원 단가 ${formatMoney(group.sourceUnitPrice)}원`}
-                    />
-                    <Chip
-                      size="small"
-                      variant="outlined"
-                      label={`${group.itemIds.length.toLocaleString()}개 품목 일괄적용`}
-                    />
-                  </Stack>
-
-                  <Typography
-                    title={group.itemNames.join(', ')}
-                    sx={{
-                      mb: 1,
-                      color: '#64748b',
-                      fontSize: '0.72rem',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                    }}
-                  >
-                    {group.itemNames.slice(0, 3).join(', ')}
-                    {group.itemNames.length > 3
-                      ? ` 외 ${(group.itemNames.length - 3).toLocaleString()}개`
-                      : ''}
-                  </Typography>
-
-                  <Stack
-                    direction={{ xs: 'column', sm: 'row' }}
-                    spacing={0.8}
-                    alignItems={{ xs: 'stretch', sm: 'flex-start' }}
-                  >
-                    {group.processTypes.map((processType) => (
-                      <TextField
-                        key={processType}
-                        size="small"
-                        label={`${processType} 노무비 단가${
-                          normalizeContractProcessType(processType) ===
-                          normalizeContractProcessType(contractPickerProcess)
-                            ? ' (현재 공정)'
-                            : ''
-                        }`}
-                        value={group.values[processType] ?? ''}
-                        onChange={(event) =>
-                          updateContractAllocationDraft(
-                            group.key,
-                            processType,
-                            event.target.value,
-                          )
-                        }
-                        disabled={contractAllocationSaving}
-                        inputProps={{ inputMode: 'decimal' }}
-                        InputProps={{
-                          endAdornment: (
-                            <Typography
-                              component="span"
-                              sx={{ ml: 0.4, fontSize: '0.72rem' }}
-                            >
-                              원
-                            </Typography>
-                          ),
-                        }}
-                        color={
-                          normalizeContractProcessType(processType) ===
-                          normalizeContractProcessType(contractPickerProcess)
-                            ? 'primary'
-                            : 'secondary'
-                        }
-                        sx={{ minWidth: 170, flex: 1 }}
-                      />
-                    ))}
-
-                    <Stack
-                      direction="row"
-                      spacing={0.6}
-                      useFlexGap
-                      flexWrap="wrap"
-                      sx={{ minWidth: 210, pt: 0.35 }}
-                    >
-                      <Chip
-                        size="small"
-                        label={`배분합계 ${formatMoney(allocatedTotal)}원`}
-                      />
-                      <Chip
-                        size="small"
-                        color={allocationMatched ? 'success' : 'warning'}
-                        label={
-                          allocationMatched
-                            ? '차액 0원'
-                            : `차액 ${formatMoney(difference)}원`
-                        }
-                      />
-                    </Stack>
-                  </Stack>
-                </Paper>
-              );
-            })}
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button
-            onClick={() => setContractAllocationDialogOpen(false)}
-            disabled={contractAllocationSaving}
-          >
-            취소
-          </Button>
-          <Button
-            variant="contained"
-            onClick={handleSaveContractAllocations}
-            disabled={
-              contractAllocationSaving ||
-              contractAllocationDraftGroups.length === 0
-            }
-            startIcon={
-              contractAllocationSaving ? (
-                <CircularProgress size={16} color="inherit" />
-              ) : (
-                <SaveRoundedIcon />
-              )
-            }
-          >
-            일괄 저장
           </Button>
         </DialogActions>
       </Dialog>
