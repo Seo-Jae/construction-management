@@ -1,0 +1,19 @@
+v52.14.2 적용 및 운영 배포
+
+1. ZIP을 현재 프로젝트 최상위 폴더에 풉니다.
+2. 이번 버전은 Supabase SQL 실행이 필요 없습니다.
+3. 프로젝트 최상위 폴더의 PowerShell에서 아래 명령을 순서대로 실행합니다.
+
+node .\release_v52.14.2\apply-v52.14.2-attendance-camera.cjs
+npm run build
+git add src/page/AttendanceWorkerPortal.jsx
+git commit -m "v52.14.2 fix mobile attendance qr camera"
+git push origin main
+
+4. Vercel Deployments에서 해당 커밋이 Ready인지 확인합니다.
+5. 아이폰은 기존 근태 앱을 완전히 종료한 뒤 다시 열어 테스트합니다.
+6. 출·퇴근 QR 촬영을 누를 때 카메라 권한 팝업이 나오면 허용합니다.
+7. 카메라가 차단된 경우 Safari 주소창 가가(AA) > 웹사이트 설정 > 카메라 > 허용으로 변경합니다.
+
+배포 대상 파일
+- src/page/AttendanceWorkerPortal.jsx

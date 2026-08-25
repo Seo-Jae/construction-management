@@ -1,0 +1,9 @@
+기본 규칙
+- costType: material_rounding
+- 품명: 잡자재
+- 규격: 피스 외
+- 단위: 식
+- 정미수량: 0 (자동 계산 항목)
+- 기본 가산액(unitPrice): 0
+- 제출용 단수정리 계산은 기존 getRoundingAdjustment 규칙 유지
+- 요약 합계에서는 기존 getSummaryCostType에 의해 재료비로 집계

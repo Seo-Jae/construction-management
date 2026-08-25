@@ -1,0 +1,7 @@
+ad794ab000cb6a9837bcbd61f6c76b096267dce037cbc9a2ca0e7f789bc21910  ./Supabase에서_실행/00_v52.17_근태앱_상단공지티커.sql
+db7e3e715ff8c9e08c04c139b7342af6dc313a0d3360bf94a93c2d9790ae46a9  ./apply-v52.17-attendance-notice-ticker.cjs
+4ac46f0b8f550bc4d30e3c27540592085df7ff7378f14ac098e5bc81eb0ef1d7  ./src/page/AttendanceManagement.jsx
+d98953ac6d6b681a48f934149200a0d2e5fc270a613ab1f03169b81123a59211  ./src/page/AttendanceWorkerPortal.jsx
+737dba57276f10c9acce1f58c23277d9b6a1e8961a2c99160631d79103a111ad  ./검증결과.md
+cccc26e815561acee11e811352a8601a0a66149b01b684bb4ed6f5beb85db110  ./변경내용.md
+7f1d8fec484758d771e5093ad83c0671644c330e7484140cab53b59af0ed4191  ./적용방법.md

@@ -1,0 +1,33 @@
+[v52.14.4 적용 및 운영 배포]
+
+1. 이 ZIP을 현재 프로젝트 최상위 폴더에 압축 해제합니다.
+   package.json과 release_v52.14.4 폴더가 같은 위치에 있어야 합니다.
+
+2. Supabase SQL은 실행하지 않습니다.
+
+3. 프로젝트 최상위 폴더의 PowerShell에서 다음 명령을 순서대로 실행합니다.
+
+node .\release_v52.14.4\apply-v52.14.4-attendance-app-ui.cjs
+npm run build
+git add index.html public/attendance.webmanifest public/attendance-icon.svg public/attendance-icon-maskable.svg public/attendance-icon-192.png public/attendance-icon-512.png public/attendance-icon-512-maskable.png public/attendance-apple-touch-icon.png src/page/AttendanceWorkerPortal.jsx
+git commit -m "v52.14.4 improve installed attendance app ui"
+git push origin main
+
+4. Vercel Deployments에서 해당 커밋이 Ready인지 확인합니다.
+
+5. 앱 이름과 아이콘은 기존 설치본에 바로 갱신되지 않을 수 있습니다.
+   배포 완료 후 휴대폰 홈 화면의 기존 근태 앱을 삭제하고, 정적 QR 또는 Safari에서 다시 접속해 홈 화면에 추가합니다.
+
+[재설치 후 확인]
+
+- 홈 화면 이름: 욱림건설 근태시스템
+- 아이콘: 초록색 배경 + 중앙 흰색 W
+- 앱 실행 시 글자·입력칸·버튼이 브라우저 화면보다 크게 표시
+- 앱 내부에 앱으로 설치 버튼 미표시
+- 브라우저 접속 시에는 설치 버튼 표시
+
+[주의]
+
+- 반드시 v52.14.3 적용 완료 상태에서 실행합니다.
+- 적용 스크립트는 기존 파일 상태가 다르면 덮어쓰지 않고 중단합니다.
+- 기존 파일은 backup_v52.14.4_날짜시간 폴더에 자동 백업됩니다.

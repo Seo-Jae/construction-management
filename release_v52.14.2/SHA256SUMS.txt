@@ -1,0 +1,5 @@
+e769df973d6c28f37a9dd2d3fdd9aa1cf4f50fab96b0cd10431b64ba2d5d1771  release_v52.14.2/apply-v52.14.2-attendance-camera.cjs
+d1f680f647a9a731f945811687097786c3f5a4e931ca27d64ed6948c715fd654  release_v52.14.2/src/page/AttendanceWorkerPortal.jsx
+17aa3d2560bcb45fa753e7de47a9e98e241a6d94140b227987ef227b923f0ca8  release_v52.14.2/검증결과.md
+a66b2fb47262606472f4ba96e9539b9aea27eccf4495366bd2b75af80c3bd99a  release_v52.14.2/변경내용.md
+3886c859fb5ed49aeec801ba2840539a28f3341e785802160ad49a64796b674f  release_v52.14.2/적용및배포방법.txt

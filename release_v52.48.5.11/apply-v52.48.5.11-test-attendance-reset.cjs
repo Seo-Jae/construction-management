@@ -1,0 +1,67 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const crypto = require('node:crypto');
+
+const VERSION = 'v52.48.5.11';
+const projectRoot = process.cwd();
+const entry = {
+  relativePath: 'src/page/AttendanceManagement.jsx',
+  baseHash: '50dc1d987acf47bd23375eb266550e65c271ea78',
+  targetHash: 'a62f9058470f2d60641dae82abfceed76a39474f',
+};
+
+function gitBlobHash(filePath) {
+  const contents = fs.readFileSync(filePath);
+  const header = Buffer.from(`blob ${contents.length}\0`);
+  return crypto.createHash('sha1').update(header).update(contents).digest('hex');
+}
+
+function fail(message) {
+  console.error(`\n[적용 중단] ${message}`);
+  process.exit(1);
+}
+
+const payloadPath = path.join(__dirname, 'files', entry.relativePath);
+const destinationPath = path.join(projectRoot, entry.relativePath);
+
+if (!fs.existsSync(payloadPath)) {
+  fail(`패키지 안의 교체 파일이 없습니다: ${entry.relativePath}`);
+}
+if (gitBlobHash(payloadPath) !== entry.targetHash) {
+  fail(`패키지 파일 검증에 실패했습니다: ${entry.relativePath}`);
+}
+if (!fs.existsSync(destinationPath)) {
+  fail(`기준 파일이 없습니다: ${entry.relativePath}`);
+}
+
+const currentHash = gitBlobHash(destinationPath);
+if (currentHash === entry.targetHash) {
+  console.log(`${VERSION} 수정이 이미 적용되어 있습니다. 추가 작업은 필요하지 않습니다.`);
+  process.exit(0);
+}
+if (currentHash !== entry.baseHash) {
+  fail(
+    `${entry.relativePath} 내용이 예상 기준 버전과 다릅니다. ` +
+      '기존 변경을 보호하기 위해 자동 덮어쓰기를 하지 않았습니다.',
+  );
+}
+
+const safeTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
+const backupRoot = path.join(projectRoot, `backup_${VERSION}_${safeTimestamp}`);
+const backupPath = path.join(backupRoot, entry.relativePath);
+fs.mkdirSync(path.dirname(backupPath), { recursive: true });
+fs.copyFileSync(destinationPath, backupPath);
+
+fs.copyFileSync(payloadPath, destinationPath);
+if (gitBlobHash(destinationPath) !== entry.targetHash) {
+  fail(`적용 후 파일 검증에 실패했습니다: ${entry.relativePath}`);
+}
+
+console.log(`\n${VERSION} 코드 적용 완료`);
+console.log('- 근태기록에 테스트계정 표시');
+console.log('- 테스트계정에만 선택일자 근태 초기화 버튼 표시');
+console.log('- 출퇴근·작업범위·퇴근 진척 제출·QR 교환자료 함께 초기화');
+console.log('- 이번 버전 이후 승인된 테스트 진척은 승인 전 상태로 안전하게 원복');
+console.log('- 일반 근로자 근태 초기화는 화면과 서버에서 모두 차단');
+console.log(`- 원본 백업: ${backupRoot}`);
+console.log('- 코드 적용 전 Supabase SQL을 먼저 실행해야 합니다.');

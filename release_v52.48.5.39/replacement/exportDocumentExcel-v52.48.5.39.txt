@@ -1,0 +1,270 @@
+  // v52.48.5.39 사용자 제공 일위대가 엑셀 양식 적용
+  const exportDocumentExcel = async () => {
+    const exportRows = draftRows.filter((row) => String(row.itemName || '').trim());
+    if (exportRows.length === 0) {
+      showToast('내보낼 일위대가 항목이 없습니다.', 'warning');
+      return;
+    }
+
+    try {
+      const templateResponse = await fetch('/templates/unit_price_template.xlsx', {
+        cache: 'no-store',
+      });
+      if (!templateResponse.ok) {
+        throw new Error(
+          `일위대가 엑셀 양식을 불러오지 못했습니다. (${templateResponse.status})`,
+        );
+      }
+
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(await templateResponse.arrayBuffer());
+      workbook.creator = '욱림건설 공사관리시스템';
+      workbook.lastModifiedBy = '욱림건설 공사관리시스템';
+      workbook.created = new Date();
+      workbook.modified = new Date();
+
+      if (workbook.calcProperties) {
+        workbook.calcProperties.fullCalcOnLoad = true;
+        workbook.calcProperties.forceFullCalc = true;
+        workbook.calcProperties.calcMode = 'auto';
+      }
+
+      const netSheet = workbook.worksheets[0];
+      if (!netSheet) {
+        throw new Error('일위대가 엑셀 양식의 첫 번째 시트를 찾지 못했습니다.');
+      }
+      netSheet.name = '정미값';
+
+      const templateMerges = [
+        'A1:A3',
+        'B1:B3',
+        'C1:I3',
+        'K1:N1',
+        'K2:N2',
+        'K3:N3',
+        'A4:B5',
+        'C4:C5',
+        'D4:D5',
+        'E4:E5',
+        'F4:G4',
+        'H4:I4',
+        'J4:K4',
+        'L4:M4',
+        'N4:N5',
+      ];
+
+      const clonePlainObject = (value, fallback = {}) => {
+        try {
+          return JSON.parse(JSON.stringify(value ?? fallback));
+        } catch (_error) {
+          return fallback;
+        }
+      };
+
+      const cloneTemplateSheet = (source, name) => {
+        const target = workbook.addWorksheet(name);
+
+        Object.assign(target.properties, clonePlainObject(source.properties));
+        Object.assign(target.pageSetup, clonePlainObject(source.pageSetup));
+        Object.assign(target.headerFooter, clonePlainObject(source.headerFooter));
+        target.views = clonePlainObject(source.views, []);
+
+        for (let columnNumber = 1; columnNumber <= 14; columnNumber += 1) {
+          const sourceColumn = source.getColumn(columnNumber);
+          const targetColumn = target.getColumn(columnNumber);
+          targetColumn.width = sourceColumn.width;
+          targetColumn.hidden = sourceColumn.hidden;
+          targetColumn.outlineLevel = sourceColumn.outlineLevel;
+          targetColumn.style = clonePlainObject(sourceColumn.style);
+        }
+
+        const copyRowCount = Math.max(source.rowCount, 32);
+        for (let rowNumber = 1; rowNumber <= copyRowCount; rowNumber += 1) {
+          const sourceRow = source.getRow(rowNumber);
+          const targetRow = target.getRow(rowNumber);
+
+          if (sourceRow.height) targetRow.height = sourceRow.height;
+          targetRow.hidden = sourceRow.hidden;
+          targetRow.outlineLevel = sourceRow.outlineLevel;
+
+          for (let columnNumber = 1; columnNumber <= 14; columnNumber += 1) {
+            const sourceCell = sourceRow.getCell(columnNumber);
+            const targetCell = targetRow.getCell(columnNumber);
+
+            const sourceValue = sourceCell.value;
+            targetCell.value = (
+              sourceValue && typeof sourceValue === 'object'
+                ? clonePlainObject(sourceValue, sourceValue)
+                : sourceValue
+            );
+            targetCell.style = clonePlainObject(sourceCell.style);
+          }
+        }
+
+        templateMerges.forEach((range) => target.mergeCells(range));
+        return target;
+      };
+
+      const submittedSheet = cloneTemplateSheet(netSheet, '제출용');
+
+      const costTypeLabel = (row) => {
+        if (isRoundingMaterial(row)) return '재료비';
+        if (row.costType === 'labor') return '노무비';
+        if (row.costType === 'expense') return '경비';
+        return '재료비';
+      };
+
+      const fillTemplateSheet = (sheet, mode) => {
+        const isNet = mode === 'net';
+        const baseCapacity = 20;
+        const extraRows = Math.max(0, exportRows.length - baseCapacity);
+
+        // 기본 양식은 6~25행 20칸입니다.
+        // 20개를 초과할 때만 25행의 모양을 복제하여 합계/특이사항 행을 아래로 밀어냅니다.
+        if (extraRows > 0) {
+          sheet.duplicateRow(25, extraRows, true);
+        }
+
+        const bodyStartRow = 6;
+        const bodyEndRow = 25 + extraRows;
+        const totalRow = 26 + extraRows;
+        const noteRow = 27 + extraRows;
+        const printEndRow = 29 + extraRows;
+
+        // 상단 양식: NO / 일위대가 / 품명·규격·단위
+        sheet.getCell('A1').value = 'NO';
+        sheet.getCell('B1').value = 1;
+        sheet.getCell('C1').value = '일위대가';
+        sheet.getCell('J1').value = '품    명';
+        sheet.getCell('J2').value = '규    격';
+        sheet.getCell('J3').value = '단    위';
+        sheet.getCell('K1').value = (
+          selectedMiddle
+          || documentState.documentName
+          || selectedDetail
+          || ''
+        );
+        sheet.getCell('K2').value = selectedDetail || '';
+        sheet.getCell('K3').value = 'M2';
+
+        for (
+          let rowNumber = bodyStartRow;
+          rowNumber <= bodyEndRow;
+          rowNumber += 1
+        ) {
+          const item = exportRows[rowNumber - bodyStartRow];
+
+          if (item) {
+            const ownerSupplied = isOwnerSuppliedMaterial(item);
+            const roundingAmount = roundingAmounts.get(item.clientId);
+            const summaryType = getSummaryCostType(item);
+            const quantity = isNet
+              ? toNumber(item.netQuantity)
+              : getSubmittedQuantity(item);
+            const unitPrice = isNet
+              ? (
+                ownerSupplied || isRoundingMaterial(item)
+                  ? 0
+                  : toNumber(item.unitPrice)
+              )
+              : getSubmittedUnitPrice(item, roundingAmount);
+
+            sheet.getCell(`A${rowNumber}`).value = costTypeLabel(item);
+            sheet.getCell(`B${rowNumber}`).value = item.itemName || '';
+            sheet.getCell(`C${rowNumber}`).value = item.specification || '';
+            sheet.getCell(`D${rowNumber}`).value = item.unit || '';
+            sheet.getCell(`E${rowNumber}`).value = quantity;
+
+            sheet.getCell(`F${rowNumber}`).value = summaryType === 'material'
+              ? unitPrice
+              : 0;
+            sheet.getCell(`H${rowNumber}`).value = summaryType === 'labor'
+              ? unitPrice
+              : 0;
+            sheet.getCell(`J${rowNumber}`).value = summaryType === 'expense'
+              ? unitPrice
+              : 0;
+
+            sheet.getCell(`N${rowNumber}`).value = [
+              ownerSupplied ? '지급자재' : '',
+              item.remarks || '',
+            ].filter(Boolean).join(' · ');
+          } else {
+            ['A', 'B', 'C', 'D', 'E', 'F', 'H', 'J', 'N'].forEach((column) => {
+              sheet.getCell(`${column}${rowNumber}`).value = null;
+            });
+          }
+
+          // 금액 및 합계는 제공받은 양식의 계산구조를 그대로 유지합니다.
+          sheet.getCell(`G${rowNumber}`).value = {
+            formula: `E${rowNumber}*F${rowNumber}`,
+          };
+          sheet.getCell(`I${rowNumber}`).value = {
+            formula: `E${rowNumber}*H${rowNumber}`,
+          };
+          sheet.getCell(`K${rowNumber}`).value = {
+            formula: `E${rowNumber}*J${rowNumber}`,
+          };
+          sheet.getCell(`L${rowNumber}`).value = {
+            formula: `F${rowNumber}+H${rowNumber}+J${rowNumber}`,
+          };
+          sheet.getCell(`M${rowNumber}`).value = {
+            formula: `G${rowNumber}+I${rowNumber}+K${rowNumber}`,
+          };
+        }
+
+        // 합계행도 양식의 열 구성을 그대로 사용합니다.
+        sheet.getCell(`G${totalRow}`).value = {
+          formula: `ROUND(SUM(G${bodyStartRow}:G${bodyEndRow}),0)`,
+        };
+        sheet.getCell(`I${totalRow}`).value = {
+          formula: `SUM(I${bodyStartRow}:I${bodyEndRow})`,
+        };
+        sheet.getCell(`K${totalRow}`).value = {
+          formula: `SUM(K${bodyStartRow}:K${bodyEndRow})`,
+        };
+        sheet.getCell(`M${totalRow}`).value = {
+          formula: `SUM(M${bodyStartRow}:M${bodyEndRow})`,
+        };
+
+        sheet.getCell(`A${noteRow}`).value = '*특이사항';
+        if (documentState.notes) {
+          sheet.getCell(`B${noteRow}`).value = documentState.notes;
+        }
+
+        // 사용자 양식의 인쇄방향/여백은 그대로 두고 인쇄영역만 항목수에 맞춰 확장합니다.
+        sheet.pageSetup = {
+          ...sheet.pageSetup,
+          printArea: `A1:N${printEndRow}`,
+        };
+      };
+
+      fillTemplateSheet(netSheet, 'net');
+      fillTemplateSheet(submittedSheet, 'submitted');
+
+      const safeName = String(
+        documentState.documentName
+        || selectedDetail
+        || '일위대가',
+      ).replace(/[\\/:*?"<>|]/g, '_');
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      saveBlob(
+        new Blob(
+          [buffer],
+          {
+            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+          },
+        ),
+        `일위대가_${safeName}_${getToday()}.xlsx`,
+      );
+
+      showToast('제공된 일위대가 양식으로 Excel을 다운로드했습니다.');
+    } catch (error) {
+      console.error('일위대가 양식 Excel 다운로드 실패:', error);
+      showToast(
+        error?.message || '일위대가 Excel을 생성하지 못했습니다.',
+        'error',
+      );
+    }
+  };

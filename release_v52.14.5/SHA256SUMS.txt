@@ -1,0 +1,12 @@
+f59c18ae33ab0f28c9694a516bf51eff43f80fd055242102f48270b0905cd441  ./apply-v52.14.5-attendance-fullscreen-qr-tabs.cjs
+efbaddbfbf0ca9fcc367907e99195e6c15119281d6dbde24de6de9d7c433068a  ./public/attendance-apple-touch-icon.png
+ca10d825a51833e1be9ac11aab8848643c5d3ce24350b36daa5d899d90cdf4c0  ./public/attendance-icon-192.png
+71f19272ce3c9b85326093a95140c3cb509f41a84699d2d0483886c0b521e5ef  ./public/attendance-icon-512-maskable.png
+96c3dad9bb2980d10bb0c6b04b990924c4ce70e0144d6dbc0f36e866d77671fc  ./public/attendance-icon-512.png
+1f011764b2f2854a6efa4a10dced8eacf3d12a5d20ff22c84b2fb1964d4d2150  ./public/attendance-icon-maskable.svg
+7881c7ee5fc6e5f5f0aee575c2b2ef4457f32a944a23e00a4f15fa60f9325bed  ./public/attendance-icon.svg
+58cb40d62064f386b4261e832a5eeb188e95ab2be687f692976f112d0135542b  ./src/page/AttendanceQrDisplay.jsx
+62104bb46722ea82db1b49a7dce6b2086bb655339e448073d6b6ad5af80800eb  ./src/page/AttendanceWorkerPortal.jsx
+dcd8f6ed4149699c320015271002661eee4bde700de4e820b8656e11f396a38d  ./검증결과.md
+5a883350352d617fc1ee4c3db8576deee70ea9e2c3eb6e4f7d2e5c3e3c833aa8  ./변경내용.md
+3461d9e2d9557ff9aabd23fb78f570f788f789c874da0764e1a27132d1fb124c  ./적용및배포방법.txt

@@ -1,0 +1,37 @@
+사내시스템 v52.13 Dashboard 조회/수정/차단 권한
+
+[적용 결과]
+1. 회원관리 > 세부권한 > Dashboard를 조회/수정/차단 3단계로 표시
+2. 조회: Dashboard 메뉴 노출, 일정 입력·행 추가·삭제·저장 차단
+3. 수정: Dashboard 조회와 일정 입력·행 추가·삭제·저장 허용
+4. 차단: Dashboard 메뉴 숨김 및 화면 직접 접근 차단
+5. 조회 전용 사용자의 직접 저장 요청도 Supabase RPC와 RLS에서 거부
+6. 기존 Dashboard 일정관리 특수권한은 수정 권한으로 자동 이전
+
+[중요 적용 순서]
+코드를 배포하기 전에 Supabase SQL을 먼저 실행해야 합니다.
+
+1. Supabase Dashboard > SQL Editor에서 아래 파일 전체 실행
+release_v52.13\Supabase에서_실행\00_v52.13_Dashboard_조회수정차단.sql
+
+2. 프로젝트 최상위 폴더에서 적용
+node .\release_v52.13\apply-v52.13-dashboard-access.cjs
+
+3. 프로덕션 빌드 검증
+npm run build
+
+4. 빌드 성공 후 운영 배포
+git status
+git add src/Dashboard.jsx src/page/UserManagement.jsx src/page/AdminDashboard.jsx src/page/AdminDashboardScheduleBoard.jsx
+git commit -m "v52.13 dashboard read edit block permissions"
+git push origin main
+
+5. Vercel 자동 배포 확인
+Vercel 프로젝트 > Deployments에서 방금 커밋이 Ready인지 확인합니다.
+
+[운영 검증]
+- 조회 계정: Dashboard 메뉴가 보이고 기존 자료가 조회됨
+- 조회 계정: 행 추가·삭제·저장 버튼이 없고 입력칸 수정 불가
+- 수정 계정: 행 추가·수정·삭제·저장 가능
+- 차단 계정: 좌측 Dashboard 메뉴가 보이지 않음
+- 최고관리자: 기존처럼 전체 조회·수정 가능

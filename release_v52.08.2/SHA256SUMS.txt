@@ -1,0 +1,3 @@
+17b64a37dd481ac8d1d1aa91e42cda60e03e92ed31f4677bf3906cd8d0a14aee  src/page/Messenger.jsx
+4d691a39f1924fdb710ef42479599d4e221c4fe1450236b9ec258e1e779cbcd0  Supabase에서_실행/00_v52.08.2_읽음_대화방나가기.sql
+7bb726fc0a3e9d34c36885901ade7ef3a0ad89c19c1efbc4ae1c734723ff9c34  apply-v52.08.2-messenger-ux.cjs

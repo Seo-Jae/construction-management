@@ -1,0 +1,34 @@
+[중요] 현재 운영본 v52.13에 적용하는 증분 패키지입니다.
+
+1. ZIP을 프로젝트 최상위 폴더에 풀어 release_v52.14 폴더가 보이게 합니다.
+
+2. Supabase SQL Editor에서 아래 파일 전체를 먼저 실행합니다.
+release_v52.14\Supabase에서_실행\00_v52.14_근태관리_v1.sql
+
+3. 프로젝트 최상위 폴더 PowerShell에서 실행합니다.
+node .\release_v52.14\apply-v52.14-attendance-v1.cjs
+npm run build
+
+4. 빌드 성공 후 운영 배포합니다.
+git add package.json package-lock.json index.html public/attendance.webmanifest public/attendance-icon.svg public/attendance-sw.js src/App.jsx src/Dashboard.jsx src/main.jsx src/components/Sidebar.jsx src/page/AttendanceManagement.jsx src/page/AttendanceWorkerPortal.jsx src/utils/attendance.js
+git commit -m "v52.14 attendance qr system"
+git push origin main
+
+5. Vercel Deployments에서 해당 커밋이 Ready인지 확인합니다.
+
+6. 운영주소에서 현장담당자 계정으로 확인합니다.
+- 좌측 근태관리 메뉴 표시
+- 출·퇴근 QR 탭의 동적 QR이 5초마다 변경
+- 정적 QR 인쇄
+- 정적 QR을 휴대폰으로 촬영해 근로자 가입
+- 담당자 가입 승인
+- 근로자 로그인 후 동적 QR 촬영
+- 출근 처리 후 같은 날 다시 촬영하면 퇴근 처리
+
+[내일 아침 운영 전 확인]
+- 근태관리 화면을 띄울 PC가 절전모드로 들어가지 않도록 설정
+- 휴대폰 카메라 권한 허용
+- iPhone은 Safari 공유 > 홈 화면에 추가
+- Android는 브라우저 메뉴 > 앱 설치 또는 홈 화면에 추가
+- SMS 인증은 적용하지 않았으며 담당자 대면 승인으로 운영
+- GPS와 위치정보는 수집하지 않음
