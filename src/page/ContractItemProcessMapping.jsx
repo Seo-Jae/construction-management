@@ -1,3 +1,4 @@
+// v52.48.5.44.8.2 계약품목 중복방지·표시정리
 // v52.48.5.44.7.6 계약버전 중복표시 제거 + 삭제동기화
 // v52.48.5.44.7.5 기성양식-계약품목 공정연결 실시간 연동
 import React, {
@@ -225,6 +226,106 @@ const buildGroupedRows = (items) => {
   });
 };
 
+const dedupeContractItemsBySourceKey = (
+  sourceItems,
+) => {
+  const itemMap = new Map();
+  const noSourceKeyRows = [];
+
+  (Array.isArray(sourceItems)
+    ? sourceItems
+    : []
+  ).forEach((item) => {
+    const sourceKey = String(
+      item?.source_key || '',
+    ).trim();
+
+    if (!sourceKey) {
+      noSourceKeyRows.push(item);
+      return;
+    }
+
+    const key =
+      `${item?.contract_version_id || ''}::${sourceKey}`;
+    const existing =
+      itemMap.get(key);
+
+    if (!existing) {
+      itemMap.set(key, {
+        ...item,
+        source_key: sourceKey,
+      });
+      return;
+    }
+
+    const mergedProcess =
+      encodeProcessTypes([
+        ...decodeProcessTypes(
+          existing.process_type,
+        ),
+        ...decodeProcessTypes(
+          item.process_type,
+        ),
+      ]);
+
+    const existingMappedAt =
+      existing.mapped_at
+        ? new Date(
+            existing.mapped_at,
+          ).getTime()
+        : 0;
+    const itemMappedAt =
+      item.mapped_at
+        ? new Date(
+            item.mapped_at,
+          ).getTime()
+        : 0;
+
+    itemMap.set(key, {
+      ...existing,
+      process_type:
+        mergedProcess,
+      mapped_by_name:
+        itemMappedAt >
+        existingMappedAt
+          ? item.mapped_by_name
+          : existing.mapped_by_name,
+      mapped_at:
+        itemMappedAt >
+        existingMappedAt
+          ? item.mapped_at
+          : existing.mapped_at,
+    });
+  });
+
+  const deduped = [
+    ...itemMap.values(),
+    ...noSourceKeyRows,
+  ];
+
+  deduped.sort(
+    (left, right) =>
+      Number(left?.sort_order || 0) -
+        Number(right?.sort_order || 0) ||
+      Number(left?.source_row_no || 0) -
+        Number(right?.source_row_no || 0),
+  );
+
+  if (
+    deduped.length <
+    sourceItems.length
+  ) {
+    console.warn(
+      `계약품목 중복 ${
+        sourceItems.length -
+        deduped.length
+      }건을 화면에서 제외했습니다. DB 중복정리 SQL을 실행해주세요.`,
+    );
+  }
+
+  return deduped;
+};
+
 const fetchAllContractItems = async ({ projectName, contractVersionId }) => {
   const rows = [];
   let from = 0;
@@ -271,10 +372,17 @@ const fetchAllContractItems = async ({ projectName, contractVersionId }) => {
     from += PAGE_SIZE;
   }
 
-  return rows.map((item) => ({
-    ...item,
-    process_type: encodeProcessTypes(decodeProcessTypes(item.process_type)),
-  }));
+  return dedupeContractItemsBySourceKey(
+    rows.map((item) => ({
+      ...item,
+      process_type:
+        encodeProcessTypes(
+          decodeProcessTypes(
+            item.process_type,
+          ),
+        ),
+    })),
+  );
 };
 
 function ContractItemProcessMapping({
