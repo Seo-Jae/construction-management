@@ -1,9 +1,11 @@
+// v52.48.5.44.3 현장관리 호별타입 공정진척 연동
 import React, { useMemo } from 'react';
 import { Box, Tooltip, Typography } from '@mui/material';
 import {
   buildFloorVisualCells,
   countUniqueUnits,
   getCellKey,
+  getUnitType,
 } from './utils/buildingUnits.js';
 
 const CELL_WIDTH = 34;
@@ -135,41 +137,105 @@ export default function BuildingGrid({
     const typeCountsByLine = new Map();
     let detectedMaxLine = 0;
 
-    Object.entries(unitTypeData || {}).forEach(
-      ([cellKey, rawUnitType]) => {
-        const normalizedCellKey = String(cellKey || '').trim();
+    const addTypeCount = (lineNumber, rawUnitType) => {
+      const normalizedLineNumber = Number(lineNumber);
+      const unitType = String(rawUnitType || '').trim();
 
-        if (
-          !buildingPrefix ||
-          !normalizedCellKey.startsWith(buildingPrefix)
-        ) {
-          return;
-        }
+      if (!normalizedLineNumber || !unitType) {
+        return;
+      }
 
-        const unitCode = normalizedCellKey
-          .slice(buildingPrefix.length)
-          .trim();
-        const lineMatched = unitCode.match(/(\d{1,2})$/);
-        const lineNumber = Number(lineMatched?.[1] || 0);
-        const unitType = String(rawUnitType || '').trim();
+      detectedMaxLine = Math.max(
+        detectedMaxLine,
+        normalizedLineNumber,
+      );
 
-        if (!lineNumber || !unitType) {
-          return;
-        }
+      if (!typeCountsByLine.has(normalizedLineNumber)) {
+        typeCountsByLine.set(normalizedLineNumber, new Map());
+      }
 
-        detectedMaxLine = Math.max(detectedMaxLine, lineNumber);
+      const typeCounts = typeCountsByLine.get(normalizedLineNumber);
+      typeCounts.set(
+        unitType,
+        (typeCounts.get(unitType) || 0) + 1,
+      );
+    };
 
-        if (!typeCountsByLine.has(lineNumber)) {
-          typeCountsByLine.set(lineNumber, new Map());
-        }
+    /*
+      v52.48.5.44.3
+      새 현장관리에서 입력한 타입은 building_settings.config_json의
+      unitTypes / floorUnitTypes에 저장됩니다.
 
-        const typeCounts = typeCountsByLine.get(lineNumber);
-        typeCounts.set(
-          unitType,
-          (typeCounts.get(unitType) || 0) + 1,
-        );
-      },
-    );
+      기존 현장은 project_unit_types 테이블을 사용해왔으므로,
+      1) config_json에 새 타입정보가 있으면 그것을 우선 사용
+      2) 없으면 기존 project_unit_types 데이터를 그대로 사용
+      하여 기존 현장과 신규 현장을 동시에 지원합니다.
+    */
+    const hasConfigUnitTypes =
+      Object.values(config?.unitTypes || {}).some(
+        (value) => Boolean(String(value || '').trim()),
+      ) ||
+      Object.values(config?.floorUnitTypes || {}).some(
+        (floorMap) =>
+          floorMap &&
+          typeof floorMap === 'object' &&
+          Object.values(floorMap).some(
+            (value) => Boolean(String(value || '').trim()),
+          ),
+      );
+
+    if (hasConfigUnitTypes) {
+      for (let floor = 1; floor <= floors; floor += 1) {
+        buildFloorVisualCells(config, floor).forEach((cell) => {
+          if (cell.type !== 'valid') {
+            return;
+          }
+
+          const unitType = getUnitType(
+            config,
+            floor,
+            cell.visualStart,
+          );
+
+          if (!unitType) {
+            return;
+          }
+
+          /*
+            aliasUnits로 하나의 실제 세대가 여러 시각 칸을 차지하는 경우
+            하단 타입도 모든 표시 칸에 동일하게 맞춥니다.
+          */
+          for (
+            let lineNumber = cell.visualStart;
+            lineNumber <= cell.visualEnd;
+            lineNumber += 1
+          ) {
+            addTypeCount(lineNumber, unitType);
+          }
+        });
+      }
+    } else {
+      Object.entries(unitTypeData || {}).forEach(
+        ([cellKey, rawUnitType]) => {
+          const normalizedCellKey = String(cellKey || '').trim();
+
+          if (
+            !buildingPrefix ||
+            !normalizedCellKey.startsWith(buildingPrefix)
+          ) {
+            return;
+          }
+
+          const unitCode = normalizedCellKey
+            .slice(buildingPrefix.length)
+            .trim();
+          const lineMatched = unitCode.match(/(\d{1,2})$/);
+          const lineNumber = Number(lineMatched?.[1] || 0);
+
+          addTypeCount(lineNumber, rawUnitType);
+        },
+      );
+    }
 
     const columnCount =
       configuredColumnCount || detectedMaxLine;
@@ -195,7 +261,12 @@ export default function BuildingGrid({
       labels,
       hasLabels: labels.some(Boolean),
     };
-  }, [buildingName, config?.unitsPerFloor, unitTypeData]);
+  }, [
+    buildingName,
+    config,
+    floors,
+    unitTypeData,
+  ]);
 
   return (
     <Box
