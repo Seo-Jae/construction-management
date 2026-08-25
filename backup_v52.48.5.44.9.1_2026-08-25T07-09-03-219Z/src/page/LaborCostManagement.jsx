@@ -1,4 +1,3 @@
-// v52.48.5.44.9.1 계약품목 검색 normalizeText 참조오류 긴급수정
 // v52.48.5.44.9 공정별 노임단가-최초계약 품목 연결
 import React, {
   useCallback,
@@ -270,12 +269,6 @@ const contractItemMatchesProcess = (item, processType) => {
     normalizedProcess,
   );
 };
-
-const normalizeContractSearchText = (value) =>
-  String(value || '')
-    .replace(/\s+/g, '')
-    .trim()
-    .toLowerCase();
 
 const mergeMonthlyStatusResults = (monthlyResults) => {
   const results = monthlyResults || [];
@@ -885,9 +878,9 @@ export default function LaborCostManagement({
   }, [selectedEditorContractItems]);
 
   const contractPickerRows = useMemo(() => {
-    const normalizedKeyword = normalizeContractSearchText(
+    const normalizedKeyword = normalizeText(
       contractPickerKeyword,
-    );
+    ).toLowerCase();
 
     return contractSourceItems.filter((item) => {
       const selected = contractPickerSelectedIds.has(String(item.id));
@@ -899,7 +892,7 @@ export default function LaborCostManagement({
       if (!selected && !processMatched) return false;
       if (!normalizedKeyword) return true;
 
-      return normalizeContractSearchText(
+      return normalizeText(
         [
           item.classification,
           item.housing_type,
@@ -909,7 +902,9 @@ export default function LaborCostManagement({
           item.unit,
           item.process_type,
         ].join(' '),
-      ).includes(normalizedKeyword);
+      )
+        .toLowerCase()
+        .includes(normalizedKeyword);
     });
   }, [
     contractPickerKeyword,
