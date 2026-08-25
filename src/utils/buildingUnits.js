@@ -49,6 +49,44 @@ export const getCanonicalUnitCode = (
     getCanonicalUnitNumber(config, floor, visualUnitNumber),
   );
 
+/*
+  v52.48.5.44.2 세대 타입 판정
+  - floorUnitTypes: 특정 층/호 타입 예외가 최우선
+  - unitTypes: 동별 기본 호 타입
+  - aliasUnits가 있으면 실제 세대번호(canonical)를 우선 사용
+*/
+export const getUnitType = (config, floor, visualUnitNumber) => {
+  const canonicalUnitNumber = getCanonicalUnitNumber(
+    config,
+    floor,
+    visualUnitNumber,
+  );
+
+  const floorTypes =
+    config?.floorUnitTypes?.[floor] ||
+    config?.floorUnitTypes?.[String(floor)] ||
+    {};
+
+  const overrideType =
+    floorTypes?.[canonicalUnitNumber] ??
+    floorTypes?.[String(canonicalUnitNumber)] ??
+    floorTypes?.[visualUnitNumber] ??
+    floorTypes?.[String(visualUnitNumber)];
+
+  if (String(overrideType || '').trim()) {
+    return String(overrideType).trim();
+  }
+
+  const baseTypes = config?.unitTypes || {};
+  const baseType =
+    baseTypes?.[canonicalUnitNumber] ??
+    baseTypes?.[String(canonicalUnitNumber)] ??
+    baseTypes?.[visualUnitNumber] ??
+    baseTypes?.[String(visualUnitNumber)];
+
+  return String(baseType || '').trim();
+};
+
 export const getCellKey = (buildingName, unitCode) =>
   `${String(buildingName)}-${String(unitCode)}`;
 
