@@ -1,4 +1,3 @@
-// v52.48.5.44.13 옵션관리 세대별 표시값·색상 지원
 // v52.48.5.44.12 옵션관리 읽기전용 골구도 지원
 // v52.48.5.44.6.3.2 필로티 X 모서리 정합
 // v52.48.5.44.6.3 타입윤곽선 복원 + 골구도 셀 1.2배
@@ -149,7 +148,6 @@ export default function BuildingGrid({
   targetEditMode = false,
   activeTargetId = '',
   readOnly = false,
-  cellDisplayData = {},
 }) {
   const floors = Number(config?.floors) || 0;
   const totalUnits = useMemo(() => countUniqueUnits(config), [config]);
@@ -814,20 +812,6 @@ export default function BuildingGrid({
                     progress?.status,
                     selected,
                   );
-                  const displayOverride =
-                    cellDisplayData?.[cellKey] || {};
-                  const customLabel = String(
-                    displayOverride?.label || '',
-                  ).trim();
-                  const customStyle = customLabel
-                    ? {
-                        bgcolor:
-                          displayOverride?.backgroundColor || '#dbeafe',
-                        borderColor:
-                          displayOverride?.borderColor || '#64748b',
-                        color: displayOverride?.color || '#0f172a',
-                      }
-                    : {};
                   const completionDate =
                     progress?.status === '작업완료'
                       ? formatCompletionMonthDay(progress?.date)
@@ -848,12 +832,7 @@ export default function BuildingGrid({
                     ),
                   );
                   const displayText =
-                    customLabel || completionDate || cell.unitCode;
-                  const customTitle =
-                    String(displayOverride?.title || '').trim() ||
-                    (customLabel
-                      ? `${buildingName} ${cell.unitCode}호 · ${customLabel}`
-                      : '');
+                    completionDate || cell.unitCode;
 
                   return (
                     <Tooltip
@@ -864,9 +843,7 @@ export default function BuildingGrid({
                       leaveTouchDelay={4000}
                       disableInteractive
                       title={
-                        customTitle
-                          ? customTitle
-                          : isCompleted && completionWorkerNames.length > 0
+                        isCompleted && completionWorkerNames.length > 0
                           ? (
                             <Box sx={{ py: 0.25 }}>
                               <Typography
@@ -913,15 +890,13 @@ export default function BuildingGrid({
                             isProtectedCompleted
                           }
                           aria-label={
-                            customLabel
-                              ? `${buildingName} ${cell.unitCode}호, ${customLabel}`
-                              : isCompleted && completionWorkerNames.length > 0
+                            isCompleted && completionWorkerNames.length > 0
                               ? `${buildingName} ${cell.unitCode}호, 작업자 ${completionWorkerNames.join(', ')}`
                               : `${buildingName} ${cell.unitCode}호`
                           }
                           title={
                             readOnly
-                              ? customTitle || `${buildingName} ${cell.unitCode}호`
+                              ? `${buildingName} ${cell.unitCode}호`
                               : targetEditMode
                               ? '목표 라인 설정 중에는 층 번호를 클릭하세요.'
                               : isProtectedCompleted
@@ -958,20 +933,17 @@ export default function BuildingGrid({
                                   ? 'not-allowed'
                                   : 'pointer',
                             fontFamily: 'inherit',
-                            fontSize:
-                              customLabel || completionDate
-                                ? '0.53rem'
-                                : '0.57rem',
-                            letterSpacing:
-                              customLabel || completionDate
-                                ? '-0.02em'
-                                : 'normal',
+                            fontSize: completionDate
+                              ? '0.53rem'
+                              : '0.57rem',
+                            letterSpacing: completionDate
+                              ? '-0.02em'
+                              : 'normal',
                             lineHeight: 1,
                             fontWeight: 800,
                             userSelect: 'none',
                             transition: 'filter 120ms ease, transform 120ms ease',
                             ...statusStyle,
-                            ...customStyle,
                             '&:disabled': {
                               opacity:
                                 targetEditMode && !readOnly

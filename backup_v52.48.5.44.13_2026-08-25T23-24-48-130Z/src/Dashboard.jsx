@@ -1,4 +1,3 @@
-// v52.48.5.44.13 옵션현황(단열) 업로드 사용자 연결
 // v52.48.5.44.12 옵션관리 메뉴·골구도 기본화면
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -4183,7 +4182,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                 mode="insulation"
                 projectName={activeProjectName}
                 buildingConfigs={buildingConfigs}
-                currentUserId={user?.id || ''}
               />
             )}
 
