@@ -1,4 +1,3 @@
-// v52.48.5.44.9.3 계약 노무비 우측정렬·아이콘 금액 높이통일
 // v52.48.5.44.9.2 계약 노무비 링크 아이콘 단일행 전면배치
 // v52.48.5.44.9.1 계약품목 검색 normalizeText 참조오류 긴급수정
 // v52.48.5.44.9 공정별 노임단가-최초계약 품목 연결
@@ -3691,15 +3690,8 @@ export default function LaborCostManagement({
                       direction="row"
                       alignItems="center"
                       justifyContent="flex-end"
-                      spacing={0.3}
-                      sx={{
-                        width: '100%',
-                        minWidth: 0,
-                        height: 18,
-                        flexWrap: 'nowrap',
-                        whiteSpace: 'nowrap',
-                        lineHeight: '18px',
-                      }}
+                      spacing={0.35}
+                      sx={{ flexWrap: 'nowrap', whiteSpace: 'nowrap' }}
                     >
                       <Tooltip
                         title={
@@ -3712,17 +3704,7 @@ export default function LaborCostManagement({
                         }
                         arrow
                       >
-                        <Box
-                          component="span"
-                          sx={{
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            width: 18,
-                            height: 18,
-                            flex: '0 0 18px',
-                          }}
-                        >
+                        <span>
                           <IconButton
                             size="small"
                             color="primary"
@@ -3734,36 +3716,19 @@ export default function LaborCostManagement({
                               !rateEditable || contractSourceLoading
                             }
                             aria-label="최초계약 품목 선택"
-                            sx={{
-                              p: 0,
-                              width: 18,
-                              height: 18,
-                              minWidth: 18,
-                              minHeight: 18,
-                            }}
+                            sx={{ p: 0.25 }}
                           >
-                            <LinkRoundedIcon sx={{ fontSize: 14 }} />
+                            <LinkRoundedIcon sx={{ fontSize: 16 }} />
                           </IconButton>
-                        </Box>
+                        </span>
                       </Tooltip>
-                      <Box
-                        component="span"
-                        sx={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'flex-end',
-                          height: 18,
-                          lineHeight: '18px',
-                          whiteSpace: 'nowrap',
-                          textAlign: 'right',
-                        }}
-                      >
+                      <span>
                         {processRow
                           ? `${formatMoney(
                               processRow.contract_labor_amount,
                             )}원`
                           : '-'}
-                      </Box>
+                      </span>
                     </Stack>
                   </TableCell>
                   <TableCell sx={numberCellSx}>
