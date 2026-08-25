@@ -1,7 +1,9 @@
 import ExcelJS from 'exceljs';
 
+export const LABOR_QUANTITY_EXCEL_TEST_PROJECT =
+  '한라건설 용인금어지구';
+
 const TEMPLATE_VERSION = '4';
-// v52.48.5.44.11 세대별 물량 엑셀 운영전환
 const DATA_SHEET_NAME = '세대별 물량';
 const REFERENCE_SHEET_NAME = '세대정보';
 const META_SHEET_NAME = '_시스템정보';
@@ -338,6 +340,9 @@ const readMetadata = (workbook) => {
   }
   return metadata;
 };
+
+export const isLaborQuantityExcelTestProject = (projectName) =>
+  String(projectName || '').trim() === LABOR_QUANTITY_EXCEL_TEST_PROJECT;
 
 export const createLaborQuantityWorkbook = ({
   projectName,

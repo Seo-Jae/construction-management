@@ -1,4 +1,3 @@
-// v52.48.5.44.11 세대별 물량 엑셀 운영전환·현장관리 타입 자동연결
 // v52.48.5.44.10 복합공정 계약품목 노무비 단가 배분
 // v52.48.5.44.9.5 계약품목 선택 노무비 단가열·열폭 조정
 // v52.48.5.44.9.4 계약 노무비 인라인 묶음 셀 우측정렬
@@ -69,12 +68,10 @@ import { supabase } from '../supabaseClient';
 import LaborPeriodStructureDialog from '../components/LaborPeriodStructureDialog.jsx';
 import KoreanMonthSelect from '../components/KoreanMonthSelect.jsx';
 import KoreanDatePicker from '../components/KoreanDatePicker.jsx';
+import { getProjectCellKeys } from '../utils/buildingUnits.js';
 import {
-  buildFloorVisualCells,
-  getProjectCellKeys,
-  getUnitType,
-} from '../utils/buildingUnits.js';
-import {
+  LABOR_QUANTITY_EXCEL_TEST_PROJECT,
+  isLaborQuantityExcelTestProject,
   parseLaborQuantityWorkbookFile,
   saveLaborQuantityWorkbook,
 } from '../utils/laborQuantityExcel.js';
@@ -860,6 +857,9 @@ export default function LaborCostManagement({
   const monthlyRangeLabel = getMonthRangeLabel(startMonth, endMonth);
 
   const rateEditable = canManageRates(userProfile);
+  const quantityExcelTestEnabled =
+    isLaborQuantityExcelTestProject(projectName);
+
   const settingByProcess = useMemo(
     () =>
       settings.reduce((result, setting) => {
@@ -1158,46 +1158,16 @@ export default function LaborCostManagement({
   );
 
   const validUnits = useMemo(() => {
-    const configuredUnitTypes = {};
-
-    Object.entries(buildingConfigs || {}).forEach(
-      ([building, config]) => {
-        const floorCount = Math.max(0, Number(config?.floors) || 0);
-
-        for (let floor = 1; floor <= floorCount; floor += 1) {
-          buildFloorVisualCells(config, floor).forEach((cell) => {
-            if (cell.type !== 'valid') return;
-
-            const unitType = getUnitType(
-              config,
-              floor,
-              cell.visualStart,
-            );
-            const lookupKey = getUnitTypeLookupKey(
-              building,
-              cell.unitCode,
-            );
-
-            if (lookupKey !== '::' && unitType) {
-              configuredUnitTypes[lookupKey] = unitType;
-            }
-          });
-        }
-      },
-    );
-
     const rows = Array.from(getProjectCellKeys(buildingConfigs)).map(
       (cellKey) => {
         const { building, unit } = splitCellKey(cellKey);
-        const lookupKey = getUnitTypeLookupKey(building, unit);
         return {
           cellKey,
           building,
           unit,
           floor: resolveFloor(unit),
           unitType:
-            configuredUnitTypes[lookupKey] ||
-            unitTypes[lookupKey] ||
+            unitTypes[getUnitTypeLookupKey(building, unit)] ||
             '미지정',
         };
       },
@@ -1696,11 +1666,9 @@ export default function LaborCostManagement({
 
       while (true) {
         const { data, error } = await supabase
-          .from('project_unit_types')
-          .select('building, unit, unit_type')
-          .eq('project_name', projectName)
-          .order('building', { ascending: true })
-          .order('unit', { ascending: true })
+          .rpc('get_labor_unit_types', {
+            p_project_name: projectName,
+          })
           .range(
             offset,
             offset + SUPABASE_READ_PAGE_SIZE - 1,
@@ -1735,7 +1703,11 @@ export default function LaborCostManagement({
       setUnitTypes(nextUnitTypes);
     } catch (error) {
       console.error('세대 타입 불러오기 오류:', error);
-      setUnitTypes({});
+      setErrorMessage(
+        `세대 타입을 불러오지 못했습니다: ${
+          error?.message || '알 수 없는 오류'
+        }`,
+      );
     }
   }, [projectName]);
 
@@ -3065,6 +3037,12 @@ export default function LaborCostManagement({
   };
 
   const handleDownloadQuantityExcel = async () => {
+    if (!quantityExcelTestEnabled) {
+      setErrorMessage(
+        `현재 엑셀 물량 입력은 ${LABOR_QUANTITY_EXCEL_TEST_PROJECT}에서만 시험할 수 있습니다.`,
+      );
+      return;
+    }
     if (!quantityProcess) {
       setErrorMessage('엑셀로 내려받을 공정을 선택해주세요.');
       return;
@@ -3109,6 +3087,13 @@ export default function LaborCostManagement({
     const file = event.target.files?.[0];
     if (!file) return;
 
+    if (!quantityExcelTestEnabled) {
+      setErrorMessage(
+        `현재 엑셀 물량 입력은 ${LABOR_QUANTITY_EXCEL_TEST_PROJECT}에서만 시험할 수 있습니다.`,
+      );
+      event.target.value = '';
+      return;
+    }
     if (!quantityProcess) {
       setErrorMessage('엑셀을 불러올 공정을 선택해주세요.');
       event.target.value = '';
@@ -4375,7 +4360,8 @@ export default function LaborCostManagement({
             disabled={
               quantityExcelLoading ||
               quantityLoading ||
-              !quantityProcess
+              !quantityProcess ||
+              !quantityExcelTestEnabled
             }
             sx={{ whiteSpace: 'nowrap' }}
           >
@@ -4390,7 +4376,8 @@ export default function LaborCostManagement({
             disabled={
               quantityExcelLoading ||
               quantityLoading ||
-              !quantityProcess
+              !quantityProcess ||
+              !quantityExcelTestEnabled
             }
             sx={{ whiteSpace: 'nowrap' }}
           >
@@ -4460,6 +4447,17 @@ export default function LaborCostManagement({
           </Button>
 
           <Box sx={{ flex: 1 }} />
+
+          <Chip
+            size="small"
+            color={quantityExcelTestEnabled ? 'success' : 'default'}
+            variant="outlined"
+            label={
+              quantityExcelTestEnabled
+                ? '용인금어지구 엑셀 시험'
+                : '엑셀 시험 대상 현장 아님'
+            }
+          />
 
           <Chip
             size="small"
