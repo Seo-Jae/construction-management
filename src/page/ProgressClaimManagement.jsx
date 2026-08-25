@@ -1,3 +1,4 @@
+// v52.48.5.44.7.6 기성삭제-계약품목 공정연결 완전초기화
 // v52.48.5.44.7.5 기성양식-계약품목 공정연결 즉시 동기화
 // v52.48.5.44.7.4 기성회차 삭제 시 표준계약 잔여데이터 정리
 // v52.48.5.44.7.3 기성회차 삭제 + 구분 누락 진단
@@ -404,6 +405,16 @@ const getClaimVersionLabel = (claim) => {
   return relation?.version_label || DEFAULT_CONTRACT_VERSION;
 };
 
+const getClaimContractVersionId = (claim) => {
+  const relation = claim?.contract_version;
+
+  if (Array.isArray(relation)) {
+    return relation[0]?.id || '';
+  }
+
+  return relation?.id || '';
+};
+
 const getNextClaimDefaults = (claimRows = []) => {
   const latestClaim = [...claimRows].sort(
     (left, right) => Number(right?.claim_no || 0) - Number(left?.claim_no || 0),
@@ -514,9 +525,10 @@ const fetchContractTemplateItems = async ({ projectName, versionLabel }) => {
 
   const { data: versionRows, error: versionError } = await supabase
     .from('progress_contract_versions')
-    .select('id')
+    .select('id, created_at')
     .eq('project_name', normalizedProjectName)
     .eq('version_label', normalizedVersionLabel)
+    .order('created_at', { ascending: false })
     .limit(1);
 
   if (versionError) throw versionError;
@@ -740,9 +752,10 @@ const fetchContractProcessMappingItems = async ({
 
   const { data: versionRows, error: versionError } = await supabase
     .from('progress_contract_versions')
-    .select('id')
+    .select('id, created_at')
     .eq('project_name', normalizedProjectName)
     .eq('version_label', normalizedVersionLabel)
+    .order('created_at', { ascending: false })
     .limit(1);
 
   if (versionError) throw versionError;
@@ -1360,7 +1373,7 @@ export default function ProgressClaimManagement({
           created_by_name,
           updated_by_name,
           updated_at,
-          contract_version:progress_contract_versions(version_label)
+          contract_version:progress_contract_versions(id, version_label)
         `)
         .eq('project_name', projectName)
         .order('claim_no', { ascending: false });
@@ -1854,9 +1867,30 @@ export default function ProgressClaimManagement({
     setErrorMessage('');
 
     try {
+      /*
+        동일한 version_label의 과거 중복버전이 있더라도
+        전회차가 실제 사용한 contract_version_id를 우선 사용합니다.
+      */
+      const preferredContractClaim = [...claims]
+        .filter(
+          (claim) =>
+            Number(claim.claim_no || 0) < Number(claimNo || 1) &&
+            getClaimVersionLabel(claim) ===
+              contractVersionLabel.trim(),
+        )
+        .sort(
+          (left, right) =>
+            Number(right.claim_no || 0) -
+            Number(left.claim_no || 0),
+        )[0];
+
       const contractRows = await fetchContractTemplateItems({
         projectName,
         versionLabel: contractVersionLabel,
+        contractVersionId:
+          getClaimContractVersionId(
+            preferredContractClaim,
+          ),
       });
 
       const isNewContractTemplate =

@@ -1,3 +1,4 @@
+// v52.48.5.44.7.6 계약버전 중복표시 제거 + 삭제동기화
 // v52.48.5.44.7.5 기성양식-계약품목 공정연결 실시간 연동
 import React, {
   useCallback,
@@ -337,13 +338,68 @@ function ContractItemProcessMapping({
 
       if (error) throw error;
 
-      const nextVersions = data || [];
+      /*
+        과거 저장과정에서 동일한 version_label이 중복 생성된 적이 있어
+        공정연결 화면에 같은 계약버전이 여러 개 보일 수 있었습니다.
+        같은 이름은 가장 최근 created_at 1개만 화면에 사용합니다.
+      */
+      const versionByLabel = new Map();
+
+      (data || []).forEach((version) => {
+        const label = String(
+          version?.version_label || '',
+        ).trim();
+
+        if (!label) return;
+
+        const existing =
+          versionByLabel.get(label);
+
+        if (
+          !existing ||
+          new Date(
+            version?.created_at || 0,
+          ).getTime() >=
+            new Date(
+              existing?.created_at || 0,
+            ).getTime()
+        ) {
+          versionByLabel.set(
+            label,
+            version,
+          );
+        }
+      });
+
+      const nextVersions = Array.from(
+        versionByLabel.values(),
+      ).sort(
+        (left, right) =>
+          new Date(
+            left?.created_at || 0,
+          ).getTime() -
+          new Date(
+            right?.created_at || 0,
+          ).getTime(),
+      );
+
       setVersions(nextVersions);
       setSelectedVersionId((previous) => {
-        if (previous && nextVersions.some((version) => version.id === previous)) {
+        if (
+          previous &&
+          nextVersions.some(
+            (version) =>
+              version.id === previous,
+          )
+        ) {
           return previous;
         }
-        return nextVersions[nextVersions.length - 1]?.id || '';
+
+        return (
+          nextVersions[
+            nextVersions.length - 1
+          ]?.id || ''
+        );
       });
     } catch (error) {
       console.error(error);
