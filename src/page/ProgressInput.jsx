@@ -1,3 +1,4 @@
+// v52.48.5.44.5.1 타입현황 위치·최소화·닫기 동작 보정
 // v52.48.5.44.5 공정별 현황 입력 타입별 세대현황 플로팅 패널
 import React, {
   useCallback,
@@ -27,7 +28,6 @@ import {
 } from '@mui/material';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import DragIndicatorRoundedIcon from '@mui/icons-material/DragIndicatorRounded';
-import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded';
 import BuildingGrid from '../BuildingGrid';
 import { supabase } from '../supabaseClient';
@@ -232,12 +232,12 @@ const TYPE_SUMMARY_COLORS = [
 ];
 
 const TYPE_SUMMARY_PANEL_WIDTH = 328;
-const TYPE_SUMMARY_PANEL_MIN_WIDTH = 286;
+const TYPE_SUMMARY_PANEL_MIN_WIDTH = TYPE_SUMMARY_PANEL_WIDTH;
 
 const getTypeSummaryPreferenceStorageKey = (projectName) =>
   `progress-input:${encodeURIComponent(
     String(projectName || 'default'),
-  )}:type-summary-panel`;
+  )}:type-summary-panel-v2`;
 
 const getDefaultTypeSummaryPanelState = () => {
   const viewportWidth =
@@ -247,14 +247,14 @@ const getDefaultTypeSummaryPanelState = () => {
 
   return {
     minimized: false,
-    closed: false,
     x: Math.max(
       12,
       viewportWidth -
         TYPE_SUMMARY_PANEL_WIDTH -
         18,
     ),
-    y: 128,
+    // 상단 공정선택 + 방통설정 영역과 겹치지 않도록 기본 위치를 하단으로 내립니다.
+    y: 164,
   };
 };
 
@@ -282,8 +282,6 @@ const readStoredTypeSummaryPanelState = (projectName) => {
     return {
       minimized:
         parsed?.minimized === true,
-      closed:
-        parsed?.closed === true,
       x: Number.isFinite(Number(parsed?.x))
         ? Number(parsed.x)
         : fallback.x,
@@ -319,8 +317,6 @@ const storeTypeSummaryPanelState = (
       JSON.stringify({
         minimized:
           panelState?.minimized === true,
-        closed:
-          panelState?.closed === true,
         x: Number(panelState?.x) || 0,
         y: Number(panelState?.y) || 0,
       }),
@@ -1167,6 +1163,17 @@ export default function ProgressInput({
       projectName,
     ),
   );
+
+  /*
+    닫기(X)는 현재 공정별 현황 입력 화면을 떠날 때까지만 유지합니다.
+    - 공정 변경: 다시 나타나지 않음
+    - 다른 메뉴 이동 후 재진입: 다시 나타남
+    - F5 새로고침: 다시 나타남
+  */
+  const [
+    typeSummaryPanelClosed,
+    setTypeSummaryPanelClosed,
+  ] = useState(false);
 
   const typeSummaryDragRef =
     useRef(null);
@@ -2519,23 +2526,11 @@ export default function ProgressInput({
 
   const closeTypeSummaryPanel =
     () => {
-      updateTypeSummaryPanelState(
-        (previous) => ({
-          ...previous,
-          closed: true,
-        }),
+      setTypeSummaryPanelClosed(
+        true,
       );
-    };
-
-  const reopenTypeSummaryPanel =
-    () => {
-      updateTypeSummaryPanelState(
-        (previous) => ({
-          ...previous,
-          closed: false,
-          minimized: false,
-        }),
-      );
+      typeSummaryDragRef.current =
+        null;
     };
 
   const toggleTargetPanelMinimized =
@@ -2912,7 +2907,7 @@ export default function ProgressInput({
         </Box>
       </Paper>
 
-      {!typeSummaryPanelState.closed ? (
+      {!typeSummaryPanelClosed && (
         <Paper
           data-type-summary-panel="true"
           elevation={8}
@@ -3218,46 +3213,6 @@ export default function ProgressInput({
             </Box>
           )}
         </Paper>
-      ) : (
-        <Button
-          size="small"
-          variant="outlined"
-          startIcon={
-            <GridViewRoundedIcon
-              sx={{
-                fontSize:
-                  '15px !important',
-              }}
-            />
-          }
-          onClick={
-            reopenTypeSummaryPanel
-          }
-          sx={{
-            position: 'fixed',
-            right: 14,
-            top: 128,
-            zIndex: 1350,
-            minWidth: 0,
-            px: 0.9,
-            py: 0.4,
-            color: '#475569',
-            borderColor:
-              '#cbd5e1',
-            bgcolor: '#ffffff',
-            fontSize: '0.65rem',
-            fontWeight: 800,
-            boxShadow:
-              '0 6px 16px rgba(15,23,42,0.12)',
-            '&:hover': {
-              bgcolor: '#f8fafc',
-              borderColor:
-                '#94a3b8',
-            },
-          }}
-        >
-          타입 현황
-        </Button>
       )}
 
       <Paper
