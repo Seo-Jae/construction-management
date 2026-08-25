@@ -1,3 +1,4 @@
+// v52.48.5.44.6.1 예외타입 동일행 압축 + hover 설명 제거
 // v52.48.5.44.6 층별 예외타입 하단 다단표시
 // v52.48.5.44.3 현장관리 호별타입 공정진척 연동
 import React, { useMemo } from 'react';
@@ -448,6 +449,83 @@ export default function BuildingGrid({
         });
       });
 
+    /*
+      서로 다른 층의 예외타입이라도 표시 호 범위가 겹치지 않으면
+      같은 한 줄에 배치합니다.
+
+      예:
+      150PC = 1~2호
+      150PA = 3~4호
+      => [ 150PC ][ 150PA ] 한 줄
+
+      반대로 표시 범위가 겹치면 별도 줄을 사용합니다.
+      이렇게 하면 기존 현장 타입표처럼 불필요한 세로 공간을 만들지 않습니다.
+    */
+    const packedExceptionRows = [];
+
+    exceptionRows.forEach((sourceRow) => {
+      const segments =
+        (sourceRow.segments || [])
+          .map((segment) => ({
+            ...segment,
+            floor: sourceRow.floor,
+          }))
+          .sort(
+            (first, second) =>
+              first.start - second.start ||
+              first.end - second.end,
+          );
+
+      let targetRow = null;
+
+      for (
+        let rowIndex = 0;
+        rowIndex < packedExceptionRows.length;
+        rowIndex += 1
+      ) {
+        const candidate =
+          packedExceptionRows[rowIndex];
+
+        const overlaps = segments.some(
+          (segment) =>
+            candidate.segments.some(
+              (existing) =>
+                !(
+                  segment.end < existing.start ||
+                  segment.start > existing.end
+                ),
+            ),
+        );
+
+        if (!overlaps) {
+          targetRow = candidate;
+          break;
+        }
+      }
+
+      if (!targetRow) {
+        targetRow = {
+          floors: [],
+          segments: [],
+        };
+        packedExceptionRows.push(
+          targetRow,
+        );
+      }
+
+      targetRow.floors.push(
+        sourceRow.floor,
+      );
+      targetRow.segments.push(
+        ...segments,
+      );
+      targetRow.segments.sort(
+        (first, second) =>
+          first.start - second.start ||
+          first.end - second.end,
+      );
+    });
+
     return {
       columnCount,
       lineLabels: Array.from(
@@ -456,10 +534,11 @@ export default function BuildingGrid({
           `${index + 1}호`,
       ),
       baseLabels,
-      exceptionRows,
+      exceptionRows:
+        packedExceptionRows,
       hasLabels:
         baseLabels.some(Boolean) ||
-        exceptionRows.length > 0,
+        packedExceptionRows.length > 0,
     };
   }, [
     buildingName,
@@ -920,7 +999,7 @@ export default function BuildingGrid({
           {unitTypeSummary.exceptionRows.map(
             (row, rowIndex) => (
               <Box
-                key={`${buildingName}-unit-type-exception-${row.floor}-${rowIndex}`}
+                key={`${buildingName}-unit-type-exception-row-${rowIndex}`}
                 sx={{
                   display: 'grid',
                   gridTemplateColumns:
@@ -935,46 +1014,41 @@ export default function BuildingGrid({
 
                 {row.segments.map(
                   (segment, segmentIndex) => (
-                    <Tooltip
-                      key={`${buildingName}-unit-type-exception-${row.floor}-${segment.start}-${segmentIndex}`}
-                      arrow
-                      title={`${row.floor}층 ${segment.start}~${segment.end}호 타입 예외`}
+                    <Typography
+                      key={`${buildingName}-unit-type-exception-${segment.floor}-${segment.start}-${segmentIndex}`}
+                      component="div"
+                      sx={{
+                        gridColumn:
+                          `${segment.start + 1} / span ${segment.end - segment.start + 1}`,
+                        height: 17,
+                        display:
+                          'flex',
+                        alignItems:
+                          'center',
+                        justifyContent:
+                          'center',
+                        border:
+                          '1px solid #94a3b8',
+                        bgcolor:
+                          '#f1f5f9',
+                        boxSizing:
+                          'border-box',
+                        color:
+                          '#334155',
+                        fontSize:
+                          '0.54rem',
+                        fontWeight: 900,
+                        lineHeight: 1,
+                        whiteSpace:
+                          'nowrap',
+                        overflow:
+                          'hidden',
+                        textOverflow:
+                          'ellipsis',
+                      }}
                     >
-                      <Typography
-                        component="div"
-                        sx={{
-                          gridColumn:
-                            `${segment.start + 1} / span ${segment.end - segment.start + 1}`,
-                          height: 17,
-                          display:
-                            'flex',
-                          alignItems:
-                            'center',
-                          justifyContent:
-                            'center',
-                          border:
-                            '1px solid #94a3b8',
-                          bgcolor:
-                            '#f1f5f9',
-                          boxSizing:
-                            'border-box',
-                          color:
-                            '#334155',
-                          fontSize:
-                            '0.54rem',
-                          fontWeight: 900,
-                          lineHeight: 1,
-                          whiteSpace:
-                            'nowrap',
-                          overflow:
-                            'hidden',
-                          textOverflow:
-                            'ellipsis',
-                        }}
-                      >
-                        {segment.typeName}
-                      </Typography>
-                    </Tooltip>
+                      {segment.typeName}
+                    </Typography>
                   ),
                 )}
               </Box>
@@ -999,7 +1073,6 @@ export default function BuildingGrid({
                 <Typography
                   key={`${buildingName}-unit-type-${index + 1}`}
                   component="div"
-                  title={unitType || ''}
                   sx={{
                     height: 17,
                     display: 'flex',
