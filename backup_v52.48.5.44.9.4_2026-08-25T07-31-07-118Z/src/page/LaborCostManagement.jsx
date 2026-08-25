@@ -1,4 +1,3 @@
-// v52.48.5.44.9.4 계약 노무비 인라인 묶음 셀 우측정렬
 // v52.48.5.44.9.3 계약 노무비 우측정렬·아이콘 금액 높이통일
 // v52.48.5.44.9.2 계약 노무비 링크 아이콘 단일행 전면배치
 // v52.48.5.44.9.1 계약품목 검색 normalizeText 참조오류 긴급수정
@@ -3688,14 +3687,14 @@ export default function LaborCostManagement({
                     {setting?.unit || processRow?.unit || '-'}
                   </TableCell>
                   <TableCell sx={numberCellSx}>
-                    <Box
-                      component="span"
+                    <Stack
+                      direction="row"
+                      alignItems="center"
+                      justifyContent="flex-end"
+                      spacing={0.3}
                       sx={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'flex-end',
-                        verticalAlign: 'middle',
-                        gap: '3px',
+                        width: '100%',
+                        minWidth: 0,
                         height: 18,
                         flexWrap: 'nowrap',
                         whiteSpace: 'nowrap',
@@ -3765,7 +3764,7 @@ export default function LaborCostManagement({
                             )}원`
                           : '-'}
                       </Box>
-                    </Box>
+                    </Stack>
                   </TableCell>
                   <TableCell sx={numberCellSx}>
                     {setting
