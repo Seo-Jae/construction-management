@@ -1,4 +1,3 @@
-// v52.48.5.44.12 옵션관리 메뉴·골구도 기본화면
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
@@ -70,7 +69,6 @@ import OrganizationChart from './page/OrganizationChart.jsx';
 import DrawingQuantityAnalysis from './page/DrawingQuantityAnalysis.jsx';
 import Messenger from './page/Messenger.jsx';
 import AttendanceManagement from './page/AttendanceManagement.jsx';
-import OptionManagementOverview from './page/OptionManagementOverview.jsx';
 
 const drawerWidth = 240;
 const SUPABASE_PAGE_SIZE = 1000;
@@ -341,9 +339,6 @@ const viewTitles = {
   'progress-daily': '일별 완료 집계',
   'progress-weekly': '주별 완료 집계',
   'progress-monthly': '월별 완료 집계',
-  'option-insulation-status': '옵션현황(단열)',
-  'option-selection-status': '옵션현황(선택)',
-  'option-comparison': '옵션별 비교',
   'material-order': '자재발주작성',
   'material-input-status': '자재투입현황',
   'material-unit-price': '일위대가작성',
@@ -381,9 +376,6 @@ const VIEW_PERMISSION_KEYS = {
   'progress-daily': 'construction.progress_daily.view',
   'progress-weekly': 'construction.progress_weekly.view',
   'progress-monthly': 'construction.progress_monthly.view',
-  'option-insulation-status': 'construction.progress.view',
-  'option-selection-status': 'construction.progress.view',
-  'option-comparison': 'construction.progress.view',
   'drawing-quantity': 'construction.drawing.view',
   'material-order': 'material.order.view',
   'material-input-status': 'material.input.view',
@@ -4175,33 +4167,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               buildingConfigs={buildingConfigs}
             />
           )}
-
-          {currentView === 'option-insulation-status' &&
-            activeProjectName && (
-              <OptionManagementOverview
-                mode="insulation"
-                projectName={activeProjectName}
-                buildingConfigs={buildingConfigs}
-              />
-            )}
-
-          {currentView === 'option-selection-status' &&
-            activeProjectName && (
-              <OptionManagementOverview
-                mode="selection"
-                projectName={activeProjectName}
-                buildingConfigs={buildingConfigs}
-              />
-            )}
-
-          {currentView === 'option-comparison' &&
-            activeProjectName && (
-              <OptionManagementOverview
-                mode="comparison"
-                projectName={activeProjectName}
-                buildingConfigs={buildingConfigs}
-              />
-            )}
 
           {currentView === 'drawing-quantity' && activeProjectName && (
             <DrawingQuantityAnalysis

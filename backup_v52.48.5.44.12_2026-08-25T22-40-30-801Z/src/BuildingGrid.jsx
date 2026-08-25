@@ -1,4 +1,3 @@
-// v52.48.5.44.12 옵션관리 읽기전용 골구도 지원
 // v52.48.5.44.6.3.2 필로티 X 모서리 정합
 // v52.48.5.44.6.3 타입윤곽선 복원 + 골구도 셀 1.2배
 // v52.48.5.44.6.2 타입행 높이통일 + 박스제거 + 타입색상
@@ -147,7 +146,6 @@ export default function BuildingGrid({
   targetLines = [],
   targetEditMode = false,
   activeTargetId = '',
-  readOnly = false,
 }) {
   const floors = Number(config?.floors) || 0;
   const totalUnits = useMemo(() => countUniqueUnits(config), [config]);
@@ -678,21 +676,18 @@ export default function BuildingGrid({
                   component="button"
                   type="button"
                   title={
-                    readOnly
-                      ? `${buildingName} ${floor}층`
-                      : targetEditMode
+                    targetEditMode
                       ? activeFloorLine
                         ? '같은 층을 다시 누르면 목표 라인이 해제됩니다.'
                         : '이 층까지 목표 범위로 설정합니다.'
                       : '층 전체 세대 선택'
                   }
-                  onClick={() => {
-                    if (readOnly) return;
+                  onClick={() =>
                     onFloorClick?.(
                       buildingName,
                       floor,
-                    );
-                  }}
+                    )
+                  }
                   sx={{
                     width: 21,
                     flex: '0 0 21px',
@@ -742,14 +737,6 @@ export default function BuildingGrid({
                             : 'transparent',
                       fontWeight: 800,
                     },
-                    ...(readOnly && {
-                      cursor: 'default',
-                      '&:hover': {
-                        color: '#64748b',
-                        bgcolor: 'transparent',
-                        fontWeight: 400,
-                      },
-                    }),
                   }}
                 >
                   {floor}F
@@ -885,7 +872,6 @@ export default function BuildingGrid({
                           component="button"
                           type="button"
                           disabled={
-                            readOnly ||
                             targetEditMode ||
                             isProtectedCompleted
                           }
@@ -895,9 +881,7 @@ export default function BuildingGrid({
                               : `${buildingName} ${cell.unitCode}호`
                           }
                           title={
-                            readOnly
-                              ? `${buildingName} ${cell.unitCode}호`
-                              : targetEditMode
+                            targetEditMode
                               ? '목표 라인 설정 중에는 층 번호를 클릭하세요.'
                               : isProtectedCompleted
                                 ? '완료 처리에서는 기존 완료 세대의 완료일을 유지합니다.'
@@ -907,7 +891,6 @@ export default function BuildingGrid({
                           }
                           onClick={() => {
                             if (
-                              readOnly ||
                               targetEditMode ||
                               isProtectedCompleted
                             ) {
@@ -926,12 +909,10 @@ export default function BuildingGrid({
                             border: '1px solid',
                             boxSizing: 'border-box',
                             cursor:
-                              readOnly
-                                ? 'default'
-                                : targetEditMode ||
-                                    isProtectedCompleted
-                                  ? 'not-allowed'
-                                  : 'pointer',
+                              targetEditMode ||
+                              isProtectedCompleted
+                                ? 'not-allowed'
+                                : 'pointer',
                             fontFamily: 'inherit',
                             fontSize: completionDate
                               ? '0.53rem'
@@ -946,7 +927,7 @@ export default function BuildingGrid({
                             ...statusStyle,
                             '&:disabled': {
                               opacity:
-                                targetEditMode && !readOnly
+                                targetEditMode
                                   ? 0.72
                                   : 1,
                               WebkitTextFillColor:
@@ -955,14 +936,12 @@ export default function BuildingGrid({
                             '&:hover': {
                               filter:
                                 isProtectedCompleted
-                                  || readOnly
                                   ? 'none'
                                   : 'brightness(0.96)',
                             },
                             '&:active': {
                               transform:
                                 isProtectedCompleted
-                                  || readOnly
                                   ? 'none'
                                   : 'scale(0.98)',
                             },

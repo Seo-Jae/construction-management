@@ -1,4 +1,3 @@
-// v52.48.5.44.12 옵션관리 메뉴 추가
 import React, { useEffect, useState } from 'react';
 import {
   Badge,
@@ -21,7 +20,6 @@ import BadgeOutlinedIcon from '@mui/icons-material/BadgeOutlined';
 import ManageAccountsOutlinedIcon from '@mui/icons-material/ManageAccountsOutlined';
 import DomainAddRoundedIcon from '@mui/icons-material/DomainAddRounded';
 import PunchClockRoundedIcon from '@mui/icons-material/PunchClockRounded';
-import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { fetchPendingApprovalSummary } from '../utils/approvalQueries.js';
@@ -58,12 +56,6 @@ const progressMenus = [
   { value: 'progress-daily', label: '일별 완료 집계' },
   { value: 'progress-weekly', label: '주별 완료 집계' },
   { value: 'progress-monthly', label: '월별 완료 집계' },
-];
-
-const optionMenus = [
-  { value: 'option-insulation-status', label: '옵션현황(단열)' },
-  { value: 'option-selection-status', label: '옵션현황(선택)' },
-  { value: 'option-comparison', label: '옵션별 비교' },
 ];
 
 const materialMenus = [
@@ -317,7 +309,6 @@ export default function Sidebar({
   const hasDailyMenu = dailyMenus.some((item) => canAccessView(item.value));
   const hasWeeklyOverviewMenu = weeklyOverviewMenus.some((item) => canAccessView(item.value));
   const hasProgressMenu = progressMenus.some((item) => canAccessView(item.value));
-  const hasOptionMenu = optionMenus.some((item) => canAccessView(item.value));
   const hasMaterialMenu = materialMenus.some((item) => canAccessView(item.value));
   const hasLaborMenu = laborMenus.some((item) => canAccessView(item.value));
   const hasPaymentMenu = paymentMenus.some((item) => canAccessView(item.value));
@@ -335,11 +326,6 @@ export default function Sidebar({
   const isProgressView =
     currentView?.startsWith(
       'progress-',
-    );
-
-  const isOptionView =
-    currentView?.startsWith(
-      'option-',
     );
 
   const isMaterialView =
@@ -374,13 +360,6 @@ export default function Sidebar({
     setProgressOpen,
   ] = useState(
     isProgressView,
-  );
-
-  const [
-    optionOpen,
-    setOptionOpen,
-  ] = useState(
-    isOptionView,
   );
 
   const [
@@ -430,12 +409,6 @@ export default function Sidebar({
       setProgressOpen(true);
     }
   }, [isProgressView]);
-
-  useEffect(() => {
-    if (isOptionView) {
-      setOptionOpen(true);
-    }
-  }, [isOptionView]);
 
   useEffect(() => {
     if (isMaterialView) {
@@ -1075,54 +1048,6 @@ export default function Sidebar({
       <Collapse in={drawerOpen && progressOpen} timeout="auto" unmountOnExit>
         <SubMenuList
           items={progressMenus}
-          currentView={currentView}
-          onViewChange={handleViewChange}
-          canView={canAccessView}
-        />
-      </Collapse>        </>
-      )}
-
-
-      {hasOptionMenu && (
-        <>
-      <Tooltip
-        title={drawerOpen ? '' : '옵션관리'}
-        placement="right"
-        arrow
-      >
-        <ListItemButton
-          selected={isOptionView}
-          onClick={() => setOptionOpen((previous) => !previous)}
-          sx={topMenuSx(isOptionView)}
-        >
-          <ListItemIcon
-            sx={{ minWidth: 34, color: 'inherit', justifyContent: 'center' }}
-          >
-            <TuneRoundedIcon fontSize="small" />
-          </ListItemIcon>
-
-          <ListItemText
-            primary="옵션관리"
-            primaryTypographyProps={{
-              noWrap: true,
-              fontSize: '0.8rem',
-              fontWeight: isOptionView ? 700 : 500,
-            }}
-            sx={{ opacity: drawerOpen ? 1 : 0 }}
-          />
-
-          {drawerOpen &&
-            (optionOpen ? (
-              <ExpandLessIcon fontSize="small" />
-            ) : (
-              <ExpandMoreIcon fontSize="small" />
-            ))}
-        </ListItemButton>
-      </Tooltip>
-
-      <Collapse in={drawerOpen && optionOpen} timeout="auto" unmountOnExit>
-        <SubMenuList
-          items={optionMenus}
           currentView={currentView}
           onViewChange={handleViewChange}
           canView={canAccessView}
