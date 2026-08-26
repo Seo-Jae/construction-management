@@ -1,3 +1,4 @@
+// v52.48.5.44.16 타입·옵션 골구도 강조·좌우 패널 크기조절
 // v52.48.5.44.15 단열 옵션 타입별 현황·상단 박스 실높이 통일
 // v52.48.5.44.14 단열 옵션 상단정리·토스트·단일시트 무색상 전환
 // v52.48.5.44.13 옵션현황(단열) 골구도 엑셀 다운로드·업로드·저장
@@ -61,6 +62,9 @@ const MODE_CONFIG = {
 };
 
 const HEADER_CONTROL_HEIGHT = 30;
+const DEFAULT_SUMMARY_PANEL_WIDTH = 270;
+const MIN_SUMMARY_PANEL_WIDTH = 220;
+const MIN_BUILDING_PANEL_WIDTH = 520;
 
 const HEADER_CONTROL_SX = {
   height: HEADER_CONTROL_HEIGHT,
@@ -104,7 +108,14 @@ export default function OptionManagementOverview({
   const [message, setMessage] = useState(null);
   const [toast, setToast] = useState(null);
   const [expandedUnitType, setExpandedUnitType] = useState('');
+  const [selectedHighlight, setSelectedHighlight] = useState(null);
+  const [summaryPanelWidth, setSummaryPanelWidth] = useState(
+    DEFAULT_SUMMARY_PANEL_WIDTH,
+  );
+  const [isResizingPanels, setIsResizingPanels] = useState(false);
   const fileInputRef = useRef(null);
+  const splitPaneRef = useRef(null);
+  const resizeStartRef = useRef(null);
 
   const pageConfig = MODE_CONFIG[mode] || MODE_CONFIG.insulation;
   const isInsulation = mode === 'insulation';
@@ -126,22 +137,6 @@ export default function OptionManagementOverview({
       ),
     [buildingEntries],
   );
-
-  const displayData = useMemo(() => {
-    if (!isInsulation) return {};
-    return Object.entries(optionData).reduce((result, [cellKey, row]) => {
-      const value = String(row?.value || '').trim();
-      if (!value) return result;
-      result[cellKey] = {
-        label: value,
-        backgroundColor: '#ffffff',
-        borderColor: '#cbd5e1',
-        color: '#334155',
-        title: `${cellKey} · ${value}`,
-      };
-      return result;
-    }, {});
-  }, [isInsulation, optionData]);
 
   const optionLegend = useMemo(() => {
     const byValue = new Map();
@@ -171,9 +166,133 @@ export default function OptionManagementOverview({
     [buildingConfigs, optionData],
   );
 
+  const highlightedCellKeys = useMemo(() => {
+    if (!selectedHighlight?.typeName) return new Set();
+    const typeRow = typeOptionSummary.rows.find(
+      (row) => row.typeName === selectedHighlight.typeName,
+    );
+    if (!typeRow) return new Set();
+    if (!selectedHighlight.optionName) return new Set(typeRow.cellKeys);
+    const optionRow = typeRow.optionCounts.find(
+      (row) => row.optionName === selectedHighlight.optionName,
+    );
+    return new Set(optionRow?.cellKeys || []);
+  }, [selectedHighlight, typeOptionSummary]);
+
+  const displayData = useMemo(() => {
+    if (!isInsulation) return {};
+    const isOptionHighlight = Boolean(selectedHighlight?.optionName);
+    const highlightStyle = isOptionHighlight
+      ? {
+          backgroundColor: '#fef3c7',
+          borderColor: '#f59e0b',
+          color: '#92400e',
+        }
+      : {
+          backgroundColor: '#dbeafe',
+          borderColor: '#2563eb',
+          color: '#1e3a8a',
+        };
+
+    const result = Object.entries(optionData).reduce(
+      (nextResult, [cellKey, row]) => {
+        const value = String(row?.value || '').trim();
+        if (!value) return nextResult;
+        const highlighted = highlightedCellKeys.has(cellKey);
+        nextResult[cellKey] = {
+          label: value,
+          backgroundColor: highlighted
+            ? highlightStyle.backgroundColor
+            : '#ffffff',
+          borderColor: highlighted ? highlightStyle.borderColor : '#cbd5e1',
+          color: highlighted ? highlightStyle.color : '#334155',
+          title: `${cellKey} · ${value}`,
+        };
+        return nextResult;
+      },
+      {},
+    );
+
+    if (selectedHighlight?.typeName && !selectedHighlight.optionName) {
+      highlightedCellKeys.forEach((cellKey) => {
+        if (result[cellKey]) return;
+        result[cellKey] = {
+          label: cellKey.slice(cellKey.lastIndexOf('-') + 1),
+          ...highlightStyle,
+          title: `${cellKey} · ${selectedHighlight.typeName}`,
+        };
+      });
+    }
+
+    return result;
+  }, [highlightedCellKeys, isInsulation, optionData, selectedHighlight]);
+
   useEffect(() => {
     setExpandedUnitType('');
+    setSelectedHighlight(null);
+    setSummaryPanelWidth(DEFAULT_SUMMARY_PANEL_WIDTH);
   }, [projectName]);
+
+  useEffect(() => {
+    if (!isResizingPanels) return undefined;
+
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const handlePointerMove = (event) => {
+      const resizeStart = resizeStartRef.current;
+      const splitWidth = splitPaneRef.current?.getBoundingClientRect().width || 0;
+      if (!resizeStart || splitWidth <= 0) return;
+
+      const maximumWidth = Math.max(
+        MIN_SUMMARY_PANEL_WIDTH,
+        splitWidth - MIN_BUILDING_PANEL_WIDTH - 10,
+      );
+      const nextWidth = resizeStart.width - (event.clientX - resizeStart.clientX);
+      setSummaryPanelWidth(
+        Math.min(maximumWidth, Math.max(MIN_SUMMARY_PANEL_WIDTH, nextWidth)),
+      );
+    };
+
+    const handlePointerUp = () => {
+      resizeStartRef.current = null;
+      setIsResizingPanels(false);
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    window.addEventListener('pointercancel', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+      window.removeEventListener('pointercancel', handlePointerUp);
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+    };
+  }, [isResizingPanels]);
+
+  const changeSummaryPanelWidth = useCallback((nextWidth) => {
+    const splitWidth = splitPaneRef.current?.getBoundingClientRect().width || 0;
+    const maximumWidth = Math.max(
+      MIN_SUMMARY_PANEL_WIDTH,
+      splitWidth - MIN_BUILDING_PANEL_WIDTH - 10,
+    );
+    setSummaryPanelWidth(
+      Math.min(maximumWidth, Math.max(MIN_SUMMARY_PANEL_WIDTH, nextWidth)),
+    );
+  }, []);
+
+  const handleResizePointerDown = (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    resizeStartRef.current = {
+      clientX: event.clientX,
+      width: summaryPanelWidth,
+    };
+    setIsResizingPanels(true);
+  };
 
   const loadInsulationData = useCallback(async () => {
     if (!isInsulation || !projectName) return;
@@ -190,6 +309,7 @@ export default function OptionManagementOverview({
 
       if (error) throw error;
       setOptionData(normalizeOptionData(data?.unit_values));
+      setSelectedHighlight(null);
       setSourceFileName(data?.source_file_name || '');
       setSavedAt(data?.updated_at || '');
       setHasPendingChanges(false);
@@ -270,6 +390,7 @@ export default function OptionManagementOverview({
         buildingConfigs,
       });
       setOptionData(result.unitValues);
+      setSelectedHighlight(null);
       setSourceFileName(file.name);
       setHasPendingChanges(true);
       setToast({
@@ -542,39 +663,21 @@ export default function OptionManagementOverview({
         {isComparison && <Chip size="small" color="warning" label="비교 옵션 미선택" />}
       </Stack>
 
-      {isInsulation && optionLegend.length > 0 && (
-        <Stack direction="row" spacing={0.6} useFlexGap flexWrap="wrap">
-          {optionLegend.map((row) => (
-            <Chip
-              key={row.value}
-              size="small"
-              variant="outlined"
-              label={`${row.value} ${row.count.toLocaleString()}세대`}
-              sx={{
-                bgcolor: '#ffffff',
-                color: '#334155',
-                borderColor: '#cbd5e1',
-                fontWeight: 800,
-              }}
-            />
-          ))}
-        </Stack>
-      )}
-
       <Box
+        ref={splitPaneRef}
         sx={{
           flexGrow: 1,
           minHeight: 0,
           display: 'flex',
           alignItems: 'stretch',
-          gap: 1,
+          gap: 0,
         }}
       >
         <Paper
           variant="outlined"
           sx={{
             flex: 1,
-            minWidth: 0,
+            minWidth: MIN_BUILDING_PANEL_WIDTH,
             minHeight: 0,
             overflowX: 'auto',
             overflowY: 'hidden',
@@ -646,8 +749,55 @@ export default function OptionManagementOverview({
 
         {isInsulation && (
           <Box
+            role="separator"
+            aria-label="골구도와 타입별 현황 너비 조절"
+            aria-orientation="vertical"
+            tabIndex={0}
+            onPointerDown={handleResizePointerDown}
+            onDoubleClick={() =>
+              changeSummaryPanelWidth(DEFAULT_SUMMARY_PANEL_WIDTH)
+            }
+            onKeyDown={(event) => {
+              if (event.key === 'ArrowLeft') {
+                event.preventDefault();
+                changeSummaryPanelWidth(summaryPanelWidth + 20);
+              }
+              if (event.key === 'ArrowRight') {
+                event.preventDefault();
+                changeSummaryPanelWidth(summaryPanelWidth - 20);
+              }
+            }}
             sx={{
-              width: 270,
+              width: 10,
+              flex: '0 0 10px',
+              position: 'relative',
+              cursor: 'col-resize',
+              outline: 'none',
+              touchAction: 'none',
+              '&::after': {
+                content: '""',
+                position: 'absolute',
+                top: 8,
+                bottom: 8,
+                left: '50%',
+                width: isResizingPanels ? 3 : 1,
+                transform: 'translateX(-50%)',
+                bgcolor: isResizingPanels ? '#0284c7' : '#cbd5e1',
+                borderRadius: 4,
+              },
+              '&:hover::after, &:focus-visible::after': {
+                width: 3,
+                bgcolor: '#0284c7',
+              },
+            }}
+          />
+        )}
+
+        {isInsulation && (
+          <Box
+            sx={{
+              width: summaryPanelWidth,
+              minWidth: MIN_SUMMARY_PANEL_WIDTH,
               flexShrink: 0,
               minHeight: 0,
               display: 'flex',
@@ -670,7 +820,7 @@ export default function OptionManagementOverview({
                 타입별 단열 옵션 현황
               </Typography>
               <Typography sx={{ mt: 0.15, color: '#64748b', fontSize: '0.62rem' }}>
-                타입을 클릭하면 옵션별 세대수가 펼쳐집니다.
+                타입·옵션을 클릭하면 골구도에 표시됩니다.
               </Typography>
             </Box>
 
@@ -684,6 +834,9 @@ export default function OptionManagementOverview({
               ) : (
                 typeOptionSummary.rows.map((row) => {
                   const expanded = expandedUnitType === row.typeName;
+                  const typeSelected =
+                    selectedHighlight?.typeName === row.typeName &&
+                    !selectedHighlight?.optionName;
                   return (
                     <Box
                       key={row.typeName}
@@ -696,11 +849,17 @@ export default function OptionManagementOverview({
                       }}
                     >
                       <ButtonBase
-                        onClick={() =>
+                        onClick={() => {
                           setExpandedUnitType((current) =>
                             current === row.typeName ? '' : row.typeName,
-                          )
-                        }
+                          );
+                          setSelectedHighlight((current) =>
+                            current?.typeName === row.typeName &&
+                            !current?.optionName
+                              ? null
+                              : { typeName: row.typeName, optionName: '' },
+                          );
+                        }}
                         sx={{
                           width: '100%',
                           minHeight: 34,
@@ -709,7 +868,10 @@ export default function OptionManagementOverview({
                           gridTemplateColumns: '20px minmax(0, 1fr)',
                           alignItems: 'center',
                           textAlign: 'left',
-                          '&:hover': { bgcolor: '#f8fafc' },
+                          bgcolor: typeSelected ? '#dbeafe' : '#ffffff',
+                          '&:hover': {
+                            bgcolor: typeSelected ? '#bfdbfe' : '#f8fafc',
+                          },
                         }}
                       >
                         {expanded ? (
@@ -747,35 +909,63 @@ export default function OptionManagementOverview({
                               엑셀에 등록된 옵션명이 없습니다.
                             </Typography>
                           ) : (
-                            row.optionCounts.map(({ optionName, count }) => (
-                              <Box
-                                key={optionName}
-                                sx={{
-                                  display: 'grid',
-                                  gridTemplateColumns: 'minmax(0, 1fr) auto',
-                                  columnGap: 0.7,
-                                  alignItems: 'center',
-                                }}
-                              >
-                                <Typography
-                                  title={optionName}
-                                  noWrap
-                                  sx={{ color: '#475569', fontSize: '0.65rem', fontWeight: 700 }}
-                                >
-                                  {optionName}
-                                </Typography>
-                                <Typography
+                            row.optionCounts.map(({ optionName, count }) => {
+                              const optionSelected =
+                                selectedHighlight?.typeName === row.typeName &&
+                                selectedHighlight?.optionName === optionName;
+                              return (
+                                <ButtonBase
+                                  key={optionName}
+                                  onClick={() =>
+                                    setSelectedHighlight((current) =>
+                                      current?.typeName === row.typeName &&
+                                      current?.optionName === optionName
+                                        ? null
+                                        : { typeName: row.typeName, optionName },
+                                    )
+                                  }
                                   sx={{
-                                    color: '#0f172a',
-                                    fontSize: '0.65rem',
-                                    fontWeight: 800,
-                                    fontVariantNumeric: 'tabular-nums',
+                                    width: '100%',
+                                    minHeight: 25,
+                                    px: 0.55,
+                                    borderRadius: 0.75,
+                                    display: 'grid',
+                                    gridTemplateColumns: 'minmax(0, 1fr) auto',
+                                    columnGap: 0.7,
+                                    alignItems: 'center',
+                                    textAlign: 'left',
+                                    bgcolor: optionSelected
+                                      ? '#fef3c7'
+                                      : 'transparent',
+                                    '&:hover': {
+                                      bgcolor: optionSelected ? '#fde68a' : '#eef2f7',
+                                    },
                                   }}
                                 >
-                                  {count.toLocaleString()}세대
-                                </Typography>
-                              </Box>
-                            ))
+                                  <Typography
+                                    title={optionName}
+                                    noWrap
+                                    sx={{
+                                      color: '#475569',
+                                      fontSize: '0.65rem',
+                                      fontWeight: 700,
+                                    }}
+                                  >
+                                    {optionName}
+                                  </Typography>
+                                  <Typography
+                                    sx={{
+                                      color: '#0f172a',
+                                      fontSize: '0.65rem',
+                                      fontWeight: 800,
+                                      fontVariantNumeric: 'tabular-nums',
+                                    }}
+                                  >
+                                    {count.toLocaleString()}세대
+                                  </Typography>
+                                </ButtonBase>
+                              );
+                            })
                           )}
                         </Box>
                       </Collapse>

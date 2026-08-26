@@ -1,3 +1,4 @@
+// v52.48.5.44.16 타입·옵션 선택용 세대키 및 0세대 항목 제외
 // v52.48.5.44.15 골구도 타입별 단열 옵션 세대수 집계
 import {
   buildFloorVisualCells,
@@ -60,6 +61,7 @@ export const createOptionTypeSummary = ({
     .sort(([first], [second]) => compareNatural(first, second))
     .map(([typeName, cellKeys]) => {
       const countByOptionName = new Map();
+      const cellKeysByOptionName = new Map();
       let assignedCount = 0;
 
       cellKeys.forEach((cellKey) => {
@@ -70,20 +72,27 @@ export const createOptionTypeSummary = ({
           optionName,
           (countByOptionName.get(optionName) || 0) + 1,
         );
+        const optionCellKeys = cellKeysByOptionName.get(optionName) || [];
+        optionCellKeys.push(cellKey);
+        cellKeysByOptionName.set(optionName, optionCellKeys);
       });
 
       return {
         typeName,
+        cellKeys,
         assignedCount,
         totalCount: cellKeys.length,
         percentage: formatOptionProgressPercentage(
           assignedCount,
           cellKeys.length,
         ),
-        optionCounts: optionNames.map((optionName) => ({
-          optionName,
-          count: countByOptionName.get(optionName) || 0,
-        })),
+        optionCounts: optionNames
+          .map((optionName) => ({
+            optionName,
+            count: countByOptionName.get(optionName) || 0,
+            cellKeys: cellKeysByOptionName.get(optionName) || [],
+          }))
+          .filter(({ count }) => count > 0),
       };
     });
 
