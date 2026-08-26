@@ -1,3 +1,4 @@
+// v52.48.5.44.28 선택옵션 MenuListContext 누락 백색화면 긴급수정
 // v52.48.5.44.27 선택옵션 로컬목록 위치고정·10행 스크롤 제한
 // v52.48.5.44.26 비교 옵션선택 높이축소·불필요 세로스크롤 제거
 // v52.48.5.44.25 선택옵션 세대수 단일표시·비교카드 세대수·X 해제
@@ -30,6 +31,7 @@ import {
   IconButton,
   Menu,
   MenuItem,
+  MenuList,
   Paper,
   Snackbar,
   Stack,
@@ -1338,30 +1340,32 @@ export default function OptionManagementOverview({
                     bgcolor: '#ffffff',
                   }}
                 >
-                  {['', ...selectionOptionNames].map((optionName) => {
-                    const selected = selectedSelectionOption === optionName;
-                    return (
-                      <MenuItem
-                        key={optionName || 'all-options'}
-                        selected={selected}
-                        onClick={() => {
-                          setSelectedSelectionOption(optionName);
-                          setSelectionOptionMenuOpen(false);
-                        }}
-                        sx={{
-                          minHeight: '32px !important',
-                          height: 32,
-                          px: 1.2,
-                          fontSize: '0.7rem',
-                          whiteSpace: 'nowrap',
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                        }}
-                      >
-                        {optionName || '전체 옵션'}
-                      </MenuItem>
-                    );
-                  })}
+                  <MenuList disablePadding>
+                    {['', ...selectionOptionNames].map((optionName) => {
+                      const selected = selectedSelectionOption === optionName;
+                      return (
+                        <MenuItem
+                          key={optionName || 'all-options'}
+                          selected={selected}
+                          onClick={() => {
+                            setSelectedSelectionOption(optionName);
+                            setSelectionOptionMenuOpen(false);
+                          }}
+                          sx={{
+                            minHeight: '32px !important',
+                            height: 32,
+                            px: 1.2,
+                            fontSize: '0.7rem',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                          }}
+                        >
+                          {optionName || '전체 옵션'}
+                        </MenuItem>
+                      );
+                    })}
+                  </MenuList>
                 </Paper>
               )}
             </Box>
