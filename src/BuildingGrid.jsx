@@ -1,3 +1,4 @@
+// v52.48.5.44.27 90% 화면 골구도 셀테두리·행간격 균일화
 // v52.48.5.44.23 옵션비교 선택수 기준 세대셀 분할표시 지원
 // v52.48.5.44.13 옵션관리 세대별 표시값·색상 지원
 // v52.48.5.44.12 옵션관리 읽기전용 골구도 지원
@@ -20,7 +21,10 @@ import {
 const CELL_WIDTH = 41;
 const CELL_HEIGHT = 22;
 const CELL_GAP = 2;
-const ROW_GAP = 1;
+const GRID_BORDER_WIDTH =
+  'var(--wooklim-building-grid-border-width, 1px)';
+const GRID_ROW_GAP =
+  'var(--wooklim-building-grid-row-gap, 1px)';
 
 const formatCompletionMonthDay = (dateValue) => {
   const value = String(dateValue || '').trim();
@@ -91,7 +95,7 @@ function PilotiCell({ span = 1 }) {
         width,
         height: CELL_HEIGHT,
         flex: `0 0 ${width}px`,
-        border: '1px solid #cbd5e1',
+        border: `${GRID_BORDER_WIDTH} solid #cbd5e1`,
         bgcolor: '#f8fafc',
         boxSizing: 'border-box',
         overflow: 'hidden',
@@ -583,7 +587,7 @@ export default function BuildingGrid({
         sx={{
           display: 'flex',
           flexDirection: 'column',
-          gap: `${ROW_GAP}px`,
+          gap: GRID_ROW_GAP,
           bgcolor: 'transparent',
         }}
       >
@@ -958,7 +962,7 @@ export default function BuildingGrid({
                             height: '100%',
                             flex: '0 0 100%',
                             p: 0,
-                            border: '1px solid',
+                            border: `${GRID_BORDER_WIDTH} solid`,
                             boxSizing: 'border-box',
                             cursor:
                               readOnly
@@ -1068,7 +1072,7 @@ export default function BuildingGrid({
         sx={{
           mt: 0.35,
           display: 'grid',
-          gap: `${ROW_GAP}px`,
+          gap: GRID_ROW_GAP,
         }}
       >
         {/*

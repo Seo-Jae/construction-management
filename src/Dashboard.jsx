@@ -1,3 +1,4 @@
+// v52.48.5.44.27 90% 골구도 테두리·행간격 물리 1px 역보정
 // v52.48.5.44.26 화면배율 축소분 가용높이 역보정·전체화면 채움
 // v52.48.5.44.24 기본 화면 90%·사용자 배율 선택·인쇄 100% 지원
 // v52.48.5.44.13 옵션현황(단열) 업로드 사용자 연결
@@ -578,6 +579,12 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     const previousViewportHeight = documentElement.style.getPropertyValue(
       '--wooklim-dashboard-viewport-height',
     );
+    const previousGridBorderWidth = documentElement.style.getPropertyValue(
+      '--wooklim-building-grid-border-width',
+    );
+    const previousGridRowGap = documentElement.style.getPropertyValue(
+      '--wooklim-building-grid-row-gap',
+    );
     const hadScaleClass = documentElement.classList.contains(
       'wooklim-dashboard-scaled',
     );
@@ -587,6 +594,14 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       documentElement.style.setProperty(
         '--wooklim-dashboard-viewport-height',
         `${(100 / scale).toFixed(6)}vh`,
+      );
+      documentElement.style.setProperty(
+        '--wooklim-building-grid-border-width',
+        `${(1 / scale).toFixed(6)}px`,
+      );
+      documentElement.style.setProperty(
+        '--wooklim-building-grid-row-gap',
+        `${(1 / scale).toFixed(6)}px`,
       );
       documentElement.classList.add('wooklim-dashboard-scaled');
     };
@@ -607,6 +622,14 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       documentElement.style.setProperty(
         '--wooklim-dashboard-viewport-height',
         '100vh',
+      );
+      documentElement.style.setProperty(
+        '--wooklim-building-grid-border-width',
+        '1px',
+      );
+      documentElement.style.setProperty(
+        '--wooklim-building-grid-row-gap',
+        '1px',
       );
     };
     const handleAfterPrint = () => {
@@ -629,6 +652,28 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       } else {
         documentElement.style.removeProperty(
           '--wooklim-dashboard-viewport-height',
+        );
+      }
+
+      if (previousGridBorderWidth) {
+        documentElement.style.setProperty(
+          '--wooklim-building-grid-border-width',
+          previousGridBorderWidth,
+        );
+      } else {
+        documentElement.style.removeProperty(
+          '--wooklim-building-grid-border-width',
+        );
+      }
+
+      if (previousGridRowGap) {
+        documentElement.style.setProperty(
+          '--wooklim-building-grid-row-gap',
+          previousGridRowGap,
+        );
+      } else {
+        documentElement.style.removeProperty(
+          '--wooklim-building-grid-row-gap',
         );
       }
 

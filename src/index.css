@@ -31,5 +31,7 @@ html.wooklim-dashboard-scaled .MuiModal-root {
   html.wooklim-dashboard-scaled {
     zoom: 1 !important;
     --wooklim-dashboard-viewport-height: 100vh !important;
+    --wooklim-building-grid-border-width: 1px !important;
+    --wooklim-building-grid-row-gap: 1px !important;
   }
 }

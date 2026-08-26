@@ -1,3 +1,4 @@
+// v52.48.5.44.27 선택옵션 로컬목록 위치고정·10행 스크롤 제한
 // v52.48.5.44.26 비교 옵션선택 높이축소·불필요 세로스크롤 제거
 // v52.48.5.44.25 선택옵션 세대수 단일표시·비교카드 세대수·X 해제
 // v52.48.5.44.23 옵션선택 팝업·저장옵션 연동·세대셀 다분할 비교
@@ -24,6 +25,7 @@ import {
   ButtonBase,
   Chip,
   CircularProgress,
+  ClickAwayListener,
   Collapse,
   IconButton,
   Menu,
@@ -39,6 +41,7 @@ import AddCircleOutlineRoundedIcon from '@mui/icons-material/AddCircleOutlineRou
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
+import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import BuildingGrid from '../BuildingGrid.jsx';
@@ -142,6 +145,7 @@ export default function OptionManagementOverview({
   const [expandedUnitType, setExpandedUnitType] = useState('');
   const [selectedHighlight, setSelectedHighlight] = useState(null);
   const [selectedSelectionOption, setSelectedSelectionOption] = useState('');
+  const [selectionOptionMenuOpen, setSelectionOptionMenuOpen] = useState(false);
   const [comparisonOptionKeys, setComparisonOptionKeys] = useState(() =>
     Array(COMPARISON_OPTION_SLOT_STYLES.length).fill(''),
   );
@@ -438,6 +442,7 @@ export default function OptionManagementOverview({
     setExpandedUnitType('');
     setSelectedHighlight(null);
     setSelectedSelectionOption('');
+    setSelectionOptionMenuOpen(false);
     setComparisonOptionKeys(
       Array(COMPARISON_OPTION_SLOT_STYLES.length).fill(''),
     );
@@ -1232,36 +1237,135 @@ export default function OptionManagementOverview({
             세대수 : {displayedSelectionUnitCount.toLocaleString()}세대
           </Typography>
 
-          <TextField
-            select
-            size="small"
-            label="표시 옵션"
-            value={selectedSelectionOption}
-            onChange={(event) =>
-              setSelectedSelectionOption(event.target.value)
-            }
-            disabled={selectionOptionNames.length === 0}
-            sx={{
-              ml: 'auto',
-              width: 250,
-              minWidth: 210,
-              bgcolor: '#ffffff',
-              '& .MuiInputBase-root': {
-                height: 32,
-                fontSize: '0.72rem',
-              },
-              '& .MuiInputLabel-root': {
-                fontSize: '0.72rem',
-              },
-            }}
+          <ClickAwayListener
+            onClickAway={() => setSelectionOptionMenuOpen(false)}
           >
-            <MenuItem value="">전체 옵션</MenuItem>
-            {selectionOptionNames.map((optionName) => (
-              <MenuItem key={optionName} value={optionName}>
-                {optionName}
-              </MenuItem>
-            ))}
-          </TextField>
+            <Box
+              sx={{
+                ml: 'auto',
+                width: 250,
+                minWidth: 210,
+                position: 'relative',
+                zIndex: 12,
+              }}
+            >
+              <ButtonBase
+                id="selection-option-filter-button"
+                aria-haspopup="listbox"
+                aria-expanded={selectionOptionMenuOpen ? 'true' : undefined}
+                disabled={selectionOptionNames.length === 0}
+                onClick={() =>
+                  setSelectionOptionMenuOpen((current) => !current)
+                }
+                sx={{
+                  width: '100%',
+                  height: 32,
+                  px: 1.2,
+                  border: '1px solid #2563eb',
+                  borderRadius: 1,
+                  bgcolor: '#ffffff',
+                  display: 'grid',
+                  gridTemplateColumns: 'minmax(0, 1fr) 18px',
+                  alignItems: 'center',
+                  columnGap: 0.7,
+                  textAlign: 'left',
+                  '&:hover': {
+                    bgcolor: '#f8fafc',
+                  },
+                  '&.Mui-disabled': {
+                    color: '#94a3b8',
+                    borderColor: '#cbd5e1',
+                    bgcolor: '#f8fafc',
+                  },
+                }}
+              >
+                <Typography
+                  noWrap
+                  sx={{
+                    color: 'inherit',
+                    fontSize: '0.72rem',
+                    lineHeight: 1,
+                  }}
+                >
+                  {selectedSelectionOption || '전체 옵션'}
+                </Typography>
+                <KeyboardArrowDownRoundedIcon
+                  sx={{
+                    fontSize: 18,
+                    color: '#475569',
+                    transform: selectionOptionMenuOpen
+                      ? 'rotate(180deg)'
+                      : 'none',
+                    transition: 'transform 120ms ease',
+                  }}
+                />
+              </ButtonBase>
+
+              <Typography
+                component="span"
+                sx={{
+                  position: 'absolute',
+                  top: -6,
+                  left: 10,
+                  zIndex: 1,
+                  px: 0.4,
+                  color: '#2563eb',
+                  bgcolor: '#ffffff',
+                  fontSize: '0.58rem',
+                  fontWeight: 700,
+                  lineHeight: 1,
+                  pointerEvents: 'none',
+                }}
+              >
+                표시 옵션
+              </Typography>
+
+              {selectionOptionMenuOpen && (
+                <Paper
+                  role="listbox"
+                  aria-labelledby="selection-option-filter-button"
+                  elevation={8}
+                  sx={{
+                    position: 'absolute',
+                    top: 'calc(100% + 4px)',
+                    left: 0,
+                    right: 0,
+                    maxHeight: 320,
+                    overflowX: 'hidden',
+                    overflowY: 'auto',
+                    border: '1px solid #cbd5e1',
+                    borderRadius: 1,
+                    bgcolor: '#ffffff',
+                  }}
+                >
+                  {['', ...selectionOptionNames].map((optionName) => {
+                    const selected = selectedSelectionOption === optionName;
+                    return (
+                      <MenuItem
+                        key={optionName || 'all-options'}
+                        selected={selected}
+                        onClick={() => {
+                          setSelectedSelectionOption(optionName);
+                          setSelectionOptionMenuOpen(false);
+                        }}
+                        sx={{
+                          minHeight: '32px !important',
+                          height: 32,
+                          px: 1.2,
+                          fontSize: '0.7rem',
+                          whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                        }}
+                      >
+                        {optionName || '전체 옵션'}
+                      </MenuItem>
+                    );
+                  })}
+                </Paper>
+              )}
+            </Box>
+          </ClickAwayListener>
         </Box>
       )}
 
