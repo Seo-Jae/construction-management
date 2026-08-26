@@ -1,3 +1,4 @@
+// v52.48.5.44.22 옵션별 비교 상단 6칸 옵션선택 UI·임시안내 제거
 // v52.48.5.44.21 선택옵션 단일필터·엑셀순서·해당세대 색상강조
 // v52.48.5.44.18 선택옵션 동·호·타입 3열 수정가능 양식
 // v52.48.5.44.17 선택옵션 양식 다운로드·업로드·저장 연결
@@ -29,6 +30,7 @@ import {
   Typography,
 } from '@mui/material';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
+import AddCircleOutlineRoundedIcon from '@mui/icons-material/AddCircleOutlineRounded';
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
@@ -80,6 +82,15 @@ const HEADER_CONTROL_SX = {
   minHeight: HEADER_CONTROL_HEIGHT,
   boxSizing: 'border-box',
 };
+
+const COMPARISON_OPTION_SLOT_STYLES = [
+  { backgroundColor: '#eff6ff', borderColor: '#93c5fd' },
+  { backgroundColor: '#fff7f7', borderColor: '#fca5a5' },
+  { backgroundColor: '#faf5ff', borderColor: '#d8b4fe' },
+  { backgroundColor: '#f7fee7', borderColor: '#bef264' },
+  { backgroundColor: '#fffbeb', borderColor: '#fcd34d' },
+  { backgroundColor: '#ecfeff', borderColor: '#a5f3fc' },
+];
 
 const normalizeOptionData = (value) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
@@ -691,26 +702,7 @@ export default function OptionManagementOverview({
                 저장
               </Button>
             </>
-          ) : isComparison ? (
-            <>
-              <TextField
-                size="small"
-                label="기준 옵션"
-                value=""
-                placeholder="비교 기준 옵션"
-                disabled
-                sx={{ minWidth: 170 }}
-              />
-              <TextField
-                size="small"
-                label="비교 옵션"
-                value=""
-                placeholder="비교할 옵션"
-                disabled
-                sx={{ minWidth: 170 }}
-              />
-            </>
-          ) : (
+          ) : !isComparison ? (
             <TextField
               size="small"
               label="옵션 항목"
@@ -719,28 +711,77 @@ export default function OptionManagementOverview({
               disabled
               sx={{ minWidth: 210 }}
             />
-          )}
+          ) : null}
         </Stack>
 
         <SystemRefreshButton onClick={handleRefresh} label={`${pageConfig.title} 새로고침`} />
       </Paper>
 
-      {!isEditableOptionMode && (
-        <Alert severity="info" sx={{ py: 0.35 }}>
-          메뉴와 골구도 기본화면을 구성했습니다. 다음 단계에서 옵션 항목,
-          세대별 선택값, 색상 및 저장 기능을 연결합니다.
-        </Alert>
-      )}
-
       {message && <Alert severity={message.severity}>{message.text}</Alert>}
 
-      <Stack
-        direction="row"
-        spacing={0.8}
-        useFlexGap
-        flexWrap="wrap"
-        alignItems="center"
-      >
+      {isComparison && (
+        <Box sx={{ overflowX: 'auto', pb: 0.2 }}>
+          <Box
+            sx={{
+              minWidth: 1080,
+              display: 'grid',
+              gridTemplateColumns: 'repeat(6, minmax(160px, 1fr))',
+              gap: 1.4,
+            }}
+          >
+            {COMPARISON_OPTION_SLOT_STYLES.map((slotStyle, index) => (
+              <ButtonBase
+                key={`comparison-option-slot-${index + 1}`}
+                aria-label={`비교 옵션 ${index + 1} 선택`}
+                sx={{
+                  height: 72,
+                  px: 2,
+                  border: `1px solid ${slotStyle.borderColor}`,
+                  borderRadius: '6px',
+                  bgcolor: slotStyle.backgroundColor,
+                  color: '#1e293b',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 0.65,
+                  boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
+                  transition: 'box-shadow 120ms ease, transform 120ms ease',
+                  '&:hover': {
+                    boxShadow: `0 3px 10px ${slotStyle.borderColor}55`,
+                    transform: 'translateY(-1px)',
+                  },
+                  '&:focus-visible': {
+                    outline: `2px solid ${slotStyle.borderColor}`,
+                    outlineOffset: 2,
+                  },
+                }}
+              >
+                <AddCircleOutlineRoundedIcon sx={{ fontSize: 22 }} />
+                <Typography
+                  component="span"
+                  sx={{
+                    fontSize: '0.96rem',
+                    fontWeight: 850,
+                    lineHeight: 1,
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  옵션선택
+                </Typography>
+              </ButtonBase>
+            ))}
+          </Box>
+        </Box>
+      )}
+
+      {!isComparison && (
+        <Stack
+          direction="row"
+          spacing={0.8}
+          useFlexGap
+          flexWrap="wrap"
+          alignItems="center"
+        >
         <Chip
           size="small"
           variant="outlined"
@@ -806,7 +847,6 @@ export default function OptionManagementOverview({
             )}
           </>
         )}
-        {isComparison && <Chip size="small" color="warning" label="비교 옵션 미선택" />}
         {isSelection && (
           <TextField
             select
@@ -839,7 +879,8 @@ export default function OptionManagementOverview({
             ))}
           </TextField>
         )}
-      </Stack>
+        </Stack>
+      )}
 
       <Box
         ref={splitPaneRef}
@@ -862,7 +903,7 @@ export default function OptionManagementOverview({
             p: 0.75,
             borderColor: 'transparent',
             boxShadow: 'none',
-            bgcolor: '#f1f5f9',
+            bgcolor: isComparison ? '#ffffff' : '#f1f5f9',
             position: 'relative',
           }}
         >
