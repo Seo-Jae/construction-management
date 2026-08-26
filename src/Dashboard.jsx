@@ -1,3 +1,4 @@
+// v52.48.5.44.30 세대물량관리 독립 대메뉴 분리
 // v52.48.5.44.29 옵션관리 세대물량관리 좌·우 2분할 기본화면
 // v52.48.5.44.27 90% 골구도 테두리·행간격 물리 1px 역보정
 // v52.48.5.44.26 화면배율 축소분 가용높이 역보정·전체화면 채움
@@ -367,7 +368,7 @@ const viewTitles = {
   'option-insulation-status': '옵션현황(단열)',
   'option-selection-status': '옵션현황(선택)',
   'option-comparison': '옵션별 비교',
-  'option-household-quantity': '세대물량관리',
+  'household-quantity-management': '세대물량관리',
   'material-order': '자재발주작성',
   'material-input-status': '자재투입현황',
   'material-unit-price': '일위대가작성',
@@ -408,7 +409,7 @@ const VIEW_PERMISSION_KEYS = {
   'option-insulation-status': 'construction.progress.view',
   'option-selection-status': 'construction.progress.view',
   'option-comparison': 'construction.progress.view',
-  'option-household-quantity': 'construction.progress.view',
+  'household-quantity-management': 'construction.progress.view',
   'drawing-quantity': 'construction.drawing.view',
   'material-order': 'material.order.view',
   'material-input-status': 'material.input.view',
@@ -4447,7 +4448,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               />
             )}
 
-          {currentView === 'option-household-quantity' &&
+          {currentView === 'household-quantity-management' &&
             activeProjectName && (
               <HouseholdQuantityManagement
                 projectName={activeProjectName}

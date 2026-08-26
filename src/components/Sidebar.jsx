@@ -1,3 +1,4 @@
+// v52.48.5.44.30 세대물량관리 독립 대메뉴 분리
 // v52.48.5.44.29 옵션관리 세대물량관리 메뉴 추가
 // v52.48.5.44.12 옵션관리 메뉴 추가
 import React, { useEffect, useState } from 'react';
@@ -23,6 +24,7 @@ import ManageAccountsOutlinedIcon from '@mui/icons-material/ManageAccountsOutlin
 import DomainAddRoundedIcon from '@mui/icons-material/DomainAddRounded';
 import PunchClockRoundedIcon from '@mui/icons-material/PunchClockRounded';
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
+import TableRowsRoundedIcon from '@mui/icons-material/TableRowsRounded';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { fetchPendingApprovalSummary } from '../utils/approvalQueries.js';
@@ -65,7 +67,6 @@ const optionMenus = [
   { value: 'option-insulation-status', label: '옵션현황(단열)' },
   { value: 'option-selection-status', label: '옵션현황(선택)' },
   { value: 'option-comparison', label: '옵션별 비교' },
-  { value: 'option-household-quantity', label: '세대물량관리' },
 ];
 
 const materialMenus = [
@@ -1131,6 +1132,41 @@ export default function Sidebar({
         />
       </Collapse>        </>
       )}
+
+
+      {canAccessView('household-quantity-management') && (
+      <Tooltip
+        title={drawerOpen ? '' : '세대물량관리'}
+        placement="right"
+        arrow
+      >
+        <ListItemButton
+          selected={currentView === 'household-quantity-management'}
+          onClick={() => handleViewChange('household-quantity-management')}
+          sx={topMenuSx(currentView === 'household-quantity-management')}
+        >
+          <ListItemIcon
+            sx={{
+              minWidth: 34,
+              color: 'inherit',
+              justifyContent: 'center',
+            }}
+          >
+            <TableRowsRoundedIcon fontSize="small" />
+          </ListItemIcon>
+
+          <ListItemText
+            primary="세대물량관리"
+            primaryTypographyProps={{
+              noWrap: true,
+              fontSize: '0.8rem',
+              fontWeight:
+                currentView === 'household-quantity-management' ? 700 : 500,
+            }}
+            sx={{ opacity: drawerOpen ? 1 : 0 }}
+          />
+        </ListItemButton>
+      </Tooltip>      )}
 
 
       {canAccessView('drawing-quantity') && (
