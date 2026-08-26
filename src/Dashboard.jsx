@@ -1,3 +1,4 @@
+// v52.48.5.44.35 화면배율 Portal 목록 좌표 전역 보정
 // v52.48.5.44.32 세대물량 기본 공정 정리·옵션비교 선택옵션 전용
 // v52.48.5.44.31 세대물량관리 공정별 갑지·Excel 연동
 // v52.48.5.44.30 세대물량관리 독립 대메뉴 분리
@@ -592,6 +593,12 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     const previousGridRowGap = documentElement.style.getPropertyValue(
       '--wooklim-building-grid-row-gap',
     );
+    const previousDashboardScale = documentElement.style.getPropertyValue(
+      '--wooklim-dashboard-scale',
+    );
+    const previousOverlayInverseScale = documentElement.style.getPropertyValue(
+      '--wooklim-dashboard-overlay-inverse-scale',
+    );
     const hadScaleClass = documentElement.classList.contains(
       'wooklim-dashboard-scaled',
     );
@@ -609,6 +616,14 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       documentElement.style.setProperty(
         '--wooklim-building-grid-row-gap',
         `${(1 / scale).toFixed(6)}px`,
+      );
+      documentElement.style.setProperty(
+        '--wooklim-dashboard-scale',
+        String(scale),
+      );
+      documentElement.style.setProperty(
+        '--wooklim-dashboard-overlay-inverse-scale',
+        String(1 / scale),
       );
       documentElement.classList.add('wooklim-dashboard-scaled');
     };
@@ -637,6 +652,11 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       documentElement.style.setProperty(
         '--wooklim-building-grid-row-gap',
         '1px',
+      );
+      documentElement.style.setProperty('--wooklim-dashboard-scale', '1');
+      documentElement.style.setProperty(
+        '--wooklim-dashboard-overlay-inverse-scale',
+        '1',
       );
     };
     const handleAfterPrint = () => {
@@ -681,6 +701,26 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       } else {
         documentElement.style.removeProperty(
           '--wooklim-building-grid-row-gap',
+        );
+      }
+
+      if (previousDashboardScale) {
+        documentElement.style.setProperty(
+          '--wooklim-dashboard-scale',
+          previousDashboardScale,
+        );
+      } else {
+        documentElement.style.removeProperty('--wooklim-dashboard-scale');
+      }
+
+      if (previousOverlayInverseScale) {
+        documentElement.style.setProperty(
+          '--wooklim-dashboard-overlay-inverse-scale',
+          previousOverlayInverseScale,
+        );
+      } else {
+        documentElement.style.removeProperty(
+          '--wooklim-dashboard-overlay-inverse-scale',
         );
       }
 
