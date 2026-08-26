@@ -1,3 +1,4 @@
+// v52.48.5.44.21 선택옵션 단일필터·엑셀순서·해당세대 색상강조
 // v52.48.5.44.18 선택옵션 동·호·타입 3열 수정가능 양식
 // v52.48.5.44.17 선택옵션 양식 다운로드·업로드·저장 연결
 // v52.48.5.44.16 타입·옵션 골구도 강조·좌우 패널 크기조절
@@ -20,6 +21,7 @@ import {
   Chip,
   CircularProgress,
   Collapse,
+  MenuItem,
   Paper,
   Snackbar,
   Stack,
@@ -119,6 +121,7 @@ export default function OptionManagementOverview({
   const [toast, setToast] = useState(null);
   const [expandedUnitType, setExpandedUnitType] = useState('');
   const [selectedHighlight, setSelectedHighlight] = useState(null);
+  const [selectedSelectionOption, setSelectedSelectionOption] = useState('');
   const [summaryPanelWidth, setSummaryPanelWidth] = useState(
     DEFAULT_SUMMARY_PANEL_WIDTH,
   );
@@ -190,6 +193,8 @@ export default function OptionManagementOverview({
     };
   }, [selectionDocument]);
 
+  const selectionOptionNames = selectionDocument.optionNames;
+
   const highlightedCellKeys = useMemo(() => {
     if (!selectedHighlight?.typeName) return new Set();
     const typeRow = typeOptionSummary.rows.find(
@@ -211,12 +216,23 @@ export default function OptionManagementOverview({
             ? row.selectedOptions.filter(Boolean)
             : [];
           if (selectedOptions.length === 0) return result;
+          if (
+            selectedSelectionOption &&
+            !selectedOptions.includes(selectedSelectionOption)
+          ) {
+            return result;
+          }
+          const unitLabel =
+            String(selectionDocument.unitInfo?.[cellKey]?.unit || '').trim() ||
+            cellKey.slice(cellKey.lastIndexOf('-') + 1);
           result[cellKey] = {
-            label: `${selectedOptions.length}개 선택`,
-            backgroundColor: '#ecfdf5',
-            borderColor: '#10b981',
-            color: '#065f46',
-            title: `${cellKey} · ${selectedOptions.join(', ')}`,
+            label: unitLabel,
+            backgroundColor: '#bfdbfe',
+            borderColor: '#2563eb',
+            color: '#1e3a8a',
+            title: `${cellKey} · ${
+              selectedSelectionOption || selectedOptions.join(', ')
+            }`,
           };
           return result;
         },
@@ -274,15 +290,24 @@ export default function OptionManagementOverview({
     isSelection,
     optionData,
     selectedHighlight,
+    selectedSelectionOption,
     selectionDocument,
   ]);
 
   useEffect(() => {
     setExpandedUnitType('');
     setSelectedHighlight(null);
+    setSelectedSelectionOption('');
     setSummaryPanelWidth(DEFAULT_SUMMARY_PANEL_WIDTH);
     setMessage(null);
   }, [mode, projectName]);
+
+  useEffect(() => {
+    if (!isSelection) return;
+    setSelectedSelectionOption((current) =>
+      current && !selectionOptionNames.includes(current) ? '' : current,
+    );
+  }, [isSelection, selectionOptionNames]);
 
   useEffect(() => {
     if (!isResizingPanels) return undefined;
@@ -709,7 +734,13 @@ export default function OptionManagementOverview({
 
       {message && <Alert severity={message.severity}>{message.text}</Alert>}
 
-      <Stack direction="row" spacing={0.8} useFlexGap flexWrap="wrap" alignItems="center">
+      <Stack
+        direction="row"
+        spacing={0.8}
+        useFlexGap
+        flexWrap="wrap"
+        alignItems="center"
+      >
         <Chip
           size="small"
           variant="outlined"
@@ -776,6 +807,38 @@ export default function OptionManagementOverview({
           </>
         )}
         {isComparison && <Chip size="small" color="warning" label="비교 옵션 미선택" />}
+        {isSelection && (
+          <TextField
+            select
+            size="small"
+            label="표시 옵션"
+            value={selectedSelectionOption}
+            onChange={(event) =>
+              setSelectedSelectionOption(event.target.value)
+            }
+            disabled={selectionOptionNames.length === 0}
+            sx={{
+              ml: 'auto',
+              width: 250,
+              minWidth: 210,
+              bgcolor: '#ffffff',
+              '& .MuiInputBase-root': {
+                height: 32,
+                fontSize: '0.72rem',
+              },
+              '& .MuiInputLabel-root': {
+                fontSize: '0.72rem',
+              },
+            }}
+          >
+            <MenuItem value="">전체 옵션</MenuItem>
+            {selectionOptionNames.map((optionName) => (
+              <MenuItem key={optionName} value={optionName}>
+                {optionName}
+              </MenuItem>
+            ))}
+          </TextField>
+        )}
       </Stack>
 
       <Box
