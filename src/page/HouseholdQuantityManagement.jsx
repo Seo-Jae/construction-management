@@ -1,3 +1,4 @@
+// v52.48.5.44.41 단열·합지 자동기준, 골구도 줌·이동·가로출력
 // v52.48.5.44.40 공정별 세대물량 골구도 보기
 // v52.48.5.44.39 증감 부호 계산 수정·상하 표 9열 정렬
 // v52.48.5.44.38 하단 옵션 증감물량 타입별 상단 자동집계
@@ -8,15 +9,18 @@
 // v52.48.5.44.31 세대물량관리 단일화·공정별 갑지·Excel 연동
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert, Box, Button, ButtonBase, Checkbox, Chip, CircularProgress,
+  Alert, Box, Button, ButtonBase, Checkbox, Chip, CircularProgress, IconButton,
   Dialog, DialogActions, DialogContent, DialogTitle, Divider, Paper,
   Snackbar, Stack, Tab, Tabs, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, TextField, Typography,
+  TableHead, TableRow, TextField, Tooltip, Typography,
 } from '@mui/material';
 import AddCircleOutlineRoundedIcon from '@mui/icons-material/AddCircleOutlineRounded';
+import CenterFocusStrongRoundedIcon from '@mui/icons-material/CenterFocusStrongRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import LinkRoundedIcon from '@mui/icons-material/LinkRounded';
+import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded';
+import PrintRoundedIcon from '@mui/icons-material/PrintRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import SystemPageTitle from '../components/SystemPageTitle.jsx';
@@ -48,6 +52,9 @@ const HEADER_CONTROL_SX = {
   boxSizing: 'border-box',
   whiteSpace: 'nowrap',
 };
+const GRID_ZOOM_MIN = 0.35;
+const GRID_ZOOM_MAX = 1.8;
+const GRID_ZOOM_STEP = 0.1;
 const TABLE_HEADER_SX = {
   py: 0.8,
   px: 1,
@@ -89,6 +96,13 @@ const formatQuantity = (value) => {
 };
 const hasQuantity = (value) =>
   value !== null && value !== undefined && value !== '';
+const escapeHtml = (value) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 
 export default function HouseholdQuantityManagement({
   projectName = '',
@@ -122,7 +136,16 @@ export default function HouseholdQuantityManagement({
   const [processAddError, setProcessAddError] = useState('');
   const [gridDialogOpen, setGridDialogOpen] = useState(false);
   const [gridProcessName, setGridProcessName] = useState('');
+  const [gridZoom, setGridZoom] = useState(1);
+  const [gridPan, setGridPan] = useState({ x: 0, y: 0 });
+  const [gridPanning, setGridPanning] = useState(false);
   const fileInputRef = useRef(null);
+  const gridViewportRef = useRef(null);
+  const gridContentRef = useRef(null);
+  const gridPanDragRef = useRef(null);
+  const gridFitFrameRef = useRef(null);
+  const gridZoomRef = useRef(1);
+  const gridPanRef = useRef({ x: 0, y: 0 });
 
   const safeProcessOptions = useMemo(
     () => [
@@ -306,10 +329,7 @@ export default function HouseholdQuantityManagement({
       return result;
     }, {}));
     setWorkingProcessNames([...safeProcessOptions]);
-    setDialogProcess(
-      safeProcessOptions.find((processName) => processName !== '단열') ||
-      safeProcessOptions[0] || '',
-    );
+    setDialogProcess(safeProcessOptions[0] || '');
     setAddingProcess(false);
     setNewProcessName('');
     setProcessAddError('');
@@ -321,9 +341,233 @@ export default function HouseholdQuantityManagement({
     openConfigurationDialog('connections');
   };
 
+  const setGridPanPosition = useCallback((nextPan) => {
+    const safePan = {
+      x: Number(nextPan?.x || 0),
+      y: Number(nextPan?.y || 0),
+    };
+    gridPanRef.current = safePan;
+    setGridPan(safePan);
+  }, []);
+
+  const setGridZoomAtClientPoint = useCallback(
+    (requestedZoom, clientX, clientY) => {
+      const viewport = gridViewportRef.current;
+      if (!viewport) return;
+      const nextZoom = Math.min(
+        GRID_ZOOM_MAX,
+        Math.max(
+          GRID_ZOOM_MIN,
+          Number(Number(requestedZoom).toFixed(2)),
+        ),
+      );
+      const currentZoom = gridZoomRef.current;
+      if (Math.abs(nextZoom - currentZoom) < 0.001) return;
+
+      const rect = viewport.getBoundingClientRect();
+      const anchorX = Number.isFinite(clientX)
+        ? clientX - rect.left
+        : rect.width / 2;
+      const anchorY = Number.isFinite(clientY)
+        ? clientY - rect.top
+        : rect.height / 2;
+      const currentPan = gridPanRef.current;
+      const worldX = (anchorX - currentPan.x) / currentZoom;
+      const worldY = (anchorY - currentPan.y) / currentZoom;
+      const nextPan = {
+        x: anchorX - worldX * nextZoom,
+        y: anchorY - worldY * nextZoom,
+      };
+
+      gridZoomRef.current = nextZoom;
+      setGridZoom(nextZoom);
+      setGridPanPosition(nextPan);
+    },
+    [setGridPanPosition],
+  );
+
+  const fitGridView = useCallback(() => {
+    const viewport = gridViewportRef.current;
+    const content = gridContentRef.current;
+    if (!viewport || !content) return;
+    const viewportRect = viewport.getBoundingClientRect();
+    const contentWidth = Math.max(content.scrollWidth, content.offsetWidth, 1);
+    const contentHeight = Math.max(content.scrollHeight, content.offsetHeight, 1);
+    const nextZoom = Math.min(
+      1,
+      Math.max(
+        GRID_ZOOM_MIN,
+        Math.min(
+          (viewportRect.width - 32) / contentWidth,
+          (viewportRect.height - 32) / contentHeight,
+        ),
+      ),
+    );
+    const nextPan = {
+      x: Math.max(16, (viewportRect.width - contentWidth * nextZoom) / 2),
+      y: Math.max(16, (viewportRect.height - contentHeight * nextZoom) / 2),
+    };
+    gridZoomRef.current = nextZoom;
+    setGridZoom(nextZoom);
+    setGridPanPosition(nextPan);
+  }, [setGridPanPosition]);
+
   const openGridDialog = () => {
     setGridProcessName(activeProcess?.processName || '');
+    gridZoomRef.current = 1;
+    gridPanRef.current = { x: 0, y: 0 };
+    setGridZoom(1);
+    setGridPan({ x: 0, y: 0 });
     setGridDialogOpen(true);
+  };
+
+  useEffect(() => {
+    if (!gridDialogOpen || buildingEntries.length === 0) return undefined;
+    const firstFrame = window.requestAnimationFrame(() => {
+      const secondFrame = window.requestAnimationFrame(fitGridView);
+      gridFitFrameRef.current = secondFrame;
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      if (gridFitFrameRef.current) {
+        window.cancelAnimationFrame(gridFitFrameRef.current);
+        gridFitFrameRef.current = null;
+      }
+    };
+  }, [buildingEntries.length, fitGridView, gridDialogOpen]);
+
+  const changeGridZoom = (difference) => {
+    const viewport = gridViewportRef.current;
+    const rect = viewport?.getBoundingClientRect();
+    setGridZoomAtClientPoint(
+      gridZoomRef.current + difference,
+      rect ? rect.left + rect.width / 2 : undefined,
+      rect ? rect.top + rect.height / 2 : undefined,
+    );
+  };
+
+  const handleGridWheel = useCallback(
+    (event) => {
+      event.preventDefault();
+      const zoomFactor = Math.exp(-event.deltaY * 0.0015);
+      setGridZoomAtClientPoint(
+        gridZoomRef.current * zoomFactor,
+        event.clientX,
+        event.clientY,
+      );
+    },
+    [setGridZoomAtClientPoint],
+  );
+
+  const handleGridPointerDown = useCallback((event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    gridPanDragRef.current = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      origin: gridPanRef.current,
+    };
+    setGridPanning(true);
+  }, []);
+
+  const handleGridPointerMove = useCallback(
+    (event) => {
+      const drag = gridPanDragRef.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      event.preventDefault();
+      setGridPanPosition({
+        x: drag.origin.x + event.clientX - drag.startClientX,
+        y: drag.origin.y + event.clientY - drag.startClientY,
+      });
+    },
+    [setGridPanPosition],
+  );
+
+  const finishGridPan = useCallback((event) => {
+    const drag = gridPanDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    gridPanDragRef.current = null;
+    setGridPanning(false);
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+  }, []);
+
+  const handleGridOutput = (mode) => {
+    const content = gridContentRef.current;
+    if (!content || !gridProcess) return;
+    const outputWindow = window.open('', '_blank', 'width=1400,height=900');
+    if (!outputWindow) {
+      setToast({
+        severity: 'warning',
+        text: '출력 창이 차단되었습니다. 브라우저 팝업을 허용한 뒤 다시 시도해주세요.',
+      });
+      return;
+    }
+
+    const styleMarkup = Array.from(
+      document.querySelectorAll('style, link[rel="stylesheet"]'),
+    )
+      .map((node) => node.outerHTML)
+      .join('\n');
+    const contentWidth = Math.ceil(
+      Math.max(content.scrollWidth, content.offsetWidth, 1),
+    );
+    const contentHeight = Math.ceil(
+      Math.max(content.scrollHeight, content.offsetHeight, 1),
+    );
+    const outputTitle = `${projectName || '현장명 미등록'}_${gridProcess.processName}_세대물량골구도`;
+    const finalizeOutput = () => {
+      const stage = outputWindow.document.getElementById('quantity-print-stage');
+      const printContent = outputWindow.document.getElementById('quantity-print-content');
+      if (!stage || !printContent) return;
+      const scale = Math.min(
+        stage.clientWidth / contentWidth,
+        stage.clientHeight / contentHeight,
+      );
+      const left = Math.max(0, (stage.clientWidth - contentWidth * scale) / 2);
+      const top = Math.max(0, (stage.clientHeight - contentHeight * scale) / 2);
+      printContent.style.transform = `translate(${left}px, ${top}px) scale(${scale})`;
+      outputWindow.focus();
+      window.setTimeout(() => outputWindow.print(), mode === 'pdf' ? 350 : 250);
+    };
+
+    outputWindow.addEventListener('load', finalizeOutput, { once: true });
+    outputWindow.document.open();
+    outputWindow.document.write(`<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <base href="${escapeHtml(document.baseURI)}" />
+  <title>${escapeHtml(outputTitle)}</title>
+  ${styleMarkup}
+  <style>
+    @page { size: A4 landscape; margin: 5mm; }
+    html, body { width: 287mm; height: 200mm; margin: 0; padding: 0; overflow: hidden; }
+    body { background: #fff; color: #0f172a; font-family: inherit; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .quantity-print-page { width: 287mm; height: 200mm; box-sizing: border-box; overflow: hidden; }
+    .quantity-print-header { height: 13mm; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 8mm; border-bottom: 0.3mm solid #cbd5e1; }
+    .quantity-print-title { min-width: 0; font-size: 12pt; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .quantity-print-meta { flex: 0 0 auto; color: #475569; font-size: 7pt; font-weight: 800; }
+    .quantity-print-stage { position: relative; width: 287mm; height: 187mm; overflow: hidden; }
+    .quantity-print-content { position: absolute; left: 0; top: 0; width: ${contentWidth}px; height: ${contentHeight}px; transform-origin: 0 0; }
+    .quantity-print-content button { cursor: default !important; }
+    @media print { .quantity-print-page { break-after: avoid; page-break-after: avoid; } }
+  </style>
+</head>
+<body>
+  <main class="quantity-print-page">
+    <header class="quantity-print-header">
+      <div class="quantity-print-title">${escapeHtml(projectName || '현장명 미등록')} · ${escapeHtml(gridProcess.processName)} 세대물량 골구도</div>
+      <div class="quantity-print-meta">계산 ${gridUnitValues.completeCount.toLocaleString()}/${gridUnitValues.rows.length.toLocaleString()}세대 · 총 물량 ${escapeHtml(formatQuantity(gridUnitValues.totalQuantity))}</div>
+    </header>
+    <section class="quantity-print-stage" id="quantity-print-stage">
+      <div class="quantity-print-content" id="quantity-print-content">${content.innerHTML}</div>
+    </section>
+  </main>
+</body>
+</html>`);
+    outputWindow.document.close();
   };
 
   const openDownloadDialog = () => {
@@ -667,8 +911,8 @@ export default function HouseholdQuantityManagement({
                   {activeProcess.processName} 갑지
                 </Typography>
                 <Typography sx={{ mt: 0.15, color: '#64748b', fontSize: '0.65rem' }}>
-                  {activeProcess.isInsulation
-                    ? '타입과 단열 옵션현황 조합별 기본물량'
+                  {activeProcess.usesInsulationBasis
+                    ? '타입·단열옵션별 기본물량 + 연결된 유상옵션별 증감물량'
                     : '타입별 기본물량 + 연결된 유상옵션별 증감물량'}
                 </Typography>
               </Box>
@@ -729,9 +973,7 @@ export default function HouseholdQuantityManagement({
                 </Typography>
                 {activeProcess.optionRows.length === 0 ? (
                   <Alert severity="info" variant="outlined">
-                    {activeProcess.isInsulation
-                      ? '단열공정은 상단의 타입·단열옵션별 기본물량을 사용합니다.'
-                      : '공정별옵션연결에서 이 공정에 연결할 유상옵션을 선택하면 증감물량 행이 생성됩니다.'}
+                    공정별옵션연결에서 이 공정에 연결할 유상옵션을 선택하면 증감물량 행이 생성됩니다.
                   </Alert>
                 ) : (
                   <Table size="small" sx={{ tableLayout: 'fixed' }}>
@@ -796,7 +1038,7 @@ export default function HouseholdQuantityManagement({
                 공정별 세대물량 골구도
               </Typography>
               <Typography sx={{ mt: 0.15, color: '#64748b', fontSize: '0.68rem' }}>
-                세대물량 = 타입·단열옵션별 기본물량 + 해당 세대의 선택옵션 증감물량
+                세대물량 = 해당 세대의 기본물량 + 연결된 선택옵션 증감물량
               </Typography>
             </Box>
             <Chip size="small" color="primary" label={gridProcess?.processName || '-'} />
@@ -820,7 +1062,14 @@ export default function HouseholdQuantityManagement({
           <Paper
             square
             elevation={0}
-            sx={{ flex: '0 0 auto', borderBottom: '1px solid #cbd5e1' }}
+            sx={{
+              flex: '0 0 auto',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              pr: 1,
+              borderBottom: '1px solid #cbd5e1',
+            }}
           >
             <Tabs
               value={gridProcess?.processName || false}
@@ -829,6 +1078,8 @@ export default function HouseholdQuantityManagement({
               scrollButtons="auto"
               aria-label="골구도 표시 공정 선택"
               sx={{
+                flex: 1,
+                minWidth: 0,
                 minHeight: 38,
                 '& .MuiTab-root': {
                   minHeight: 38,
@@ -847,6 +1098,61 @@ export default function HouseholdQuantityManagement({
                 />
               ))}
             </Tabs>
+            <Stack direction="row" spacing={0.15} alignItems="center" sx={{ flex: '0 0 auto' }}>
+              <Tooltip title="축소">
+                <span>
+                  <IconButton
+                    size="small"
+                    onClick={() => changeGridZoom(-GRID_ZOOM_STEP)}
+                    disabled={gridZoom <= GRID_ZOOM_MIN}
+                    aria-label="골구도 축소"
+                  >
+                    <Typography sx={{ fontSize: 18, fontWeight: 900, lineHeight: 1 }}>−</Typography>
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <Typography sx={{ minWidth: 40, textAlign: 'center', color: '#475569', fontSize: '0.67rem', fontWeight: 900 }}>
+                {Math.round(gridZoom * 100)}%
+              </Typography>
+              <Tooltip title="확대">
+                <span>
+                  <IconButton
+                    size="small"
+                    onClick={() => changeGridZoom(GRID_ZOOM_STEP)}
+                    disabled={gridZoom >= GRID_ZOOM_MAX}
+                    aria-label="골구도 확대"
+                  >
+                    <Typography sx={{ fontSize: 18, fontWeight: 900, lineHeight: 1 }}>+</Typography>
+                  </IconButton>
+                </span>
+              </Tooltip>
+              <Tooltip title="화면에 맞춤">
+                <IconButton size="small" onClick={fitGridView} aria-label="골구도 화면 맞춤">
+                  <CenterFocusStrongRoundedIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <Divider orientation="vertical" flexItem sx={{ mx: 0.4 }} />
+              <Tooltip title="PDF 저장(A4 가로 1장)">
+                <IconButton
+                  size="small"
+                  color="error"
+                  onClick={() => handleGridOutput('pdf')}
+                  aria-label="골구도 PDF 저장"
+                >
+                  <PictureAsPdfRoundedIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="인쇄(A4 가로 1장)">
+                <IconButton
+                  size="small"
+                  color="primary"
+                  onClick={() => handleGridOutput('print')}
+                  aria-label="골구도 인쇄"
+                >
+                  <PrintRoundedIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </Stack>
           </Paper>
 
           {buildingEntries.length === 0 ? (
@@ -854,26 +1160,55 @@ export default function HouseholdQuantityManagement({
               <Typography color="text.secondary">표시할 현장 골구도 정보가 없습니다.</Typography>
             </Box>
           ) : (
-            <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', p: 1.5 }}>
+            <Box
+              ref={gridViewportRef}
+              onWheel={handleGridWheel}
+              onPointerDown={handleGridPointerDown}
+              onPointerMove={handleGridPointerMove}
+              onPointerUp={finishGridPan}
+              onPointerCancel={finishGridPan}
+              sx={{
+                position: 'relative',
+                flex: 1,
+                minHeight: 0,
+                overflow: 'hidden',
+                bgcolor: '#f8fafc',
+                cursor: gridPanning ? 'grabbing' : 'grab',
+                touchAction: 'none',
+                userSelect: gridPanning ? 'none' : 'auto',
+              }}
+            >
               <Box
                 sx={{
-                  minWidth: 'max-content',
-                  minHeight: '100%',
-                  display: 'flex',
-                  alignItems: 'flex-end',
-                  gap: 2.5,
-                  pb: 0.5,
+                  position: 'absolute',
+                  left: 0,
+                  top: 0,
+                  transform: `translate(${gridPan.x}px, ${gridPan.y}px) scale(${gridZoom})`,
+                  transformOrigin: '0 0',
+                  willChange: 'transform',
                 }}
               >
-                {buildingEntries.map(([buildingName, config]) => (
-                  <BuildingGrid
-                    key={`household-quantity-grid-${buildingName}`}
-                    buildingName={buildingName}
-                    config={config}
-                    readOnly
-                    cellDisplayData={gridCellDisplayData}
-                  />
-                ))}
+                <Box
+                  ref={gridContentRef}
+                  sx={{
+                    width: 'max-content',
+                    display: 'flex',
+                    alignItems: 'flex-end',
+                    gap: 2.5,
+                    p: 2,
+                    bgcolor: '#f8fafc',
+                  }}
+                >
+                  {buildingEntries.map(([buildingName, config]) => (
+                    <BuildingGrid
+                      key={`household-quantity-grid-${buildingName}`}
+                      buildingName={buildingName}
+                      config={config}
+                      readOnly
+                      cellDisplayData={gridCellDisplayData}
+                    />
+                  ))}
+                </Box>
               </Box>
             </Box>
           )}
@@ -897,7 +1232,7 @@ export default function HouseholdQuantityManagement({
         </DialogTitle>
         <DialogContent dividers sx={{ p: 0, minHeight: 0 }}>
           <Alert severity="info" sx={{ m: 1.25 }}>
-            단열은 단열 옵션현황이 자동 연결됩니다. 다른 공정은 물량에 영향을 주는 유상옵션을 선택하세요.
+            단열과 합지는 단열 옵션현황을 기본값으로 자동 연결합니다. 두 공정을 포함해 물량에 영향을 주는 유상옵션은 추가로 선택할 수 있습니다.
           </Alert>
           <Box sx={{ height: 'calc(100% - 76px)', minHeight: 0, display: 'grid', gridTemplateColumns: '220px minmax(0, 1fr)' }}>
             <Box sx={{ minHeight: 0, overflowY: 'auto', p: 1 }}>
@@ -925,8 +1260,10 @@ export default function HouseholdQuantityManagement({
                     <Typography sx={{ fontSize: '0.73rem', fontWeight: 850 }}>{processName}</Typography>
                     <Chip
                       size="small"
-                      color={processName === '단열' ? 'primary' : 'default'}
-                      label={processName === '단열' ? '자동' : `${selectedCount}개`}
+                      color={['단열', '합지'].includes(processName) ? 'primary' : 'default'}
+                      label={['단열', '합지'].includes(processName)
+                        ? `자동${selectedCount ? ` + ${selectedCount}개` : ''}`
+                        : `${selectedCount}개`}
                       sx={{ height: 21, fontSize: '0.62rem' }}
                     />
                   </ButtonBase>
@@ -1014,18 +1351,19 @@ export default function HouseholdQuantityManagement({
               <Box sx={{ px: 1.5, py: 1.1, bgcolor: '#f8fafc' }}>
                 <Typography sx={{ fontSize: '0.8rem', fontWeight: 900 }}>{dialogProcess || '공정 선택'}</Typography>
                 <Typography sx={{ mt: 0.2, color: '#64748b', fontSize: '0.65rem' }}>
-                  {dialogProcess === '단열'
-                    ? '단열 옵션현황의 타입·옵션 조합을 자동으로 사용합니다.'
+                  {['단열', '합지'].includes(dialogProcess)
+                    ? '단열 옵션현황의 타입·옵션 조합을 자동으로 사용하고, 필요한 유상옵션을 추가 연결합니다.'
                     : '이 공정 물량에 영향을 주는 유상옵션을 선택합니다.'}
                 </Typography>
               </Box>
               <Divider />
               <Box sx={{ flexGrow: 1, minHeight: 0, overflowY: 'auto', p: 1 }}>
-                {dialogProcess === '단열' ? (
-                  <Alert severity="success" variant="outlined">
-                    단열 옵션현황에 등록된 세대별 옵션과 현장관리의 타입정보를 조합해 Excel 기본물량 행을 자동 생성합니다.
+                {['단열', '합지'].includes(dialogProcess) && (
+                  <Alert severity="success" variant="outlined" sx={{ mb: 0.7 }}>
+                    단열 옵션현황과 타입정보를 조합한 기본물량 행은 자동 생성됩니다. 아래 선택옵션은 필요한 경우에만 추가 연결하세요.
                   </Alert>
-                ) : selectionDocument.optionNames.length === 0 ? (
+                )}
+                {selectionDocument.optionNames.length === 0 ? (
                   <Alert severity="warning" variant="outlined">
                     옵션현황(선택)에 등록된 유상옵션이 없습니다. 기본물량만 포함된 양식이 생성됩니다.
                   </Alert>

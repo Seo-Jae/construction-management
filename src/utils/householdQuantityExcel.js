@@ -1,3 +1,4 @@
+// v52.48.5.44.41 단열·합지 단열옵션 자동기준 및 선택옵션 증감 허용
 // v52.48.5.44.40 공정별 세대물량 골구도 계산
 // v52.48.5.44.39 증감 부호 계산 수정·상하 표 9열 정렬
 // v52.48.5.44.38 타입별 증감물량 자동집계 및 최종합계 반영
@@ -199,10 +200,14 @@ export const createHouseholdQuantityDefinitions = ({
 
   const typeNames = [...typeCounts.keys()].sort(naturalCompare);
   const selectedOptionCounts = new Map();
+  const selectedOptionCountsByInsulationBasis = new Map();
+  const unitRowMap = new Map(unitRows.map((row) => [row.cellKey, row]));
   Object.entries(selectionDocument?.units || {}).forEach(([cellKey, row]) => {
-    const unitRow = unitRows.find((unit) => unit.cellKey === cellKey);
+    const unitRow = unitRowMap.get(cellKey);
     if (!unitRow) return;
     const typeName = normalizeText(unitRow.unitType) || '미지정';
+    const basisOption =
+      normalizeText(insulationData?.[cellKey]?.value) || '미지정';
     (Array.isArray(row?.selectedOptions) ? row.selectedOptions : []).forEach(
       (optionName) => {
         const normalizedOption = normalizeText(optionName);
@@ -211,6 +216,11 @@ export const createHouseholdQuantityDefinitions = ({
         selectedOptionCounts.set(
           key,
           (selectedOptionCounts.get(key) || 0) + 1,
+        );
+        const basisKey = `${typeName}\u001f${basisOption}\u001f${normalizedOption}`;
+        selectedOptionCountsByInsulationBasis.set(
+          basisKey,
+          (selectedOptionCountsByInsulationBasis.get(basisKey) || 0) + 1,
         );
       },
     );
@@ -221,9 +231,10 @@ export const createHouseholdQuantityDefinitions = ({
     .filter(Boolean)
     .map((processName) => {
       const isInsulation = processName === '단열';
+      const usesInsulationBasis = ['단열', '합지'].includes(processName);
       let baseRows = [];
 
-      if (isInsulation) {
+      if (usesInsulationBasis) {
         const groupCounts = new Map();
         unitRows.forEach((unitRow) => {
           const typeName = normalizeText(unitRow.unitType) || '미지정';
@@ -263,7 +274,16 @@ export const createHouseholdQuantityDefinitions = ({
       }
 
       baseRows = baseRows.map((row) => {
-        const saved = valueMap.get(createRowIdentity(row));
+        const saved =
+          valueMap.get(createRowIdentity(row)) ||
+          (processName === '합지'
+            ? valueMap.get(
+                createRowIdentity({
+                  ...row,
+                  basisOption: '',
+                }),
+              )
+            : null);
         return {
           ...row,
           quantity: saved?.quantity ?? null,
@@ -271,17 +291,15 @@ export const createHouseholdQuantityDefinitions = ({
         };
       });
 
-      const selectedOptions = isInsulation
-        ? []
-        : [
-            ...new Set(
-              (Array.isArray(selections?.[processName])
-                ? selections[processName]
-                : [])
-                .map((optionName) => normalizeText(optionName))
-                .filter(Boolean),
-            ),
-          ];
+      const selectedOptions = [
+        ...new Set(
+          (Array.isArray(selections?.[processName])
+            ? selections[processName]
+            : [])
+            .map((optionName) => normalizeText(optionName))
+            .filter(Boolean),
+        ),
+      ];
 
       const optionRows = [];
       selectedOptions.forEach((optionName) => {
@@ -311,10 +329,37 @@ export const createHouseholdQuantityDefinitions = ({
         result.set(row.typeName, (result.get(row.typeName) || 0) + rowTotal);
         return result;
       }, new Map());
-      baseRows = baseRows.map((row) => ({
-        ...row,
-        adjustmentQuantity: optionAdjustmentByType.get(row.typeName) || 0,
-      }));
+      baseRows = baseRows.map((row) => {
+        if (!usesInsulationBasis) {
+          return {
+            ...row,
+            optionAdjustmentCounts: {},
+            adjustmentQuantity: optionAdjustmentByType.get(row.typeName) || 0,
+          };
+        }
+
+        const optionAdjustmentCounts = Object.fromEntries(
+          selectedOptions
+            .map((optionName) => [
+              optionName,
+              selectedOptionCountsByInsulationBasis.get(
+                `${row.typeName}\u001f${row.basisOption}\u001f${optionName}`,
+              ) || 0,
+            ])
+            .filter(([, unitCount]) => unitCount > 0),
+        );
+        const adjustmentQuantity = optionRows.reduce((total, optionRow) => {
+          if (optionRow.typeName !== row.typeName) return total;
+          const unitCount = optionAdjustmentCounts[optionRow.optionName] || 0;
+          return total + (Number(optionRow.quantity) || 0) * unitCount;
+        }, 0);
+
+        return {
+          ...row,
+          optionAdjustmentCounts,
+          adjustmentQuantity,
+        };
+      });
 
       const baseSubtotal = baseRows.reduce(
         (total, row) => total + (Number(row.quantity) || 0) * row.unitCount,
@@ -333,6 +378,7 @@ export const createHouseholdQuantityDefinitions = ({
       return {
         processName,
         isInsulation,
+        usesInsulationBasis,
         baseRows,
         optionRows,
         unitCount: unitRows.length,
@@ -410,23 +456,23 @@ export const createHouseholdQuantityUnitValues = ({
 
   const rows = createSelectionOptionUnitRows(buildingConfigs).map((unitRow) => {
     const typeName = normalizeText(unitRow.unitType) || '미지정';
-    const basisOption = process.isInsulation
+    const usesInsulationBasis =
+      Boolean(process.usesInsulationBasis) || process.isInsulation;
+    const basisOption = usesInsulationBasis
       ? normalizeText(insulationData?.[unitRow.cellKey]?.value) || '미지정'
       : '';
     const baseRow = baseRowMap.get(`${typeName}\u001f${basisOption}`);
-    const selectedOptionNames = process.isInsulation
-      ? []
-      : [
-          ...new Set(
-            (Array.isArray(
-              selectionDocument?.units?.[unitRow.cellKey]?.selectedOptions,
-            )
-              ? selectionDocument.units[unitRow.cellKey].selectedOptions
-              : [])
-              .map((optionName) => normalizeText(optionName))
-              .filter((optionName) => connectedOptionNames.has(optionName)),
-          ),
-        ];
+    const selectedOptionNames = [
+      ...new Set(
+        (Array.isArray(
+          selectionDocument?.units?.[unitRow.cellKey]?.selectedOptions,
+        )
+          ? selectionDocument.units[unitRow.cellKey].selectedOptions
+          : [])
+          .map((optionName) => normalizeText(optionName))
+          .filter((optionName) => connectedOptionNames.has(optionName)),
+      ),
+    ];
     const adjustmentRows = selectedOptionNames.map((optionName) => {
       const optionRow = optionRowMap.get(`${typeName}\u001f${optionName}`);
       return {
@@ -437,7 +483,7 @@ export const createHouseholdQuantityUnitValues = ({
     const missingItems = [];
     if (!baseRow || !hasEnteredQuantity(baseRow.quantity)) {
       missingItems.push(
-        process.isInsulation
+        usesInsulationBasis
           ? `기본물량(${typeName}/${basisOption})`
           : `기본물량(${typeName})`,
       );
@@ -603,8 +649,8 @@ export const saveHouseholdQuantityWorkbook = async ({
     sheet.getRow(1).height = 30;
 
     sheet.mergeCells('A2:I2');
-    sheet.getCell('A2').value = process.isInsulation
-      ? '단열 옵션현황에 따라 타입·단열옵션별 기본물량을 입력하세요.'
+    sheet.getCell('A2').value = process.usesInsulationBasis
+      ? '단열 옵션현황에 따라 타입·단열옵션별 기본물량을 입력하고, 필요하면 연결된 유상옵션별 증감물량을 입력하세요.'
       : '타입별 기본물량과 선택한 유상옵션별 증감물량을 입력하세요. 감소하는 물량은 음수(-)로 입력합니다.';
     sheet.getCell('A2').font = {
       name: '맑은 고딕',
@@ -640,8 +686,24 @@ export const saveHouseholdQuantityWorkbook = async ({
       optionDataStartRow + process.optionRows.length - 1;
     process.baseRows.forEach((row) => {
       const subtotal = (Number(row.quantity) || 0) * row.unitCount;
+      const basisAdjustmentTerms = process.usesInsulationBasis
+        ? Object.entries(row.optionAdjustmentCounts || {})
+            .map(([optionName, unitCount]) => {
+              const optionIndex = process.optionRows.findIndex(
+                (optionRow) =>
+                  optionRow.typeName === row.typeName &&
+                  optionRow.optionName === optionName,
+              );
+              return optionIndex >= 0 && Number(unitCount) > 0
+                ? `$E$${optionDataStartRow + optionIndex}*${Number(unitCount)}`
+                : '';
+            })
+            .filter(Boolean)
+        : [];
       const adjustmentFormula = process.optionRows.length
-        ? `SUMIF($B$${optionDataStartRow}:$B$${optionDataEndRow},B${rowNumber},$G$${optionDataStartRow}:$G$${optionDataEndRow})`
+        ? process.usesInsulationBasis
+          ? basisAdjustmentTerms.join('+') || '0'
+          : `SUMIF($B$${optionDataStartRow}:$B$${optionDataEndRow},B${rowNumber},$G$${optionDataStartRow}:$G$${optionDataEndRow})`
         : '0';
       sheet.getRow(rowNumber).values = [
         '기본',
@@ -705,9 +767,8 @@ export const saveHouseholdQuantityWorkbook = async ({
 
     if (process.optionRows.length === 0) {
       sheet.mergeCells(rowNumber, 1, rowNumber, 9);
-      sheet.getCell(rowNumber, 1).value = process.isInsulation
-        ? '단열공정은 상단 타입·단열옵션별 기본물량을 사용합니다.'
-        : '이 공정에 연결된 유상옵션이 없습니다.';
+      sheet.getCell(rowNumber, 1).value =
+        '이 공정에 연결된 유상옵션이 없습니다.';
       applyBodyStyle(sheet.getCell(rowNumber, 1), { fill: 'FFF8FAFC' });
       rowNumber += 1;
     } else {
