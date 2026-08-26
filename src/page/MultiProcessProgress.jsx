@@ -1,3 +1,4 @@
+// v52.48.5.44.36 다중공종 Autocomplete 배율 좌표 고정
 // v52.48.5.44.6.4 다중공종 셀확대·필로티X·하단타입
 import React, { useEffect, useMemo, useState } from 'react';
 import {
@@ -1766,6 +1767,7 @@ export default function MultiProcessProgress({
 
         <Autocomplete
           multiple
+          disablePortal
           disableCloseOnSelect
           filterSelectedOptions
           options={safeProcessOptions}

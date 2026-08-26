@@ -1,3 +1,4 @@
+// v52.48.5.44.36 자재 입고업체 Autocomplete 배율 좌표 고정
 import React, {
   useCallback,
   useEffect,
@@ -201,6 +202,7 @@ const SupplierSearchAutocomplete =
 
       return (
         <Autocomplete
+          disablePortal
           options={options}
           value={
             value || null

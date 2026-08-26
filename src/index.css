@@ -37,13 +37,16 @@ html.wooklim-dashboard-scaled .MuiPopover-paper {
   transform: scale(var(--wooklim-dashboard-scale, 1)) !important;
 }
 
-html.wooklim-dashboard-scaled .MuiAutocomplete-popper,
+html.wooklim-dashboard-scaled
+  .MuiAutocomplete-popper:not(.MuiAutocomplete-popperDisablePortal),
 html.wooklim-dashboard-scaled
   .MuiPopper-root:not(.MuiTooltip-popper):not(.MuiAutocomplete-popper) {
   zoom: var(--wooklim-dashboard-overlay-inverse-scale, 1);
 }
 
-html.wooklim-dashboard-scaled .MuiAutocomplete-popper .MuiAutocomplete-paper,
+html.wooklim-dashboard-scaled
+  .MuiAutocomplete-popper:not(.MuiAutocomplete-popperDisablePortal)
+  .MuiAutocomplete-paper,
 html.wooklim-dashboard-scaled
   .MuiPopper-root:not(.MuiTooltip-popper):not(.MuiAutocomplete-popper)
   > .MuiPaper-root {
