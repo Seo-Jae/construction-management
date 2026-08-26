@@ -1,3 +1,4 @@
+// v52.48.5.44.18 선택옵션 동·호·타입 3열 및 담당자 수정값 누적
 // v52.48.5.44.17 유상옵션 양식 골구도 자동작성·선택값 업로드
 import ExcelJS from 'exceljs';
 import {
@@ -6,14 +7,15 @@ import {
   getUnitType,
 } from './buildingUnits.js';
 
-const TEMPLATE_VERSION = '1';
+const TEMPLATE_VERSION = '2';
 const CATEGORY = 'selection';
 const DATA_SHEET_NAME = '유상옵션';
 const META_SHEET_NAME = '_옵션시스템정보';
 const OPTION_HEADER_ROW = 5;
 const DATA_START_ROW = 6;
-const FIRST_OPTION_COLUMN = 6;
-const LAST_OPTION_COLUMN = 23;
+const FIRST_OPTION_COLUMN = 4;
+const LAST_OPTION_COLUMN = 21;
+const IDENTITY_COLUMN = 22;
 const MAX_OPTION_COUNT = LAST_OPTION_COLUMN - FIRST_OPTION_COLUMN + 1;
 const MAX_IMPORT_ROWS = 5000;
 const TEMPLATE_PATH = 'templates/selection_option_template.xlsx';
@@ -45,18 +47,6 @@ const normalizeBuilding = (value) => {
     .replace(/\.0+$/, '');
   return /^\d+$/.test(text) ? String(Number(text)) : text.toLowerCase();
 };
-
-const normalizeNumberText = (value) => {
-  const text = normalizeText(toPlainCellValue(value)).replace(/\.0+$/, '');
-  return /^\d+$/.test(text) ? String(Number(text)) : text;
-};
-
-const normalizeCombinedUnit = (value) =>
-  normalizeText(toPlainCellValue(value))
-    .toLowerCase()
-    .replace(/\.0+$/, '')
-    .replace(/[동호실]/gu, '')
-    .replace(/[^\p{L}\p{N}]/gu, '');
 
 const toSafeFilenamePart = (value) =>
   normalizeText(value)
@@ -122,6 +112,7 @@ export const normalizeSelectionOptionDocument = (value) => {
   });
 
   const units = {};
+  const unitInfo = {};
   const rawUnits =
     value?.units && typeof value.units === 'object' && !Array.isArray(value.units)
       ? value.units
@@ -139,9 +130,25 @@ export const normalizeSelectionOptionDocument = (value) => {
     }
   });
 
+  const rawUnitInfo =
+    value?.unitInfo &&
+    typeof value.unitInfo === 'object' &&
+    !Array.isArray(value.unitInfo)
+      ? value.unitInfo
+      : {};
+  Object.entries(rawUnitInfo).forEach(([cellKey, row]) => {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) return;
+    unitInfo[cellKey] = {
+      building: normalizeText(row.building),
+      unit: normalizeText(row.unit),
+      unitType: normalizeText(row.unitType),
+    };
+  });
+
   return {
-    version: 1,
+    version: 2,
     optionNames,
+    unitInfo,
     units,
   };
 };
@@ -235,7 +242,7 @@ export const createSelectionOptionWorkbook = async ({
   worksheet.views = [
     {
       state: 'frozen',
-      xSplit: 5,
+      xSplit: 3,
       ySplit: 5,
       showGridLines: false,
     },
@@ -248,7 +255,7 @@ export const createSelectionOptionWorkbook = async ({
 
   for (let rowNumber = DATA_START_ROW; rowNumber <= clearLastRow; rowNumber += 1) {
     const row = worksheet.getRow(rowNumber);
-    for (let column = 1; column <= LAST_OPTION_COLUMN; column += 1) {
+    for (let column = 1; column <= IDENTITY_COLUMN; column += 1) {
       row.getCell(column).value = null;
     }
   }
@@ -260,19 +267,24 @@ export const createSelectionOptionWorkbook = async ({
 
     if (rowNumber > 1000) {
       row.height = baseStyleRow.height;
-      for (let column = 1; column <= LAST_OPTION_COLUMN; column += 1) {
+      for (let column = 1; column <= IDENTITY_COLUMN; column += 1) {
         row.getCell(column).style = baseStyleRow.getCell(column).style;
       }
     }
 
-    row.getCell(1).value = unitRow.building;
-    row.getCell(2).value = unitRow.floor;
-    row.getCell(3).value = unitRow.unit;
-    row.getCell(4).value = unitRow.combinedUnit;
-    row.getCell(5).value = unitRow.unitType;
+    const savedUnitInfo = normalizedDocument.unitInfo?.[unitRow.cellKey];
+    row.getCell(1).value = savedUnitInfo
+      ? savedUnitInfo.building
+      : unitRow.building;
+    row.getCell(2).value = savedUnitInfo ? savedUnitInfo.unit : unitRow.unit;
+    row.getCell(3).value = savedUnitInfo
+      ? savedUnitInfo.unitType
+      : unitRow.unitType;
     row.getCell(1).numFmt = '@';
+    row.getCell(2).numFmt = '@';
     row.getCell(3).numFmt = '@';
-    row.getCell(4).numFmt = '@';
+    row.getCell(IDENTITY_COLUMN).value = unitRow.cellKey;
+    row.getCell(IDENTITY_COLUMN).numFmt = '@';
 
     const selectedOptionSet = new Set(
       normalizedDocument.units?.[unitRow.cellKey]?.selectedOptions || [],
@@ -292,9 +304,11 @@ export const createSelectionOptionWorkbook = async ({
     }
   });
 
+  worksheet.getCell(OPTION_HEADER_ROW, IDENTITY_COLUMN).value = '_세대키';
+  worksheet.getColumn(IDENTITY_COLUMN).hidden = true;
   worksheet.autoFilter = {
     from: { row: OPTION_HEADER_ROW, column: 1 },
-    to: { row: lastDataRow, column: LAST_OPTION_COLUMN },
+    to: { row: lastDataRow, column: IDENTITY_COLUMN },
   };
   createMetaSheet(workbook, projectName, unitRows);
   workbook.creator = '현장관리 시스템';
@@ -366,9 +380,7 @@ export const parseSelectionOptionWorkbookFile = async ({
   }
 
   const unitRows = createSelectionOptionUnitRows(buildingConfigs);
-  const unitsByCombined = new Map(
-    unitRows.map((row) => [normalizeCombinedUnit(row.combinedUnit), row]),
-  );
+  const unitsByCellKey = new Map(unitRows.map((row) => [row.cellKey, row]));
   const optionDefinitions = [];
   const optionNameKeys = new Set();
   for (let column = FIRST_OPTION_COLUMN; column <= LAST_OPTION_COLUMN; column += 1) {
@@ -385,13 +397,14 @@ export const parseSelectionOptionWorkbookFile = async ({
     optionDefinitions.push({ column, optionName });
   }
   if (optionDefinitions.length === 0) {
-    throw new Error('F5:W5에 유상옵션명을 한 개 이상 입력해주세요.');
+    throw new Error('D5:U5에 유상옵션명을 한 개 이상 입력해주세요.');
   }
   const optionNameByColumn = new Map(
     optionDefinitions.map(({ column, optionName }) => [column, optionName]),
   );
 
   const selectedUnits = {};
+  const unitInfo = {};
   const seenCellKeys = new Set();
   const maximumRow = Math.min(
     MAX_IMPORT_ROWS,
@@ -401,52 +414,33 @@ export const parseSelectionOptionWorkbookFile = async ({
 
   for (let rowNumber = DATA_START_ROW; rowNumber <= maximumRow; rowNumber += 1) {
     const row = worksheet.getRow(rowNumber);
-    const combinedUnit = getCellText(row.getCell(4));
+    const cellKey = getCellText(row.getCell(IDENTITY_COLUMN));
     const optionCellValues = [];
     for (let column = FIRST_OPTION_COLUMN; column <= LAST_OPTION_COLUMN; column += 1) {
       optionCellValues.push(getCellText(row.getCell(column)));
     }
     const hasVisibleValue =
-      [1, 2, 3, 4, 5].some((column) => getCellText(row.getCell(column))) ||
+      [1, 2, 3].some((column) => getCellText(row.getCell(column))) ||
+      Boolean(cellKey) ||
       optionCellValues.some(Boolean);
     if (!hasVisibleValue) continue;
-    if (!combinedUnit) {
-      throw new Error(`D${rowNumber} 동호수가 비어 있습니다. 양식의 자동입력 칸을 변경하지 마세요.`);
+    if (!cellKey) {
+      throw new Error(`${rowNumber}행의 세대 연결정보가 없습니다. 세대 행을 추가하거나 복사하지 마세요.`);
     }
 
-    const unitRow = unitsByCombined.get(normalizeCombinedUnit(combinedUnit));
+    const unitRow = unitsByCellKey.get(cellKey);
     if (!unitRow) {
-      throw new Error(`D${rowNumber}의 동호수(${combinedUnit})가 현재 골구도에 없습니다.`);
+      throw new Error(`${rowNumber}행이 현재 골구도의 세대와 연결되지 않습니다.`);
     }
-    if (seenCellKeys.has(unitRow.cellKey)) {
-      throw new Error(`D${rowNumber}의 동호수(${combinedUnit})가 중복되었습니다.`);
+    if (seenCellKeys.has(cellKey)) {
+      throw new Error(`${rowNumber}행의 세대 연결정보가 중복되었습니다.`);
     }
-    seenCellKeys.add(unitRow.cellKey);
-
-    const visibleValues = [
-      getCellText(row.getCell(1)),
-      getCellText(row.getCell(2)),
-      getCellText(row.getCell(3)),
-      combinedUnit,
-      getCellText(row.getCell(5)),
-    ];
-    const expectedValues = [
-      unitRow.building,
-      String(unitRow.floor),
-      unitRow.unit,
-      unitRow.combinedUnit,
-      unitRow.unitType,
-    ];
-    const matches = [
-      normalizeBuilding(visibleValues[0]) === normalizeBuilding(expectedValues[0]),
-      normalizeNumberText(visibleValues[1]) === normalizeNumberText(expectedValues[1]),
-      normalizeNumberText(visibleValues[2]) === normalizeNumberText(expectedValues[2]),
-      normalizeCombinedUnit(visibleValues[3]) === normalizeCombinedUnit(expectedValues[3]),
-      normalizeText(visibleValues[4]) === normalizeText(expectedValues[4]),
-    ];
-    if (matches.some((matched) => !matched)) {
-      throw new Error(`A${rowNumber}:E${rowNumber} 자동입력 정보가 변경되었습니다. 새 양식에서 다시 작성해주세요.`);
-    }
+    seenCellKeys.add(cellKey);
+    unitInfo[cellKey] = {
+      building: getCellText(row.getCell(1)),
+      unit: getCellText(row.getCell(2)),
+      unitType: getCellText(row.getCell(3)),
+    };
 
     const selectedOptions = [];
     for (let column = FIRST_OPTION_COLUMN; column <= LAST_OPTION_COLUMN; column += 1) {
@@ -455,7 +449,7 @@ export const parseSelectionOptionWorkbookFile = async ({
       if (!selectedValue) continue;
       const optionName = optionNameByColumn.get(column);
       if (!optionName) {
-        throw new Error(`${cell.address} 위 F5:W5 옵션명이 비어 있습니다.`);
+        throw new Error(`${cell.address} 위 D5:U5 옵션명이 비어 있습니다.`);
       }
       if (selectedValue !== '선택') {
         throw new Error(`${cell.address}에는 "선택" 또는 빈칸만 입력할 수 있습니다.`);
@@ -477,8 +471,9 @@ export const parseSelectionOptionWorkbookFile = async ({
 
   return {
     selectionDocument: {
-      version: 1,
+      version: 2,
       optionNames: optionDefinitions.map(({ optionName }) => optionName),
+      unitInfo,
       units: selectedUnits,
     },
     optionCount: optionDefinitions.length,
