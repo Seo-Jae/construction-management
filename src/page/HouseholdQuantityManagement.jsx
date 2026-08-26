@@ -1,3 +1,4 @@
+// v52.48.5.44.37 기본물량 소계·공제물량·자동합계 및 표 정렬
 // v52.48.5.44.34 공정별옵션연결 별도 설정·다운로드 연결정보 즉시 저장
 // v52.48.5.44.33 공정 탭 배율 오차 수정·기본옵션 명칭 통일
 // v52.48.5.44.32 기본 공정 6개·사용자 공정 추가
@@ -50,6 +51,7 @@ const TABLE_HEADER_SX = {
   fontWeight: 900,
   borderRight: '1px solid #e2e8f0',
   whiteSpace: 'nowrap',
+  textAlign: 'center',
 };
 const TABLE_BODY_SX = {
   py: 0.72,
@@ -57,6 +59,7 @@ const TABLE_BODY_SX = {
   color: '#334155',
   fontSize: '0.69rem',
   borderRight: '1px solid #e2e8f0',
+  textAlign: 'center',
 };
 
 const normalizeInsulationData = (value) => {
@@ -572,28 +575,39 @@ export default function HouseholdQuantityManagement({
                 <Table size="small" sx={{ tableLayout: 'fixed' }}>
                   <TableHead>
                     <TableRow>
-                      <TableCell sx={{ ...TABLE_HEADER_SX, width: 80 }}>구분</TableCell>
-                      <TableCell sx={{ ...TABLE_HEADER_SX, width: 130 }}>타입</TableCell>
-                      <TableCell sx={{ ...TABLE_HEADER_SX, width: 210 }}>기본옵션</TableCell>
+                      <TableCell align="center" sx={{ ...TABLE_HEADER_SX, width: 80 }}>구분</TableCell>
+                      <TableCell align="center" sx={{ ...TABLE_HEADER_SX, width: 130 }}>타입</TableCell>
+                      <TableCell align="center" sx={{ ...TABLE_HEADER_SX, width: 210 }}>기본옵션</TableCell>
                       <TableCell align="right" sx={{ ...TABLE_HEADER_SX, width: 110 }}>해당 세대</TableCell>
                       <TableCell align="right" sx={{ ...TABLE_HEADER_SX, width: 130 }}>기본물량</TableCell>
-                      <TableCell sx={{ ...TABLE_HEADER_SX, width: 90 }}>단위</TableCell>
+                      <TableCell align="center" sx={{ ...TABLE_HEADER_SX, width: 90 }}>단위</TableCell>
+                      <TableCell align="right" sx={{ ...TABLE_HEADER_SX, width: 140 }}>소계</TableCell>
+                      <TableCell align="right" sx={{ ...TABLE_HEADER_SX, width: 130 }}>공제물량</TableCell>
                       <TableCell align="right" sx={TABLE_HEADER_SX}>자동 합계</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
                     {activeProcess.baseRows.map((row) => (
                       <TableRow key={`base-${row.typeName}-${row.basisOption}`} hover>
-                        <TableCell sx={TABLE_BODY_SX}>기본</TableCell>
-                        <TableCell sx={{ ...TABLE_BODY_SX, fontWeight: 800 }}>{row.typeName}</TableCell>
-                        <TableCell sx={TABLE_BODY_SX}>{row.basisOption || '-'}</TableCell>
+                        <TableCell align="center" sx={TABLE_BODY_SX}>기본</TableCell>
+                        <TableCell align="center" sx={{ ...TABLE_BODY_SX, fontWeight: 800 }}>{row.typeName}</TableCell>
+                        <TableCell align="center" sx={TABLE_BODY_SX}>{row.basisOption || '-'}</TableCell>
                         <TableCell align="right" sx={TABLE_BODY_SX}>{row.unitCount.toLocaleString()}세대</TableCell>
                         <TableCell align="right" sx={{ ...TABLE_BODY_SX, color: hasQuantity(row.quantity) ? '#0f172a' : '#dc2626', fontWeight: 850 }}>
                           {hasQuantity(row.quantity) ? formatQuantity(row.quantity) : '미입력'}
                         </TableCell>
-                        <TableCell sx={TABLE_BODY_SX}>{row.unit}</TableCell>
+                        <TableCell align="center" sx={TABLE_BODY_SX}>{row.unit}</TableCell>
                         <TableCell align="right" sx={{ ...TABLE_BODY_SX, fontWeight: 850 }}>
                           {formatQuantity((Number(row.quantity) || 0) * row.unitCount)}
+                        </TableCell>
+                        <TableCell align="right" sx={{ ...TABLE_BODY_SX, fontWeight: 850 }}>
+                          {formatQuantity(Number(row.deductionQuantity) || 0)}
+                        </TableCell>
+                        <TableCell align="right" sx={{ ...TABLE_BODY_SX, fontWeight: 850 }}>
+                          {formatQuantity(
+                            (Number(row.quantity) || 0) * row.unitCount -
+                              (Number(row.deductionQuantity) || 0),
+                          )}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -613,26 +627,26 @@ export default function HouseholdQuantityManagement({
                   <Table size="small" sx={{ tableLayout: 'fixed' }}>
                     <TableHead>
                       <TableRow>
-                        <TableCell sx={{ ...TABLE_HEADER_SX, width: 90 }}>구분</TableCell>
-                        <TableCell sx={{ ...TABLE_HEADER_SX, width: 130 }}>타입</TableCell>
-                        <TableCell sx={{ ...TABLE_HEADER_SX, width: 260 }}>유상옵션</TableCell>
+                        <TableCell align="center" sx={{ ...TABLE_HEADER_SX, width: 90 }}>구분</TableCell>
+                        <TableCell align="center" sx={{ ...TABLE_HEADER_SX, width: 130 }}>타입</TableCell>
+                        <TableCell align="center" sx={{ ...TABLE_HEADER_SX, width: 260 }}>유상옵션</TableCell>
                         <TableCell align="right" sx={{ ...TABLE_HEADER_SX, width: 110 }}>해당 세대</TableCell>
                         <TableCell align="right" sx={{ ...TABLE_HEADER_SX, width: 130 }}>증감물량</TableCell>
-                        <TableCell sx={{ ...TABLE_HEADER_SX, width: 90 }}>단위</TableCell>
+                        <TableCell align="center" sx={{ ...TABLE_HEADER_SX, width: 90 }}>단위</TableCell>
                         <TableCell align="right" sx={TABLE_HEADER_SX}>자동 합계</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
                       {activeProcess.optionRows.map((row) => (
                         <TableRow key={`option-${row.typeName}-${row.optionName}`} hover>
-                          <TableCell sx={TABLE_BODY_SX}>옵션증감</TableCell>
-                          <TableCell sx={{ ...TABLE_BODY_SX, fontWeight: 800 }}>{row.typeName}</TableCell>
-                          <TableCell sx={TABLE_BODY_SX}>{row.optionName}</TableCell>
+                          <TableCell align="center" sx={TABLE_BODY_SX}>옵션증감</TableCell>
+                          <TableCell align="center" sx={{ ...TABLE_BODY_SX, fontWeight: 800 }}>{row.typeName}</TableCell>
+                          <TableCell align="center" sx={TABLE_BODY_SX}>{row.optionName}</TableCell>
                           <TableCell align="right" sx={TABLE_BODY_SX}>{row.unitCount.toLocaleString()}세대</TableCell>
                           <TableCell align="right" sx={{ ...TABLE_BODY_SX, color: hasQuantity(row.quantity) ? '#0f172a' : '#dc2626', fontWeight: 850 }}>
                             {hasQuantity(row.quantity) ? formatQuantity(row.quantity) : '미입력'}
                           </TableCell>
-                          <TableCell sx={TABLE_BODY_SX}>{row.unit}</TableCell>
+                          <TableCell align="center" sx={TABLE_BODY_SX}>{row.unit}</TableCell>
                           <TableCell align="right" sx={{ ...TABLE_BODY_SX, fontWeight: 850 }}>
                             {formatQuantity((Number(row.quantity) || 0) * row.unitCount)}
                           </TableCell>

@@ -38,14 +38,14 @@ html.wooklim-dashboard-scaled .MuiPopover-paper {
 }
 
 html.wooklim-dashboard-scaled
-  .MuiAutocomplete-popper:not(.MuiAutocomplete-popperDisablePortal),
+  .MuiAutocomplete-popper:not(.MuiAutocomplete-popperDisablePortal):not(.wooklim-scale-aware-autocomplete-popper),
 html.wooklim-dashboard-scaled
   .MuiPopper-root:not(.MuiTooltip-popper):not(.MuiAutocomplete-popper) {
   zoom: var(--wooklim-dashboard-overlay-inverse-scale, 1);
 }
 
 html.wooklim-dashboard-scaled
-  .MuiAutocomplete-popper:not(.MuiAutocomplete-popperDisablePortal)
+  .MuiAutocomplete-popper:not(.MuiAutocomplete-popperDisablePortal):not(.wooklim-scale-aware-autocomplete-popper)
   .MuiAutocomplete-paper,
 html.wooklim-dashboard-scaled
   .MuiPopper-root:not(.MuiTooltip-popper):not(.MuiAutocomplete-popper)

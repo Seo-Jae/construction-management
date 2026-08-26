@@ -1,4 +1,4 @@
-// v52.48.5.44.36 자재 입고업체 Autocomplete 배율 좌표 고정
+// v52.48.5.44.37 자재 입고업체 Autocomplete 가상 기준좌표 보정
 import React, {
   useCallback,
   useEffect,
@@ -48,6 +48,7 @@ import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
 import KoreanMonthSelect from '../components/KoreanMonthSelect.jsx';
 import KoreanDatePicker from '../components/KoreanDatePicker.jsx';
+import ScaleAwareAutocompletePopper from '../components/ScaleAwareAutocompletePopper.jsx';
 
 import SystemPageTitle from '../components/SystemPageTitle.jsx';
 import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
@@ -202,7 +203,7 @@ const SupplierSearchAutocomplete =
 
       return (
         <Autocomplete
-          disablePortal
+          slots={{ popper: ScaleAwareAutocompletePopper }}
           options={options}
           value={
             value || null
