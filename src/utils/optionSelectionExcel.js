@@ -1,3 +1,4 @@
+// v52.48.5.44.19 선택옵션 옵션명 검정색·셀에맞춤·열너비 12 및 전체 선택셀 가운데정렬
 // v52.48.5.44.18 선택옵션 동·호·타입 3열 및 담당자 수정값 누적
 // v52.48.5.44.17 유상옵션 양식 골구도 자동작성·선택값 업로드
 import ExcelJS from 'exceljs';
@@ -249,8 +250,21 @@ export const createSelectionOptionWorkbook = async ({
   ];
 
   for (let column = FIRST_OPTION_COLUMN; column <= LAST_OPTION_COLUMN; column += 1) {
-    worksheet.getCell(OPTION_HEADER_ROW, column).value =
+    const optionHeaderCell = worksheet.getCell(OPTION_HEADER_ROW, column);
+    optionHeaderCell.value =
       optionNames[column - FIRST_OPTION_COLUMN] || null;
+    optionHeaderCell.font = {
+      ...optionHeaderCell.font,
+      color: { argb: 'FF000000' },
+    };
+    optionHeaderCell.alignment = {
+      ...optionHeaderCell.alignment,
+      horizontal: 'center',
+      vertical: 'middle',
+      wrapText: false,
+      shrinkToFit: true,
+    };
+    worksheet.getColumn(column).width = 12;
   }
 
   for (let rowNumber = DATA_START_ROW; rowNumber <= clearLastRow; rowNumber += 1) {
@@ -293,6 +307,11 @@ export const createSelectionOptionWorkbook = async ({
       const optionName = optionNames[column - FIRST_OPTION_COLUMN];
       const cell = row.getCell(column);
       cell.value = optionName && selectedOptionSet.has(optionName) ? '선택' : null;
+      cell.alignment = {
+        ...cell.alignment,
+        horizontal: 'center',
+        vertical: 'middle',
+      };
       cell.dataValidation = {
         type: 'list',
         allowBlank: true,
