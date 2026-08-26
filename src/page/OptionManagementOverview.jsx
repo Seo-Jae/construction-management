@@ -1,3 +1,4 @@
+// v52.48.5.44.23 옵션선택 팝업·저장옵션 연동·세대셀 다분할 비교
 // v52.48.5.44.22 옵션별 비교 상단 6칸 옵션선택 UI·임시안내 제거
 // v52.48.5.44.21 선택옵션 단일필터·엑셀순서·해당세대 색상강조
 // v52.48.5.44.18 선택옵션 동·호·타입 3열 수정가능 양식
@@ -22,6 +23,7 @@ import {
   Chip,
   CircularProgress,
   Collapse,
+  Menu,
   MenuItem,
   Paper,
   Snackbar,
@@ -39,7 +41,10 @@ import BuildingGrid from '../BuildingGrid.jsx';
 import SystemPageTitle from '../components/SystemPageTitle.jsx';
 import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 import { supabase } from '../supabaseClient';
-import { countUniqueUnits } from '../utils/buildingUnits.js';
+import {
+  countUniqueUnits,
+  getProjectCellKeys,
+} from '../utils/buildingUnits.js';
 import {
   parseInsulationOptionWorkbookFile,
   saveInsulationOptionWorkbook,
@@ -84,12 +89,12 @@ const HEADER_CONTROL_SX = {
 };
 
 const COMPARISON_OPTION_SLOT_STYLES = [
-  { backgroundColor: '#eff6ff', borderColor: '#93c5fd' },
-  { backgroundColor: '#fff7f7', borderColor: '#fca5a5' },
-  { backgroundColor: '#faf5ff', borderColor: '#d8b4fe' },
-  { backgroundColor: '#f7fee7', borderColor: '#bef264' },
-  { backgroundColor: '#fffbeb', borderColor: '#fcd34d' },
-  { backgroundColor: '#ecfeff', borderColor: '#a5f3fc' },
+  { backgroundColor: '#eff6ff', borderColor: '#93c5fd', segmentColor: '#60a5fa' },
+  { backgroundColor: '#fff7f7', borderColor: '#fca5a5', segmentColor: '#fb7185' },
+  { backgroundColor: '#faf5ff', borderColor: '#d8b4fe', segmentColor: '#c084fc' },
+  { backgroundColor: '#f7fee7', borderColor: '#bef264', segmentColor: '#a3e635' },
+  { backgroundColor: '#fffbeb', borderColor: '#fcd34d', segmentColor: '#fbbf24' },
+  { backgroundColor: '#ecfeff', borderColor: '#a5f3fc', segmentColor: '#22d3ee' },
 ];
 
 const normalizeOptionData = (value) => {
@@ -133,6 +138,11 @@ export default function OptionManagementOverview({
   const [expandedUnitType, setExpandedUnitType] = useState('');
   const [selectedHighlight, setSelectedHighlight] = useState(null);
   const [selectedSelectionOption, setSelectedSelectionOption] = useState('');
+  const [comparisonOptionKeys, setComparisonOptionKeys] = useState(() =>
+    Array(COMPARISON_OPTION_SLOT_STYLES.length).fill(''),
+  );
+  const [comparisonMenuAnchor, setComparisonMenuAnchor] = useState(null);
+  const [activeComparisonSlot, setActiveComparisonSlot] = useState(-1);
   const [summaryPanelWidth, setSummaryPanelWidth] = useState(
     DEFAULT_SUMMARY_PANEL_WIDTH,
   );
@@ -206,6 +216,108 @@ export default function OptionManagementOverview({
 
   const selectionOptionNames = selectionDocument.optionNames;
 
+  const comparisonOptionChoices = useMemo(() => {
+    const insulationChoices = [];
+    const insulationByName = new Map();
+
+    Object.entries(optionData).forEach(([cellKey, row]) => {
+      const optionName = String(row?.value || '').trim();
+      if (!optionName) return;
+      let choice = insulationByName.get(optionName);
+      if (!choice) {
+        choice = {
+          key: `insulation:${optionName}`,
+          category: '단열 옵션',
+          optionName,
+          cellKeys: new Set(),
+        };
+        insulationByName.set(optionName, choice);
+        insulationChoices.push(choice);
+      }
+      choice.cellKeys.add(cellKey);
+    });
+
+    const selectionByName = new Map(
+      selectionDocument.optionNames.map((optionName) => [
+        optionName,
+        {
+          key: `selection:${optionName}`,
+          category: '선택 옵션',
+          optionName,
+          cellKeys: new Set(),
+        },
+      ]),
+    );
+
+    Object.entries(selectionDocument.units || {}).forEach(([cellKey, row]) => {
+      const selectedOptions = Array.isArray(row?.selectedOptions)
+        ? row.selectedOptions
+        : [];
+      selectedOptions.forEach((optionName) => {
+        selectionByName.get(optionName)?.cellKeys.add(cellKey);
+      });
+    });
+
+    return [
+      ...insulationChoices,
+      ...selectionDocument.optionNames
+        .map((optionName) => selectionByName.get(optionName))
+        .filter(Boolean),
+    ];
+  }, [optionData, selectionDocument]);
+
+  const comparisonChoiceMap = useMemo(
+    () =>
+      new Map(
+        comparisonOptionChoices.map((choice) => [choice.key, choice]),
+      ),
+    [comparisonOptionChoices],
+  );
+
+  const selectedComparisonChoices = useMemo(
+    () =>
+      comparisonOptionKeys
+        .map((optionKey, slotIndex) => {
+          const choice = comparisonChoiceMap.get(optionKey);
+          return choice ? { ...choice, slotIndex } : null;
+        })
+        .filter(Boolean),
+    [comparisonChoiceMap, comparisonOptionKeys],
+  );
+
+  const comparisonDisplayData = useMemo(() => {
+    if (!isComparison || selectedComparisonChoices.length === 0) return {};
+
+    const result = {};
+    getProjectCellKeys(buildingConfigs).forEach((cellKey) => {
+      const activeNames = [];
+      const segments = selectedComparisonChoices.map((choice) => {
+        const active = choice.cellKeys.has(cellKey);
+        if (active) activeNames.push(`${choice.category} · ${choice.optionName}`);
+        return {
+          active,
+          color:
+            COMPARISON_OPTION_SLOT_STYLES[choice.slotIndex]?.segmentColor ||
+            '#60a5fa',
+          inactiveColor: '#ffffff',
+        };
+      });
+
+      result[cellKey] = {
+        label: cellKey.slice(cellKey.lastIndexOf('-') + 1),
+        backgroundColor: '#ffffff',
+        borderColor: '#cbd5e1',
+        color: '#0f172a',
+        segments,
+        title: `${cellKey} · ${
+          activeNames.length > 0 ? activeNames.join(', ') : '선택 옵션 해당 없음'
+        }`,
+      };
+    });
+
+    return result;
+  }, [buildingConfigs, isComparison, selectedComparisonChoices]);
+
   const highlightedCellKeys = useMemo(() => {
     if (!selectedHighlight?.typeName) return new Set();
     const typeRow = typeOptionSummary.rows.find(
@@ -250,6 +362,7 @@ export default function OptionManagementOverview({
         {},
       );
     }
+    if (isComparison) return comparisonDisplayData;
     if (!isInsulation) return {};
     const isOptionHighlight = Boolean(selectedHighlight?.optionName);
     const highlightStyle = isOptionHighlight
@@ -297,6 +410,8 @@ export default function OptionManagementOverview({
     return result;
   }, [
     highlightedCellKeys,
+    comparisonDisplayData,
+    isComparison,
     isInsulation,
     isSelection,
     optionData,
@@ -309,6 +424,11 @@ export default function OptionManagementOverview({
     setExpandedUnitType('');
     setSelectedHighlight(null);
     setSelectedSelectionOption('');
+    setComparisonOptionKeys(
+      Array(COMPARISON_OPTION_SLOT_STYLES.length).fill(''),
+    );
+    setComparisonMenuAnchor(null);
+    setActiveComparisonSlot(-1);
     setSummaryPanelWidth(DEFAULT_SUMMARY_PANEL_WIDTH);
     setMessage(null);
   }, [mode, projectName]);
@@ -319,6 +439,21 @@ export default function OptionManagementOverview({
       current && !selectionOptionNames.includes(current) ? '' : current,
     );
   }, [isSelection, selectionOptionNames]);
+
+  useEffect(() => {
+    if (!isComparison) return;
+    const validKeys = new Set(
+      comparisonOptionChoices.map((choice) => choice.key),
+    );
+    setComparisonOptionKeys((current) => {
+      const next = current.map((optionKey) =>
+        optionKey && validKeys.has(optionKey) ? optionKey : '',
+      );
+      return next.some((optionKey, index) => optionKey !== current[index])
+        ? next
+        : current;
+    });
+  }, [comparisonOptionChoices, isComparison]);
 
   useEffect(() => {
     if (!isResizingPanels) return undefined;
@@ -382,20 +517,37 @@ export default function OptionManagementOverview({
   };
 
   const loadOptionStatusData = useCallback(async () => {
-    if (!isEditableOptionMode || !projectName) return;
+    if ((!isEditableOptionMode && !isComparison) || !projectName) return;
     setLoading(true);
     setMessage(null);
 
     try {
-      const { data, error } = await supabase
+      const baseQuery = supabase
         .from('option_status_documents')
-        .select('unit_values, source_file_name, updated_at')
-        .eq('project_name', projectName)
-        .eq('option_category', isInsulation ? 'insulation' : 'selection')
-        .maybeSingle();
+        .select('option_category, unit_values, source_file_name, updated_at')
+        .eq('project_name', projectName);
+      const { data, error } = isComparison
+        ? await baseQuery.in('option_category', ['insulation', 'selection'])
+        : await baseQuery
+            .eq('option_category', isInsulation ? 'insulation' : 'selection')
+            .maybeSingle();
 
       if (error) throw error;
-      if (isInsulation) {
+      if (isComparison) {
+        const rows = Array.isArray(data) ? data : [];
+        const insulationRow = rows.find(
+          (row) => row.option_category === 'insulation',
+        );
+        const selectionRow = rows.find(
+          (row) => row.option_category === 'selection',
+        );
+        setOptionData(normalizeOptionData(insulationRow?.unit_values));
+        setSelectionDocument(
+          normalizeSelectionOptionDocument(selectionRow?.unit_values),
+        );
+        setSourceFileName('');
+        setSavedAt('');
+      } else if (isInsulation) {
         setOptionData(normalizeOptionData(data?.unit_values));
       } else {
         setSelectionDocument(
@@ -410,7 +562,10 @@ export default function OptionManagementOverview({
     } catch (error) {
       if (isMissingOptionTableError(error)) {
         setSchemaMissing(true);
-        if (isInsulation) {
+        if (isComparison) {
+          setOptionData({});
+          setSelectionDocument(normalizeSelectionOptionDocument({}));
+        } else if (isInsulation) {
           setOptionData({});
         } else {
           setSelectionDocument(normalizeSelectionOptionDocument({}));
@@ -431,7 +586,13 @@ export default function OptionManagementOverview({
     } finally {
       setLoading(false);
     }
-  }, [isEditableOptionMode, isInsulation, pageConfig.category, projectName]);
+  }, [
+    isComparison,
+    isEditableOptionMode,
+    isInsulation,
+    pageConfig.category,
+    projectName,
+  ]);
 
   useEffect(() => {
     loadOptionStatusData();
@@ -577,6 +738,26 @@ export default function OptionManagementOverview({
     } finally {
       setSaving(false);
     }
+  };
+
+  const openComparisonOptionMenu = (event, slotIndex) => {
+    setComparisonMenuAnchor(event.currentTarget);
+    setActiveComparisonSlot(slotIndex);
+  };
+
+  const closeComparisonOptionMenu = () => {
+    setComparisonMenuAnchor(null);
+    setActiveComparisonSlot(-1);
+  };
+
+  const selectComparisonOption = (optionKey) => {
+    if (activeComparisonSlot < 0) return;
+    setComparisonOptionKeys((current) =>
+      current.map((currentKey, index) =>
+        index === activeComparisonSlot ? optionKey : currentKey,
+      ),
+    );
+    closeComparisonOptionMenu();
   };
 
   return (
@@ -729,48 +910,186 @@ export default function OptionManagementOverview({
               gap: 1.4,
             }}
           >
-            {COMPARISON_OPTION_SLOT_STYLES.map((slotStyle, index) => (
-              <ButtonBase
-                key={`comparison-option-slot-${index + 1}`}
-                aria-label={`비교 옵션 ${index + 1} 선택`}
-                sx={{
-                  height: 72,
-                  px: 2,
-                  border: `1px solid ${slotStyle.borderColor}`,
-                  borderRadius: '6px',
-                  bgcolor: slotStyle.backgroundColor,
-                  color: '#1e293b',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 0.65,
-                  boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
-                  transition: 'box-shadow 120ms ease, transform 120ms ease',
-                  '&:hover': {
-                    boxShadow: `0 3px 10px ${slotStyle.borderColor}55`,
-                    transform: 'translateY(-1px)',
-                  },
-                  '&:focus-visible': {
-                    outline: `2px solid ${slotStyle.borderColor}`,
-                    outlineOffset: 2,
-                  },
-                }}
-              >
-                <AddCircleOutlineRoundedIcon sx={{ fontSize: 22 }} />
-                <Typography
-                  component="span"
+            {COMPARISON_OPTION_SLOT_STYLES.map((slotStyle, index) => {
+              const selectedChoice = comparisonChoiceMap.get(
+                comparisonOptionKeys[index],
+              );
+              return (
+                <ButtonBase
+                  key={`comparison-option-slot-${index + 1}`}
+                  aria-label={
+                    selectedChoice
+                      ? `비교 옵션 ${index + 1}, ${selectedChoice.optionName}`
+                      : `비교 옵션 ${index + 1} 선택`
+                  }
+                  onClick={(event) => openComparisonOptionMenu(event, index)}
                   sx={{
-                    fontSize: '0.96rem',
-                    fontWeight: 850,
-                    lineHeight: 1,
-                    whiteSpace: 'nowrap',
+                    height: 72,
+                    px: 2,
+                    border: `1px solid ${slotStyle.borderColor}`,
+                    borderRadius: '6px',
+                    bgcolor: slotStyle.backgroundColor,
+                    color: '#1e293b',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 0.65,
+                    boxShadow: selectedChoice
+                      ? `inset 0 0 0 1px ${slotStyle.borderColor}`
+                      : '0 1px 2px rgba(15, 23, 42, 0.04)',
+                    transition: 'box-shadow 120ms ease, transform 120ms ease',
+                    '&:hover': {
+                      boxShadow: `0 3px 10px ${slotStyle.borderColor}55`,
+                      transform: 'translateY(-1px)',
+                    },
+                    '&:focus-visible': {
+                      outline: `2px solid ${slotStyle.borderColor}`,
+                      outlineOffset: 2,
+                    },
                   }}
                 >
-                  옵션선택
-                </Typography>
-              </ButtonBase>
-            ))}
+                  {selectedChoice ? (
+                    <Box sx={{ minWidth: 0, textAlign: 'center' }}>
+                      <Typography
+                        sx={{
+                          mb: 0.35,
+                          color: '#64748b',
+                          fontSize: '0.62rem',
+                          fontWeight: 750,
+                          lineHeight: 1,
+                        }}
+                      >
+                        {selectedChoice.category}
+                      </Typography>
+                      <Typography
+                        title={selectedChoice.optionName}
+                        noWrap
+                        sx={{
+                          color: '#1e293b',
+                          fontSize: '0.86rem',
+                          fontWeight: 850,
+                          lineHeight: 1.2,
+                        }}
+                      >
+                        {selectedChoice.optionName}
+                      </Typography>
+                    </Box>
+                  ) : (
+                    <>
+                      <AddCircleOutlineRoundedIcon sx={{ fontSize: 22 }} />
+                      <Typography
+                        component="span"
+                        sx={{
+                          fontSize: '0.96rem',
+                          fontWeight: 850,
+                          lineHeight: 1,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        옵션선택
+                      </Typography>
+                    </>
+                  )}
+                </ButtonBase>
+              );
+            })}
           </Box>
+          <Menu
+            anchorEl={comparisonMenuAnchor}
+            open={Boolean(comparisonMenuAnchor)}
+            onClose={closeComparisonOptionMenu}
+            anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+            transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+            slotProps={{
+              paper: {
+                sx: {
+                  mt: 0.5,
+                  width: 320,
+                  maxHeight: 430,
+                  border: '1px solid #cbd5e1',
+                  boxShadow: '0 12px 28px rgba(15, 23, 42, 0.18)',
+                },
+              },
+            }}
+          >
+            {activeComparisonSlot >= 0 &&
+              comparisonOptionKeys[activeComparisonSlot] && (
+                <MenuItem
+                  onClick={() => selectComparisonOption('')}
+                  sx={{ color: '#dc2626', fontSize: '0.75rem', fontWeight: 800 }}
+                >
+                  선택 해제
+                </MenuItem>
+              )}
+            {comparisonOptionChoices.length === 0 ? (
+              <MenuItem disabled sx={{ fontSize: '0.75rem' }}>
+                저장된 옵션이 없습니다.
+              </MenuItem>
+            ) : (
+              ['단열 옵션', '선택 옵션'].map((category) => {
+                const categoryChoices = comparisonOptionChoices.filter(
+                  (choice) => choice.category === category,
+                );
+                if (categoryChoices.length === 0) return null;
+                return (
+                  <React.Fragment key={category}>
+                    <MenuItem
+                      disabled
+                      sx={{
+                        minHeight: 28,
+                        opacity: '1 !important',
+                        bgcolor: '#f8fafc',
+                        color: '#475569',
+                        fontSize: '0.66rem',
+                        fontWeight: 900,
+                      }}
+                    >
+                      {category}
+                    </MenuItem>
+                    {categoryChoices.map((choice) => {
+                      const selectedElsewhere = comparisonOptionKeys.some(
+                        (optionKey, slotIndex) =>
+                          slotIndex !== activeComparisonSlot &&
+                          optionKey === choice.key,
+                      );
+                      return (
+                        <MenuItem
+                          key={choice.key}
+                          selected={
+                            activeComparisonSlot >= 0 &&
+                            comparisonOptionKeys[activeComparisonSlot] ===
+                              choice.key
+                          }
+                          disabled={selectedElsewhere}
+                          onClick={() => selectComparisonOption(choice.key)}
+                          sx={{
+                            minHeight: 34,
+                            display: 'grid',
+                            gridTemplateColumns: 'minmax(0, 1fr) auto',
+                            gap: 1,
+                            fontSize: '0.73rem',
+                          }}
+                        >
+                          <Typography noWrap sx={{ fontSize: '0.73rem' }}>
+                            {choice.optionName}
+                          </Typography>
+                          <Typography
+                            sx={{
+                              color: '#64748b',
+                              fontSize: '0.65rem',
+                              fontVariantNumeric: 'tabular-nums',
+                            }}
+                          >
+                            {choice.cellKeys.size.toLocaleString()}세대
+                          </Typography>
+                        </MenuItem>
+                      );
+                    })}
+                  </React.Fragment>
+                );
+              })
+            )}
+          </Menu>
         </Box>
       )}
 
@@ -959,7 +1278,9 @@ export default function OptionManagementOverview({
                   buildingName={buildingName}
                   config={config}
                   readOnly
-                  cellDisplayData={isEditableOptionMode ? displayData : {}}
+                  cellDisplayData={
+                    isEditableOptionMode || isComparison ? displayData : {}
+                  }
                 />
               ))}
             </Box>

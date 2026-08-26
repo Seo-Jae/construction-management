@@ -1,3 +1,4 @@
+// v52.48.5.44.23 옵션비교 선택수 기준 세대셀 분할표시 지원
 // v52.48.5.44.13 옵션관리 세대별 표시값·색상 지원
 // v52.48.5.44.12 옵션관리 읽기전용 골구도 지원
 // v52.48.5.44.6.3.2 필로티 X 모서리 정합
@@ -819,7 +820,16 @@ export default function BuildingGrid({
                   const customLabel = String(
                     displayOverride?.label || '',
                   ).trim();
-                  const customStyle = customLabel
+                  const customSegments = Array.isArray(
+                    displayOverride?.segments,
+                  )
+                    ? displayOverride.segments.filter(
+                        (segment) => segment && typeof segment === 'object',
+                      )
+                    : [];
+                  const hasCustomDisplay =
+                    Boolean(customLabel) || customSegments.length > 0;
+                  const customStyle = hasCustomDisplay
                     ? {
                         bgcolor:
                           displayOverride?.backgroundColor || '#dbeafe',
@@ -968,6 +978,11 @@ export default function BuildingGrid({
                                 : 'normal',
                             lineHeight: 1,
                             fontWeight: 800,
+                            position: 'relative',
+                            overflow: 'hidden',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
                             userSelect: 'none',
                             transition: 'filter 120ms ease, transform 120ms ease',
                             ...statusStyle,
@@ -996,7 +1011,49 @@ export default function BuildingGrid({
                             },
                           }}
                         >
-                          {displayText}
+                          {customSegments.length > 0 && (
+                            <Box
+                              component="span"
+                              aria-hidden="true"
+                              sx={{
+                                position: 'absolute',
+                                inset: 0,
+                                zIndex: 0,
+                                display: 'flex',
+                              }}
+                            >
+                              {customSegments.map((segment, segmentIndex) => (
+                                <Box
+                                  component="span"
+                                  key={`${cellKey}-segment-${segmentIndex}`}
+                                  sx={{
+                                    flex: '1 1 0',
+                                    minWidth: 0,
+                                    bgcolor: segment.active
+                                      ? segment.color || '#60a5fa'
+                                      : segment.inactiveColor || '#ffffff',
+                                    borderRight:
+                                      segmentIndex < customSegments.length - 1
+                                        ? '1px solid rgba(148, 163, 184, 0.55)'
+                                        : 'none',
+                                  }}
+                                />
+                              ))}
+                            </Box>
+                          )}
+                          <Box
+                            component="span"
+                            sx={{
+                              position: 'relative',
+                              zIndex: 1,
+                              textShadow:
+                                customSegments.some((segment) => segment.active)
+                                  ? '0 0 2px #ffffff, 0 0 3px #ffffff'
+                                  : 'none',
+                            }}
+                          >
+                            {displayText}
+                          </Box>
                         </Box>
                       </Box>
                     </Tooltip>
