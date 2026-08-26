@@ -1,3 +1,4 @@
+// v52.48.5.44.42 골구도 다이얼로그 높이·화면맞춤 로딩 수정
 // v52.48.5.44.41 단열·합지 자동기준, 골구도 줌·이동·가로출력
 // v52.48.5.44.40 공정별 세대물량 골구도 보기
 // v52.48.5.44.39 증감 부호 계산 수정·상하 표 9열 정렬
@@ -389,10 +390,13 @@ export default function HouseholdQuantityManagement({
   const fitGridView = useCallback(() => {
     const viewport = gridViewportRef.current;
     const content = gridContentRef.current;
-    if (!viewport || !content) return;
+    if (!viewport || !content) return false;
     const viewportRect = viewport.getBoundingClientRect();
     const contentWidth = Math.max(content.scrollWidth, content.offsetWidth, 1);
     const contentHeight = Math.max(content.scrollHeight, content.offsetHeight, 1);
+    if (viewportRect.width < 100 || viewportRect.height < 100 || contentWidth <= 1 || contentHeight <= 1) {
+      return false;
+    }
     const nextZoom = Math.min(
       1,
       Math.max(
@@ -410,6 +414,7 @@ export default function HouseholdQuantityManagement({
     gridZoomRef.current = nextZoom;
     setGridZoom(nextZoom);
     setGridPanPosition(nextPan);
+    return true;
   }, [setGridPanPosition]);
 
   const openGridDialog = () => {
@@ -423,12 +428,18 @@ export default function HouseholdQuantityManagement({
 
   useEffect(() => {
     if (!gridDialogOpen || buildingEntries.length === 0) return undefined;
-    const firstFrame = window.requestAnimationFrame(() => {
-      const secondFrame = window.requestAnimationFrame(fitGridView);
-      gridFitFrameRef.current = secondFrame;
-    });
+    let cancelled = false;
+    let attemptCount = 0;
+    const tryFitGridView = () => {
+      if (cancelled) return;
+      attemptCount += 1;
+      if (!fitGridView() && attemptCount < 12) {
+        gridFitFrameRef.current = window.requestAnimationFrame(tryFitGridView);
+      }
+    };
+    gridFitFrameRef.current = window.requestAnimationFrame(tryFitGridView);
     return () => {
-      window.cancelAnimationFrame(firstFrame);
+      cancelled = true;
       if (gridFitFrameRef.current) {
         window.cancelAnimationFrame(gridFitFrameRef.current);
         gridFitFrameRef.current = null;
@@ -1022,12 +1033,17 @@ export default function HouseholdQuantityManagement({
         onClose={() => setGridDialogOpen(false)}
         fullWidth
         maxWidth={false}
-        PaperProps={{
-          sx: {
-            width: '96vw',
-            maxWidth: '96vw',
-            height: '90vh',
-            maxHeight: '90vh',
+        slotProps={{
+          paper: {
+            sx: {
+              width: '96vw',
+              maxWidth: '96vw',
+              height: '90vh',
+              maxHeight: '90vh',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+            },
           },
         }}
       >
@@ -1057,7 +1073,16 @@ export default function HouseholdQuantityManagement({
         </DialogTitle>
         <DialogContent
           dividers
-          sx={{ p: 0, minHeight: 0, display: 'flex', flexDirection: 'column', bgcolor: '#f8fafc' }}
+          sx={{
+            p: 0,
+            flex: '1 1 auto',
+            height: 0,
+            minHeight: 0,
+            overflow: 'hidden',
+            display: 'flex',
+            flexDirection: 'column',
+            bgcolor: '#f8fafc',
+          }}
         >
           <Paper
             square
@@ -1169,7 +1194,8 @@ export default function HouseholdQuantityManagement({
               onPointerCancel={finishGridPan}
               sx={{
                 position: 'relative',
-                flex: 1,
+                flex: '1 1 0',
+                height: 0,
                 minHeight: 0,
                 overflow: 'hidden',
                 bgcolor: '#f8fafc',
@@ -1223,7 +1249,7 @@ export default function HouseholdQuantityManagement({
         onClose={() => !excelLoading && !saving && setDownloadDialogOpen(false)}
         fullWidth
         maxWidth="md"
-        PaperProps={{ sx: { height: '72vh', minHeight: 520 } }}
+        slotProps={{ paper: { sx: { height: '72vh', minHeight: 520 } } }}
       >
         <DialogTitle sx={{ pb: 1, fontSize: '1rem', fontWeight: 900 }}>
           {configurationDialogMode === 'connections'
