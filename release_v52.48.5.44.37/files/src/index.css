@@ -1,0 +1,88 @@
+html,
+body,
+#root {
+  margin: 0;
+  min-width: 100%;
+  min-height: 100%;
+}
+
+html.wooklim-dashboard-scaled,
+html.wooklim-dashboard-scaled body,
+html.wooklim-dashboard-scaled #root {
+  min-height: var(--wooklim-dashboard-viewport-height, 100vh);
+}
+
+html.wooklim-dashboard-scaled,
+html.wooklim-dashboard-scaled body {
+  overflow: hidden;
+}
+
+html.wooklim-dashboard-scaled body,
+html.wooklim-dashboard-scaled #root,
+html.wooklim-dashboard-scaled .MuiModal-root {
+  height: var(--wooklim-dashboard-viewport-height, 100vh);
+}
+
+/*
+  CSS zoom 아래의 MUI Portal은 getBoundingClientRect 좌표가 다시 zoom되어
+  Menu·Select·Popover 목록이 기준 요소보다 왼쪽/위쪽으로 밀린다.
+  Portal 좌표계는 역배율로 복원하고, 실제 목록 크기만 사용자 화면배율로
+  축소해 브라우저·운영체제 배율과 무관하게 기준 요소에 고정한다.
+*/
+html.wooklim-dashboard-scaled .MuiPopover-root {
+  zoom: var(--wooklim-dashboard-overlay-inverse-scale, 1);
+}
+
+html.wooklim-dashboard-scaled .MuiPopover-paper {
+  transform: scale(var(--wooklim-dashboard-scale, 1)) !important;
+}
+
+html.wooklim-dashboard-scaled
+  .MuiAutocomplete-popper:not(.MuiAutocomplete-popperDisablePortal):not(.wooklim-scale-aware-autocomplete-popper),
+html.wooklim-dashboard-scaled
+  .MuiPopper-root:not(.MuiTooltip-popper):not(.MuiAutocomplete-popper) {
+  zoom: var(--wooklim-dashboard-overlay-inverse-scale, 1);
+}
+
+html.wooklim-dashboard-scaled
+  .MuiAutocomplete-popper:not(.MuiAutocomplete-popperDisablePortal):not(.wooklim-scale-aware-autocomplete-popper)
+  .MuiAutocomplete-paper,
+html.wooklim-dashboard-scaled
+  .MuiPopper-root:not(.MuiTooltip-popper):not(.MuiAutocomplete-popper)
+  > .MuiPaper-root {
+  transform: scale(var(--wooklim-dashboard-scale, 1)) !important;
+  transform-origin: top left;
+}
+
+html.wooklim-dashboard-scaled
+  .MuiPopper-root[data-popper-placement^='top']:not(.MuiTooltip-popper)
+  > .MuiPaper-root {
+  transform-origin: bottom left;
+}
+
+html.wooklim-dashboard-scaled
+  .MuiPopper-root[data-popper-placement$='-end']:not(.MuiTooltip-popper)
+  > .MuiPaper-root {
+  transform-origin: top right;
+}
+
+html.wooklim-dashboard-scaled
+  .MuiPopper-root[data-popper-placement^='top'][data-popper-placement$='-end']:not(.MuiTooltip-popper)
+  > .MuiPaper-root {
+  transform-origin: bottom right;
+}
+
+/*
+  대시보드에서 선택한 화면 배율은 문서 최상위 요소에 적용된다.
+  인쇄물은 화면 배율과 무관하게 항상 100%로 출력한다.
+*/
+@media print {
+  html.wooklim-dashboard-scaled {
+    zoom: 1 !important;
+    --wooklim-dashboard-viewport-height: 100vh !important;
+    --wooklim-building-grid-border-width: 1px !important;
+    --wooklim-building-grid-row-gap: 1px !important;
+    --wooklim-dashboard-scale: 1 !important;
+    --wooklim-dashboard-overlay-inverse-scale: 1 !important;
+  }
+}

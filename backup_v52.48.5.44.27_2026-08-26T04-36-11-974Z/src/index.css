@@ -1,0 +1,35 @@
+html,
+body,
+#root {
+  margin: 0;
+  min-width: 100%;
+  min-height: 100%;
+}
+
+html.wooklim-dashboard-scaled,
+html.wooklim-dashboard-scaled body,
+html.wooklim-dashboard-scaled #root {
+  min-height: var(--wooklim-dashboard-viewport-height, 100vh);
+}
+
+html.wooklim-dashboard-scaled,
+html.wooklim-dashboard-scaled body {
+  overflow: hidden;
+}
+
+html.wooklim-dashboard-scaled body,
+html.wooklim-dashboard-scaled #root,
+html.wooklim-dashboard-scaled .MuiModal-root {
+  height: var(--wooklim-dashboard-viewport-height, 100vh);
+}
+
+/*
+  대시보드에서 선택한 화면 배율은 문서 최상위 요소에 적용된다.
+  인쇄물은 화면 배율과 무관하게 항상 100%로 출력한다.
+*/
+@media print {
+  html.wooklim-dashboard-scaled {
+    zoom: 1 !important;
+    --wooklim-dashboard-viewport-height: 100vh !important;
+  }
+}

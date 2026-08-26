@@ -1,5 +1,3 @@
-// v52.48.5.44.43 골구도 계산데이터 방어·PDF/프린트 출력 안정화
-// v52.48.5.44.42 골구도 다이얼로그 높이·화면맞춤 로딩 수정
 // v52.48.5.44.41 단열·합지 자동기준, 골구도 줌·이동·가로출력
 // v52.48.5.44.40 공정별 세대물량 골구도 보기
 // v52.48.5.44.39 증감 부호 계산 수정·상하 표 9열 정렬
@@ -181,122 +179,76 @@ export default function HouseholdQuantityManagement({
       ) || activeProcess,
     [activeProcess, definitions.processes, gridProcessName],
   );
-  const gridUnitValues = useMemo(() => {
-    const emptyResult = {
-      rows: [],
-      completeCount: 0,
-      missingCount: 0,
-      totalQuantity: 0,
-      loadError: '',
-    };
-    if (!gridProcess) return emptyResult;
-    try {
-      const result = createHouseholdQuantityUnitValues({
+  const gridUnitValues = useMemo(
+    () =>
+      createHouseholdQuantityUnitValues({
         buildingConfigs,
         process: gridProcess,
         insulationData,
         selectionDocument,
         processOptionSelections: definitions.processOptionSelections,
-      });
-      const rows = Array.isArray(result?.rows) ? result.rows : [];
-      return {
-        ...emptyResult,
-        ...(result && typeof result === 'object' ? result : {}),
-        rows,
-        completeCount: Number.isFinite(Number(result?.completeCount))
-          ? Number(result.completeCount)
-          : rows.filter((row) => Boolean(row?.complete)).length,
-        missingCount: Number.isFinite(Number(result?.missingCount))
-          ? Number(result.missingCount)
-          : rows.filter((row) => !row?.complete).length,
-        totalQuantity: Number.isFinite(Number(result?.totalQuantity))
-          ? Number(result.totalQuantity)
-          : rows.reduce(
-              (sum, row) =>
-                sum + (row?.complete && Number.isFinite(Number(row?.finalQuantity))
-                  ? Number(row.finalQuantity)
-                  : 0),
-              0,
-            ),
-      };
-    } catch (error) {
-      console.error('골구도 세대물량 계산 오류:', error);
-      return {
-        ...emptyResult,
-        loadError: error?.message || '골구도 세대물량을 계산하지 못했습니다.',
-      };
-    }
-  }, [
-    buildingConfigs,
-    definitions.processOptionSelections,
-    gridProcess,
-    insulationData,
-    selectionDocument,
-  ]);
+      }),
+    [
+      buildingConfigs,
+      definitions.processOptionSelections,
+      gridProcess,
+      insulationData,
+      selectionDocument,
+    ],
+  );
   const gridCellDisplayData = useMemo(
     () =>
       Object.fromEntries(
-        gridUnitValues.rows
-          .map((row) => {
-            const cellKey = String(row?.cellKey || '').trim();
-            if (!cellKey) return null;
-            const unit = String(row?.measurementUnit || 'M2');
-            const adjustmentRows = Array.isArray(row?.adjustmentRows)
-              ? row.adjustmentRows
-              : [];
-            const missingItems = Array.isArray(row?.missingItems)
-              ? row.missingItems
-              : [];
-            const adjustmentText = adjustmentRows.length
-              ? adjustmentRows
-                  .map(
-                    (item) =>
-                      `${item?.optionName || '선택옵션'} ${
-                        hasQuantity(item?.quantity)
-                          ? formatQuantity(item.quantity)
-                          : '미입력'
-                      }${unit}`,
-                  )
-                  .join(' · ')
-              : '선택옵션 증감 없음';
-            const title = row?.complete
-              ? `${row?.building || ''} ${row?.unitCode || ''}호 · ${row?.typeName || '-'}${
-                  row?.basisOption ? `/${row.basisOption}` : ''
-                } · 기본 ${formatQuantity(row?.baseQuantity)}${unit} · ${
-                  adjustmentText
-                } · 세대물량 ${formatQuantity(row?.finalQuantity)}${unit}`
-              : `${row?.building || ''} ${row?.unitCode || ''}호 · ${
-                  missingItems.length ? missingItems.join(', ') : '계산정보'
-                } 미입력`;
-            const finalQuantity = Number(row?.finalQuantity);
+        gridUnitValues.rows.map((row) => {
+          const unit = row.measurementUnit || 'M2';
+          const adjustmentText = row.adjustmentRows.length
+            ? row.adjustmentRows
+                .map(
+                  (item) =>
+                    `${item.optionName} ${
+                      hasQuantity(item.quantity)
+                        ? formatQuantity(item.quantity)
+                        : '미입력'
+                    }${unit}`,
+                )
+                .join(' · ')
+            : '선택옵션 증감 없음';
+          const title = row.complete
+            ? `${row.building} ${row.unitCode}호 · ${row.typeName}${
+                row.basisOption ? `/${row.basisOption}` : ''
+              } · 기본 ${formatQuantity(row.baseQuantity)}${unit} · ${
+                adjustmentText
+              } · 세대물량 ${formatQuantity(row.finalQuantity)}${unit}`
+            : `${row.building} ${row.unitCode}호 · ${row.missingItems.join(
+                ', ',
+              )} 미입력`;
 
-            return [
-              cellKey,
-              {
-                label: row?.complete ? formatQuantity(row?.finalQuantity) : '미입력',
-                backgroundColor: row?.complete
-                  ? finalQuantity < 0
-                    ? '#fef2f2'
-                    : '#eff6ff'
-                  : '#fff7ed',
-                borderColor: row?.complete
-                  ? finalQuantity < 0
-                    ? '#dc2626'
-                    : '#2563eb'
-                  : '#f97316',
-                color: row?.complete
-                  ? finalQuantity < 0
-                    ? '#991b1b'
-                    : '#1e3a8a'
-                  : '#9a3412',
-                fontSize: '0.46rem',
-                letterSpacing: '-0.04em',
-                fontWeight: 900,
-                title,
-              },
-            ];
-          })
-          .filter(Boolean),
+          return [
+            row.cellKey,
+            {
+              label: row.complete ? formatQuantity(row.finalQuantity) : '미입력',
+              backgroundColor: row.complete
+                ? row.finalQuantity < 0
+                  ? '#fef2f2'
+                  : '#eff6ff'
+                : '#fff7ed',
+              borderColor: row.complete
+                ? row.finalQuantity < 0
+                  ? '#dc2626'
+                  : '#2563eb'
+                : '#f97316',
+              color: row.complete
+                ? row.finalQuantity < 0
+                  ? '#991b1b'
+                  : '#1e3a8a'
+                : '#9a3412',
+              fontSize: '0.46rem',
+              letterSpacing: '-0.04em',
+              fontWeight: 900,
+              title,
+            },
+          ];
+        }),
       ),
     [gridUnitValues.rows],
   );
@@ -437,13 +389,10 @@ export default function HouseholdQuantityManagement({
   const fitGridView = useCallback(() => {
     const viewport = gridViewportRef.current;
     const content = gridContentRef.current;
-    if (!viewport || !content) return false;
+    if (!viewport || !content) return;
     const viewportRect = viewport.getBoundingClientRect();
     const contentWidth = Math.max(content.scrollWidth, content.offsetWidth, 1);
     const contentHeight = Math.max(content.scrollHeight, content.offsetHeight, 1);
-    if (viewportRect.width < 100 || viewportRect.height < 100 || contentWidth <= 1 || contentHeight <= 1) {
-      return false;
-    }
     const nextZoom = Math.min(
       1,
       Math.max(
@@ -461,7 +410,6 @@ export default function HouseholdQuantityManagement({
     gridZoomRef.current = nextZoom;
     setGridZoom(nextZoom);
     setGridPanPosition(nextPan);
-    return true;
   }, [setGridPanPosition]);
 
   const openGridDialog = () => {
@@ -475,18 +423,12 @@ export default function HouseholdQuantityManagement({
 
   useEffect(() => {
     if (!gridDialogOpen || buildingEntries.length === 0) return undefined;
-    let cancelled = false;
-    let attemptCount = 0;
-    const tryFitGridView = () => {
-      if (cancelled) return;
-      attemptCount += 1;
-      if (!fitGridView() && attemptCount < 12) {
-        gridFitFrameRef.current = window.requestAnimationFrame(tryFitGridView);
-      }
-    };
-    gridFitFrameRef.current = window.requestAnimationFrame(tryFitGridView);
+    const firstFrame = window.requestAnimationFrame(() => {
+      const secondFrame = window.requestAnimationFrame(fitGridView);
+      gridFitFrameRef.current = secondFrame;
+    });
     return () => {
-      cancelled = true;
+      window.cancelAnimationFrame(firstFrame);
       if (gridFitFrameRef.current) {
         window.cancelAnimationFrame(gridFitFrameRef.current);
         gridFitFrameRef.current = null;
@@ -554,10 +496,11 @@ export default function HouseholdQuantityManagement({
   const handleGridOutput = (mode) => {
     const content = gridContentRef.current;
     if (!content || !gridProcess) return;
-    if (gridUnitValues.loadError) {
+    const outputWindow = window.open('', '_blank', 'width=1400,height=900');
+    if (!outputWindow) {
       setToast({
-        severity: 'error',
-        text: `골구도 계산 오류를 먼저 확인해주세요: ${gridUnitValues.loadError}`,
+        severity: 'warning',
+        text: '출력 창이 차단되었습니다. 브라우저 팝업을 허용한 뒤 다시 시도해주세요.',
       });
       return;
     }
@@ -573,109 +516,25 @@ export default function HouseholdQuantityManagement({
     const contentHeight = Math.ceil(
       Math.max(content.scrollHeight, content.offsetHeight, 1),
     );
-    if (contentWidth <= 1 || contentHeight <= 1) {
-      setToast({
-        severity: 'warning',
-        text: '출력할 골구도 영역의 크기를 확인하지 못했습니다. 화면맞춤 후 다시 시도해주세요.',
-      });
-      return;
-    }
-
     const outputTitle = `${projectName || '현장명 미등록'}_${gridProcess.processName}_세대물량골구도`;
-    const outputLabel = mode === 'pdf' ? 'PDF 저장' : '인쇄';
-    const printFrame = document.createElement('iframe');
-    printFrame.setAttribute('title', `${outputLabel}용 골구도`);
-    printFrame.setAttribute('aria-hidden', 'true');
-    Object.assign(printFrame.style, {
-      position: 'fixed',
-      right: '0',
-      bottom: '0',
-      width: '1px',
-      height: '1px',
-      border: '0',
-      opacity: '0',
-      pointerEvents: 'none',
-    });
-    document.body.appendChild(printFrame);
-
-    const outputWindow = printFrame.contentWindow;
-    const outputDocument = printFrame.contentDocument || outputWindow?.document;
-    if (!outputWindow || !outputDocument) {
-      printFrame.remove();
-      setToast({
-        severity: 'error',
-        text: '출력용 문서를 만들지 못했습니다. 브라우저를 새로고침한 뒤 다시 시도해주세요.',
-      });
-      return;
-    }
-
-    let cleaned = false;
-    const cleanup = () => {
-      if (cleaned) return;
-      cleaned = true;
-      window.setTimeout(() => printFrame.remove(), 50);
-    };
-    outputWindow.addEventListener('afterprint', cleanup, { once: true });
-
-    const finalizeOutput = async () => {
-      try {
-        const stage = outputDocument.getElementById('quantity-print-stage');
-        const printContent = outputDocument.getElementById('quantity-print-content');
-        if (!stage || !printContent) {
-          throw new Error('출력용 골구도 영역을 찾지 못했습니다.');
-        }
-
-        if (outputDocument.fonts?.ready) {
-          try {
-            await outputDocument.fonts.ready;
-          } catch (error) {
-            console.warn('골구도 출력 폰트 로딩 경고:', error);
-          }
-        }
-        const images = Array.from(outputDocument.images || []);
-        await Promise.all(
-          images.map((image) =>
-            image.complete
-              ? Promise.resolve()
-              : new Promise((resolve) => {
-                  image.addEventListener('load', resolve, { once: true });
-                  image.addEventListener('error', resolve, { once: true });
-                  window.setTimeout(resolve, 1500);
-                }),
-          ),
-        );
-
-        const stageRect = stage.getBoundingClientRect();
-        const stageWidth = Math.max(stage.clientWidth, stageRect.width, 1);
-        const stageHeight = Math.max(stage.clientHeight, stageRect.height, 1);
-        const scale = Math.min(
-          stageWidth / contentWidth,
-          stageHeight / contentHeight,
-        );
-        const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
-        const left = Math.max(0, (stageWidth - contentWidth * safeScale) / 2);
-        const top = Math.max(0, (stageHeight - contentHeight * safeScale) / 2);
-        printContent.style.transform = `translate(${left}px, ${top}px) scale(${safeScale})`;
-
-        await new Promise((resolve) =>
-          outputWindow.requestAnimationFrame(() =>
-            outputWindow.requestAnimationFrame(resolve),
-          ),
-        );
-        outputWindow.focus();
-        outputWindow.print();
-        window.setTimeout(cleanup, 60000);
-      } catch (error) {
-        console.error('골구도 출력 오류:', error);
-        cleanup();
-        setToast({
-          severity: 'error',
-          text: `골구도를 출력하지 못했습니다: ${error?.message || '알 수 없는 오류'}`,
-        });
-      }
+    const finalizeOutput = () => {
+      const stage = outputWindow.document.getElementById('quantity-print-stage');
+      const printContent = outputWindow.document.getElementById('quantity-print-content');
+      if (!stage || !printContent) return;
+      const scale = Math.min(
+        stage.clientWidth / contentWidth,
+        stage.clientHeight / contentHeight,
+      );
+      const left = Math.max(0, (stage.clientWidth - contentWidth * scale) / 2);
+      const top = Math.max(0, (stage.clientHeight - contentHeight * scale) / 2);
+      printContent.style.transform = `translate(${left}px, ${top}px) scale(${scale})`;
+      outputWindow.focus();
+      window.setTimeout(() => outputWindow.print(), mode === 'pdf' ? 350 : 250);
     };
 
-    const markup = `<!doctype html>
+    outputWindow.addEventListener('load', finalizeOutput, { once: true });
+    outputWindow.document.open();
+    outputWindow.document.write(`<!doctype html>
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
@@ -693,11 +552,7 @@ export default function HouseholdQuantityManagement({
     .quantity-print-stage { position: relative; width: 287mm; height: 187mm; overflow: hidden; }
     .quantity-print-content { position: absolute; left: 0; top: 0; width: ${contentWidth}px; height: ${contentHeight}px; transform-origin: 0 0; }
     .quantity-print-content button { cursor: default !important; }
-    .quantity-print-content .MuiTouchRipple-root { display: none !important; }
-    @media print {
-      html, body { width: 287mm !important; height: 200mm !important; }
-      .quantity-print-page { break-after: avoid; page-break-after: avoid; }
-    }
+    @media print { .quantity-print-page { break-after: avoid; page-break-after: avoid; } }
   </style>
 </head>
 <body>
@@ -711,19 +566,8 @@ export default function HouseholdQuantityManagement({
     </section>
   </main>
 </body>
-</html>`;
-
-    let outputStarted = false;
-    const startOutput = () => {
-      if (outputStarted || cleaned) return;
-      outputStarted = true;
-      finalizeOutput();
-    };
-    printFrame.addEventListener('load', startOutput, { once: true });
-    outputDocument.open();
-    outputDocument.write(markup);
-    outputDocument.close();
-    window.setTimeout(startOutput, 120);
+</html>`);
+    outputWindow.document.close();
   };
 
   const openDownloadDialog = () => {
@@ -1178,17 +1022,12 @@ export default function HouseholdQuantityManagement({
         onClose={() => setGridDialogOpen(false)}
         fullWidth
         maxWidth={false}
-        slotProps={{
-          paper: {
-            sx: {
-              width: '96vw',
-              maxWidth: '96vw',
-              height: '90vh',
-              maxHeight: '90vh',
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
-            },
+        PaperProps={{
+          sx: {
+            width: '96vw',
+            maxWidth: '96vw',
+            height: '90vh',
+            maxHeight: '90vh',
           },
         }}
       >
@@ -1218,22 +1057,8 @@ export default function HouseholdQuantityManagement({
         </DialogTitle>
         <DialogContent
           dividers
-          sx={{
-            p: 0,
-            flex: '1 1 auto',
-            height: 0,
-            minHeight: 0,
-            overflow: 'hidden',
-            display: 'flex',
-            flexDirection: 'column',
-            bgcolor: '#f8fafc',
-          }}
+          sx={{ p: 0, minHeight: 0, display: 'flex', flexDirection: 'column', bgcolor: '#f8fafc' }}
         >
-          {gridUnitValues.loadError && (
-            <Alert severity="error" sx={{ flex: '0 0 auto', borderRadius: 0 }}>
-              골구도 세대물량 계산 중 오류가 발생했습니다: {gridUnitValues.loadError}
-            </Alert>
-          )}
           <Paper
             square
             elevation={0}
@@ -1344,8 +1169,7 @@ export default function HouseholdQuantityManagement({
               onPointerCancel={finishGridPan}
               sx={{
                 position: 'relative',
-                flex: '1 1 0',
-                height: 0,
+                flex: 1,
                 minHeight: 0,
                 overflow: 'hidden',
                 bgcolor: '#f8fafc',
@@ -1399,7 +1223,7 @@ export default function HouseholdQuantityManagement({
         onClose={() => !excelLoading && !saving && setDownloadDialogOpen(false)}
         fullWidth
         maxWidth="md"
-        slotProps={{ paper: { sx: { height: '72vh', minHeight: 520 } } }}
+        PaperProps={{ sx: { height: '72vh', minHeight: 520 } }}
       >
         <DialogTitle sx={{ pb: 1, fontSize: '1rem', fontWeight: 900 }}>
           {configurationDialogMode === 'connections'
