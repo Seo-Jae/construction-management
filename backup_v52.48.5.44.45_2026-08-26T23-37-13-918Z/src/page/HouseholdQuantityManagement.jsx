@@ -1,4 +1,3 @@
-// v52.48.5.44.45 골구도 출력 여백 자동확대·화면 줌 선명도 개선
 // v52.48.5.44.44 골구도 출력 DOM 복제방식 수정·A4 가로 1페이지 실크기 맞춤
 // v52.48.5.44.43 골구도 계산데이터 방어·PDF/프린트 출력 안정화
 // v52.48.5.44.42 골구도 다이얼로그 높이·화면맞춤 로딩 수정
@@ -385,14 +384,9 @@ export default function HouseholdQuantityManagement({
   };
 
   const setGridPanPosition = useCallback((nextPan) => {
-    /*
-      화면 확대 시 글자가 흐려지는 현상을 줄이기 위해 이동 좌표는
-      정수 픽셀에 맞춥니다. 실제 확대는 transform: scale이 아니라
-      CSS zoom으로 처리하므로 텍스트가 확대 배율에 맞춰 다시 렌더링됩니다.
-    */
     const safePan = {
-      x: Math.round(Number(nextPan?.x || 0)),
-      y: Math.round(Number(nextPan?.y || 0)),
+      x: Number(nextPan?.x || 0),
+      y: Number(nextPan?.y || 0),
     };
     gridPanRef.current = safePan;
     setGridPan(safePan);
@@ -562,6 +556,20 @@ export default function HouseholdQuantityManagement({
       return;
     }
 
+    const contentWidth = Math.ceil(
+      Math.max(content.scrollWidth, content.offsetWidth, 1),
+    );
+    const contentHeight = Math.ceil(
+      Math.max(content.scrollHeight, content.offsetHeight, 1),
+    );
+    if (contentWidth <= 1 || contentHeight <= 1) {
+      setToast({
+        severity: 'warning',
+        text: '출력할 골구도 영역의 크기를 확인하지 못했습니다. 화면맞춤 후 다시 시도해주세요.',
+      });
+      return;
+    }
+
     const previousPrintRoot = document.getElementById('quantity-grid-print-root');
     const previousPrintStyle = document.getElementById('quantity-grid-print-style');
     previousPrintRoot?.remove();
@@ -578,8 +586,8 @@ export default function HouseholdQuantityManagement({
       position: 'fixed',
       left: '-100000px',
       top: '0',
-      width: '297mm',
-      height: '210mm',
+      width: '287mm',
+      height: '200mm',
       margin: '0',
       padding: '0',
       boxSizing: 'border-box',
@@ -592,10 +600,9 @@ export default function HouseholdQuantityManagement({
 
     const header = document.createElement('div');
     Object.assign(header.style, {
-      width: '297mm',
-      height: '12mm',
+      width: '287mm',
+      height: '13mm',
       boxSizing: 'border-box',
-      padding: '0 3mm',
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
@@ -630,8 +637,8 @@ export default function HouseholdQuantityManagement({
     stage.id = 'quantity-grid-print-stage';
     Object.assign(stage.style, {
       position: 'relative',
-      width: '297mm',
-      height: '198mm',
+      width: '287mm',
+      height: '187mm',
       boxSizing: 'border-box',
       overflow: 'hidden',
       background: '#ffffff',
@@ -644,7 +651,7 @@ export default function HouseholdQuantityManagement({
 
       출력용 골구도는 현재 문서 안에서 실제 렌더링된 DOM 전체를 cloneNode(true)로
       복제합니다. 따라서 현재 화면에서 사용 중인 MUI 스타일시트를 그대로 적용받고,
-      출력 복제본은 zoom: 1로 강제해 화면의 줌/이동 상태가 출력물에 포함되지 않습니다.
+      화면의 줌/이동 transform은 부모에만 있으므로 출력물에는 포함되지 않습니다.
     */
     const printContent = content.cloneNode(true);
     printContent.removeAttribute('id');
@@ -655,8 +662,6 @@ export default function HouseholdQuantityManagement({
       left: '0',
       top: '0',
       margin: '0',
-      padding: '0',
-      zoom: '1',
       transformOrigin: '0 0',
       willChange: 'auto',
       pointerEvents: 'none',
@@ -674,7 +679,7 @@ export default function HouseholdQuantityManagement({
     printStyle.textContent = `
       @page {
         size: A4 landscape;
-        margin: 0;
+        margin: 5mm;
       }
       @media print {
         html,
@@ -696,8 +701,8 @@ export default function HouseholdQuantityManagement({
           position: static !important;
           left: auto !important;
           top: auto !important;
-          width: 297mm !important;
-          height: 210mm !important;
+          width: 287mm !important;
+          height: 200mm !important;
           margin: 0 !important;
           padding: 0 !important;
           overflow: hidden !important;
@@ -728,36 +733,10 @@ export default function HouseholdQuantityManagement({
     const stageRect = stage.getBoundingClientRect();
     const stageWidth = Math.max(stage.clientWidth, stageRect.width, 1);
     const stageHeight = Math.max(stage.clientHeight, stageRect.height, 1);
-    /*
-      출력 크기는 화면에서 현재 확대된 DOM이 아니라, 출력용으로 복제해
-      zoom: 1로 되돌린 DOM 자체를 측정합니다. 따라서 화면이 171%여도
-      PDF/인쇄 배율은 항상 동일한 원본 골구도를 기준으로 계산됩니다.
-    */
-    const contentWidth = Math.ceil(
-      Math.max(printContent.scrollWidth, printContent.offsetWidth, 1),
-    );
-    const contentHeight = Math.ceil(
-      Math.max(printContent.scrollHeight, printContent.offsetHeight, 1),
-    );
-    if (contentWidth <= 1 || contentHeight <= 1) {
-      printRoot.remove();
-      printStyle.remove();
-      document.title = originalDocumentTitle;
-      setToast({
-        severity: 'warning',
-        text: '출력할 골구도 영역의 크기를 확인하지 못했습니다. 화면맞춤 후 다시 시도해주세요.',
-      });
-      return;
-    }
-    /*
-      v52.48.5.44.44까지는 마지막 인수 1 때문에 원본 골구도가
-      용지보다 작을 때 절대 확대되지 않아 큰 좌우 여백이 남았습니다.
-      이제 확대도 허용하고, A4 가로 전체 폭(297mm)을 출력영역으로 사용해
-      가로/세로 중 먼저 닿는 쪽까지 한 페이지를 최대한 크게 채웁니다.
-    */
     const scale = Math.min(
       stageWidth / contentWidth,
       stageHeight / contentHeight,
+      1,
     );
     const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
     const left = Math.max(0, (stageWidth - contentWidth * safeScale) / 2);
@@ -1428,8 +1407,11 @@ export default function HouseholdQuantityManagement({
               <Box
                 sx={{
                   position: 'absolute',
-                  left: `${gridPan.x}px`,
-                  top: `${gridPan.y}px`,
+                  left: 0,
+                  top: 0,
+                  transform: `translate(${gridPan.x}px, ${gridPan.y}px) scale(${gridZoom})`,
+                  transformOrigin: '0 0',
+                  willChange: 'transform',
                 }}
               >
                 <Box
@@ -1441,13 +1423,6 @@ export default function HouseholdQuantityManagement({
                     gap: 2.5,
                     p: 2,
                     bgcolor: '#f8fafc',
-                    /*
-                      transform: scale()은 171% 같은 비정수 확대에서 글자를
-                      한 번 그린 뒤 비트맵처럼 늘려 흐릿하게 보일 수 있습니다.
-                      CSS zoom은 확대된 크기로 다시 레이아웃/렌더링하므로
-                      셀 숫자와 층 표기가 훨씬 선명하게 유지됩니다.
-                    */
-                    zoom: gridZoom,
                   }}
                 >
                   {buildingEntries.map(([buildingName, config]) => (
