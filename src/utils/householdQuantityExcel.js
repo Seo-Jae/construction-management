@@ -1,3 +1,4 @@
+// v52.48.5.44.39 증감 부호 계산 수정·상하 표 9열 정렬
 // v52.48.5.44.38 타입별 증감물량 자동집계 및 최종합계 반영
 // v52.48.5.44.37 기본물량 소계·공제물량·자동합계 반영
 // v52.48.5.44.33 Excel 기본옵션 명칭 통일
@@ -6,7 +7,7 @@
 import ExcelJS from 'exceljs';
 import { createSelectionOptionUnitRows } from './optionSelectionExcel.js';
 
-const TEMPLATE_VERSION = '4';
+const TEMPLATE_VERSION = '5';
 const CATEGORY = 'household_quantity';
 const META_SHEET_NAME = '_세대물량시스템정보';
 const META_START_ROW = 8;
@@ -158,7 +159,7 @@ export const normalizeHouseholdQuantityDocument = (value = {}) => {
   });
 
   return {
-    version: 4,
+    version: 5,
     processNames,
     processOptionSelections,
     values,
@@ -322,7 +323,7 @@ export const createHouseholdQuantityDefinitions = ({
         (total, row) => total + (Number(row.adjustmentQuantity) || 0),
         0,
       );
-      const baseTotal = baseSubtotal - adjustmentTotal;
+      const baseTotal = baseSubtotal + adjustmentTotal;
       const optionTotal = optionRows.reduce(
         (total, row) => total + (Number(row.quantity) || 0) * row.unitCount,
         0,
@@ -354,7 +355,7 @@ export const createHouseholdQuantityDefinitions = ({
 export const createHouseholdQuantityDocumentFromDefinitions = (
   definitions,
 ) => ({
-  version: 4,
+  version: 5,
   processNames: definitions.processNames ||
     definitions.processes.map((process) => process.processName),
   processOptionSelections: definitions.processOptionSelections || {},
@@ -530,8 +531,8 @@ export const saveHouseholdQuantityWorkbook = async ({
         { formula: `D${rowNumber}*E${rowNumber}`, result: subtotal },
         { formula: adjustmentFormula, result: row.adjustmentQuantity || 0 },
         {
-          formula: `G${rowNumber}-H${rowNumber}`,
-          result: subtotal - (Number(row.adjustmentQuantity) || 0),
+          formula: `G${rowNumber}+H${rowNumber}`,
+          result: subtotal + (Number(row.adjustmentQuantity) || 0),
         },
       ];
       for (let column = 1; column <= 9; column += 1) {
@@ -571,7 +572,9 @@ export const saveHouseholdQuantityWorkbook = async ({
       '해당 세대',
       '증감물량',
       '단위',
-      '자동 합계',
+      '소계',
+      '',
+      '',
     ];
     sheet.getRow(rowNumber).eachCell((cell) =>
       applyHeaderStyle(cell, 'FF475569'),
@@ -598,8 +601,10 @@ export const saveHouseholdQuantityWorkbook = async ({
             formula: `D${rowNumber}*E${rowNumber}`,
             result: (Number(row.quantity) || 0) * row.unitCount,
           },
+          '',
+          '',
         ];
-        for (let column = 1; column <= 7; column += 1) {
+        for (let column = 1; column <= 9; column += 1) {
           applyBodyStyle(sheet.getCell(rowNumber, column), {
             fill: column === 5 || column === 6 ? 'FFFFFBEB' : undefined,
             horizontal: [4, 5, 7].includes(column) ? 'right' : 'center',

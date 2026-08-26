@@ -1,3 +1,4 @@
+// v52.48.5.44.39 증감 부호 계산 수정·상하 표 9열 정렬
 // v52.48.5.44.38 하단 옵션 증감물량 타입별 상단 자동집계
 // v52.48.5.44.37 기본물량 소계·공제물량·자동합계 및 표 정렬
 // v52.48.5.44.34 공정별옵션연결 별도 설정·다운로드 연결정보 즉시 저장
@@ -606,7 +607,7 @@ export default function HouseholdQuantityManagement({
                         </TableCell>
                         <TableCell align="right" sx={{ ...TABLE_BODY_SX, fontWeight: 850 }}>
                           {formatQuantity(
-                            (Number(row.quantity) || 0) * row.unitCount -
+                            (Number(row.quantity) || 0) * row.unitCount +
                               (Number(row.adjustmentQuantity) || 0),
                           )}
                         </TableCell>
@@ -628,13 +629,15 @@ export default function HouseholdQuantityManagement({
                   <Table size="small" sx={{ tableLayout: 'fixed' }}>
                     <TableHead>
                       <TableRow>
-                        <TableCell align="center" sx={{ ...TABLE_HEADER_SX, width: 90 }}>구분</TableCell>
+                        <TableCell align="center" sx={{ ...TABLE_HEADER_SX, width: 80 }}>구분</TableCell>
                         <TableCell align="center" sx={{ ...TABLE_HEADER_SX, width: 130 }}>타입</TableCell>
-                        <TableCell align="center" sx={{ ...TABLE_HEADER_SX, width: 260 }}>유상옵션</TableCell>
+                        <TableCell align="center" sx={{ ...TABLE_HEADER_SX, width: 210 }}>유상옵션</TableCell>
                         <TableCell align="right" sx={{ ...TABLE_HEADER_SX, width: 110 }}>해당 세대</TableCell>
                         <TableCell align="right" sx={{ ...TABLE_HEADER_SX, width: 130 }}>증감물량</TableCell>
                         <TableCell align="center" sx={{ ...TABLE_HEADER_SX, width: 90 }}>단위</TableCell>
-                        <TableCell align="right" sx={TABLE_HEADER_SX}>자동 합계</TableCell>
+                        <TableCell align="right" sx={{ ...TABLE_HEADER_SX, width: 140 }}>소계</TableCell>
+                        <TableCell sx={{ ...TABLE_HEADER_SX, width: 130 }} />
+                        <TableCell sx={TABLE_HEADER_SX} />
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -651,6 +654,8 @@ export default function HouseholdQuantityManagement({
                           <TableCell align="right" sx={{ ...TABLE_BODY_SX, fontWeight: 850 }}>
                             {formatQuantity((Number(row.quantity) || 0) * row.unitCount)}
                           </TableCell>
+                          <TableCell sx={TABLE_BODY_SX} />
+                          <TableCell sx={TABLE_BODY_SX} />
                         </TableRow>
                       ))}
                     </TableBody>
