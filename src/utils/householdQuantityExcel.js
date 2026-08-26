@@ -1,3 +1,4 @@
+// v52.48.5.44.33 Excel 기본옵션 명칭 통일
 // v52.48.5.44.32 세대물량 사용자 추가 공정 Excel 유지
 // v52.48.5.44.31 세대물량 공정별 갑지 Excel 생성·업로드
 import ExcelJS from 'exceljs';
@@ -476,7 +477,7 @@ export const saveHouseholdQuantityWorkbook = async ({
     sheet.getRow(5).values = [
       '구분',
       '타입',
-      '단열 기준',
+      '기본옵션',
       '해당 세대',
       '기본물량',
       '단위',

@@ -1,3 +1,4 @@
+// v52.48.5.44.33 공정 탭 배율 오차 수정·기본옵션 명칭 통일
 // v52.48.5.44.32 기본 공정 6개·사용자 공정 추가
 // v52.48.5.44.31 세대물량관리 단일화·공정별 갑지·Excel 연동
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -434,7 +435,18 @@ export default function HouseholdQuantityManagement({
           aria-label="공정별 세대물량 갑지 선택"
           sx={{
             minHeight: 40,
-            '& .MuiTab-root': { minHeight: 40, py: 0.5, px: 1.7, fontSize: '0.72rem', fontWeight: 800 },
+            '& .MuiTabs-indicator': { display: 'none' },
+            '& .MuiTab-root': {
+              minHeight: 40,
+              py: 0.5,
+              px: 1.7,
+              borderBottom: '2px solid transparent',
+              fontSize: '0.72rem',
+              fontWeight: 800,
+            },
+            '& .MuiTab-root.Mui-selected': {
+              borderBottomColor: '#2563eb',
+            },
           }}
         >
           {definitions.processes.map((process) => (
@@ -495,7 +507,7 @@ export default function HouseholdQuantityManagement({
                     <TableRow>
                       <TableCell sx={{ ...TABLE_HEADER_SX, width: 80 }}>구분</TableCell>
                       <TableCell sx={{ ...TABLE_HEADER_SX, width: 130 }}>타입</TableCell>
-                      <TableCell sx={{ ...TABLE_HEADER_SX, width: 210 }}>단열 기준</TableCell>
+                      <TableCell sx={{ ...TABLE_HEADER_SX, width: 210 }}>기본옵션</TableCell>
                       <TableCell align="right" sx={{ ...TABLE_HEADER_SX, width: 110 }}>해당 세대</TableCell>
                       <TableCell align="right" sx={{ ...TABLE_HEADER_SX, width: 130 }}>기본물량</TableCell>
                       <TableCell sx={{ ...TABLE_HEADER_SX, width: 90 }}>단위</TableCell>
