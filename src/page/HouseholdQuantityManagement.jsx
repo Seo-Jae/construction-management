@@ -1,3 +1,4 @@
+// v52.48.5.44.38 하단 옵션 증감물량 타입별 상단 자동집계
 // v52.48.5.44.37 기본물량 소계·공제물량·자동합계 및 표 정렬
 // v52.48.5.44.34 공정별옵션연결 별도 설정·다운로드 연결정보 즉시 저장
 // v52.48.5.44.33 공정 탭 배율 오차 수정·기본옵션 명칭 통일
@@ -582,7 +583,7 @@ export default function HouseholdQuantityManagement({
                       <TableCell align="right" sx={{ ...TABLE_HEADER_SX, width: 130 }}>기본물량</TableCell>
                       <TableCell align="center" sx={{ ...TABLE_HEADER_SX, width: 90 }}>단위</TableCell>
                       <TableCell align="right" sx={{ ...TABLE_HEADER_SX, width: 140 }}>소계</TableCell>
-                      <TableCell align="right" sx={{ ...TABLE_HEADER_SX, width: 130 }}>공제물량</TableCell>
+                      <TableCell align="right" sx={{ ...TABLE_HEADER_SX, width: 130 }}>증감물량</TableCell>
                       <TableCell align="right" sx={TABLE_HEADER_SX}>자동 합계</TableCell>
                     </TableRow>
                   </TableHead>
@@ -601,12 +602,12 @@ export default function HouseholdQuantityManagement({
                           {formatQuantity((Number(row.quantity) || 0) * row.unitCount)}
                         </TableCell>
                         <TableCell align="right" sx={{ ...TABLE_BODY_SX, fontWeight: 850 }}>
-                          {formatQuantity(Number(row.deductionQuantity) || 0)}
+                          {formatQuantity(Number(row.adjustmentQuantity) || 0)}
                         </TableCell>
                         <TableCell align="right" sx={{ ...TABLE_BODY_SX, fontWeight: 850 }}>
                           {formatQuantity(
                             (Number(row.quantity) || 0) * row.unitCount -
-                              (Number(row.deductionQuantity) || 0),
+                              (Number(row.adjustmentQuantity) || 0),
                           )}
                         </TableCell>
                       </TableRow>

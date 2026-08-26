@@ -1,3 +1,4 @@
+// v52.48.5.44.38 타입별 증감물량 자동집계 및 최종합계 반영
 // v52.48.5.44.37 기본물량 소계·공제물량·자동합계 반영
 // v52.48.5.44.33 Excel 기본옵션 명칭 통일
 // v52.48.5.44.32 세대물량 사용자 추가 공정 Excel 유지
@@ -5,7 +6,7 @@
 import ExcelJS from 'exceljs';
 import { createSelectionOptionUnitRows } from './optionSelectionExcel.js';
 
-const TEMPLATE_VERSION = '3';
+const TEMPLATE_VERSION = '4';
 const CATEGORY = 'household_quantity';
 const META_SHEET_NAME = '_세대물량시스템정보';
 const META_START_ROW = 8;
@@ -112,7 +113,6 @@ const normalizeValueRow = (row, fallback = {}) => ({
   basisOption: normalizeText(row?.basisOption || fallback.basisOption),
   optionName: normalizeText(row?.optionName || fallback.optionName),
   quantity: toQuantity(row?.quantity),
-  deductionQuantity: toQuantity(row?.deductionQuantity) ?? 0,
   unit: normalizeUnit(row?.unit),
 });
 
@@ -158,7 +158,7 @@ export const normalizeHouseholdQuantityDocument = (value = {}) => {
   });
 
   return {
-    version: 3,
+    version: 4,
     processNames,
     processOptionSelections,
     values,
@@ -265,7 +265,6 @@ export const createHouseholdQuantityDefinitions = ({
         return {
           ...row,
           quantity: saved?.quantity ?? null,
-          deductionQuantity: saved?.deductionQuantity ?? 0,
           unit: normalizeUnit(saved?.unit),
         };
       });
@@ -300,21 +299,30 @@ export const createHouseholdQuantityDefinitions = ({
           optionRows.push({
             ...row,
             quantity: saved?.quantity ?? null,
-            deductionQuantity: 0,
             unit: normalizeUnit(saved?.unit),
           });
         });
       });
 
+      const optionAdjustmentByType = optionRows.reduce((result, row) => {
+        const rowTotal = (Number(row.quantity) || 0) * row.unitCount;
+        result.set(row.typeName, (result.get(row.typeName) || 0) + rowTotal);
+        return result;
+      }, new Map());
+      baseRows = baseRows.map((row) => ({
+        ...row,
+        adjustmentQuantity: optionAdjustmentByType.get(row.typeName) || 0,
+      }));
+
       const baseSubtotal = baseRows.reduce(
         (total, row) => total + (Number(row.quantity) || 0) * row.unitCount,
         0,
       );
-      const baseDeductionTotal = baseRows.reduce(
-        (total, row) => total + (Number(row.deductionQuantity) || 0),
+      const adjustmentTotal = baseRows.reduce(
+        (total, row) => total + (Number(row.adjustmentQuantity) || 0),
         0,
       );
-      const baseTotal = baseSubtotal - baseDeductionTotal;
+      const baseTotal = baseSubtotal - adjustmentTotal;
       const optionTotal = optionRows.reduce(
         (total, row) => total + (Number(row.quantity) || 0) * row.unitCount,
         0,
@@ -327,10 +335,10 @@ export const createHouseholdQuantityDefinitions = ({
         optionRows,
         unitCount: unitRows.length,
         baseSubtotal,
-        baseDeductionTotal,
+        adjustmentTotal,
         baseTotal,
         optionTotal,
-        totalQuantity: baseTotal + optionTotal,
+        totalQuantity: baseTotal,
       };
     });
 
@@ -346,7 +354,7 @@ export const createHouseholdQuantityDefinitions = ({
 export const createHouseholdQuantityDocumentFromDefinitions = (
   definitions,
 ) => ({
-  version: 3,
+  version: 4,
   processNames: definitions.processNames ||
     definitions.processes.map((process) => process.processName),
   processOptionSelections: definitions.processOptionSelections || {},
@@ -398,7 +406,6 @@ const createMetaSheet = ({ workbook, projectName, definitions }) => {
     'type_name',
     'basis_option',
     'option_name',
-    'deduction_cell',
   ];
   return sheet;
 };
@@ -433,6 +440,9 @@ export const saveHouseholdQuantityWorkbook = async ({
   workbook.creator = '공사관리 시스템';
   workbook.created = new Date();
   workbook.modified = new Date();
+  workbook.calcProperties.fullCalcOnLoad = true;
+  workbook.calcProperties.forceFullCalc = true;
+  workbook.calcProperties.calcMode = 'auto';
   const metaSheet = createMetaSheet({ workbook, projectName, definitions });
   let metaRowNumber = META_START_ROW;
 
@@ -496,13 +506,20 @@ export const saveHouseholdQuantityWorkbook = async ({
       '기본물량',
       '단위',
       '소계',
-      '공제물량',
+      '증감물량',
       '자동 합계',
     ];
     sheet.getRow(5).eachCell((cell) => applyHeaderStyle(cell));
 
     let rowNumber = 6;
+    const optionDataStartRow = process.baseRows.length + 9;
+    const optionDataEndRow =
+      optionDataStartRow + process.optionRows.length - 1;
     process.baseRows.forEach((row) => {
+      const subtotal = (Number(row.quantity) || 0) * row.unitCount;
+      const adjustmentFormula = process.optionRows.length
+        ? `SUMIF($B$${optionDataStartRow}:$B$${optionDataEndRow},B${rowNumber},$G$${optionDataStartRow}:$G$${optionDataEndRow})`
+        : '0';
       sheet.getRow(rowNumber).values = [
         '기본',
         row.typeName,
@@ -510,16 +527,16 @@ export const saveHouseholdQuantityWorkbook = async ({
         row.unitCount,
         row.quantity,
         row.unit,
-        { formula: `D${rowNumber}*E${rowNumber}` },
-        row.deductionQuantity ?? 0,
-        { formula: `G${rowNumber}-H${rowNumber}` },
+        { formula: `D${rowNumber}*E${rowNumber}`, result: subtotal },
+        { formula: adjustmentFormula, result: row.adjustmentQuantity || 0 },
+        {
+          formula: `G${rowNumber}-H${rowNumber}`,
+          result: subtotal - (Number(row.adjustmentQuantity) || 0),
+        },
       ];
       for (let column = 1; column <= 9; column += 1) {
         applyBodyStyle(sheet.getCell(rowNumber, column), {
-          fill:
-            column === 5 || column === 6 || column === 8
-              ? 'FFFFFBEB'
-              : undefined,
+          fill: column === 5 || column === 6 ? 'FFFFFBEB' : undefined,
           horizontal: [4, 5, 7, 8, 9].includes(column) ? 'right' : 'center',
         });
       }
@@ -537,7 +554,6 @@ export const saveHouseholdQuantityWorkbook = async ({
         row.typeName,
         row.basisOption,
         '',
-        sheet.getCell(rowNumber, 8).address,
       ];
       metaRowNumber += 1;
       rowNumber += 1;
@@ -578,7 +594,10 @@ export const saveHouseholdQuantityWorkbook = async ({
           row.unitCount,
           row.quantity,
           row.unit,
-          { formula: `D${rowNumber}*E${rowNumber}` },
+          {
+            formula: `D${rowNumber}*E${rowNumber}`,
+            result: (Number(row.quantity) || 0) * row.unitCount,
+          },
         ];
         for (let column = 1; column <= 7; column += 1) {
           applyBodyStyle(sheet.getCell(rowNumber, column), {
@@ -598,7 +617,6 @@ export const saveHouseholdQuantityWorkbook = async ({
           row.typeName,
           '',
           row.optionName,
-          '',
         ];
         metaRowNumber += 1;
         rowNumber += 1;
@@ -607,7 +625,7 @@ export const saveHouseholdQuantityWorkbook = async ({
 
     sheet.autoFilter = {
       from: { row: 5, column: 1 },
-      to: { row: 5, column: 7 },
+      to: { row: 5, column: 9 },
     };
   });
 
@@ -677,9 +695,6 @@ export const parseHouseholdQuantityWorkbookFile = async ({
     const typeName = normalizeText(metaSheet.getCell(rowNumber, 6).value);
     const basisOption = normalizeText(metaSheet.getCell(rowNumber, 7).value);
     const optionName = normalizeText(metaSheet.getCell(rowNumber, 8).value);
-    const deductionAddress = normalizeText(
-      metaSheet.getCell(rowNumber, 9).value,
-    );
     if (!sheetName && !quantityAddress && !processName) {
       rowNumber += 1;
       continue;
@@ -695,10 +710,6 @@ export const parseHouseholdQuantityWorkbookFile = async ({
       basisOption,
       optionName,
       quantity: toQuantity(sheet.getCell(quantityAddress).value),
-      deductionQuantity:
-        kind === 'base' && deductionAddress
-          ? toQuantity(sheet.getCell(deductionAddress).value) ?? 0
-          : 0,
       unit: normalizeUnit(sheet.getCell(unitAddress).value),
     });
     rowNumber += 1;
