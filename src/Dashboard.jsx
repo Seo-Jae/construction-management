@@ -1,3 +1,4 @@
+// v52.48.5.44.26 화면배율 축소분 가용높이 역보정·전체화면 채움
 // v52.48.5.44.24 기본 화면 90%·사용자 배율 선택·인쇄 100% 지원
 // v52.48.5.44.13 옵션현황(단열) 업로드 사용자 연결
 // v52.48.5.44.12 옵션관리 메뉴·골구도 기본화면
@@ -574,12 +575,19 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   useEffect(() => {
     const documentElement = document.documentElement;
     const previousZoom = documentElement.style.zoom;
+    const previousViewportHeight = documentElement.style.getPropertyValue(
+      '--wooklim-dashboard-viewport-height',
+    );
     const hadScaleClass = documentElement.classList.contains(
       'wooklim-dashboard-scaled',
     );
 
     const applyScale = (scale) => {
       documentElement.style.zoom = String(scale);
+      documentElement.style.setProperty(
+        '--wooklim-dashboard-viewport-height',
+        `${(100 / scale).toFixed(6)}vh`,
+      );
       documentElement.classList.add('wooklim-dashboard-scaled');
     };
 
@@ -596,6 +604,10 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
     const handleBeforePrint = () => {
       documentElement.style.zoom = '1';
+      documentElement.style.setProperty(
+        '--wooklim-dashboard-viewport-height',
+        '100vh',
+      );
     };
     const handleAfterPrint = () => {
       applyScale(dashboardScale);
@@ -608,6 +620,17 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       window.removeEventListener('beforeprint', handleBeforePrint);
       window.removeEventListener('afterprint', handleAfterPrint);
       documentElement.style.zoom = previousZoom;
+
+      if (previousViewportHeight) {
+        documentElement.style.setProperty(
+          '--wooklim-dashboard-viewport-height',
+          previousViewportHeight,
+        );
+      } else {
+        documentElement.style.removeProperty(
+          '--wooklim-dashboard-viewport-height',
+        );
+      }
 
       if (!hadScaleClass) {
         documentElement.classList.remove('wooklim-dashboard-scaled');
@@ -3588,7 +3611,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       : '공사 관리';
 
   return (
-    <Box sx={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+    <Box
+      sx={{
+        display: 'flex',
+        height: 'var(--wooklim-dashboard-viewport-height, 100vh)',
+        overflow: 'hidden',
+      }}
+    >
       <Snackbar
         key={dashboardToast?.text || 'dashboard-toast'}
         open={Boolean(dashboardToast)}
@@ -4013,6 +4042,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           flexShrink: 0,
           '& .MuiDrawer-paper': {
             width: open ? drawerWidth : 72,
+            height: 'var(--wooklim-dashboard-viewport-height, 100vh)',
             boxSizing: 'border-box',
             overflowX: 'hidden',
             transition: 'width 0.3s',
@@ -4086,7 +4116,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         sx={{
           flexGrow: 1,
           minWidth: 0,
-          height: '100vh',
+          height: 'var(--wooklim-dashboard-viewport-height, 100vh)',
           display: 'flex',
           flexDirection: 'column',
           bgcolor: '#f1f5f9',

@@ -1,3 +1,4 @@
+// v52.48.5.44.26 비교 옵션선택 높이축소·불필요 세로스크롤 제거
 // v52.48.5.44.25 선택옵션 세대수 단일표시·비교카드 세대수·X 해제
 // v52.48.5.44.23 옵션선택 팝업·저장옵션 연동·세대셀 다분할 비교
 // v52.48.5.44.22 옵션별 비교 상단 6칸 옵션선택 UI·임시안내 제거
@@ -926,7 +927,7 @@ export default function OptionManagementOverview({
       {message && <Alert severity={message.severity}>{message.text}</Alert>}
 
       {isComparison && (
-        <Box sx={{ overflowX: 'auto', pb: 0.2 }}>
+        <Box sx={{ overflowX: 'auto', overflowY: 'hidden' }}>
           <Box
             sx={{
               minWidth: 1080,
@@ -943,7 +944,7 @@ export default function OptionManagementOverview({
                 <Box
                   key={`comparison-option-slot-${index + 1}`}
                   sx={{
-                    height: 72,
+                    height: 64,
                     position: 'relative',
                   }}
                 >
@@ -969,10 +970,9 @@ export default function OptionManagementOverview({
                       boxShadow: selectedChoice
                         ? `inset 0 0 0 1px ${slotStyle.borderColor}`
                         : '0 1px 2px rgba(15, 23, 42, 0.04)',
-                      transition: 'box-shadow 120ms ease, transform 120ms ease',
+                      transition: 'box-shadow 120ms ease',
                       '&:hover': {
                         boxShadow: `0 3px 10px ${slotStyle.borderColor}55`,
-                        transform: 'translateY(-1px)',
                       },
                       '&:focus-visible': {
                         outline: `2px solid ${slotStyle.borderColor}`,
