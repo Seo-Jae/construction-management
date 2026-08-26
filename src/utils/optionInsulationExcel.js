@@ -1,3 +1,4 @@
+// v52.48.5.44.15 단열 옵션 Excel 메모 제거·동 간격 1열(너비 5.42)
 // v52.48.5.44.14 옵션현황(단열) 전체 동 단일시트·빈 세대셀·무색상 양식
 // v52.48.5.44.13 옵션현황(단열) 골구도 엑셀 다운로드·업로드
 import ExcelJS from 'exceljs';
@@ -18,7 +19,8 @@ const GUIDE_ROW = 2;
 const BUILDING_TITLE_ROW = 4;
 const HEADER_ROW = 5;
 const DATA_START_ROW = 6;
-const BLOCK_GAP_COLUMNS = 2;
+const BLOCK_GAP_COLUMNS = 1;
+const BLOCK_GAP_COLUMN_WIDTH = 5.42;
 
 const normalizeText = (value) => String(value ?? '').trim();
 
@@ -180,6 +182,10 @@ export const saveInsulationOptionWorkbook = async ({
   const metaSheet = createMetaSheet(workbook, projectName);
   let metaRowNumber = META_START_ROW;
 
+  blocks.slice(0, -1).forEach(({ endColumn }) => {
+    sheet.getColumn(endColumn + 1).width = BLOCK_GAP_COLUMN_WIDTH;
+  });
+
   sheet.mergeCells(TITLE_ROW, 1, TITLE_ROW, lastColumn);
   sheet.getCell(TITLE_ROW, 1).value = `${
     projectName || '현장명 미등록'
@@ -337,9 +343,6 @@ export const saveInsulationOptionWorkbook = async ({
             );
 
             cell.value = optionValue;
-            cell.note = `${buildingName} ${visualCell.unitCode}호${
-              unitType ? ` · ${unitType}` : ''
-            }\n현장 담당자가 사용하는 단열 옵션명을 입력하세요.`;
             cell.fill = {
               type: 'pattern',
               pattern: 'solid',
@@ -554,4 +557,3 @@ export const parseInsulationOptionWorkbookFile = async ({
     unitValues,
   };
 };
-

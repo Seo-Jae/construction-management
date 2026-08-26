@@ -1,3 +1,4 @@
+// v52.48.5.44.15 단열 옵션 타입별 현황·상단 박스 실높이 통일
 // v52.48.5.44.14 단열 옵션 상단정리·토스트·단일시트 무색상 전환
 // v52.48.5.44.13 옵션현황(단열) 골구도 엑셀 다운로드·업로드·저장
 // v52.48.5.44.12 옵션관리 골구도 기본화면
@@ -12,8 +13,10 @@ import {
   Alert,
   Box,
   Button,
+  ButtonBase,
   Chip,
   CircularProgress,
+  Collapse,
   Paper,
   Snackbar,
   Stack,
@@ -21,6 +24,8 @@ import {
   Typography,
 } from '@mui/material';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
+import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
+import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import BuildingGrid from '../BuildingGrid.jsx';
@@ -32,6 +37,7 @@ import {
   parseInsulationOptionWorkbookFile,
   saveInsulationOptionWorkbook,
 } from '../utils/optionInsulationExcel.js';
+import { createOptionTypeSummary } from '../utils/optionTypeSummary.js';
 
 const MODE_CONFIG = {
   insulation: {
@@ -55,6 +61,12 @@ const MODE_CONFIG = {
 };
 
 const HEADER_CONTROL_HEIGHT = 30;
+
+const HEADER_CONTROL_SX = {
+  height: HEADER_CONTROL_HEIGHT,
+  minHeight: HEADER_CONTROL_HEIGHT,
+  boxSizing: 'border-box',
+};
 
 const normalizeOptionData = (value) => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
@@ -91,6 +103,7 @@ export default function OptionManagementOverview({
   const [schemaMissing, setSchemaMissing] = useState(false);
   const [message, setMessage] = useState(null);
   const [toast, setToast] = useState(null);
+  const [expandedUnitType, setExpandedUnitType] = useState('');
   const fileInputRef = useRef(null);
 
   const pageConfig = MODE_CONFIG[mode] || MODE_CONFIG.insulation;
@@ -148,6 +161,19 @@ export default function OptionManagementOverview({
         first.value.localeCompare(second.value, 'ko', { numeric: true }),
     );
   }, [optionData]);
+
+  const typeOptionSummary = useMemo(
+    () =>
+      createOptionTypeSummary({
+        buildingConfigs,
+        optionData,
+      }),
+    [buildingConfigs, optionData],
+  );
+
+  useEffect(() => {
+    setExpandedUnitType('');
+  }, [projectName]);
 
   const loadInsulationData = useCallback(async () => {
     if (!isInsulation || !projectName) return;
@@ -348,27 +374,44 @@ export default function OptionManagementOverview({
           flexWrap="wrap"
           sx={{ flex: 1 }}
         >
-          <Chip
-            size="small"
-            label="골구도 기준"
+          <Box
+            component="span"
             sx={{
-              height: HEADER_CONTROL_HEIGHT,
+              ...HEADER_CONTROL_SX,
+              display: 'inline-flex',
+              alignItems: 'center',
+              px: 1.2,
               bgcolor: `${pageConfig.accent}16`,
               border: `1px solid ${pageConfig.accent}66`,
+              borderRadius: '16px',
               color: pageConfig.accent,
+              fontSize: '0.72rem',
               fontWeight: 800,
-              '& .MuiChip-label': { px: 1.2 },
+              lineHeight: 1,
+              whiteSpace: 'nowrap',
             }}
-          />
-          <Chip
-            size="small"
-            variant="outlined"
-            label={pageConfig.category}
+          >
+            골구도 기준
+          </Box>
+          <Box
+            component="span"
             sx={{
-              height: HEADER_CONTROL_HEIGHT,
-              '& .MuiChip-label': { px: 1.2 },
+              ...HEADER_CONTROL_SX,
+              display: 'inline-flex',
+              alignItems: 'center',
+              px: 1.2,
+              bgcolor: '#ffffff',
+              border: '1px solid #cbd5e1',
+              borderRadius: '16px',
+              color: '#334155',
+              fontSize: '0.72rem',
+              fontWeight: 700,
+              lineHeight: 1,
+              whiteSpace: 'nowrap',
             }}
-          />
+          >
+            {pageConfig.category}
+          </Box>
 
           {isInsulation ? (
             <>
@@ -385,7 +428,7 @@ export default function OptionManagementOverview({
                 startIcon={<DownloadRoundedIcon />}
                 onClick={handleDownloadExcel}
                 disabled={excelLoading || buildingEntries.length === 0}
-                sx={{ height: HEADER_CONTROL_HEIGHT, whiteSpace: 'nowrap' }}
+                sx={{ ...HEADER_CONTROL_SX, whiteSpace: 'nowrap' }}
               >
                 골구도 다운로드
               </Button>
@@ -396,7 +439,7 @@ export default function OptionManagementOverview({
                 startIcon={<UploadFileRoundedIcon />}
                 onClick={() => fileInputRef.current?.click()}
                 disabled={excelLoading || buildingEntries.length === 0}
-                sx={{ height: HEADER_CONTROL_HEIGHT, whiteSpace: 'nowrap' }}
+                sx={{ ...HEADER_CONTROL_SX, whiteSpace: 'nowrap' }}
               >
                 엑셀 업로드
               </Button>
@@ -412,7 +455,7 @@ export default function OptionManagementOverview({
                 }
                 onClick={handleSave}
                 disabled={saving || loading || !hasPendingChanges || schemaMissing}
-                sx={{ height: HEADER_CONTROL_HEIGHT, whiteSpace: 'nowrap' }}
+                sx={{ ...HEADER_CONTROL_SX, whiteSpace: 'nowrap' }}
               >
                 저장
               </Button>
@@ -518,74 +561,232 @@ export default function OptionManagementOverview({
         </Stack>
       )}
 
-      <Paper
-        variant="outlined"
+      <Box
         sx={{
           flexGrow: 1,
           minHeight: 0,
-          overflowX: 'auto',
-          overflowY: 'hidden',
-          p: 0.75,
-          borderColor: 'transparent',
-          boxShadow: 'none',
-          bgcolor: '#f1f5f9',
-          position: 'relative',
+          display: 'flex',
+          alignItems: 'stretch',
+          gap: 1,
         }}
       >
-        {(loading || excelLoading) && (
-          <Box
-            sx={{
-              position: 'absolute',
-              inset: 0,
-              zIndex: 5,
-              bgcolor: 'rgba(248, 250, 252, 0.72)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 1,
-            }}
-          >
-            <CircularProgress size={22} />
-            <Typography sx={{ fontSize: '0.75rem', fontWeight: 800 }}>
-              {excelLoading ? '엑셀을 처리하는 중입니다.' : '단열 옵션을 불러오는 중입니다.'}
-            </Typography>
-          </Box>
-        )}
+        <Paper
+          variant="outlined"
+          sx={{
+            flex: 1,
+            minWidth: 0,
+            minHeight: 0,
+            overflowX: 'auto',
+            overflowY: 'hidden',
+            p: 0.75,
+            borderColor: 'transparent',
+            boxShadow: 'none',
+            bgcolor: '#f1f5f9',
+            position: 'relative',
+          }}
+        >
+          {(loading || excelLoading) && (
+            <Box
+              sx={{
+                position: 'absolute',
+                inset: 0,
+                zIndex: 5,
+                bgcolor: 'rgba(248, 250, 252, 0.72)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 1,
+              }}
+            >
+              <CircularProgress size={22} />
+              <Typography sx={{ fontSize: '0.75rem', fontWeight: 800 }}>
+                {excelLoading
+                  ? '엑셀을 처리하는 중입니다.'
+                  : '단열 옵션을 불러오는 중입니다.'}
+              </Typography>
+            </Box>
+          )}
 
-        {buildingEntries.length === 0 ? (
+          {buildingEntries.length === 0 ? (
+            <Box
+              sx={{
+                minHeight: 260,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Typography color="text.secondary">
+                이 현장에 등록된 동 설정이 없습니다.
+              </Typography>
+            </Box>
+          ) : (
+            <Box
+              sx={{
+                minWidth: 'max-content',
+                minHeight: '100%',
+                display: 'flex',
+                alignItems: 'flex-end',
+                gap: 2.5,
+                pb: 0.5,
+              }}
+            >
+              {buildingEntries.map(([buildingName, config]) => (
+                <BuildingGrid
+                  key={`${buildingName}-${refreshKey}`}
+                  buildingName={buildingName}
+                  config={config}
+                  readOnly
+                  cellDisplayData={isInsulation ? displayData : {}}
+                />
+              ))}
+            </Box>
+          )}
+        </Paper>
+
+        {isInsulation && (
           <Box
             sx={{
-              minHeight: 260,
+              width: 270,
+              flexShrink: 0,
+              minHeight: 0,
               display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
+              flexDirection: 'column',
+              border: '1px solid #cbd5e1',
+              borderRadius: 1,
+              bgcolor: '#ffffff',
+              overflow: 'hidden',
             }}
           >
-            <Typography color="text.secondary">이 현장에 등록된 동 설정이 없습니다.</Typography>
-          </Box>
-        ) : (
-          <Box
-            sx={{
-              minWidth: 'max-content',
-              minHeight: '100%',
-              display: 'flex',
-              alignItems: 'flex-end',
-              gap: 2.5,
-              pb: 0.5,
-            }}
-          >
-            {buildingEntries.map(([buildingName, config]) => (
-              <BuildingGrid
-                key={`${buildingName}-${refreshKey}`}
-                buildingName={buildingName}
-                config={config}
-                readOnly
-                cellDisplayData={isInsulation ? displayData : {}}
-              />
-            ))}
+            <Box
+              sx={{
+                px: 1.15,
+                py: 1,
+                bgcolor: '#f8fafc',
+                borderBottom: '1px solid #e2e8f0',
+              }}
+            >
+              <Typography sx={{ color: '#0f172a', fontSize: '0.78rem', fontWeight: 900 }}>
+                타입별 단열 옵션 현황
+              </Typography>
+              <Typography sx={{ mt: 0.15, color: '#64748b', fontSize: '0.62rem' }}>
+                타입을 클릭하면 옵션별 세대수가 펼쳐집니다.
+              </Typography>
+            </Box>
+
+            <Box sx={{ minHeight: 0, overflowY: 'auto', p: 0.75 }}>
+              {typeOptionSummary.rows.length === 0 ? (
+                <Typography
+                  sx={{ py: 2, color: '#94a3b8', fontSize: '0.68rem', textAlign: 'center' }}
+                >
+                  등록된 세대 타입이 없습니다.
+                </Typography>
+              ) : (
+                typeOptionSummary.rows.map((row) => {
+                  const expanded = expandedUnitType === row.typeName;
+                  return (
+                    <Box
+                      key={row.typeName}
+                      sx={{
+                        mb: 0.55,
+                        border: '1px solid #e2e8f0',
+                        borderRadius: 1,
+                        overflow: 'hidden',
+                        bgcolor: '#ffffff',
+                      }}
+                    >
+                      <ButtonBase
+                        onClick={() =>
+                          setExpandedUnitType((current) =>
+                            current === row.typeName ? '' : row.typeName,
+                          )
+                        }
+                        sx={{
+                          width: '100%',
+                          minHeight: 34,
+                          px: 0.8,
+                          display: 'grid',
+                          gridTemplateColumns: '20px minmax(0, 1fr)',
+                          alignItems: 'center',
+                          textAlign: 'left',
+                          '&:hover': { bgcolor: '#f8fafc' },
+                        }}
+                      >
+                        {expanded ? (
+                          <ExpandMoreRoundedIcon sx={{ fontSize: 18, color: '#0284c7' }} />
+                        ) : (
+                          <ChevronRightRoundedIcon sx={{ fontSize: 18, color: '#64748b' }} />
+                        )}
+                        <Typography
+                          noWrap
+                          sx={{
+                            color: '#334155',
+                            fontSize: '0.7rem',
+                            fontWeight: 850,
+                            fontVariantNumeric: 'tabular-nums',
+                          }}
+                        >
+                          {row.typeName} {row.assignedCount.toLocaleString()}/
+                          {row.totalCount.toLocaleString()}세대({row.percentage}%)
+                        </Typography>
+                      </ButtonBase>
+
+                      <Collapse in={expanded} timeout="auto" unmountOnExit>
+                        <Box
+                          sx={{
+                            px: 1,
+                            py: 0.75,
+                            display: 'grid',
+                            gap: 0.45,
+                            bgcolor: '#f8fafc',
+                            borderTop: '1px solid #e2e8f0',
+                          }}
+                        >
+                          {row.optionCounts.length === 0 ? (
+                            <Typography sx={{ color: '#94a3b8', fontSize: '0.65rem' }}>
+                              엑셀에 등록된 옵션명이 없습니다.
+                            </Typography>
+                          ) : (
+                            row.optionCounts.map(({ optionName, count }) => (
+                              <Box
+                                key={optionName}
+                                sx={{
+                                  display: 'grid',
+                                  gridTemplateColumns: 'minmax(0, 1fr) auto',
+                                  columnGap: 0.7,
+                                  alignItems: 'center',
+                                }}
+                              >
+                                <Typography
+                                  title={optionName}
+                                  noWrap
+                                  sx={{ color: '#475569', fontSize: '0.65rem', fontWeight: 700 }}
+                                >
+                                  {optionName}
+                                </Typography>
+                                <Typography
+                                  sx={{
+                                    color: '#0f172a',
+                                    fontSize: '0.65rem',
+                                    fontWeight: 800,
+                                    fontVariantNumeric: 'tabular-nums',
+                                  }}
+                                >
+                                  {count.toLocaleString()}세대
+                                </Typography>
+                              </Box>
+                            ))
+                          )}
+                        </Box>
+                      </Collapse>
+                    </Box>
+                  );
+                })
+              )}
+            </Box>
           </Box>
         )}
-      </Paper>
+      </Box>
 
       <Snackbar
         open={Boolean(toast)}
