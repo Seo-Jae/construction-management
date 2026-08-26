@@ -1,3 +1,4 @@
+// v52.48.5.44.20 선택옵션 30개(D:AG) 확장 및 AH 세대키 이동
 // v52.48.5.44.19 선택옵션 옵션명 검정색·셀에맞춤·열너비 12 및 전체 선택셀 가운데정렬
 // v52.48.5.44.18 선택옵션 동·호·타입 3열 및 담당자 수정값 누적
 // v52.48.5.44.17 유상옵션 양식 골구도 자동작성·선택값 업로드
@@ -8,15 +9,16 @@ import {
   getUnitType,
 } from './buildingUnits.js';
 
-const TEMPLATE_VERSION = '2';
+const TEMPLATE_VERSION = '3';
 const CATEGORY = 'selection';
 const DATA_SHEET_NAME = '유상옵션';
 const META_SHEET_NAME = '_옵션시스템정보';
 const OPTION_HEADER_ROW = 5;
 const DATA_START_ROW = 6;
 const FIRST_OPTION_COLUMN = 4;
-const LAST_OPTION_COLUMN = 21;
-const IDENTITY_COLUMN = 22;
+const TEMPLATE_LAST_OPTION_COLUMN = 21;
+const LAST_OPTION_COLUMN = 33;
+const IDENTITY_COLUMN = 34;
 const MAX_OPTION_COUNT = LAST_OPTION_COLUMN - FIRST_OPTION_COLUMN + 1;
 const MAX_IMPORT_ROWS = 5000;
 const TEMPLATE_PATH = 'templates/selection_option_template.xlsx';
@@ -56,6 +58,8 @@ const toSafeFilenamePart = (value) =>
 
 const naturalCompare = (first, second) =>
   String(first).localeCompare(String(second), 'ko-KR', { numeric: true });
+
+const cloneCellStyle = (style) => JSON.parse(JSON.stringify(style || {}));
 
 export const createSelectionOptionUnitRows = (buildingConfigs = {}) => {
   const rows = [];
@@ -147,7 +151,7 @@ export const normalizeSelectionOptionDocument = (value) => {
   });
 
   return {
-    version: 2,
+    version: 3,
     optionNames,
     unitInfo,
     units,
@@ -239,7 +243,15 @@ export const createSelectionOptionWorkbook = async ({
     Math.max(worksheet.rowCount || 0, lastDataRow),
   );
 
+  worksheet.unMergeCells('A1:U1');
+  worksheet.unMergeCells('A2:U2');
+  worksheet.unMergeCells('A3:U3');
+  worksheet.mergeCells('A1:AG1');
+  worksheet.mergeCells('A2:AG2');
+  worksheet.mergeCells('A3:AG3');
   worksheet.getCell('A1').value = `${projectName || '현장명 미등록'} / 유상 옵션 List`;
+  worksheet.getCell('A3').value =
+    '※ D5:AG5에 유상옵션명을 입력하고, 해당 옵션 선택 시 "선택" / 미선택 시 빈칸으로 두세요. 세대 행은 삭제·추가·순서변경하지 마세요.';
   worksheet.views = [
     {
       state: 'frozen',
@@ -249,10 +261,28 @@ export const createSelectionOptionWorkbook = async ({
     },
   ];
 
+  const optionGroupStyle = cloneCellStyle(
+    worksheet.getCell(OPTION_HEADER_ROW - 1, TEMPLATE_LAST_OPTION_COLUMN).style,
+  );
+  const optionHeaderStyle = cloneCellStyle(
+    worksheet.getCell(OPTION_HEADER_ROW, TEMPLATE_LAST_OPTION_COLUMN).style,
+  );
+  const optionDataStyle = cloneCellStyle(
+    worksheet.getCell(DATA_START_ROW, TEMPLATE_LAST_OPTION_COLUMN).style,
+  );
   for (let column = FIRST_OPTION_COLUMN; column <= LAST_OPTION_COLUMN; column += 1) {
+    const optionIndex = column - FIRST_OPTION_COLUMN;
+    const optionGroupCell = worksheet.getCell(OPTION_HEADER_ROW - 1, column);
+    if (column > TEMPLATE_LAST_OPTION_COLUMN) {
+      optionGroupCell.style = cloneCellStyle(optionGroupStyle);
+    }
+    optionGroupCell.value = `옵션(${optionIndex + 1})`;
+
     const optionHeaderCell = worksheet.getCell(OPTION_HEADER_ROW, column);
-    optionHeaderCell.value =
-      optionNames[column - FIRST_OPTION_COLUMN] || null;
+    if (column > TEMPLATE_LAST_OPTION_COLUMN) {
+      optionHeaderCell.style = cloneCellStyle(optionHeaderStyle);
+    }
+    optionHeaderCell.value = optionNames[optionIndex] || null;
     optionHeaderCell.font = {
       ...optionHeaderCell.font,
       color: { argb: 'FF000000' },
@@ -265,6 +295,14 @@ export const createSelectionOptionWorkbook = async ({
       shrinkToFit: true,
     };
     worksheet.getColumn(column).width = 12;
+  }
+
+  for (
+    let column = TEMPLATE_LAST_OPTION_COLUMN + 1;
+    column <= LAST_OPTION_COLUMN;
+    column += 1
+  ) {
+    worksheet.getCell(DATA_START_ROW, column).style = cloneCellStyle(optionDataStyle);
   }
 
   for (let rowNumber = DATA_START_ROW; rowNumber <= clearLastRow; rowNumber += 1) {
@@ -306,6 +344,9 @@ export const createSelectionOptionWorkbook = async ({
     for (let column = FIRST_OPTION_COLUMN; column <= LAST_OPTION_COLUMN; column += 1) {
       const optionName = optionNames[column - FIRST_OPTION_COLUMN];
       const cell = row.getCell(column);
+      if (column > TEMPLATE_LAST_OPTION_COLUMN) {
+        cell.style = cloneCellStyle(optionDataStyle);
+      }
       cell.value = optionName && selectedOptionSet.has(optionName) ? '선택' : null;
       cell.alignment = {
         ...cell.alignment,
@@ -416,7 +457,7 @@ export const parseSelectionOptionWorkbookFile = async ({
     optionDefinitions.push({ column, optionName });
   }
   if (optionDefinitions.length === 0) {
-    throw new Error('D5:U5에 유상옵션명을 한 개 이상 입력해주세요.');
+    throw new Error('D5:AG5에 유상옵션명을 한 개 이상 입력해주세요.');
   }
   const optionNameByColumn = new Map(
     optionDefinitions.map(({ column, optionName }) => [column, optionName]),
@@ -468,7 +509,7 @@ export const parseSelectionOptionWorkbookFile = async ({
       if (!selectedValue) continue;
       const optionName = optionNameByColumn.get(column);
       if (!optionName) {
-        throw new Error(`${cell.address} 위 D5:U5 옵션명이 비어 있습니다.`);
+        throw new Error(`${cell.address} 위 D5:AG5 옵션명이 비어 있습니다.`);
       }
       if (selectedValue !== '선택') {
         throw new Error(`${cell.address}에는 "선택" 또는 빈칸만 입력할 수 있습니다.`);
@@ -490,7 +531,7 @@ export const parseSelectionOptionWorkbookFile = async ({
 
   return {
     selectionDocument: {
-      version: 2,
+      version: 3,
       optionNames: optionDefinitions.map(({ optionName }) => optionName),
       unitInfo,
       units: selectedUnits,
