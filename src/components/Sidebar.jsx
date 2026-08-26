@@ -1,3 +1,4 @@
+// v52.48.5.44.29 옵션관리 세대물량관리 메뉴 추가
 // v52.48.5.44.12 옵션관리 메뉴 추가
 import React, { useEffect, useState } from 'react';
 import {
@@ -64,6 +65,7 @@ const optionMenus = [
   { value: 'option-insulation-status', label: '옵션현황(단열)' },
   { value: 'option-selection-status', label: '옵션현황(선택)' },
   { value: 'option-comparison', label: '옵션별 비교' },
+  { value: 'option-household-quantity', label: '세대물량관리' },
 ];
 
 const materialMenus = [

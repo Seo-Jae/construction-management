@@ -1,3 +1,4 @@
+// v52.48.5.44.29 옵션관리 세대물량관리 좌·우 2분할 기본화면
 // v52.48.5.44.27 90% 골구도 테두리·행간격 물리 1px 역보정
 // v52.48.5.44.26 화면배율 축소분 가용높이 역보정·전체화면 채움
 // v52.48.5.44.24 기본 화면 90%·사용자 배율 선택·인쇄 100% 지원
@@ -76,6 +77,7 @@ import DrawingQuantityAnalysis from './page/DrawingQuantityAnalysis.jsx';
 import Messenger from './page/Messenger.jsx';
 import AttendanceManagement from './page/AttendanceManagement.jsx';
 import OptionManagementOverview from './page/OptionManagementOverview.jsx';
+import HouseholdQuantityManagement from './page/HouseholdQuantityManagement.jsx';
 
 const drawerWidth = 240;
 const SUPABASE_PAGE_SIZE = 1000;
@@ -365,6 +367,7 @@ const viewTitles = {
   'option-insulation-status': '옵션현황(단열)',
   'option-selection-status': '옵션현황(선택)',
   'option-comparison': '옵션별 비교',
+  'option-household-quantity': '세대물량관리',
   'material-order': '자재발주작성',
   'material-input-status': '자재투입현황',
   'material-unit-price': '일위대가작성',
@@ -405,6 +408,7 @@ const VIEW_PERMISSION_KEYS = {
   'option-insulation-status': 'construction.progress.view',
   'option-selection-status': 'construction.progress.view',
   'option-comparison': 'construction.progress.view',
+  'option-household-quantity': 'construction.progress.view',
   'drawing-quantity': 'construction.drawing.view',
   'material-order': 'material.order.view',
   'material-input-status': 'material.input.view',
@@ -4440,6 +4444,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                 mode="comparison"
                 projectName={activeProjectName}
                 buildingConfigs={buildingConfigs}
+              />
+            )}
+
+          {currentView === 'option-household-quantity' &&
+            activeProjectName && (
+              <HouseholdQuantityManagement
+                projectName={activeProjectName}
               />
             )}
 
