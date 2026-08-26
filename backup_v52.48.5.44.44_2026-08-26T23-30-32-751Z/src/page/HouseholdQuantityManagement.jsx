@@ -1,4 +1,3 @@
-// v52.48.5.44.44 골구도 출력 DOM 복제방식 수정·A4 가로 1페이지 실크기 맞춤
 // v52.48.5.44.43 골구도 계산데이터 방어·PDF/프린트 출력 안정화
 // v52.48.5.44.42 골구도 다이얼로그 높이·화면맞춤 로딩 수정
 // v52.48.5.44.41 단열·합지 자동기준, 골구도 줌·이동·가로출력
@@ -99,6 +98,13 @@ const formatQuantity = (value) => {
 };
 const hasQuantity = (value) =>
   value !== null && value !== undefined && value !== '';
+const escapeHtml = (value) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
 
 export default function HouseholdQuantityManagement({
   projectName = '',
@@ -556,6 +562,11 @@ export default function HouseholdQuantityManagement({
       return;
     }
 
+    const styleMarkup = Array.from(
+      document.querySelectorAll('style, link[rel="stylesheet"]'),
+    )
+      .map((node) => node.outerHTML)
+      .join('\n');
     const contentWidth = Math.ceil(
       Math.max(content.scrollWidth, content.offsetWidth, 1),
     );
@@ -570,210 +581,149 @@ export default function HouseholdQuantityManagement({
       return;
     }
 
-    const previousPrintRoot = document.getElementById('quantity-grid-print-root');
-    const previousPrintStyle = document.getElementById('quantity-grid-print-style');
-    previousPrintRoot?.remove();
-    previousPrintStyle?.remove();
-
     const outputTitle = `${projectName || '현장명 미등록'}_${gridProcess.processName}_세대물량골구도`;
     const outputLabel = mode === 'pdf' ? 'PDF 저장' : '인쇄';
-    const originalDocumentTitle = document.title;
-
-    const printRoot = document.createElement('div');
-    printRoot.id = 'quantity-grid-print-root';
-    printRoot.setAttribute('aria-hidden', 'true');
-    Object.assign(printRoot.style, {
+    const printFrame = document.createElement('iframe');
+    printFrame.setAttribute('title', `${outputLabel}용 골구도`);
+    printFrame.setAttribute('aria-hidden', 'true');
+    Object.assign(printFrame.style, {
       position: 'fixed',
-      left: '-100000px',
-      top: '0',
-      width: '287mm',
-      height: '200mm',
-      margin: '0',
-      padding: '0',
-      boxSizing: 'border-box',
-      overflow: 'hidden',
-      background: '#ffffff',
-      color: '#0f172a',
+      right: '0',
+      bottom: '0',
+      width: '1px',
+      height: '1px',
+      border: '0',
+      opacity: '0',
       pointerEvents: 'none',
-      zIndex: '-1',
     });
+    document.body.appendChild(printFrame);
 
-    const header = document.createElement('div');
-    Object.assign(header.style, {
-      width: '287mm',
-      height: '13mm',
-      boxSizing: 'border-box',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'space-between',
-      gap: '8mm',
-      borderBottom: '0.3mm solid #cbd5e1',
-      overflow: 'hidden',
-    });
-
-    const title = document.createElement('div');
-    title.textContent = `${projectName || '현장명 미등록'} · ${gridProcess.processName} 세대물량 골구도`;
-    Object.assign(title.style, {
-      minWidth: '0',
-      flex: '1 1 auto',
-      fontSize: '12pt',
-      fontWeight: '900',
-      whiteSpace: 'nowrap',
-      overflow: 'hidden',
-      textOverflow: 'ellipsis',
-    });
-
-    const meta = document.createElement('div');
-    meta.textContent = `계산 ${gridUnitValues.completeCount.toLocaleString()}/${gridUnitValues.rows.length.toLocaleString()}세대 · 총 물량 ${formatQuantity(gridUnitValues.totalQuantity)}`;
-    Object.assign(meta.style, {
-      flex: '0 0 auto',
-      color: '#475569',
-      fontSize: '7pt',
-      fontWeight: '800',
-      whiteSpace: 'nowrap',
-    });
-
-    const stage = document.createElement('div');
-    stage.id = 'quantity-grid-print-stage';
-    Object.assign(stage.style, {
-      position: 'relative',
-      width: '287mm',
-      height: '187mm',
-      boxSizing: 'border-box',
-      overflow: 'hidden',
-      background: '#ffffff',
-    });
-
-    /*
-      v52.48.5.44.43에서는 별도 iframe에 content.innerHTML만 복제했습니다.
-      이 방식은 MUI/Emotion의 런타임 CSS를 iframe에 완전히 옮기지 못해
-      필로티 SVG의 position: absolute 기준점과 골구도 레이아웃이 깨질 수 있습니다.
-
-      출력용 골구도는 현재 문서 안에서 실제 렌더링된 DOM 전체를 cloneNode(true)로
-      복제합니다. 따라서 현재 화면에서 사용 중인 MUI 스타일시트를 그대로 적용받고,
-      화면의 줌/이동 transform은 부모에만 있으므로 출력물에는 포함되지 않습니다.
-    */
-    const printContent = content.cloneNode(true);
-    printContent.removeAttribute('id');
-    printContent.querySelectorAll('[id]').forEach((node) => node.removeAttribute('id'));
-    printContent.setAttribute('aria-hidden', 'true');
-    Object.assign(printContent.style, {
-      position: 'absolute',
-      left: '0',
-      top: '0',
-      margin: '0',
-      transformOrigin: '0 0',
-      willChange: 'auto',
-      pointerEvents: 'none',
-      userSelect: 'none',
-    });
-
-    header.appendChild(title);
-    header.appendChild(meta);
-    stage.appendChild(printContent);
-    printRoot.appendChild(header);
-    printRoot.appendChild(stage);
-
-    const printStyle = document.createElement('style');
-    printStyle.id = 'quantity-grid-print-style';
-    printStyle.textContent = `
-      @page {
-        size: A4 landscape;
-        margin: 5mm;
-      }
-      @media print {
-        html,
-        body {
-          width: 297mm !important;
-          min-width: 297mm !important;
-          height: 210mm !important;
-          min-height: 210mm !important;
-          margin: 0 !important;
-          padding: 0 !important;
-          overflow: hidden !important;
-          background: #ffffff !important;
-        }
-        body > *:not(#quantity-grid-print-root) {
-          display: none !important;
-        }
-        #quantity-grid-print-root {
-          display: block !important;
-          position: static !important;
-          left: auto !important;
-          top: auto !important;
-          width: 287mm !important;
-          height: 200mm !important;
-          margin: 0 !important;
-          padding: 0 !important;
-          overflow: hidden !important;
-          visibility: visible !important;
-          opacity: 1 !important;
-          pointer-events: none !important;
-          z-index: auto !important;
-          background: #ffffff !important;
-          -webkit-print-color-adjust: exact !important;
-          print-color-adjust: exact !important;
-        }
-        #quantity-grid-print-root,
-        #quantity-grid-print-root * {
-          box-sizing: border-box;
-          -webkit-print-color-adjust: exact !important;
-          print-color-adjust: exact !important;
-        }
-        #quantity-grid-print-root button,
-        #quantity-grid-print-root .MuiTouchRipple-root {
-          pointer-events: none !important;
-        }
-      }
-    `;
-
-    document.head.appendChild(printStyle);
-    document.body.appendChild(printRoot);
-
-    const stageRect = stage.getBoundingClientRect();
-    const stageWidth = Math.max(stage.clientWidth, stageRect.width, 1);
-    const stageHeight = Math.max(stage.clientHeight, stageRect.height, 1);
-    const scale = Math.min(
-      stageWidth / contentWidth,
-      stageHeight / contentHeight,
-      1,
-    );
-    const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
-    const left = Math.max(0, (stageWidth - contentWidth * safeScale) / 2);
-    const top = Math.max(0, (stageHeight - contentHeight * safeScale) / 2);
-    printContent.style.transform = `translate(${left}px, ${top}px) scale(${safeScale})`;
+    const outputWindow = printFrame.contentWindow;
+    const outputDocument = printFrame.contentDocument || outputWindow?.document;
+    if (!outputWindow || !outputDocument) {
+      printFrame.remove();
+      setToast({
+        severity: 'error',
+        text: '출력용 문서를 만들지 못했습니다. 브라우저를 새로고침한 뒤 다시 시도해주세요.',
+      });
+      return;
+    }
 
     let cleaned = false;
-    let cleanupTimer = null;
     const cleanup = () => {
       if (cleaned) return;
       cleaned = true;
-      if (cleanupTimer) window.clearTimeout(cleanupTimer);
-      window.removeEventListener('afterprint', cleanup);
-      printRoot.remove();
-      printStyle.remove();
-      document.title = originalDocumentTitle;
+      window.setTimeout(() => printFrame.remove(), 50);
+    };
+    outputWindow.addEventListener('afterprint', cleanup, { once: true });
+
+    const finalizeOutput = async () => {
+      try {
+        const stage = outputDocument.getElementById('quantity-print-stage');
+        const printContent = outputDocument.getElementById('quantity-print-content');
+        if (!stage || !printContent) {
+          throw new Error('출력용 골구도 영역을 찾지 못했습니다.');
+        }
+
+        if (outputDocument.fonts?.ready) {
+          try {
+            await outputDocument.fonts.ready;
+          } catch (error) {
+            console.warn('골구도 출력 폰트 로딩 경고:', error);
+          }
+        }
+        const images = Array.from(outputDocument.images || []);
+        await Promise.all(
+          images.map((image) =>
+            image.complete
+              ? Promise.resolve()
+              : new Promise((resolve) => {
+                  image.addEventListener('load', resolve, { once: true });
+                  image.addEventListener('error', resolve, { once: true });
+                  window.setTimeout(resolve, 1500);
+                }),
+          ),
+        );
+
+        const stageRect = stage.getBoundingClientRect();
+        const stageWidth = Math.max(stage.clientWidth, stageRect.width, 1);
+        const stageHeight = Math.max(stage.clientHeight, stageRect.height, 1);
+        const scale = Math.min(
+          stageWidth / contentWidth,
+          stageHeight / contentHeight,
+        );
+        const safeScale = Number.isFinite(scale) && scale > 0 ? scale : 1;
+        const left = Math.max(0, (stageWidth - contentWidth * safeScale) / 2);
+        const top = Math.max(0, (stageHeight - contentHeight * safeScale) / 2);
+        printContent.style.transform = `translate(${left}px, ${top}px) scale(${safeScale})`;
+
+        await new Promise((resolve) =>
+          outputWindow.requestAnimationFrame(() =>
+            outputWindow.requestAnimationFrame(resolve),
+          ),
+        );
+        outputWindow.focus();
+        outputWindow.print();
+        window.setTimeout(cleanup, 60000);
+      } catch (error) {
+        console.error('골구도 출력 오류:', error);
+        cleanup();
+        setToast({
+          severity: 'error',
+          text: `골구도를 출력하지 못했습니다: ${error?.message || '알 수 없는 오류'}`,
+        });
+      }
     };
 
-    window.addEventListener('afterprint', cleanup, { once: true });
-    document.title = outputTitle;
+    const markup = `<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <base href="${escapeHtml(document.baseURI)}" />
+  <title>${escapeHtml(outputTitle)}</title>
+  ${styleMarkup}
+  <style>
+    @page { size: A4 landscape; margin: 5mm; }
+    html, body { width: 287mm; height: 200mm; margin: 0; padding: 0; overflow: hidden; }
+    body { background: #fff; color: #0f172a; font-family: inherit; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .quantity-print-page { width: 287mm; height: 200mm; box-sizing: border-box; overflow: hidden; }
+    .quantity-print-header { height: 13mm; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 8mm; border-bottom: 0.3mm solid #cbd5e1; }
+    .quantity-print-title { min-width: 0; font-size: 12pt; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .quantity-print-meta { flex: 0 0 auto; color: #475569; font-size: 7pt; font-weight: 800; }
+    .quantity-print-stage { position: relative; width: 287mm; height: 187mm; overflow: hidden; }
+    .quantity-print-content { position: absolute; left: 0; top: 0; width: ${contentWidth}px; height: ${contentHeight}px; transform-origin: 0 0; }
+    .quantity-print-content button { cursor: default !important; }
+    .quantity-print-content .MuiTouchRipple-root { display: none !important; }
+    @media print {
+      html, body { width: 287mm !important; height: 200mm !important; }
+      .quantity-print-page { break-after: avoid; page-break-after: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <main class="quantity-print-page">
+    <header class="quantity-print-header">
+      <div class="quantity-print-title">${escapeHtml(projectName || '현장명 미등록')} · ${escapeHtml(gridProcess.processName)} 세대물량 골구도</div>
+      <div class="quantity-print-meta">계산 ${gridUnitValues.completeCount.toLocaleString()}/${gridUnitValues.rows.length.toLocaleString()}세대 · 총 물량 ${escapeHtml(formatQuantity(gridUnitValues.totalQuantity))}</div>
+    </header>
+    <section class="quantity-print-stage" id="quantity-print-stage">
+      <div class="quantity-print-content" id="quantity-print-content">${content.innerHTML}</div>
+    </section>
+  </main>
+</body>
+</html>`;
 
-    window.requestAnimationFrame(() => {
-      window.requestAnimationFrame(() => {
-        try {
-          window.focus();
-          window.print();
-          cleanupTimer = window.setTimeout(cleanup, 120000);
-        } catch (error) {
-          console.error('골구도 출력 오류:', error);
-          cleanup();
-          setToast({
-            severity: 'error',
-            text: `${outputLabel} 미리보기를 열지 못했습니다: ${error?.message || '알 수 없는 오류'}`,
-          });
-        }
-      });
-    });
+    let outputStarted = false;
+    const startOutput = () => {
+      if (outputStarted || cleaned) return;
+      outputStarted = true;
+      finalizeOutput();
+    };
+    printFrame.addEventListener('load', startOutput, { once: true });
+    outputDocument.open();
+    outputDocument.write(markup);
+    outputDocument.close();
+    window.setTimeout(startOutput, 120);
   };
 
   const openDownloadDialog = () => {
