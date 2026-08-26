@@ -1,3 +1,4 @@
+// v52.48.5.44.32 옵션별 비교 선택옵션 전용 전환
 // v52.48.5.44.28 선택옵션 MenuListContext 누락 백색화면 긴급수정
 // v52.48.5.44.27 선택옵션 로컬목록 위치고정·10행 스크롤 제한
 // v52.48.5.44.26 비교 옵션선택 높이축소·불필요 세로스크롤 제거
@@ -237,26 +238,6 @@ export default function OptionManagementOverview({
   }, [selectedSelectionOption, selectionDocument.units]);
 
   const comparisonOptionChoices = useMemo(() => {
-    const insulationChoices = [];
-    const insulationByName = new Map();
-
-    Object.entries(optionData).forEach(([cellKey, row]) => {
-      const optionName = String(row?.value || '').trim();
-      if (!optionName) return;
-      let choice = insulationByName.get(optionName);
-      if (!choice) {
-        choice = {
-          key: `insulation:${optionName}`,
-          category: '단열 옵션',
-          optionName,
-          cellKeys: new Set(),
-        };
-        insulationByName.set(optionName, choice);
-        insulationChoices.push(choice);
-      }
-      choice.cellKeys.add(cellKey);
-    });
-
     const selectionByName = new Map(
       selectionDocument.optionNames.map((optionName) => [
         optionName,
@@ -278,13 +259,10 @@ export default function OptionManagementOverview({
       });
     });
 
-    return [
-      ...insulationChoices,
-      ...selectionDocument.optionNames
-        .map((optionName) => selectionByName.get(optionName))
-        .filter(Boolean),
-    ];
-  }, [optionData, selectionDocument]);
+    return selectionDocument.optionNames
+      .map((optionName) => selectionByName.get(optionName))
+      .filter(Boolean);
+  }, [selectionDocument]);
 
   const comparisonChoiceMap = useMemo(
     () =>
@@ -1105,7 +1083,7 @@ export default function OptionManagementOverview({
                 저장된 옵션이 없습니다.
               </MenuItem>
             ) : (
-              ['단열 옵션', '선택 옵션'].map((category) => {
+              ['선택 옵션'].map((category) => {
                 const categoryChoices = comparisonOptionChoices.filter(
                   (choice) => choice.category === category,
                 );

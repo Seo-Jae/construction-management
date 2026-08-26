@@ -1,8 +1,9 @@
+// v52.48.5.44.32 세대물량 사용자 추가 공정 Excel 유지
 // v52.48.5.44.31 세대물량 공정별 갑지 Excel 생성·업로드
 import ExcelJS from 'exceljs';
 import { createSelectionOptionUnitRows } from './optionSelectionExcel.js';
 
-const TEMPLATE_VERSION = '1';
+const TEMPLATE_VERSION = '2';
 const CATEGORY = 'household_quantity';
 const META_SHEET_NAME = '_세대물량시스템정보';
 const META_START_ROW = 8;
@@ -113,6 +114,13 @@ const normalizeValueRow = (row, fallback = {}) => ({
 });
 
 export const normalizeHouseholdQuantityDocument = (value = {}) => {
+  const processNames = [
+    ...new Set(
+      (Array.isArray(value?.processNames) ? value.processNames : [])
+        .map((processName) => normalizeText(processName))
+        .filter(Boolean),
+    ),
+  ];
   const processOptionSelections = {};
   const rawSelections =
     value?.processOptionSelections &&
@@ -147,7 +155,8 @@ export const normalizeHouseholdQuantityDocument = (value = {}) => {
   });
 
   return {
-    version: 1,
+    version: 2,
+    processNames,
     processOptionSelections,
     values,
   };
@@ -315,6 +324,7 @@ export const createHouseholdQuantityDefinitions = ({
 
   return {
     processes,
+    processNames: processes.map((process) => process.processName),
     unitCount: unitRows.length,
     typeCount: typeNames.length,
     processOptionSelections: selections,
@@ -324,7 +334,9 @@ export const createHouseholdQuantityDefinitions = ({
 export const createHouseholdQuantityDocumentFromDefinitions = (
   definitions,
 ) => ({
-  version: 1,
+  version: 2,
+  processNames: definitions.processNames ||
+    definitions.processes.map((process) => process.processName),
   processOptionSelections: definitions.processOptionSelections || {},
   values: definitions.processes.flatMap((process) => [
     ...process.baseRows,
@@ -359,6 +371,11 @@ const createMetaSheet = ({ workbook, projectName, definitions }) => {
   sheet.getCell('A5').value = 'process_option_selections';
   sheet.getCell('B5').value = JSON.stringify(
     definitions.processOptionSelections || {},
+  );
+  sheet.getCell('A6').value = 'process_names';
+  sheet.getCell('B6').value = JSON.stringify(
+    definitions.processNames ||
+      definitions.processes.map((process) => process.processName),
   );
   sheet.getRow(7).values = [
     'sheet_name',
@@ -610,6 +627,15 @@ export const parseHouseholdQuantityWorkbookFile = async ({
     throw new Error('Excel의 공정별 옵션 연결정보를 읽을 수 없습니다.');
   }
 
+  let processNames = [];
+  try {
+    processNames = JSON.parse(
+      normalizeText(metaSheet.getCell('B6').value) || '[]',
+    );
+  } catch {
+    throw new Error('Excel의 공정 목록정보를 읽을 수 없습니다.');
+  }
+
   const values = [];
   let rowNumber = META_START_ROW;
   while (rowNumber <= metaSheet.rowCount) {
@@ -648,6 +674,7 @@ export const parseHouseholdQuantityWorkbookFile = async ({
   }
 
   const document = normalizeHouseholdQuantityDocument({
+    processNames,
     processOptionSelections,
     values,
   });

@@ -1,11 +1,13 @@
+// v52.48.5.44.32 기본 공정 6개·사용자 공정 추가
 // v52.48.5.44.31 세대물량관리 단일화·공정별 갑지·Excel 연동
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert, Box, Button, ButtonBase, Checkbox, Chip, CircularProgress,
   Dialog, DialogActions, DialogContent, DialogTitle, Divider, Paper,
   Snackbar, Stack, Tab, Tabs, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, Typography,
+  TableHead, TableRow, TextField, Typography,
 } from '@mui/material';
+import AddCircleOutlineRoundedIcon from '@mui/icons-material/AddCircleOutlineRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
@@ -22,6 +24,14 @@ import {
 } from '../utils/householdQuantityExcel.js';
 
 const HOUSEHOLD_CATEGORY = 'household_quantity';
+const DEFAULT_PROCESS_NAMES = [
+  '단열',
+  '합지',
+  '경량벽체',
+  '세대천정',
+  '몰딩',
+  '걸레받이',
+];
 const HEADER_CONTROL_SX = {
   height: 30,
   minHeight: 30,
@@ -71,7 +81,6 @@ const hasQuantity = (value) =>
 export default function HouseholdQuantityManagement({
   projectName = '',
   buildingConfigs = {},
-  processOptions = [],
   currentUserId = '',
 }) {
   const [refreshKey, setRefreshKey] = useState(0);
@@ -93,15 +102,21 @@ export default function HouseholdQuantityManagement({
   const [downloadDialogOpen, setDownloadDialogOpen] = useState(false);
   const [dialogProcess, setDialogProcess] = useState('');
   const [workingSelections, setWorkingSelections] = useState({});
+  const [customProcessNames, setCustomProcessNames] = useState([]);
+  const [workingProcessNames, setWorkingProcessNames] = useState([]);
+  const [addingProcess, setAddingProcess] = useState(false);
+  const [newProcessName, setNewProcessName] = useState('');
+  const [processAddError, setProcessAddError] = useState('');
   const fileInputRef = useRef(null);
 
   const safeProcessOptions = useMemo(
-    () => [...new Set(
-      (Array.isArray(processOptions) ? processOptions : [])
-        .map((processName) => String(processName || '').trim())
-        .filter(Boolean),
-    )],
-    [processOptions],
+    () => [
+      ...DEFAULT_PROCESS_NAMES,
+      ...customProcessNames.filter(
+        (processName) => !DEFAULT_PROCESS_NAMES.includes(processName),
+      ),
+    ],
+    [customProcessNames],
   );
   const definitions = useMemo(
     () => createHouseholdQuantityDefinitions({
@@ -143,7 +158,15 @@ export default function HouseholdQuantityManagement({
       const quantityRow = rows.find((row) => row.option_category === HOUSEHOLD_CATEGORY);
       setInsulationData(normalizeInsulationData(insulationRow?.unit_values));
       setSelectionDocument(normalizeSelectionOptionDocument(selectionRow?.unit_values));
-      setQuantityDocument(normalizeHouseholdQuantityDocument(quantityRow?.unit_values));
+      const loadedQuantityDocument = normalizeHouseholdQuantityDocument(
+        quantityRow?.unit_values,
+      );
+      setQuantityDocument(loadedQuantityDocument);
+      setCustomProcessNames(
+        loadedQuantityDocument.processNames.filter(
+          (processName) => !DEFAULT_PROCESS_NAMES.includes(processName),
+        ),
+      );
       setSourceFileName(quantityRow?.source_file_name || '');
       setHasPendingChanges(false);
     } catch (error) {
@@ -180,11 +203,40 @@ export default function HouseholdQuantityManagement({
         : [];
       return result;
     }, {}));
+    setWorkingProcessNames([...safeProcessOptions]);
     setDialogProcess(
       safeProcessOptions.find((processName) => processName !== '단열') ||
       safeProcessOptions[0] || '',
     );
+    setAddingProcess(false);
+    setNewProcessName('');
+    setProcessAddError('');
     setDownloadDialogOpen(true);
+  };
+
+  const handleAddWorkingProcess = () => {
+    const processName = String(newProcessName || '').trim();
+    if (!processName) {
+      setProcessAddError('추가할 공정명을 입력해주세요.');
+      return;
+    }
+    if (workingProcessNames.includes(processName)) {
+      setProcessAddError('이미 등록된 공정입니다.');
+      return;
+    }
+    if (processName.length > 20) {
+      setProcessAddError('공정명은 20자 이내로 입력해주세요.');
+      return;
+    }
+    setWorkingProcessNames((current) => [...current, processName]);
+    setWorkingSelections((current) => ({
+      ...current,
+      [processName]: [],
+    }));
+    setDialogProcess(processName);
+    setAddingProcess(false);
+    setNewProcessName('');
+    setProcessAddError('');
   };
 
   const toggleWorkingOption = (processName, optionName) => {
@@ -205,7 +257,7 @@ export default function HouseholdQuantityManagement({
     try {
       const downloadDefinitions = createHouseholdQuantityDefinitions({
         buildingConfigs,
-        processOptions: safeProcessOptions,
+        processOptions: workingProcessNames,
         insulationData,
         selectionDocument,
         quantityDocument,
@@ -217,6 +269,11 @@ export default function HouseholdQuantityManagement({
       });
       setQuantityDocument(
         createHouseholdQuantityDocumentFromDefinitions(downloadDefinitions),
+      );
+      setCustomProcessNames(
+        workingProcessNames.filter(
+          (processName) => !DEFAULT_PROCESS_NAMES.includes(processName),
+        ),
       );
       setHasPendingChanges(true);
       setDownloadDialogOpen(false);
@@ -244,6 +301,11 @@ export default function HouseholdQuantityManagement({
     try {
       const result = await parseHouseholdQuantityWorkbookFile({ file, projectName });
       setQuantityDocument(result.document);
+      setCustomProcessNames(
+        result.document.processNames.filter(
+          (processName) => !DEFAULT_PROCESS_NAMES.includes(processName),
+        ),
+      );
       setSourceFileName(file.name);
       setHasPendingChanges(true);
       setToast({
@@ -522,7 +584,7 @@ export default function HouseholdQuantityManagement({
           </Alert>
           <Box sx={{ height: 'calc(100% - 76px)', minHeight: 0, display: 'grid', gridTemplateColumns: '220px minmax(0, 1fr)' }}>
             <Box sx={{ minHeight: 0, overflowY: 'auto', p: 1 }}>
-              {safeProcessOptions.map((processName) => {
+              {workingProcessNames.map((processName) => {
                 const selectedCount = workingSelections[processName]?.length || 0;
                 return (
                   <ButtonBase
@@ -553,6 +615,82 @@ export default function HouseholdQuantityManagement({
                   </ButtonBase>
                 );
               })}
+
+              {addingProcess ? (
+                <Box
+                  sx={{
+                    mt: 0.8,
+                    p: 0.8,
+                    border: '1px solid #93c5fd',
+                    borderRadius: 1,
+                    bgcolor: '#eff6ff',
+                  }}
+                >
+                  <TextField
+                    autoFocus
+                    fullWidth
+                    size="small"
+                    label="추가 공정명"
+                    value={newProcessName}
+                    onChange={(event) => {
+                      setNewProcessName(event.target.value);
+                      setProcessAddError('');
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') {
+                        event.preventDefault();
+                        handleAddWorkingProcess();
+                      }
+                    }}
+                    inputProps={{ maxLength: 20 }}
+                  />
+                  {processAddError && (
+                    <Typography
+                      sx={{ mt: 0.45, color: '#dc2626', fontSize: '0.62rem' }}
+                    >
+                      {processAddError}
+                    </Typography>
+                  )}
+                  <Stack
+                    direction="row"
+                    spacing={0.5}
+                    justifyContent="flex-end"
+                    sx={{ mt: 0.7 }}
+                  >
+                    <Button
+                      size="small"
+                      onClick={() => {
+                        setAddingProcess(false);
+                        setNewProcessName('');
+                        setProcessAddError('');
+                      }}
+                    >
+                      취소
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="contained"
+                      onClick={handleAddWorkingProcess}
+                    >
+                      추가
+                    </Button>
+                  </Stack>
+                </Box>
+              ) : (
+                <Button
+                  fullWidth
+                  size="small"
+                  variant="outlined"
+                  startIcon={<AddCircleOutlineRoundedIcon />}
+                  onClick={() => {
+                    setAddingProcess(true);
+                    setProcessAddError('');
+                  }}
+                  sx={{ mt: 0.8, minHeight: 36, borderStyle: 'dashed' }}
+                >
+                  추가하기
+                </Button>
+              )}
             </Box>
 
             <Box sx={{ minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', borderLeft: '1px solid #e2e8f0' }}>

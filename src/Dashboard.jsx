@@ -1,3 +1,4 @@
+// v52.48.5.44.32 세대물량 기본 공정 정리·옵션비교 선택옵션 전용
 // v52.48.5.44.31 세대물량관리 공정별 갑지·Excel 연동
 // v52.48.5.44.30 세대물량관리 독립 대메뉴 분리
 // v52.48.5.44.29 옵션관리 세대물량관리 좌·우 2분할 기본화면
@@ -4454,7 +4455,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               <HouseholdQuantityManagement
                 projectName={activeProjectName}
                 buildingConfigs={buildingConfigs}
-                processOptions={activeProcessOptions}
                 currentUserId={user?.id || ''}
               />
             )}
