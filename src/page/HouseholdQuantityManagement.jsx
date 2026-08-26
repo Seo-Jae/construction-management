@@ -1,3 +1,4 @@
+// v52.48.5.44.34 공정별옵션연결 별도 설정·다운로드 연결정보 즉시 저장
 // v52.48.5.44.33 공정 탭 배율 오차 수정·기본옵션 명칭 통일
 // v52.48.5.44.32 기본 공정 6개·사용자 공정 추가
 // v52.48.5.44.31 세대물량관리 단일화·공정별 갑지·Excel 연동
@@ -10,6 +11,7 @@ import {
 } from '@mui/material';
 import AddCircleOutlineRoundedIcon from '@mui/icons-material/AddCircleOutlineRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
+import LinkRoundedIcon from '@mui/icons-material/LinkRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import SystemPageTitle from '../components/SystemPageTitle.jsx';
@@ -101,6 +103,7 @@ export default function HouseholdQuantityManagement({
   const [message, setMessage] = useState(null);
   const [toast, setToast] = useState(null);
   const [downloadDialogOpen, setDownloadDialogOpen] = useState(false);
+  const [configurationDialogMode, setConfigurationDialogMode] = useState('download');
   const [dialogProcess, setDialogProcess] = useState('');
   const [workingSelections, setWorkingSelections] = useState({});
   const [customProcessNames, setCustomProcessNames] = useState([]);
@@ -194,7 +197,7 @@ export default function HouseholdQuantityManagement({
     setRefreshKey((current) => current + 1);
   };
 
-  const openDownloadDialog = () => {
+  const openConfigurationDialog = (mode) => {
     const currentSelections = normalizeHouseholdQuantityDocument(
       quantityDocument,
     ).processOptionSelections;
@@ -212,7 +215,16 @@ export default function HouseholdQuantityManagement({
     setAddingProcess(false);
     setNewProcessName('');
     setProcessAddError('');
+    setConfigurationDialogMode(mode);
     setDownloadDialogOpen(true);
+  };
+
+  const openOptionConnectionDialog = () => {
+    openConfigurationDialog('connections');
+  };
+
+  const openDownloadDialog = () => {
+    openConfigurationDialog('download');
   };
 
   const handleAddWorkingProcess = () => {
@@ -252,35 +264,91 @@ export default function HouseholdQuantityManagement({
     });
   };
 
+  const persistQuantityDocument = async (documentToSave) => {
+    const payload = {
+      project_name: projectName,
+      option_category: HOUSEHOLD_CATEGORY,
+      unit_values: normalizeHouseholdQuantityDocument(documentToSave),
+      source_file_name: sourceFileName || null,
+      updated_at: new Date().toISOString(),
+    };
+    if (currentUserId) payload.updated_by = currentUserId;
+    const { error } = await supabase
+      .from('option_status_documents')
+      .upsert(payload, { onConflict: 'project_name,option_category' });
+    if (error) throw error;
+  };
+
+  const createWorkingDefinitions = () => createHouseholdQuantityDefinitions({
+    buildingConfigs,
+    processOptions: workingProcessNames,
+    insulationData,
+    selectionDocument,
+    quantityDocument,
+    processOptionSelections: workingSelections,
+  });
+
+  const applyWorkingDefinitions = (workingDefinitions) => {
+    const nextDocument = createHouseholdQuantityDocumentFromDefinitions(
+      workingDefinitions,
+    );
+    setQuantityDocument(nextDocument);
+    setCustomProcessNames(
+      workingProcessNames.filter(
+        (processName) => !DEFAULT_PROCESS_NAMES.includes(processName),
+      ),
+    );
+    return nextDocument;
+  };
+
+  const handleSaveOptionConnections = async () => {
+    setSaving(true);
+    setToast(null);
+    try {
+      const workingDefinitions = createWorkingDefinitions();
+      const nextDocument = createHouseholdQuantityDocumentFromDefinitions(
+        workingDefinitions,
+      );
+      await persistQuantityDocument(nextDocument);
+      applyWorkingDefinitions(workingDefinitions);
+      setHasPendingChanges(false);
+      setDownloadDialogOpen(false);
+      setToast({
+        severity: 'success',
+        text: '공정별 옵션 연결정보를 저장했습니다.',
+      });
+    } catch (error) {
+      console.error('공정별 옵션 연결정보 저장 오류:', error);
+      setToast({
+        severity: 'error',
+        text: isCategoryConstraintError(error)
+          ? '세대물량 저장 분류를 추가하는 v52.48.5.44.31 SQL을 먼저 실행해주세요.'
+          : `공정별 옵션 연결정보를 저장하지 못했습니다: ${error?.message || '알 수 없는 오류'}`,
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleDownloadExcel = async () => {
     setExcelLoading(true);
     setToast(null);
     try {
-      const downloadDefinitions = createHouseholdQuantityDefinitions({
-        buildingConfigs,
-        processOptions: workingProcessNames,
-        insulationData,
-        selectionDocument,
-        quantityDocument,
-        processOptionSelections: workingSelections,
-      });
+      const downloadDefinitions = createWorkingDefinitions();
+      const nextDocument = createHouseholdQuantityDocumentFromDefinitions(
+        downloadDefinitions,
+      );
+      await persistQuantityDocument(nextDocument);
       const result = await saveHouseholdQuantityWorkbook({
         projectName,
         definitions: downloadDefinitions,
       });
-      setQuantityDocument(
-        createHouseholdQuantityDocumentFromDefinitions(downloadDefinitions),
-      );
-      setCustomProcessNames(
-        workingProcessNames.filter(
-          (processName) => !DEFAULT_PROCESS_NAMES.includes(processName),
-        ),
-      );
-      setHasPendingChanges(true);
+      applyWorkingDefinitions(downloadDefinitions);
+      setHasPendingChanges(false);
       setDownloadDialogOpen(false);
       setToast({
         severity: 'success',
-        text: `${result.processCount.toLocaleString()}개 공정, ${result.unitCount.toLocaleString()}세대 기준 물량 양식을 내려받았습니다.`,
+        text: `공정별 옵션 연결정보를 저장하고 ${result.processCount.toLocaleString()}개 공정, ${result.unitCount.toLocaleString()}세대 기준 물량 양식을 내려받았습니다.`,
       });
     } catch (error) {
       console.error('세대물량 Excel 다운로드 오류:', error);
@@ -328,18 +396,7 @@ export default function HouseholdQuantityManagement({
     setSaving(true);
     setToast(null);
     try {
-      const payload = {
-        project_name: projectName,
-        option_category: HOUSEHOLD_CATEGORY,
-        unit_values: normalizeHouseholdQuantityDocument(quantityDocument),
-        source_file_name: sourceFileName || null,
-        updated_at: new Date().toISOString(),
-      };
-      if (currentUserId) payload.updated_by = currentUserId;
-      const { error } = await supabase
-        .from('option_status_documents')
-        .upsert(payload, { onConflict: 'project_name,option_category' });
-      if (error) throw error;
+      await persistQuantityDocument(quantityDocument);
       setHasPendingChanges(false);
       setToast({ severity: 'success', text: '공정별 세대물량 갑지를 저장했습니다.' });
     } catch (error) {
@@ -390,6 +447,16 @@ export default function HouseholdQuantityManagement({
           accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           onChange={handleUploadExcel}
         />
+        <Button
+          size="small"
+          variant="outlined"
+          startIcon={<LinkRoundedIcon />}
+          onClick={openOptionConnectionDialog}
+          disabled={excelLoading || saving || loading || safeProcessOptions.length === 0}
+          sx={HEADER_CONTROL_SX}
+        >
+          공정별옵션연결
+        </Button>
         <Button
           size="small"
           variant="outlined"
@@ -540,7 +607,7 @@ export default function HouseholdQuantityManagement({
                   <Alert severity="info" variant="outlined">
                     {activeProcess.isInsulation
                       ? '단열공정은 상단의 타입·단열옵션별 기본물량을 사용합니다.'
-                      : '양식 다운로드에서 이 공정에 연결할 유상옵션을 선택하면 증감물량 행이 생성됩니다.'}
+                      : '공정별옵션연결에서 이 공정에 연결할 유상옵션을 선택하면 증감물량 행이 생성됩니다.'}
                   </Alert>
                 ) : (
                   <Table size="small" sx={{ tableLayout: 'fixed' }}>
@@ -582,13 +649,15 @@ export default function HouseholdQuantityManagement({
 
       <Dialog
         open={downloadDialogOpen}
-        onClose={() => !excelLoading && setDownloadDialogOpen(false)}
+        onClose={() => !excelLoading && !saving && setDownloadDialogOpen(false)}
         fullWidth
         maxWidth="md"
         PaperProps={{ sx: { height: '72vh', minHeight: 520 } }}
       >
         <DialogTitle sx={{ pb: 1, fontSize: '1rem', fontWeight: 900 }}>
-          세대물량 Excel 설정
+          {configurationDialogMode === 'connections'
+            ? '공정별 옵션 연결'
+            : '세대물량 Excel 설정'}
         </DialogTitle>
         <DialogContent dividers sx={{ p: 0, minHeight: 0 }}>
           <Alert severity="info" sx={{ m: 1.25 }}>
@@ -754,15 +823,31 @@ export default function HouseholdQuantityManagement({
           </Box>
         </DialogContent>
         <DialogActions sx={{ px: 1.5, py: 1 }}>
-          <Button onClick={() => setDownloadDialogOpen(false)} disabled={excelLoading}>취소</Button>
           <Button
-            variant="contained"
-            startIcon={excelLoading ? <CircularProgress size={14} color="inherit" /> : <DownloadRoundedIcon />}
-            onClick={handleDownloadExcel}
-            disabled={excelLoading}
+            onClick={() => setDownloadDialogOpen(false)}
+            disabled={excelLoading || saving}
           >
-            선택 완료 및 다운로드
+            취소
           </Button>
+          {configurationDialogMode === 'connections' ? (
+            <Button
+              variant="contained"
+              startIcon={saving ? <CircularProgress size={14} color="inherit" /> : <SaveRoundedIcon />}
+              onClick={handleSaveOptionConnections}
+              disabled={saving || excelLoading}
+            >
+              연결 저장
+            </Button>
+          ) : (
+            <Button
+              variant="contained"
+              startIcon={excelLoading ? <CircularProgress size={14} color="inherit" /> : <DownloadRoundedIcon />}
+              onClick={handleDownloadExcel}
+              disabled={excelLoading || saving}
+            >
+              선택 완료 및 다운로드
+            </Button>
+          )}
         </DialogActions>
       </Dialog>
 
