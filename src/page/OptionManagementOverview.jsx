@@ -1,3 +1,4 @@
+// v52.48.5.44.17 선택옵션 양식 다운로드·업로드·저장 연결
 // v52.48.5.44.16 타입·옵션 골구도 강조·좌우 패널 크기조절
 // v52.48.5.44.15 단열 옵션 타입별 현황·상단 박스 실높이 통일
 // v52.48.5.44.14 단열 옵션 상단정리·토스트·단일시트 무색상 전환
@@ -38,6 +39,11 @@ import {
   parseInsulationOptionWorkbookFile,
   saveInsulationOptionWorkbook,
 } from '../utils/optionInsulationExcel.js';
+import {
+  normalizeSelectionOptionDocument,
+  parseSelectionOptionWorkbookFile,
+  saveSelectionOptionWorkbook,
+} from '../utils/optionSelectionExcel.js';
 import { createOptionTypeSummary } from '../utils/optionTypeSummary.js';
 
 const MODE_CONFIG = {
@@ -49,7 +55,7 @@ const MODE_CONFIG = {
   },
   selection: {
     title: '옵션현황(선택)',
-    help: '현장 골구도를 기준으로 세대별 선택 옵션 현황을 관리합니다.',
+    help: '골구도 세대정보가 입력된 양식을 내려받아 유상옵션명과 선택값을 작성한 뒤 업로드합니다.',
     category: '선택 옵션',
     accent: '#0f766e',
   },
@@ -98,6 +104,9 @@ export default function OptionManagementOverview({
 }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [optionData, setOptionData] = useState({});
+  const [selectionDocument, setSelectionDocument] = useState(() =>
+    normalizeSelectionOptionDocument({}),
+  );
   const [loading, setLoading] = useState(false);
   const [excelLoading, setExcelLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -119,7 +128,9 @@ export default function OptionManagementOverview({
 
   const pageConfig = MODE_CONFIG[mode] || MODE_CONFIG.insulation;
   const isInsulation = mode === 'insulation';
+  const isSelection = mode === 'selection';
   const isComparison = mode === 'comparison';
+  const isEditableOptionMode = isInsulation || isSelection;
 
   const buildingEntries = useMemo(
     () =>
@@ -166,6 +177,18 @@ export default function OptionManagementOverview({
     [buildingConfigs, optionData],
   );
 
+  const selectionSummary = useMemo(() => {
+    const selectedRows = Object.values(selectionDocument.units || {});
+    return {
+      optionCount: selectionDocument.optionNames.length,
+      selectedUnitCount: selectedRows.length,
+      selectionCount: selectedRows.reduce(
+        (total, row) => total + (row?.selectedOptions?.length || 0),
+        0,
+      ),
+    };
+  }, [selectionDocument]);
+
   const highlightedCellKeys = useMemo(() => {
     if (!selectedHighlight?.typeName) return new Set();
     const typeRow = typeOptionSummary.rows.find(
@@ -180,6 +203,25 @@ export default function OptionManagementOverview({
   }, [selectedHighlight, typeOptionSummary]);
 
   const displayData = useMemo(() => {
+    if (isSelection) {
+      return Object.entries(selectionDocument.units || {}).reduce(
+        (result, [cellKey, row]) => {
+          const selectedOptions = Array.isArray(row?.selectedOptions)
+            ? row.selectedOptions.filter(Boolean)
+            : [];
+          if (selectedOptions.length === 0) return result;
+          result[cellKey] = {
+            label: `${selectedOptions.length}개 선택`,
+            backgroundColor: '#ecfdf5',
+            borderColor: '#10b981',
+            color: '#065f46',
+            title: `${cellKey} · ${selectedOptions.join(', ')}`,
+          };
+          return result;
+        },
+        {},
+      );
+    }
     if (!isInsulation) return {};
     const isOptionHighlight = Boolean(selectedHighlight?.optionName);
     const highlightStyle = isOptionHighlight
@@ -225,13 +267,21 @@ export default function OptionManagementOverview({
     }
 
     return result;
-  }, [highlightedCellKeys, isInsulation, optionData, selectedHighlight]);
+  }, [
+    highlightedCellKeys,
+    isInsulation,
+    isSelection,
+    optionData,
+    selectedHighlight,
+    selectionDocument,
+  ]);
 
   useEffect(() => {
     setExpandedUnitType('');
     setSelectedHighlight(null);
     setSummaryPanelWidth(DEFAULT_SUMMARY_PANEL_WIDTH);
-  }, [projectName]);
+    setMessage(null);
+  }, [mode, projectName]);
 
   useEffect(() => {
     if (!isResizingPanels) return undefined;
@@ -294,8 +344,8 @@ export default function OptionManagementOverview({
     setIsResizingPanels(true);
   };
 
-  const loadInsulationData = useCallback(async () => {
-    if (!isInsulation || !projectName) return;
+  const loadOptionStatusData = useCallback(async () => {
+    if (!isEditableOptionMode || !projectName) return;
     setLoading(true);
     setMessage(null);
 
@@ -304,11 +354,17 @@ export default function OptionManagementOverview({
         .from('option_status_documents')
         .select('unit_values, source_file_name, updated_at')
         .eq('project_name', projectName)
-        .eq('option_category', 'insulation')
+        .eq('option_category', isInsulation ? 'insulation' : 'selection')
         .maybeSingle();
 
       if (error) throw error;
-      setOptionData(normalizeOptionData(data?.unit_values));
+      if (isInsulation) {
+        setOptionData(normalizeOptionData(data?.unit_values));
+      } else {
+        setSelectionDocument(
+          normalizeSelectionOptionDocument(data?.unit_values),
+        );
+      }
       setSelectedHighlight(null);
       setSourceFileName(data?.source_file_name || '');
       setSavedAt(data?.updated_at || '');
@@ -317,16 +373,20 @@ export default function OptionManagementOverview({
     } catch (error) {
       if (isMissingOptionTableError(error)) {
         setSchemaMissing(true);
-        setOptionData({});
+        if (isInsulation) {
+          setOptionData({});
+        } else {
+          setSelectionDocument(normalizeSelectionOptionDocument({}));
+        }
         setMessage({
           severity: 'warning',
           text: '옵션 저장용 Supabase 표가 아직 없습니다. 제공된 SQL을 먼저 실행하면 업로드 결과를 저장할 수 있습니다.',
         });
       } else {
-        console.error('단열 옵션 현황 불러오기 오류:', error);
+        console.error(`${pageConfig.category} 현황 불러오기 오류:`, error);
         setMessage({
           severity: 'error',
-          text: `단열 옵션 현황을 불러오지 못했습니다: ${
+          text: `${pageConfig.category} 현황을 불러오지 못했습니다: ${
             error?.message || '알 수 없는 오류'
           }`,
         });
@@ -334,11 +394,11 @@ export default function OptionManagementOverview({
     } finally {
       setLoading(false);
     }
-  }, [isInsulation, projectName]);
+  }, [isEditableOptionMode, isInsulation, pageConfig.category, projectName]);
 
   useEffect(() => {
-    loadInsulationData();
-  }, [loadInsulationData, refreshKey]);
+    loadOptionStatusData();
+  }, [loadOptionStatusData, refreshKey]);
 
   const handleRefresh = () => {
     if (
@@ -354,20 +414,28 @@ export default function OptionManagementOverview({
     setExcelLoading(true);
     setToast(null);
     try {
-      const rowCount = await saveInsulationOptionWorkbook({
-        projectName,
-        buildingConfigs,
-        optionData,
-      });
+      const rowCount = isInsulation
+        ? await saveInsulationOptionWorkbook({
+            projectName,
+            buildingConfigs,
+            optionData,
+          })
+        : await saveSelectionOptionWorkbook({
+            projectName,
+            buildingConfigs,
+            selectionDocument,
+          });
       setToast({
         severity: 'success',
-        text: `현장 골구도 ${rowCount.toLocaleString()}세대를 단열 옵션 엑셀로 내려받았습니다.`,
+        text: isInsulation
+          ? `현장 골구도 ${rowCount.toLocaleString()}세대를 단열 옵션 Excel로 내려받았습니다.`
+          : `골구도 ${rowCount.toLocaleString()}세대를 입력한 선택옵션 양식을 내려받았습니다.`,
       });
     } catch (error) {
-      console.error('단열 옵션 골구도 엑셀 다운로드 오류:', error);
+      console.error(`${pageConfig.category} Excel 다운로드 오류:`, error);
       setToast({
         severity: 'error',
-        text: `골구도 엑셀을 만들지 못했습니다: ${
+        text: `${pageConfig.category} Excel을 만들지 못했습니다: ${
           error?.message || '알 수 없는 오류'
         }`,
       });
@@ -384,24 +452,38 @@ export default function OptionManagementOverview({
     setExcelLoading(true);
     setToast(null);
     try {
-      const result = await parseInsulationOptionWorkbookFile({
-        file,
-        projectName,
-        buildingConfigs,
-      });
-      setOptionData(result.unitValues);
+      const result = isInsulation
+        ? await parseInsulationOptionWorkbookFile({
+            file,
+            projectName,
+            buildingConfigs,
+          })
+        : await parseSelectionOptionWorkbookFile({
+            file,
+            projectName,
+            buildingConfigs,
+          });
+      if (isInsulation) {
+        setOptionData(result.unitValues);
+      } else {
+        setSelectionDocument(
+          normalizeSelectionOptionDocument(result.selectionDocument),
+        );
+      }
       setSelectedHighlight(null);
       setSourceFileName(file.name);
       setHasPendingChanges(true);
       setToast({
         severity: 'success',
-        text: `전체 동 골구도에서 단열 옵션 ${result.filledRows.toLocaleString()}세대를 불러왔습니다. 화면 확인 후 저장해주세요.`,
+        text: isInsulation
+          ? `전체 동 골구도에서 단열 옵션 ${result.filledRows.toLocaleString()}세대를 불러왔습니다. 화면 확인 후 저장해주세요.`
+          : `유상옵션 ${result.optionCount.toLocaleString()}개, 선택 ${result.selectionCount.toLocaleString()}건을 불러왔습니다. 화면 확인 후 저장해주세요.`,
       });
     } catch (error) {
-      console.error('단열 옵션 골구도 엑셀 업로드 오류:', error);
+      console.error(`${pageConfig.category} Excel 업로드 오류:`, error);
       setToast({
         severity: 'error',
-        text: `골구도 엑셀을 불러오지 못했습니다: ${
+        text: `${pageConfig.category} Excel을 불러오지 못했습니다: ${
           error?.message || '알 수 없는 오류'
         }`,
       });
@@ -424,8 +506,8 @@ export default function OptionManagementOverview({
       const now = new Date().toISOString();
       const payload = {
         project_name: projectName,
-        option_category: 'insulation',
-        unit_values: optionData,
+        option_category: isInsulation ? 'insulation' : 'selection',
+        unit_values: isInsulation ? optionData : selectionDocument,
         source_file_name: sourceFileName || null,
         updated_at: now,
       };
@@ -442,14 +524,16 @@ export default function OptionManagementOverview({
       setHasPendingChanges(false);
       setToast({
         severity: 'success',
-        text: `단열 옵션 ${Object.keys(optionData).length.toLocaleString()}세대를 저장했습니다.`,
+        text: isInsulation
+          ? `단열 옵션 ${Object.keys(optionData).length.toLocaleString()}세대를 저장했습니다.`
+          : `유상옵션 ${selectionSummary.optionCount.toLocaleString()}개, 선택 ${selectionSummary.selectionCount.toLocaleString()}건을 저장했습니다.`,
       });
     } catch (error) {
-      console.error('단열 옵션 현황 저장 오류:', error);
+      console.error(`${pageConfig.category} 현황 저장 오류:`, error);
       if (isMissingOptionTableError(error)) setSchemaMissing(true);
       setToast({
         severity: 'error',
-        text: `단열 옵션 현황을 저장하지 못했습니다: ${
+        text: `${pageConfig.category} 현황을 저장하지 못했습니다: ${
           error?.message || '알 수 없는 오류'
         }`,
       });
@@ -534,7 +618,7 @@ export default function OptionManagementOverview({
             {pageConfig.category}
           </Box>
 
-          {isInsulation ? (
+          {isEditableOptionMode ? (
             <>
               <input
                 ref={fileInputRef}
@@ -551,7 +635,7 @@ export default function OptionManagementOverview({
                 disabled={excelLoading || buildingEntries.length === 0}
                 sx={{ ...HEADER_CONTROL_SX, whiteSpace: 'nowrap' }}
               >
-                골구도 다운로드
+                {isInsulation ? '골구도 다운로드' : '양식 다운로드'}
               </Button>
               <Button
                 size="small"
@@ -615,7 +699,7 @@ export default function OptionManagementOverview({
         <SystemRefreshButton onClick={handleRefresh} label={`${pageConfig.title} 새로고침`} />
       </Paper>
 
-      {!isInsulation && (
+      {!isEditableOptionMode && (
         <Alert severity="info" sx={{ py: 0.35 }}>
           메뉴와 골구도 기본화면을 구성했습니다. 다음 단계에서 옵션 항목,
           세대별 선택값, 색상 및 저장 기능을 연결합니다.
@@ -649,6 +733,36 @@ export default function OptionManagementOverview({
               size="small"
               variant="outlined"
               label={`옵션 종류 ${optionLegend.length.toLocaleString()}개`}
+            />
+            {sourceFileName && (
+              <Chip size="small" variant="outlined" label={`파일 ${sourceFileName}`} />
+            )}
+            {savedAt && !hasPendingChanges && (
+              <Typography sx={{ fontSize: '0.65rem', color: '#64748b' }}>
+                최근 저장 {new Date(savedAt).toLocaleString('ko-KR')}
+              </Typography>
+            )}
+          </>
+        )}
+        {isSelection && (
+          <>
+            <Chip
+              size="small"
+              color={hasPendingChanges ? 'warning' : 'success'}
+              variant={hasPendingChanges ? 'filled' : 'outlined'}
+              label={`유상옵션 ${selectionSummary.optionCount.toLocaleString()}개${
+                hasPendingChanges ? ' · 저장 전' : ''
+              }`}
+            />
+            <Chip
+              size="small"
+              variant="outlined"
+              label={`선택 세대 ${selectionSummary.selectedUnitCount.toLocaleString()}세대`}
+            />
+            <Chip
+              size="small"
+              variant="outlined"
+              label={`선택 건수 ${selectionSummary.selectionCount.toLocaleString()}건`}
             />
             {sourceFileName && (
               <Chip size="small" variant="outlined" label={`파일 ${sourceFileName}`} />
@@ -704,8 +818,8 @@ export default function OptionManagementOverview({
               <CircularProgress size={22} />
               <Typography sx={{ fontSize: '0.75rem', fontWeight: 800 }}>
                 {excelLoading
-                  ? '엑셀을 처리하는 중입니다.'
-                  : '단열 옵션을 불러오는 중입니다.'}
+                  ? 'Excel을 처리하는 중입니다.'
+                  : `${pageConfig.category}을 불러오는 중입니다.`}
               </Typography>
             </Box>
           )}
@@ -740,7 +854,7 @@ export default function OptionManagementOverview({
                   buildingName={buildingName}
                   config={config}
                   readOnly
-                  cellDisplayData={isInsulation ? displayData : {}}
+                  cellDisplayData={isEditableOptionMode ? displayData : {}}
                 />
               ))}
             </Box>
