@@ -1,3 +1,4 @@
+// v52.48.5.44.40 공정별 세대물량 골구도 보기
 // v52.48.5.44.39 증감 부호 계산 수정·상하 표 9열 정렬
 // v52.48.5.44.38 하단 옵션 증감물량 타입별 상단 자동집계
 // v52.48.5.44.37 기본물량 소계·공제물량·자동합계 및 표 정렬
@@ -14,16 +15,19 @@ import {
 } from '@mui/material';
 import AddCircleOutlineRoundedIcon from '@mui/icons-material/AddCircleOutlineRounded';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
+import GridViewRoundedIcon from '@mui/icons-material/GridViewRounded';
 import LinkRoundedIcon from '@mui/icons-material/LinkRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import SystemPageTitle from '../components/SystemPageTitle.jsx';
 import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
+import BuildingGrid from '../BuildingGrid.jsx';
 import { supabase } from '../supabaseClient';
 import { normalizeSelectionOptionDocument } from '../utils/optionSelectionExcel.js';
 import {
   createHouseholdQuantityDefinitions,
   createHouseholdQuantityDocumentFromDefinitions,
+  createHouseholdQuantityUnitValues,
   normalizeHouseholdQuantityDocument,
   parseHouseholdQuantityWorkbookFile,
   saveHouseholdQuantityWorkbook,
@@ -116,6 +120,8 @@ export default function HouseholdQuantityManagement({
   const [addingProcess, setAddingProcess] = useState(false);
   const [newProcessName, setNewProcessName] = useState('');
   const [processAddError, setProcessAddError] = useState('');
+  const [gridDialogOpen, setGridDialogOpen] = useState(false);
+  const [gridProcessName, setGridProcessName] = useState('');
   const fileInputRef = useRef(null);
 
   const safeProcessOptions = useMemo(
@@ -142,6 +148,93 @@ export default function HouseholdQuantityManagement({
       (process) => process.processName === selectedProcess,
     ) || definitions.processes[0] || null,
     [definitions.processes, selectedProcess],
+  );
+  const gridProcess = useMemo(
+    () =>
+      definitions.processes.find(
+        (process) => process.processName === gridProcessName,
+      ) || activeProcess,
+    [activeProcess, definitions.processes, gridProcessName],
+  );
+  const gridUnitValues = useMemo(
+    () =>
+      createHouseholdQuantityUnitValues({
+        buildingConfigs,
+        process: gridProcess,
+        insulationData,
+        selectionDocument,
+        processOptionSelections: definitions.processOptionSelections,
+      }),
+    [
+      buildingConfigs,
+      definitions.processOptionSelections,
+      gridProcess,
+      insulationData,
+      selectionDocument,
+    ],
+  );
+  const gridCellDisplayData = useMemo(
+    () =>
+      Object.fromEntries(
+        gridUnitValues.rows.map((row) => {
+          const unit = row.measurementUnit || 'M2';
+          const adjustmentText = row.adjustmentRows.length
+            ? row.adjustmentRows
+                .map(
+                  (item) =>
+                    `${item.optionName} ${
+                      hasQuantity(item.quantity)
+                        ? formatQuantity(item.quantity)
+                        : '미입력'
+                    }${unit}`,
+                )
+                .join(' · ')
+            : '선택옵션 증감 없음';
+          const title = row.complete
+            ? `${row.building} ${row.unitCode}호 · ${row.typeName}${
+                row.basisOption ? `/${row.basisOption}` : ''
+              } · 기본 ${formatQuantity(row.baseQuantity)}${unit} · ${
+                adjustmentText
+              } · 세대물량 ${formatQuantity(row.finalQuantity)}${unit}`
+            : `${row.building} ${row.unitCode}호 · ${row.missingItems.join(
+                ', ',
+              )} 미입력`;
+
+          return [
+            row.cellKey,
+            {
+              label: row.complete ? formatQuantity(row.finalQuantity) : '미입력',
+              backgroundColor: row.complete
+                ? row.finalQuantity < 0
+                  ? '#fef2f2'
+                  : '#eff6ff'
+                : '#fff7ed',
+              borderColor: row.complete
+                ? row.finalQuantity < 0
+                  ? '#dc2626'
+                  : '#2563eb'
+                : '#f97316',
+              color: row.complete
+                ? row.finalQuantity < 0
+                  ? '#991b1b'
+                  : '#1e3a8a'
+                : '#9a3412',
+              fontSize: '0.46rem',
+              letterSpacing: '-0.04em',
+              fontWeight: 900,
+              title,
+            },
+          ];
+        }),
+      ),
+    [gridUnitValues.rows],
+  );
+  const buildingEntries = useMemo(
+    () =>
+      Object.entries(buildingConfigs || {}).sort(([first], [second]) =>
+        String(first).localeCompare(String(second), 'ko-KR', { numeric: true }),
+      ),
+    [buildingConfigs],
   );
 
   useEffect(() => {
@@ -226,6 +319,11 @@ export default function HouseholdQuantityManagement({
 
   const openOptionConnectionDialog = () => {
     openConfigurationDialog('connections');
+  };
+
+  const openGridDialog = () => {
+    setGridProcessName(activeProcess?.processName || '');
+    setGridDialogOpen(true);
   };
 
   const openDownloadDialog = () => {
@@ -455,6 +553,16 @@ export default function HouseholdQuantityManagement({
         <Button
           size="small"
           variant="outlined"
+          startIcon={<GridViewRoundedIcon />}
+          onClick={openGridDialog}
+          disabled={loading || excelLoading || !activeProcess || definitions.unitCount === 0}
+          sx={HEADER_CONTROL_SX}
+        >
+          골구도보기
+        </Button>
+        <Button
+          size="small"
+          variant="outlined"
           startIcon={<LinkRoundedIcon />}
           onClick={openOptionConnectionDialog}
           disabled={excelLoading || saving || loading || safeProcessOptions.length === 0}
@@ -666,6 +774,114 @@ export default function HouseholdQuantityManagement({
           </>
         )}
       </Paper>
+
+      <Dialog
+        open={gridDialogOpen}
+        onClose={() => setGridDialogOpen(false)}
+        fullWidth
+        maxWidth={false}
+        PaperProps={{
+          sx: {
+            width: '96vw',
+            maxWidth: '96vw',
+            height: '90vh',
+            maxHeight: '90vh',
+          },
+        }}
+      >
+        <DialogTitle sx={{ py: 1.2, px: 1.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+            <Box sx={{ minWidth: 220, flex: 1 }}>
+              <Typography sx={{ color: '#0f172a', fontSize: '1rem', fontWeight: 900 }}>
+                공정별 세대물량 골구도
+              </Typography>
+              <Typography sx={{ mt: 0.15, color: '#64748b', fontSize: '0.68rem' }}>
+                세대물량 = 타입·단열옵션별 기본물량 + 해당 세대의 선택옵션 증감물량
+              </Typography>
+            </Box>
+            <Chip size="small" color="primary" label={gridProcess?.processName || '-'} />
+            <Chip
+              size="small"
+              variant="outlined"
+              label={`계산 ${gridUnitValues.completeCount.toLocaleString()}/${gridUnitValues.rows.length.toLocaleString()}세대`}
+            />
+            <Chip
+              size="small"
+              variant="outlined"
+              color={gridUnitValues.missingCount > 0 ? 'warning' : 'default'}
+              label={`총 물량 ${formatQuantity(gridUnitValues.totalQuantity)}`}
+            />
+          </Box>
+        </DialogTitle>
+        <DialogContent
+          dividers
+          sx={{ p: 0, minHeight: 0, display: 'flex', flexDirection: 'column', bgcolor: '#f8fafc' }}
+        >
+          <Paper
+            square
+            elevation={0}
+            sx={{ flex: '0 0 auto', borderBottom: '1px solid #cbd5e1' }}
+          >
+            <Tabs
+              value={gridProcess?.processName || false}
+              onChange={(_, value) => setGridProcessName(value)}
+              variant="scrollable"
+              scrollButtons="auto"
+              aria-label="골구도 표시 공정 선택"
+              sx={{
+                minHeight: 38,
+                '& .MuiTab-root': {
+                  minHeight: 38,
+                  py: 0.5,
+                  px: 1.7,
+                  fontSize: '0.72rem',
+                  fontWeight: 800,
+                },
+              }}
+            >
+              {definitions.processes.map((process) => (
+                <Tab
+                  key={`grid-${process.processName}`}
+                  value={process.processName}
+                  label={process.processName}
+                />
+              ))}
+            </Tabs>
+          </Paper>
+
+          {buildingEntries.length === 0 ? (
+            <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Typography color="text.secondary">표시할 현장 골구도 정보가 없습니다.</Typography>
+            </Box>
+          ) : (
+            <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', p: 1.5 }}>
+              <Box
+                sx={{
+                  minWidth: 'max-content',
+                  minHeight: '100%',
+                  display: 'flex',
+                  alignItems: 'flex-end',
+                  gap: 2.5,
+                  pb: 0.5,
+                }}
+              >
+                {buildingEntries.map(([buildingName, config]) => (
+                  <BuildingGrid
+                    key={`household-quantity-grid-${buildingName}`}
+                    buildingName={buildingName}
+                    config={config}
+                    readOnly
+                    cellDisplayData={gridCellDisplayData}
+                  />
+                ))}
+              </Box>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 1.5, py: 1 }}>
+          <Button onClick={() => setGridDialogOpen(false)}>닫기</Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={downloadDialogOpen}

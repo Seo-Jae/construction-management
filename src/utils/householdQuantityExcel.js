@@ -1,3 +1,4 @@
+// v52.48.5.44.40 공정별 세대물량 골구도 계산
 // v52.48.5.44.39 증감 부호 계산 수정·상하 표 9열 정렬
 // v52.48.5.44.38 타입별 증감물량 자동집계 및 최종합계 반영
 // v52.48.5.44.37 기본물량 소계·공제물량·자동합계 반영
@@ -364,6 +365,127 @@ export const createHouseholdQuantityDocumentFromDefinitions = (
     ...process.optionRows,
   ]).map((row) => normalizeValueRow(row)),
 });
+
+const hasEnteredQuantity = (value) =>
+  value !== null && value !== undefined && value !== '';
+
+export const createHouseholdQuantityUnitValues = ({
+  buildingConfigs = {},
+  process,
+  insulationData = {},
+  selectionDocument = {},
+  processOptionSelections = {},
+}) => {
+  if (!process?.processName) {
+    return {
+      rows: [],
+      valuesByCellKey: {},
+      completeCount: 0,
+      missingCount: 0,
+      totalQuantity: 0,
+    };
+  }
+
+  const baseRows = Array.isArray(process.baseRows) ? process.baseRows : [];
+  const optionRows = Array.isArray(process.optionRows) ? process.optionRows : [];
+  const baseRowMap = new Map(
+    baseRows.map((row) => [
+      `${normalizeText(row.typeName)}\u001f${normalizeText(row.basisOption)}`,
+      row,
+    ]),
+  );
+  const optionRowMap = new Map(
+    optionRows.map((row) => [
+      `${normalizeText(row.typeName)}\u001f${normalizeText(row.optionName)}`,
+      row,
+    ]),
+  );
+  const connectedOptionNames = new Set(
+    (Array.isArray(processOptionSelections?.[process.processName])
+      ? processOptionSelections[process.processName]
+      : [])
+      .map((optionName) => normalizeText(optionName))
+      .filter(Boolean),
+  );
+
+  const rows = createSelectionOptionUnitRows(buildingConfigs).map((unitRow) => {
+    const typeName = normalizeText(unitRow.unitType) || '미지정';
+    const basisOption = process.isInsulation
+      ? normalizeText(insulationData?.[unitRow.cellKey]?.value) || '미지정'
+      : '';
+    const baseRow = baseRowMap.get(`${typeName}\u001f${basisOption}`);
+    const selectedOptionNames = process.isInsulation
+      ? []
+      : [
+          ...new Set(
+            (Array.isArray(
+              selectionDocument?.units?.[unitRow.cellKey]?.selectedOptions,
+            )
+              ? selectionDocument.units[unitRow.cellKey].selectedOptions
+              : [])
+              .map((optionName) => normalizeText(optionName))
+              .filter((optionName) => connectedOptionNames.has(optionName)),
+          ),
+        ];
+    const adjustmentRows = selectedOptionNames.map((optionName) => {
+      const optionRow = optionRowMap.get(`${typeName}\u001f${optionName}`);
+      return {
+        optionName,
+        quantity: optionRow?.quantity ?? null,
+      };
+    });
+    const missingItems = [];
+    if (!baseRow || !hasEnteredQuantity(baseRow.quantity)) {
+      missingItems.push(
+        process.isInsulation
+          ? `기본물량(${typeName}/${basisOption})`
+          : `기본물량(${typeName})`,
+      );
+    }
+    adjustmentRows.forEach((row) => {
+      if (!hasEnteredQuantity(row.quantity)) {
+        missingItems.push(`증감물량(${row.optionName})`);
+      }
+    });
+
+    const baseQuantity = hasEnteredQuantity(baseRow?.quantity)
+      ? Number(baseRow.quantity) || 0
+      : null;
+    const adjustmentQuantity = adjustmentRows.reduce(
+      (total, row) => total + (Number(row.quantity) || 0),
+      0,
+    );
+    const complete = missingItems.length === 0;
+
+    return {
+      cellKey: unitRow.cellKey,
+      building: unitRow.building,
+      floor: unitRow.floor,
+      unitCode: unitRow.unit,
+      typeName,
+      basisOption,
+      measurementUnit: normalizeUnit(baseRow?.unit),
+      baseQuantity,
+      selectedOptionNames,
+      adjustmentRows,
+      adjustmentQuantity,
+      finalQuantity: complete ? baseQuantity + adjustmentQuantity : null,
+      complete,
+      missingItems,
+    };
+  });
+
+  return {
+    rows,
+    valuesByCellKey: Object.fromEntries(rows.map((row) => [row.cellKey, row])),
+    completeCount: rows.filter((row) => row.complete).length,
+    missingCount: rows.filter((row) => !row.complete).length,
+    totalQuantity: rows.reduce(
+      (total, row) => total + (Number(row.finalQuantity) || 0),
+      0,
+    ),
+  };
+};
 
 const createUniqueSheetName = (workbook, processName) => {
   const base =

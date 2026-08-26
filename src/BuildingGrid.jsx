@@ -1,3 +1,4 @@
+// v52.48.5.44.40 골구도 셀별 물량 글꼴 크기 지원
 // v52.48.5.44.27 90% 화면 골구도 셀테두리·행간격 균일화
 // v52.48.5.44.23 옵션비교 선택수 기준 세대셀 분할표시 지원
 // v52.48.5.44.13 옵션관리 세대별 표시값·색상 지원
@@ -973,15 +974,17 @@ export default function BuildingGrid({
                                   : 'pointer',
                             fontFamily: 'inherit',
                             fontSize:
-                              customLabel || completionDate
+                              displayOverride?.fontSize ||
+                              (customLabel || completionDate
                                 ? '0.53rem'
-                                : '0.57rem',
+                                : '0.57rem'),
                             letterSpacing:
-                              customLabel || completionDate
+                              displayOverride?.letterSpacing ||
+                              (customLabel || completionDate
                                 ? '-0.02em'
-                                : 'normal',
+                                : 'normal'),
                             lineHeight: 1,
-                            fontWeight: 800,
+                            fontWeight: displayOverride?.fontWeight || 800,
                             position: 'relative',
                             overflow: 'hidden',
                             display: 'flex',
