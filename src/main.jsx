@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { CssBaseline, ThemeProvider } from '@mui/material'
 import App from './App.jsx'
 import { appTheme } from './theme.js'
+import './index.css'
 
 const queryParams = new URLSearchParams(window.location.search)
 const isAttendanceWorkerView =

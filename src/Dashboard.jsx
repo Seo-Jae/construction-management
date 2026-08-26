@@ -1,3 +1,4 @@
+// v52.48.5.44.24 기본 화면 90%·사용자 배율 선택·인쇄 100% 지원
 // v52.48.5.44.13 옵션현황(단열) 업로드 사용자 연결
 // v52.48.5.44.12 옵션관리 메뉴·골구도 기본화면
 import React, { useEffect, useRef, useState } from 'react';
@@ -32,6 +33,7 @@ import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded';
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import CloseIcon from '@mui/icons-material/Close';
 import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
+import ZoomOutMapRoundedIcon from '@mui/icons-material/ZoomOutMapRounded';
 import ExcelJS from 'exceljs';
 import { supabase } from './supabaseClient';
 import {
@@ -79,6 +81,22 @@ const PROGRESS_WRITE_CHUNK_SIZE = 500;
 const ALL_PROJECTS_OPTION = '전체현장';
 const MANAGEMENT_AREA_CONSTRUCTION = 'construction';
 const MANAGEMENT_AREA_SAFETY = 'safety';
+const DEFAULT_DASHBOARD_SCALE = 0.9;
+const DASHBOARD_SCALE_OPTIONS = [0.9, 1];
+const DASHBOARD_SCALE_STORAGE_KEY = 'constructionManagementDashboard:uiScale';
+
+const readStoredDashboardScale = (storageKey) => {
+  try {
+    const storedScale = Number(window.localStorage.getItem(storageKey));
+
+    return DASHBOARD_SCALE_OPTIONS.includes(storedScale)
+      ? storedScale
+      : DEFAULT_DASHBOARD_SCALE;
+  } catch (error) {
+    console.warn('화면 배율 불러오기 실패:', error);
+    return DEFAULT_DASHBOARD_SCALE;
+  }
+};
 
 const PROJECT_DISPLAY_ORDER = [
   '한라건설 용인금어지구',
@@ -536,6 +554,14 @@ const resolveUserRole = (profile) => {
 };
 
 export default function Dashboard({ user, userProfile, onLogout }) {
+  const dashboardScaleStorageKey = `${DASHBOARD_SCALE_STORAGE_KEY}:${
+    user?.id || user?.email || 'anonymous'
+  }`;
+  const [dashboardScale, setDashboardScale] = useState(() =>
+    readStoredDashboardScale(dashboardScaleStorageKey),
+  );
+  const [dashboardScaleMenuAnchor, setDashboardScaleMenuAnchor] =
+    useState(null);
   const profileUserRole = resolveUserRole(userProfile);
   const [authenticatedUserRole, setAuthenticatedUserRole] =
     useState('');
@@ -544,6 +570,50 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const isManagementRole = ['관리자', '최고관리자'].includes(userRole);
   const [runtimeAccess, setRuntimeAccess] = useState(null);
   const [runtimeAccessReady, setRuntimeAccessReady] = useState(false);
+
+  useEffect(() => {
+    const documentElement = document.documentElement;
+    const previousZoom = documentElement.style.zoom;
+    const hadScaleClass = documentElement.classList.contains(
+      'wooklim-dashboard-scaled',
+    );
+
+    const applyScale = (scale) => {
+      documentElement.style.zoom = String(scale);
+      documentElement.classList.add('wooklim-dashboard-scaled');
+    };
+
+    applyScale(dashboardScale);
+
+    try {
+      window.localStorage.setItem(
+        dashboardScaleStorageKey,
+        String(dashboardScale),
+      );
+    } catch (error) {
+      console.warn('화면 배율 저장 실패:', error);
+    }
+
+    const handleBeforePrint = () => {
+      documentElement.style.zoom = '1';
+    };
+    const handleAfterPrint = () => {
+      applyScale(dashboardScale);
+    };
+
+    window.addEventListener('beforeprint', handleBeforePrint);
+    window.addEventListener('afterprint', handleAfterPrint);
+
+    return () => {
+      window.removeEventListener('beforeprint', handleBeforePrint);
+      window.removeEventListener('afterprint', handleAfterPrint);
+      documentElement.style.zoom = previousZoom;
+
+      if (!hadScaleClass) {
+        documentElement.classList.remove('wooklim-dashboard-scaled');
+      }
+    };
+  }, [dashboardScale, dashboardScaleStorageKey]);
 
   useEffect(() => {
     let active = true;
@@ -1707,6 +1777,19 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
   const handleCloseManagementMenu = () => {
     setManagementMenuAnchor(null);
+  };
+
+  const handleOpenDashboardScaleMenu = (event) => {
+    setDashboardScaleMenuAnchor(event.currentTarget);
+  };
+
+  const handleCloseDashboardScaleMenu = () => {
+    setDashboardScaleMenuAnchor(null);
+  };
+
+  const handleSelectDashboardScale = (scale) => {
+    setDashboardScale(scale);
+    handleCloseDashboardScaleMenu();
   };
 
   const handleToggleMessenger = () => {
@@ -3811,7 +3894,87 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             </Box>
           )}
 
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.1 }}>
+            <Button
+              id="dashboard-scale-button"
+              color="inherit"
+              size="small"
+              aria-controls={
+                dashboardScaleMenuAnchor
+                  ? 'dashboard-scale-menu'
+                  : undefined
+              }
+              aria-haspopup="true"
+              aria-expanded={
+                dashboardScaleMenuAnchor ? 'true' : undefined
+              }
+              onClick={handleOpenDashboardScaleMenu}
+              startIcon={
+                <ZoomOutMapRoundedIcon
+                  sx={{ fontSize: '0.92rem !important' }}
+                />
+              }
+              endIcon={
+                <KeyboardArrowDownRoundedIcon
+                  sx={{ fontSize: '0.95rem !important' }}
+                />
+              }
+              sx={{
+                minWidth: 0,
+                height: 32,
+                px: 0.9,
+                color: '#e2e8f0',
+                border: '1px solid rgba(255,255,255,0.34)',
+                borderRadius: 1,
+                fontSize: '0.7rem',
+                fontWeight: 800,
+                whiteSpace: 'nowrap',
+                '& .MuiButton-startIcon': { mr: 0.45 },
+                '& .MuiButton-endIcon': { ml: 0.25 },
+                '&:hover': {
+                  borderColor: 'rgba(255,255,255,0.66)',
+                  bgcolor: 'rgba(255,255,255,0.08)',
+                },
+              }}
+            >
+              화면 {Math.round(dashboardScale * 100)}%
+            </Button>
+
+            <Menu
+              id="dashboard-scale-menu"
+              anchorEl={dashboardScaleMenuAnchor}
+              open={Boolean(dashboardScaleMenuAnchor)}
+              onClose={handleCloseDashboardScaleMenu}
+              MenuListProps={{
+                'aria-labelledby': 'dashboard-scale-button',
+                dense: true,
+              }}
+              anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+              transformOrigin={{ vertical: 'top', horizontal: 'right' }}
+              slotProps={{
+                paper: {
+                  sx: {
+                    mt: 0.5,
+                    minWidth: 132,
+                    border: '1px solid #cbd5e1',
+                    boxShadow: '0 12px 28px rgba(15,23,42,0.24)',
+                  },
+                },
+              }}
+            >
+              {DASHBOARD_SCALE_OPTIONS.map((scale) => (
+                <MenuItem
+                  key={scale}
+                  selected={dashboardScale === scale}
+                  onClick={() => handleSelectDashboardScale(scale)}
+                  sx={{ fontSize: '0.78rem', fontWeight: 700 }}
+                >
+                  {Math.round(scale * 100)}%
+                  {scale === DEFAULT_DASHBOARD_SCALE ? ' (기본)' : ''}
+                </MenuItem>
+              ))}
+            </Menu>
+
             <MessengerButton
               userId={user?.id || userProfile?.auth_user_id || ''}
               active={false}
