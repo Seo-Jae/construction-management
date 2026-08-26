@@ -1,3 +1,4 @@
+// v52.48.5.44.25 선택옵션 세대수 단일표시·비교카드 세대수·X 해제
 // v52.48.5.44.23 옵션선택 팝업·저장옵션 연동·세대셀 다분할 비교
 // v52.48.5.44.22 옵션별 비교 상단 6칸 옵션선택 UI·임시안내 제거
 // v52.48.5.44.21 선택옵션 단일필터·엑셀순서·해당세대 색상강조
@@ -23,6 +24,7 @@ import {
   Chip,
   CircularProgress,
   Collapse,
+  IconButton,
   Menu,
   MenuItem,
   Paper,
@@ -34,6 +36,7 @@ import {
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import AddCircleOutlineRoundedIcon from '@mui/icons-material/AddCircleOutlineRounded';
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
@@ -215,6 +218,16 @@ export default function OptionManagementOverview({
   }, [selectionDocument]);
 
   const selectionOptionNames = selectionDocument.optionNames;
+
+  const displayedSelectionUnitCount = useMemo(() => {
+    const selectedRows = Object.values(selectionDocument.units || {});
+    if (!selectedSelectionOption) return selectedRows.length;
+
+    return selectedRows.filter((row) =>
+      Array.isArray(row?.selectedOptions) &&
+      row.selectedOptions.includes(selectedSelectionOption),
+    ).length;
+  }, [selectedSelectionOption, selectionDocument.units]);
 
   const comparisonOptionChoices = useMemo(() => {
     const insulationChoices = [];
@@ -760,6 +773,18 @@ export default function OptionManagementOverview({
     closeComparisonOptionMenu();
   };
 
+  const clearComparisonOption = (slotIndex) => {
+    setComparisonOptionKeys((current) =>
+      current.map((optionKey, index) =>
+        index === slotIndex ? '' : optionKey,
+      ),
+    );
+
+    if (activeComparisonSlot === slotIndex) {
+      closeComparisonOptionMenu();
+    }
+  };
+
   return (
     <Box
       sx={{
@@ -915,82 +940,129 @@ export default function OptionManagementOverview({
                 comparisonOptionKeys[index],
               );
               return (
-                <ButtonBase
+                <Box
                   key={`comparison-option-slot-${index + 1}`}
-                  aria-label={
-                    selectedChoice
-                      ? `비교 옵션 ${index + 1}, ${selectedChoice.optionName}`
-                      : `비교 옵션 ${index + 1} 선택`
-                  }
-                  onClick={(event) => openComparisonOptionMenu(event, index)}
                   sx={{
                     height: 72,
-                    px: 2,
-                    border: `1px solid ${slotStyle.borderColor}`,
-                    borderRadius: '6px',
-                    bgcolor: slotStyle.backgroundColor,
-                    color: '#1e293b',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 0.65,
-                    boxShadow: selectedChoice
-                      ? `inset 0 0 0 1px ${slotStyle.borderColor}`
-                      : '0 1px 2px rgba(15, 23, 42, 0.04)',
-                    transition: 'box-shadow 120ms ease, transform 120ms ease',
-                    '&:hover': {
-                      boxShadow: `0 3px 10px ${slotStyle.borderColor}55`,
-                      transform: 'translateY(-1px)',
-                    },
-                    '&:focus-visible': {
-                      outline: `2px solid ${slotStyle.borderColor}`,
-                      outlineOffset: 2,
-                    },
+                    position: 'relative',
                   }}
                 >
-                  {selectedChoice ? (
-                    <Box sx={{ minWidth: 0, textAlign: 'center' }}>
-                      <Typography
-                        sx={{
-                          mb: 0.35,
-                          color: '#64748b',
-                          fontSize: '0.62rem',
-                          fontWeight: 750,
-                          lineHeight: 1,
-                        }}
-                      >
-                        {selectedChoice.category}
-                      </Typography>
-                      <Typography
-                        title={selectedChoice.optionName}
-                        noWrap
-                        sx={{
-                          color: '#1e293b',
-                          fontSize: '0.86rem',
-                          fontWeight: 850,
-                          lineHeight: 1.2,
-                        }}
-                      >
-                        {selectedChoice.optionName}
-                      </Typography>
-                    </Box>
-                  ) : (
-                    <>
-                      <AddCircleOutlineRoundedIcon sx={{ fontSize: 22 }} />
-                      <Typography
-                        component="span"
-                        sx={{
-                          fontSize: '0.96rem',
-                          fontWeight: 850,
-                          lineHeight: 1,
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        옵션선택
-                      </Typography>
-                    </>
+                  <ButtonBase
+                    aria-label={
+                      selectedChoice
+                        ? `비교 옵션 ${index + 1}, ${selectedChoice.optionName}, ${selectedChoice.cellKeys.size}세대`
+                        : `비교 옵션 ${index + 1} 선택`
+                    }
+                    onClick={(event) => openComparisonOptionMenu(event, index)}
+                    sx={{
+                      width: '100%',
+                      height: '100%',
+                      px: selectedChoice ? 2.7 : 2,
+                      border: `1px solid ${slotStyle.borderColor}`,
+                      borderRadius: '6px',
+                      bgcolor: slotStyle.backgroundColor,
+                      color: '#1e293b',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 0.65,
+                      boxShadow: selectedChoice
+                        ? `inset 0 0 0 1px ${slotStyle.borderColor}`
+                        : '0 1px 2px rgba(15, 23, 42, 0.04)',
+                      transition: 'box-shadow 120ms ease, transform 120ms ease',
+                      '&:hover': {
+                        boxShadow: `0 3px 10px ${slotStyle.borderColor}55`,
+                        transform: 'translateY(-1px)',
+                      },
+                      '&:focus-visible': {
+                        outline: `2px solid ${slotStyle.borderColor}`,
+                        outlineOffset: 2,
+                      },
+                    }}
+                  >
+                    {selectedChoice ? (
+                      <Box sx={{ minWidth: 0, textAlign: 'center' }}>
+                        <Typography
+                          sx={{
+                            mb: 0.25,
+                            color: '#64748b',
+                            fontSize: '0.6rem',
+                            fontWeight: 800,
+                            lineHeight: 1,
+                          }}
+                        >
+                          옵션비교
+                        </Typography>
+                        <Typography
+                          title={`${selectedChoice.category} · ${selectedChoice.optionName}`}
+                          noWrap
+                          sx={{
+                            color: '#1e293b',
+                            fontSize: '0.82rem',
+                            fontWeight: 850,
+                            lineHeight: 1.18,
+                          }}
+                        >
+                          {selectedChoice.optionName}
+                        </Typography>
+                        <Typography
+                          sx={{
+                            mt: 0.25,
+                            color: '#475569',
+                            fontSize: '0.64rem',
+                            fontWeight: 800,
+                            lineHeight: 1,
+                            fontVariantNumeric: 'tabular-nums',
+                          }}
+                        >
+                          {selectedChoice.cellKeys.size.toLocaleString()}세대
+                        </Typography>
+                      </Box>
+                    ) : (
+                      <>
+                        <AddCircleOutlineRoundedIcon sx={{ fontSize: 22 }} />
+                        <Typography
+                          component="span"
+                          sx={{
+                            fontSize: '0.96rem',
+                            fontWeight: 850,
+                            lineHeight: 1,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          옵션선택
+                        </Typography>
+                      </>
+                    )}
+                  </ButtonBase>
+
+                  {selectedChoice && (
+                    <IconButton
+                      aria-label={`${selectedChoice.optionName} 비교 취소`}
+                      title="비교 옵션 취소"
+                      size="small"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        clearComparisonOption(index);
+                      }}
+                      sx={{
+                        position: 'absolute',
+                        top: 4,
+                        right: 4,
+                        zIndex: 2,
+                        width: 21,
+                        height: 21,
+                        color: '#ffffff',
+                        bgcolor: '#0f172a',
+                        '&:hover': {
+                          bgcolor: '#dc2626',
+                        },
+                      }}
+                    >
+                      <CloseRoundedIcon sx={{ fontSize: 15 }} />
+                    </IconButton>
                   )}
-                </ButtonBase>
+                </Box>
               );
             })}
           </Box>
@@ -1093,7 +1165,7 @@ export default function OptionManagementOverview({
         </Box>
       )}
 
-      {!isComparison && (
+      {isInsulation && (
         <Stack
           direction="row"
           spacing={0.8}
@@ -1101,72 +1173,65 @@ export default function OptionManagementOverview({
           flexWrap="wrap"
           alignItems="center"
         >
-        <Chip
-          size="small"
-          variant="outlined"
-          label={`등록 동 ${buildingEntries.length.toLocaleString()}개`}
-        />
-        <Chip
-          size="small"
-          variant="outlined"
-          label={`전체 세대 ${totalUnits.toLocaleString()}개`}
-        />
-        {isInsulation && (
-          <>
-            <Chip
-              size="small"
-              color={hasPendingChanges ? 'warning' : 'primary'}
-              variant={hasPendingChanges ? 'filled' : 'outlined'}
-              label={`단열 옵션 ${Object.keys(optionData).length.toLocaleString()}세대${
-                hasPendingChanges ? ' · 저장 전' : ''
-              }`}
-            />
-            <Chip
-              size="small"
-              variant="outlined"
-              label={`옵션 종류 ${optionLegend.length.toLocaleString()}개`}
-            />
-            {sourceFileName && (
-              <Chip size="small" variant="outlined" label={`파일 ${sourceFileName}`} />
-            )}
-            {savedAt && !hasPendingChanges && (
-              <Typography sx={{ fontSize: '0.65rem', color: '#64748b' }}>
-                최근 저장 {new Date(savedAt).toLocaleString('ko-KR')}
-              </Typography>
-            )}
-          </>
-        )}
-        {isSelection && (
-          <>
-            <Chip
-              size="small"
-              color={hasPendingChanges ? 'warning' : 'success'}
-              variant={hasPendingChanges ? 'filled' : 'outlined'}
-              label={`유상옵션 ${selectionSummary.optionCount.toLocaleString()}개${
-                hasPendingChanges ? ' · 저장 전' : ''
-              }`}
-            />
-            <Chip
-              size="small"
-              variant="outlined"
-              label={`선택 세대 ${selectionSummary.selectedUnitCount.toLocaleString()}세대`}
-            />
-            <Chip
-              size="small"
-              variant="outlined"
-              label={`선택 건수 ${selectionSummary.selectionCount.toLocaleString()}건`}
-            />
-            {sourceFileName && (
-              <Chip size="small" variant="outlined" label={`파일 ${sourceFileName}`} />
-            )}
-            {savedAt && !hasPendingChanges && (
-              <Typography sx={{ fontSize: '0.65rem', color: '#64748b' }}>
-                최근 저장 {new Date(savedAt).toLocaleString('ko-KR')}
-              </Typography>
-            )}
-          </>
-        )}
-        {isSelection && (
+          <Chip
+            size="small"
+            variant="outlined"
+            label={`등록 동 ${buildingEntries.length.toLocaleString()}개`}
+          />
+          <Chip
+            size="small"
+            variant="outlined"
+            label={`전체 세대 ${totalUnits.toLocaleString()}개`}
+          />
+          <Chip
+            size="small"
+            color={hasPendingChanges ? 'warning' : 'primary'}
+            variant={hasPendingChanges ? 'filled' : 'outlined'}
+            label={`단열 옵션 ${Object.keys(optionData).length.toLocaleString()}세대${
+              hasPendingChanges ? ' · 저장 전' : ''
+            }`}
+          />
+          <Chip
+            size="small"
+            variant="outlined"
+            label={`옵션 종류 ${optionLegend.length.toLocaleString()}개`}
+          />
+          {sourceFileName && (
+            <Chip size="small" variant="outlined" label={`파일 ${sourceFileName}`} />
+          )}
+          {savedAt && !hasPendingChanges && (
+            <Typography sx={{ fontSize: '0.65rem', color: '#64748b' }}>
+              최근 저장 {new Date(savedAt).toLocaleString('ko-KR')}
+            </Typography>
+          )}
+        </Stack>
+      )}
+
+      {isSelection && (
+        <Box
+          sx={{
+            minHeight: 32,
+            position: 'relative',
+            display: 'flex',
+            alignItems: 'center',
+          }}
+        >
+          <Typography
+            sx={{
+              position: 'absolute',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              color: '#0f172a',
+              fontSize: '0.78rem',
+              fontWeight: 900,
+              lineHeight: 1,
+              whiteSpace: 'nowrap',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            세대수 : {displayedSelectionUnitCount.toLocaleString()}세대
+          </Typography>
+
           <TextField
             select
             size="small"
@@ -1197,8 +1262,7 @@ export default function OptionManagementOverview({
               </MenuItem>
             ))}
           </TextField>
-        )}
-        </Stack>
+        </Box>
       )}
 
       <Box
