@@ -239,61 +239,16 @@ const TYPE_SUMMARY_COLORS = [
 const TYPE_SUMMARY_PANEL_WIDTH = 252;
 const TYPE_SUMMARY_PANEL_MIN_WIDTH = TYPE_SUMMARY_PANEL_WIDTH;
 
-// Dashboard의 CSS zoom은 position: fixed의 left/top 좌표도 함께 축소합니다.
-// window.innerWidth/clientX/getBoundingClientRect는 화면 좌표이므로,
-// 패널의 left/top을 계산할 때 반드시 zoom 이전의 논리 좌표로 환산합니다.
-const getDashboardLayoutScale = () => {
-  if (typeof window === 'undefined') return 1;
-
-  try {
-    const root = document.documentElement;
-    const cssScale = Number.parseFloat(
-      window
-        .getComputedStyle(root)
-        .getPropertyValue(
-          '--wooklim-dashboard-scale',
-        ),
-    );
-    const inlineZoom = Number.parseFloat(
-      root.style.zoom || '1',
-    );
-    const scale = Number.isFinite(cssScale)
-      ? cssScale
-      : inlineZoom;
-
-    return Number.isFinite(scale) &&
-      scale > 0
-      ? scale
-      : 1;
-  } catch (error) {
-    return 1;
-  }
-};
-
-const getTypeSummaryLayoutViewport = () => {
-  const scale = getDashboardLayoutScale();
-
-  return {
-    scale,
-    width:
-      typeof window !== 'undefined'
-        ? window.innerWidth / scale
-        : 1440,
-    height:
-      typeof window !== 'undefined'
-        ? window.innerHeight / scale
-        : 900,
-  };
-};
-
 const getTypeSummaryPreferenceStorageKey = (projectName) =>
   `progress-input:${encodeURIComponent(
     String(projectName || 'default'),
-  )}:type-summary-panel-v5`;
+  )}:type-summary-panel-v4`;
 
 const getDefaultTypeSummaryPanelState = () => {
-  const { width: viewportWidth } =
-    getTypeSummaryLayoutViewport();
+  const viewportWidth =
+    typeof window !== 'undefined'
+      ? window.innerWidth
+      : 1440;
 
   return {
     minimized: false,
@@ -1428,44 +1383,36 @@ export default function ProgressInput({
           minimized
             ? TYPE_SUMMARY_PANEL_MIN_WIDTH
             : TYPE_SUMMARY_PANEL_WIDTH;
-        const {
-          scale,
-          width: viewportWidth,
-          height: viewportHeight,
-        } = getTypeSummaryLayoutViewport();
         const rightGap = 4;
         const maxX =
           Math.max(
             rightGap,
-            viewportWidth -
+            window.innerWidth -
               width -
               rightGap,
           );
         const maxY =
           Math.max(
             8,
-            viewportHeight -
+            window.innerHeight -
               48,
           );
         const anchorRect =
           typeSummaryPanelAnchorRef.current?.getBoundingClientRect?.();
 
         /*
-          getBoundingClientRect는 CSS zoom이 적용된 화면 좌표를 반환하고,
-          fixed의 left/top은 zoom 이전 레이아웃 좌표를 받습니다.
-          따라서 anchor 좌표를 scale로 나눈 뒤 패널 폭을 빼야
-          실제 화면에서도 펼치기/최소화 버튼의 오른쪽 끝과 정확히 맞습니다.
+          우측 목표설정 영역의 '펼치기/최소화' 버튼 오른쪽 끝과
+          타입별 세대현황 패널의 오른쪽 끝을 맞춥니다.
+          버튼을 아직 찾지 못한 최초 렌더에서는 화면 오른쪽 끝을 사용합니다.
         */
         const desiredX =
           anchorRect
-            ? anchorRect.right /
-                scale -
+            ? anchorRect.right -
               width
             : maxX;
         const desiredY =
           anchorRect
-            ? anchorRect.bottom /
-                scale +
+            ? anchorRect.bottom +
               8
             : 164;
 
@@ -1875,10 +1822,6 @@ export default function ProgressInput({
             previous.minimized
               ? TYPE_SUMMARY_PANEL_MIN_WIDTH
               : TYPE_SUMMARY_PANEL_WIDTH;
-          const {
-            width: viewportWidth,
-            height: viewportHeight,
-          } = getTypeSummaryLayoutViewport();
           const dockedPosition =
             previous?.docked !==
             false
@@ -1904,7 +1847,7 @@ export default function ProgressInput({
                     ),
                     Math.max(
                       4,
-                      viewportWidth -
+                      window.innerWidth -
                         width -
                         4,
                     ),
@@ -1918,7 +1861,7 @@ export default function ProgressInput({
                     ),
                     Math.max(
                       8,
-                      viewportHeight -
+                      window.innerHeight -
                         48,
                     ),
                   ),
@@ -2856,8 +2799,6 @@ export default function ProgressInput({
           rect.top,
         width:
           rect.width,
-        scale:
-          getDashboardLayoutScale(),
       };
 
       event.currentTarget
@@ -2881,27 +2822,17 @@ export default function ProgressInput({
         return;
       }
 
-      const scale =
-        Number(drag.scale) > 0
-          ? Number(drag.scale)
-          : getDashboardLayoutScale();
-      const panelWidth =
-        drag.width / scale;
-      const viewportWidth =
-        window.innerWidth / scale;
-      const viewportHeight =
-        window.innerHeight / scale;
       const maxX =
         Math.max(
           4,
-          viewportWidth -
-            panelWidth -
+          window.innerWidth -
+            drag.width -
             4,
         );
       const maxY =
         Math.max(
           8,
-          viewportHeight -
+          window.innerHeight -
             48,
         );
 
@@ -2911,18 +2842,16 @@ export default function ProgressInput({
           x: Math.min(
             Math.max(
               4,
-              (event.clientX -
-                drag.offsetX) /
-                scale,
+              event.clientX -
+                drag.offsetX,
             ),
             maxX,
           ),
           y: Math.min(
             Math.max(
               8,
-              (event.clientY -
-                drag.offsetY) /
-                scale,
+              event.clientY -
+                drag.offsetY,
             ),
             maxY,
           ),
