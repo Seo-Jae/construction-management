@@ -1,5 +1,0 @@
-36308937c9b5c88f2412c22bd881b7124900f46c4acdc6c8b2e671b374ce3dfc  apply-v52.17.2-attendance-app-width-ticker.cjs
-f540ff0335aa3ea19e30d82c8f44e4da518bd3dbdf6a74207a8fb2124db2c682  src/page/AttendanceWorkerPortal.jsx
-3db949c7f9e43639ef082a59da714c69a014060f30b08e82bb36113fd852d05e  검증결과.md
-425fe101ab1dbcfa25dbaf4dd6d6533d493525acd97de1f55b0ff0dd3476a969  변경내용.md
-c11a17960da66a2b6db8ba0e0fda8c27dc4f22115411f07b333664eb291672b6  적용방법.md

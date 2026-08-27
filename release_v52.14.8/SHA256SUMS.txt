@@ -1,6 +1,0 @@
-6960c2f1fbd2f6961fd385e4c21fb5cac5d1fe8329a5e205f4d26b30507eee50  release_v52.14.8/apply-v52.14.8-attendance-toast-time-editor.cjs
-11f22c0313a016e7d6efc38d0b31bca9cc9815166e18b917fcf14d0dcec1e933  release_v52.14.8/src/page/AttendanceManagement.jsx
-885ed52f89ecc154d41bc2fc93048b70b4972fa5f9af2b6422cb241a371b6131  release_v52.14.8/src/page/AttendanceWorkerPortal.jsx
-ed1af582f4e84e06260da1c0e9e635655ac206327aba7e26c917e1616cdf6b4f  release_v52.14.8/검증결과.md
-5439d16d15a03fe48ab74a7a3f7a74b759383407c29c6fdbd69edab9e1bb1149  release_v52.14.8/변경내용.md
-0f2beb3378d93054a5d8b66cf0edf1175c93626c30b64b1b5326b8589cdd7412  release_v52.14.8/적용및배포방법.txt

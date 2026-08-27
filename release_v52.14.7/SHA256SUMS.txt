@@ -1,6 +1,0 @@
-36497455f0b7cf5b6bcbf73ae9cae1a8d5cbf2f457441d914827b6a8e6d8594f  release_v52.14.7/Supabase에서_실행/00_v52.14.7_근태앱_금월출결캘린더.sql
-4a98f6f00362f383f424cc84377f57616e8daa9fb441d3d69375dfb16a9adff9  release_v52.14.7/apply-v52.14.7-attendance-calendar-ui.cjs
-37ff7fa5665857561a8c11f285781f4174916cb97b38e6aa9d3d8e55d771ddd3  release_v52.14.7/src/page/AttendanceWorkerPortal.jsx
-2064cf95d348b62e3475721086603dd7f7c5287d2360e856f22c0afc82cf9b43  release_v52.14.7/검증결과.md
-07df0b5df1792a77a4e39af467ef128088427411df28ca26e0020ef8f98a7a36  release_v52.14.7/변경내용.md
-27803f631992f58ee8ac17494a1e0c04832cc0025e54bac100ef99a6cffcdf2b  release_v52.14.7/적용및배포방법.txt
