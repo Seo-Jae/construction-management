@@ -1,4 +1,4 @@
-// v52.48.5.44.54 최고관리자 전용 가이드 설정 - 목차 제목 줄바꿈 지원
+// v52.48.5.44.49 최고관리자 전용 가이드 설정 - 화면 내 설명/연결 화살표 방식
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert, Box, Button, Chip, Collapse, Divider, IconButton, LinearProgress,
@@ -195,7 +195,7 @@ export default function Guide() {
             return <Paper key={section.id} variant="outlined" sx={{p:1.2,borderColor:'#cbd5e1',bgcolor:'#f8fafc'}}>
               <Stack direction="row" spacing={.5} alignItems="center" sx={{mb:1}}><Chip label={`화면 ${index+1}`} size="small" sx={{height:23,color:'#9a3412',bgcolor:'#ffedd5',fontWeight:900}}/><Chip label={`표시 ${numberedAnnotations.length}${connectorCount?` · 연결 ${connectorCount}`:''}`} size="small" sx={{height:23,color:'#334155',bgcolor:'#e2e8f0',fontWeight:900}}/><Box sx={{flex:1}}/><Tooltip title="위로"><span><IconButton size="small" disabled={index===0} onClick={()=>moveSection(index,-1)}><ArrowUpwardRoundedIcon fontSize="small"/></IconButton></span></Tooltip><Tooltip title="아래로"><span><IconButton size="small" disabled={index===normalizeGuideSections(editor.draft_content).length-1} onClick={()=>moveSection(index,1)}><ArrowDownwardRoundedIcon fontSize="small"/></IconButton></span></Tooltip><Tooltip title="화면 삭제"><IconButton size="small" color="error" onClick={()=>deleteSection(section.id)}><DeleteOutlineRoundedIcon fontSize="small"/></IconButton></Tooltip></Stack>
               <Stack spacing={1}>
-                <TextField size="small" label="화면/순서 제목" fullWidth multiline minRows={1} maxRows={3} value={section.title} onChange={(e)=>updateSection(section.id,'title',e.target.value)} onKeyDown={(e)=>{if(e.key==='Enter'&&!e.shiftKey)e.preventDefault();}} helperText="줄바꿈: Shift + Enter" placeholder="예: 출력일보 작성(근로자 추가/수정)"/>
+                <TextField size="small" label="화면/순서 제목" fullWidth value={section.title} onChange={(e)=>updateSection(section.id,'title',e.target.value)} placeholder="예: 신규작성 → 항목 선택"/>
                 <TextField size="small" label="이 화면의 간단 안내(선택)" fullWidth multiline minRows={2} value={section.content} onChange={(e)=>updateSection(section.id,'content',e.target.value)} />
                 {imagePreviewUrls[section.id]
                   ? <Paper variant="outlined" sx={{p:.6,borderColor:'#cbd5e1',bgcolor:'#fff'}}><GuideAnnotatedImage src={imagePreviewUrls[section.id]} alt={section.title||'가이드 화면'} annotations={annotations} maxHeight={600}/></Paper>
