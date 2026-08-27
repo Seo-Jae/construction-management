@@ -202,21 +202,6 @@ export const getGuideConnectorPoints = (item, itemMap, sourceGap = 1.8, targetGa
   };
 };
 
-
-export const isGuideAnnotationNumberVisible = (item) => {
-  const type = String(item?.type || 'number');
-  if (type === 'number') return true;
-  if (['connector', 'pointConnector', 'note'].includes(type)) return false;
-  if (!['circle', 'box', 'arrow'].includes(type)) return false;
-  const hideNumber = item?.hideNumber;
-  const showNumber = item?.showNumber;
-  if (hideNumber === true || hideNumber === 'true' || hideNumber === 1 || hideNumber === '1') return false;
-  if (showNumber === false || showNumber === 'false' || showNumber === 0 || showNumber === '0') return false;
-  // v65: 번호 숨김 상태를 JSON 왕복 과정에서도 잃지 않도록 0을 보조 신호로 사용합니다.
-  if (Number(item?.number) === 0) return false;
-  return true;
-};
-
 export const normalizeGuideAnnotations = (value) => {
   if (!Array.isArray(value)) return [];
   const normalized = value.slice(0, 120).map((item, index) => {
@@ -232,13 +217,12 @@ export const normalizeGuideAnnotations = (value) => {
     const badgeAnchor = normalizeGuideBadgeAnchor(item?.badgeAnchor, type, item, naturalBadgeX, naturalBadgeY);
     const badgeX = clamp(item?.badgeX, naturalBadgeX);
     const badgeY = clamp(item?.badgeY, naturalBadgeY);
-    const numberVisible = isGuideAnnotationNumberVisible({ ...item, type });
     return {
       id: String(item?.id || '').trim() || `guide-mark-${index + 1}`,
       type,
-      number: numberVisible
-        ? Math.max(1, Math.min(999, Number(item?.number) || index + 1))
-        : 0,
+      number: ['connector', 'pointConnector', 'note'].includes(type)
+        ? 0
+        : Math.max(1, Math.min(999, Number(item?.number) || index + 1)),
       title: String(item?.title || '').trim(),
       description: String(item?.description || '').trim(),
       color: color(item?.color),
@@ -255,8 +239,7 @@ export const normalizeGuideAnnotations = (value) => {
       labelY: clamp(item?.labelY, Math.min(96, badgeY + 5)),
       labelWidth: labelWidth(item?.labelWidth, 24),
       showLabel: item?.showLabel !== false,
-      showNumber: numberVisible,
-      hideNumber: !numberVisible,
+      showNumber: ['connector', 'pointConnector', 'note'].includes(type) ? false : (type === 'number' ? true : item?.showNumber !== false),
       strokeWidth: stroke(item?.strokeWidth, type === 'arrow' || type === 'connector' || type === 'pointConnector' ? 3 : 2.5),
       fromId: String(item?.fromId || '').trim(),
       toId: String(item?.toId || '').trim(),

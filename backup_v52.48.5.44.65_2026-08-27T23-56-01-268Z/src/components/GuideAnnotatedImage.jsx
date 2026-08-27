@@ -1,10 +1,9 @@
-// v52.48.5.44.65 가이드 화면 이미지 - 번호 없는 설명박스 지원
+// v52.48.5.44.63 가이드 화면 이미지 - 번호 없는 설명박스 지원
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Box } from '@mui/material';
 import {
   getGuideBadgePosition,
   getGuideConnectorPoints,
-  isGuideAnnotationNumberVisible,
   normalizeGuideAnnotations,
 } from '../config/guideCatalog.js';
 
@@ -104,7 +103,7 @@ export default function GuideAnnotatedImage({ src, alt = '가이드 화면', ann
                 return null;
               })}
             </Box>
-            {items.filter((item) => isGuideAnnotationNumberVisible(item)).map((item) => {
+            {items.filter((item) => item.type !== 'connector' && item.type !== 'pointConnector' && item.type !== 'note' && (item.type === 'number' || item.showNumber !== false)).map((item) => {
               const badge = getGuideBadgePosition(item);
               return <Box key={`badge-${item.id}`} sx={{ position:'absolute', left:`${badge.x}%`, top:`${badge.y}%`, transform:`translate(-50%,-50%) scale(${s})`, transformOrigin:'center', width:28, height:28, borderRadius:'50%', display:'grid', placeItems:'center', bgcolor:item.color, color:'#fff', border:'2px solid #fff', boxShadow:'0 2px 7px rgba(0,0,0,.45)', fontFamily:'Arial, "Malgun Gothic", sans-serif', fontSize:11, fontWeight:950, lineHeight:1, pointerEvents:'none', zIndex:4 }}>{item.number}</Box>;
             })}

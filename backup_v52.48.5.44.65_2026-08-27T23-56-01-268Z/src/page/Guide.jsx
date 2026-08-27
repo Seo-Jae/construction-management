@@ -1,4 +1,4 @@
-// v52.48.5.44.65 최고관리자 전용 가이드 설정 - 목차 제목 줄바꿈 지원
+// v52.48.5.44.54 최고관리자 전용 가이드 설정 - 목차 제목 줄바꿈 지원
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert, Box, Button, Chip, Collapse, Divider, IconButton, LinearProgress,
@@ -21,7 +21,7 @@ import GuideAnnotatedImage from '../components/GuideAnnotatedImage.jsx';
 import SystemPageTitle from '../components/SystemPageTitle.jsx';
 import {
   GUIDE_GROUPS, GUIDE_IMAGE_BUCKET, GUIDE_ITEMS, createGuideSection,
-  isGuideAnnotationNumberVisible, normalizeGuideAnnotations, normalizeGuideSections,
+  normalizeGuideAnnotations, normalizeGuideSections,
 } from '../config/guideCatalog.js';
 import { openGuideAnnotationEditorWindow } from '../utils/guideAnnotationEditor.js';
 import { openSystemGuidePopup, renderSystemGuidePopup } from '../utils/systemGuidePopup.js';
@@ -190,7 +190,7 @@ export default function Guide() {
           {!normalizeGuideSections(editor.draft_content).length&&<Alert severity="info">‘가이드 화면 추가’를 눌러 실제 화면 기반 가이드를 작성하세요.</Alert>}
           {normalizeGuideSections(editor.draft_content).map((section,index)=>{
             const annotations=normalizeGuideAnnotations(section.annotations);
-            const numberedAnnotations=annotations.filter((item)=>isGuideAnnotationNumberVisible(item));
+            const numberedAnnotations=annotations.filter((item)=>item.type!=='connector'&&item.type!=='pointConnector'&&item.type!=='note'&&(item.type==='number'||item.showNumber!==false));
             const noteCount=annotations.filter((item)=>item.type==='note').length;
             const connectorCount=annotations.filter((item)=>item.type==='connector'||item.type==='pointConnector').length;
             return <Paper key={section.id} variant="outlined" sx={{p:1.2,borderColor:'#cbd5e1',bgcolor:'#f8fafc'}}>
