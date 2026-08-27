@@ -1,4 +1,4 @@
-// v52.48.5.44.63 시스템 가이드 공통 메뉴 카탈로그 + 번호 없는 설명박스 모델
+// v52.48.5.44.49 시스템 가이드 공통 메뉴 카탈로그 + 이미지 주석/연결 화살표 모델
 export const GUIDE_IMAGE_BUCKET = 'system-guide-images';
 
 export const GUIDE_GROUPS = [
@@ -204,7 +204,7 @@ export const getGuideConnectorPoints = (item, itemMap, sourceGap = 1.8, targetGa
 export const normalizeGuideAnnotations = (value) => {
   if (!Array.isArray(value)) return [];
   const normalized = value.slice(0, 120).map((item, index) => {
-    const type = ['number', 'circle', 'box', 'arrow', 'connector', 'pointConnector', 'note'].includes(String(item?.type || ''))
+    const type = ['number', 'circle', 'box', 'arrow', 'connector', 'pointConnector'].includes(String(item?.type || ''))
       ? String(item.type)
       : 'number';
     const x = clamp(item?.x, 50);
@@ -219,9 +219,7 @@ export const normalizeGuideAnnotations = (value) => {
     return {
       id: String(item?.id || '').trim() || `guide-mark-${index + 1}`,
       type,
-      number: ['connector', 'pointConnector', 'note'].includes(type)
-        ? 0
-        : Math.max(1, Math.min(999, Number(item?.number) || index + 1)),
+      number: Math.max(1, Math.min(999, Number(item?.number) || index + 1)),
       title: String(item?.title || '').trim(),
       description: String(item?.description || '').trim(),
       color: color(item?.color),

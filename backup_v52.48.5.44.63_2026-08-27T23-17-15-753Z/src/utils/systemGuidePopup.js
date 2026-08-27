@@ -1,4 +1,4 @@
-// v52.48.5.44.63 시스템 가이드 별도 팝업 - 번호 없는 설명박스 지원
+// v52.48.5.44.60 시스템 가이드 별도 팝업 - 이미지 실표시 영역과 주석 레이어 완전 일치
 import { getGuideBadgePosition, getGuideConnectorPoints, normalizeGuideAnnotations, normalizeGuideSections } from '../config/guideCatalog.js';
 
 const escapeHtml = (value) => String(value ?? '')
@@ -34,7 +34,7 @@ const annotationGraphicHtml = (annotations, uid) => {
     if (item.type === 'pointConnector') return `<line x1="${item.x}" y1="${item.y}" x2="${item.x2}" y2="${item.y2}" stroke="${escapeHtml(item.color)}" stroke-width="${sw}" vector-effect="non-scaling-stroke" marker-end="url(#arrow-${uid})"/>`; 
     return '';
   }).join('');
-  const badges = items.filter((item)=>item.type!=='connector' && item.type!=='pointConnector' && item.type!=='note').map((item) => {
+  const badges = items.filter((item)=>item.type!=='connector' && item.type!=='pointConnector').map((item) => {
     const p=getGuideBadgePosition(item);
     return `<span class="ann-badge" style="left:${p.x}%;top:${p.y}%;background:${escapeHtml(item.color)}">${escapeHtml(item.number)}</span>`;
   }).join('');
