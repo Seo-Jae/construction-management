@@ -1,4 +1,4 @@
-// v52.48.5.44.52 시스템 가이드 별도 팝업 - 화면 폭 최적화
+// v52.48.5.44.51 시스템 가이드 별도 팝업 - 고정형 무주석 한눈에 보기
 import { getGuideBadgePosition, getGuideConnectorPoints, normalizeGuideAnnotations, normalizeGuideSections } from '../config/guideCatalog.js';
 
 const escapeHtml = (value) => String(value ?? '')
@@ -9,10 +9,8 @@ const textToHtml = (value) => escapeHtml(value).replace(/\r?\n/g, '<br />');
 const popupGeometry = () => {
   const aw = window.screen?.availWidth || window.innerWidth || 1440;
   const ah = window.screen?.availHeight || window.innerHeight || 900;
-  // 가이드 본문/이미지를 억지로 키우지 않고 팝업 창 폭 자체를 줄여
-  // 좌우 여백을 최소화한다. 고해상도 모니터에서도 과도하게 넓어지지 않는다.
-  const width = Math.max(1160, Math.min(1360, Math.floor(aw * 0.76)));
-  const height = Math.max(760, Math.min(1080, Math.floor(ah * 0.92)));
+  const width = Math.max(1100, Math.min(1720, Math.floor(aw * 0.93)));
+  const height = Math.max(760, Math.min(1140, Math.floor(ah * 0.94)));
   return { width, height, left: Math.max(0, Math.floor((aw-width)/2)), top: Math.max(0, Math.floor((ah-height)/2)) };
 };
 const openPopup = (name) => { const g=popupGeometry(); return window.open('',name,['popup=yes',`width=${g.width}`,`height=${g.height}`,`left=${g.left}`,`top=${g.top}`,'resizable=yes','scrollbars=yes'].join(',')); };
