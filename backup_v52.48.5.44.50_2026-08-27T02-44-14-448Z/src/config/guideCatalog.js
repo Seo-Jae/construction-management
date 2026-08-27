@@ -94,7 +94,6 @@ export const createGuideAnnotation = (overrides = {}) => ({
   y2: 50,
   badgeX: 50,
   badgeY: 50,
-  badgeAnchor: 'free',
   labelX: 56,
   labelY: 54,
   labelWidth: 24,
@@ -110,94 +109,16 @@ const finite = (value, fallback) => Number.isFinite(Number(value)) ? Number(valu
 const stroke = (value, fallback = 2.5) => Math.max(1, Math.min(10, finite(value, fallback)));
 const labelWidth = (value, fallback = 24) => Math.max(12, Math.min(55, finite(value, fallback)));
 
-export const GUIDE_BADGE_ANCHORS = [
-  'top-left', 'top-center', 'top-right',
-  'right-center', 'bottom-right', 'bottom-center',
-  'bottom-left', 'left-center', 'free',
-];
-
-const defaultGuideBadgeAnchor = (type) => (
-  type === 'box' || type === 'circle' ? 'top-right' : 'free'
-);
-
-const normalizeGuideBadgeAnchor = (value, type, item, naturalX, naturalY) => {
-  const raw = String(value || '').trim();
-  if (GUIDE_BADGE_ANCHORS.includes(raw)) return raw;
-
-  // .49 이전 데이터에서 번호 원을 직접 옮긴 경우는 위치를 보존한다.
-  const rawX = Number(item?.badgeX);
-  const rawY = Number(item?.badgeY);
-  const hasLegacyFreePosition = Number.isFinite(rawX) && Number.isFinite(rawY)
-    && (Math.abs(rawX - naturalX) > 0.35 || Math.abs(rawY - naturalY) > 0.35);
-  if (hasLegacyFreePosition) return 'free';
-  return defaultGuideBadgeAnchor(type);
-};
-
-const anchoredBadgePosition = (item, anchor) => {
-  const x = clamp(item?.x, 50);
-  const y = clamp(item?.y, 50);
-  const width = size(item?.width, 14);
-  const height = size(item?.height, 10);
-  const left = x;
-  const centerX = x + width / 2;
-  const right = x + width;
-  const top = y;
-  const centerY = y + height / 2;
-  const bottom = y + height;
-  const positions = {
-    'top-left': { x:left, y:top },
-    'top-center': { x:centerX, y:top },
-    'top-right': { x:right, y:top },
-    'right-center': { x:right, y:centerY },
-    'bottom-right': { x:right, y:bottom },
-    'bottom-center': { x:centerX, y:bottom },
-    'bottom-left': { x:left, y:bottom },
-    'left-center': { x:left, y:centerY },
-  };
-  const pos = positions[anchor];
-  return pos ? { x:clamp(pos.x, 50), y:clamp(pos.y, 50) } : null;
-};
-
 export const getGuideBadgePosition = (item) => {
-  const type = String(item?.type || 'number');
-  const fallbackX = type === 'number' ? clamp(item?.x, 50)
-    : type === 'arrow' ? clamp(item?.x, 50)
+  const fallbackX = item?.type === 'number' ? clamp(item?.x, 50)
+    : item?.type === 'arrow' ? clamp(item?.x, 50)
       : Math.min(98, clamp(item?.x, 50) + size(item?.width, 14));
-  const fallbackY = type === 'number' ? clamp(item?.y, 50)
-    : type === 'arrow' ? clamp(item?.y, 50)
+  const fallbackY = item?.type === 'number' ? clamp(item?.y, 50)
+    : item?.type === 'arrow' ? clamp(item?.y, 50)
       : Math.max(2, clamp(item?.y, 50));
-  const anchor = String(item?.badgeAnchor || defaultGuideBadgeAnchor(type));
-  if (anchor !== 'free' && (type === 'box' || type === 'circle')) {
-    const anchored = anchoredBadgePosition(item, anchor);
-    if (anchored) return anchored;
-  }
   return {
     x: clamp(item?.badgeX, fallbackX),
     y: clamp(item?.badgeY, fallbackY),
-  };
-};
-
-export const getGuideConnectorPoints = (item, itemMap, sourceGap = 1.8, targetGap = 3.4) => {
-  const lookup = (id) => itemMap?.get ? itemMap.get(id) : undefined;
-  const from = lookup(item?.fromId);
-  const to = lookup(item?.toId);
-  const a = from ? getGuideBadgePosition(from) : { x:clamp(item?.x, 50), y:clamp(item?.y, 50) };
-  const b = to ? getGuideBadgePosition(to) : { x:clamp(item?.x2, 50), y:clamp(item?.y2, 50) };
-  const dx = b.x - a.x;
-  const dy = b.y - a.y;
-  const distance = Math.hypot(dx, dy);
-  if (!Number.isFinite(distance) || distance < 0.5) return { x1:a.x, y1:a.y, x2:b.x, y2:b.y };
-  const startGap = Math.min(Math.max(0, sourceGap), Math.max(0, distance * 0.22));
-  const endGap = Math.min(Math.max(0, targetGap), Math.max(0, distance * 0.34));
-  const totalGap = startGap + endGap;
-  if (distance <= totalGap + 0.5) return { x1:a.x, y1:a.y, x2:b.x, y2:b.y };
-  const ux = dx / distance;
-  const uy = dy / distance;
-  return {
-    x1: clamp(a.x + ux * startGap, a.x),
-    y1: clamp(a.y + uy * startGap, a.y),
-    x2: clamp(b.x - ux * endGap, b.x),
-    y2: clamp(b.y - uy * endGap, b.y),
   };
 };
 
@@ -213,7 +134,6 @@ export const normalizeGuideAnnotations = (value) => {
     const height = size(item?.height, 10);
     const naturalBadgeX = type === 'number' ? x : type === 'arrow' ? x : Math.min(98, x + width);
     const naturalBadgeY = type === 'number' ? y : type === 'arrow' ? y : Math.max(2, y);
-    const badgeAnchor = normalizeGuideBadgeAnchor(item?.badgeAnchor, type, item, naturalBadgeX, naturalBadgeY);
     const badgeX = clamp(item?.badgeX, naturalBadgeX);
     const badgeY = clamp(item?.badgeY, naturalBadgeY);
     return {
@@ -231,7 +151,6 @@ export const normalizeGuideAnnotations = (value) => {
       y2: clamp(item?.y2, 50),
       badgeX,
       badgeY,
-      badgeAnchor,
       labelX: clamp(item?.labelX, Math.min(96, badgeX + 6)),
       labelY: clamp(item?.labelY, Math.min(96, badgeY + 5)),
       labelWidth: labelWidth(item?.labelWidth, 24),

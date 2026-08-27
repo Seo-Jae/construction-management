@@ -1,17 +1,21 @@
-// v52.48.5.44.50 가이드 화면 이미지 + 고정형 번호/자동폭 설명박스/여백 연결 화살표
+// v52.48.5.44.49 가이드 화면 이미지 + 표시/설명박스/번호 연결 화살표
 import React, { useId, useMemo } from 'react';
 import { Box, Typography } from '@mui/material';
-import {
-  getGuideBadgePosition,
-  getGuideConnectorPoints,
-  normalizeGuideAnnotations,
-} from '../config/guideCatalog.js';
+import { getGuideBadgePosition, normalizeGuideAnnotations } from '../config/guideCatalog.js';
 
 export default function GuideAnnotatedImage({ src, alt = '가이드 화면', annotations = [], maxHeight = 620 }) {
   const markerId = `guide-arrow-${useId().replace(/:/g, '')}`;
   const items = normalizeGuideAnnotations(annotations);
   const itemMap = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
   if (!src) return null;
+
+  const connectorPoints = (item) => {
+    const from = itemMap.get(item.fromId);
+    const to = itemMap.get(item.toId);
+    const a = from ? getGuideBadgePosition(from) : { x:item.x, y:item.y };
+    const b = to ? getGuideBadgePosition(to) : { x:item.x2, y:item.y2 };
+    return { x1:a.x, y1:a.y, x2:b.x, y2:b.y };
+  };
 
   return (
     <Box sx={{ display:'flex', justifyContent:'center', width:'100%', overflow:'auto', bgcolor:'#fff' }}>
@@ -25,7 +29,7 @@ export default function GuideAnnotatedImage({ src, alt = '가이드 화면', ann
             if (item.type === 'box') return <rect key={item.id} x={item.x} y={item.y} width={item.width} height={item.height} rx="1" fill="none" stroke={item.color} strokeWidth={sw} strokeDasharray="5 3" vectorEffect="non-scaling-stroke" />;
             if (item.type === 'arrow') return <line key={item.id} x1={item.x} y1={item.y} x2={item.x2} y2={item.y2} stroke={item.color} strokeWidth={sw} vectorEffect="non-scaling-stroke" markerEnd={`url(#${markerId})`} />;
             if (item.type === 'connector') {
-              const p = getGuideConnectorPoints(item, itemMap);
+              const p = connectorPoints(item);
               return <line key={item.id} x1={p.x1} y1={p.y1} x2={p.x2} y2={p.y2} stroke={item.color} strokeWidth={sw} vectorEffect="non-scaling-stroke" markerEnd={`url(#${markerId})`} />;
             }
             return null;
@@ -36,9 +40,9 @@ export default function GuideAnnotatedImage({ src, alt = '가이드 화면', ann
           return <Box key={`badge-${item.id}`} sx={{ position:'absolute', left:`${badge.x}%`, top:`${badge.y}%`, transform:'translate(-50%,-50%)', width:26, height:26, borderRadius:'50%', display:'grid', placeItems:'center', bgcolor:item.color, color:'#fff', border:'2px solid #fff', boxShadow:'0 2px 6px rgba(0,0,0,.38)', fontSize:11, fontWeight:900, lineHeight:1, pointerEvents:'none', zIndex:3 }}>{item.number}</Box>;
         })}
         {items.filter((item) => item.type !== 'connector' && item.showLabel && (item.title || item.description)).map((item) => (
-          <Box key={`label-${item.id}`} sx={{ position:'absolute', left:`${item.labelX}%`, top:`${item.labelY}%`, width:'max-content', maxWidth:360, minWidth:0, transform:'translateY(-8px)', px:.75, py:.55, bgcolor:'rgba(255,255,255,.96)', border:`2px solid ${item.color}`, borderRadius:1, boxShadow:'0 4px 12px rgba(15,23,42,.18)', lineHeight:1.35, pointerEvents:'none', zIndex:2, overflowWrap:'anywhere' }}>
-            {item.title && <Typography sx={{ color:item.color, fontSize:'.68rem', fontWeight:950, lineHeight:1.35 }}>{item.title}</Typography>}
-            {item.description && <Typography sx={{ mt:item.title ? .3 : 0, color:'#334155', fontSize:'.61rem', fontWeight:700, lineHeight:1.45, whiteSpace:'pre-wrap' }}>{item.description}</Typography>}
+          <Box key={`label-${item.id}`} sx={{ position:'absolute', left:`${item.labelX}%`, top:`${item.labelY}%`, width:`${item.labelWidth}%`, minWidth:120, maxWidth:360, transform:'translateY(-8px)', p:.8, bgcolor:'rgba(255,255,255,.96)', border:`2px solid ${item.color}`, borderRadius:1, boxShadow:'0 4px 12px rgba(15,23,42,.18)', lineHeight:1.35, pointerEvents:'none', zIndex:2 }}>
+            {item.title && <Typography sx={{ color:item.color, fontSize:'.68rem', fontWeight:950, lineHeight:1.35 }}>{item.number}. {item.title}</Typography>}
+            {item.description && <Typography sx={{ mt:item.title ? .35 : 0, color:'#334155', fontSize:'.61rem', fontWeight:700, lineHeight:1.45, whiteSpace:'pre-wrap' }}>{item.description}</Typography>}
           </Box>
         ))}
       </Box>
