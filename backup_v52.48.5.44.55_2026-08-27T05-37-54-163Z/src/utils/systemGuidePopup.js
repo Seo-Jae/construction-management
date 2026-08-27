@@ -1,4 +1,4 @@
-// v52.48.5.44.55 시스템 가이드 별도 팝업 - 클릭형 지점 연결 화살표 지원
+// v52.48.5.44.54 시스템 가이드 별도 팝업 - 목차/가독성/현재위치 개선
 import { getGuideBadgePosition, getGuideConnectorPoints, normalizeGuideAnnotations, normalizeGuideSections } from '../config/guideCatalog.js';
 
 const escapeHtml = (value) => String(value ?? '')
@@ -31,14 +31,13 @@ const annotationGraphicHtml = (annotations, uid) => {
     if (item.type === 'box') return `<rect x="${item.x}" y="${item.y}" width="${item.width}" height="${item.height}" rx="1" fill="none" stroke="${escapeHtml(item.color)}" stroke-width="${sw}" stroke-dasharray="5 3" vector-effect="non-scaling-stroke"/>`;
     if (item.type === 'arrow') return `<line x1="${item.x}" y1="${item.y}" x2="${item.x2}" y2="${item.y2}" stroke="${escapeHtml(item.color)}" stroke-width="${sw}" vector-effect="non-scaling-stroke" marker-end="url(#arrow-${uid})"/>`;
     if (item.type === 'connector') { const p=points(item); return `<line x1="${p.x1}" y1="${p.y1}" x2="${p.x2}" y2="${p.y2}" stroke="${escapeHtml(item.color)}" stroke-width="${sw}" vector-effect="non-scaling-stroke" marker-end="url(#arrow-${uid})"/>`; }
-    if (item.type === 'pointConnector') return `<line x1="${item.x}" y1="${item.y}" x2="${item.x2}" y2="${item.y2}" stroke="${escapeHtml(item.color)}" stroke-width="${sw}" vector-effect="non-scaling-stroke" marker-end="url(#arrow-${uid})"/>`; 
     return '';
   }).join('');
-  const badges = items.filter((item)=>item.type!=='connector' && item.type!=='pointConnector').map((item) => {
+  const badges = items.filter((item)=>item.type!=='connector').map((item) => {
     const p=getGuideBadgePosition(item);
     return `<span class="ann-badge" style="left:${p.x}%;top:${p.y}%;background:${escapeHtml(item.color)}">${escapeHtml(item.number)}</span>`;
   }).join('');
-  const callouts = items.filter((item)=>item.type!=='connector' && item.type!=='pointConnector' && item.showLabel && (item.title||item.description)).map((item)=>`<div class="ann-callout" style="left:${item.labelX}%;top:${item.labelY}%;border:2px solid ${escapeHtml(item.color)}">${item.title?`<div class="ann-callout-title" style="color:${escapeHtml(item.color)}">${escapeHtml(item.title)}</div>`:''}${item.description?`<div class="ann-callout-desc">${textToHtml(item.description)}</div>`:''}</div>`).join('');
+  const callouts = items.filter((item)=>item.type!=='connector' && item.showLabel && (item.title||item.description)).map((item)=>`<div class="ann-callout" style="left:${item.labelX}%;top:${item.labelY}%;border:2px solid ${escapeHtml(item.color)}">${item.title?`<div class="ann-callout-title" style="color:${escapeHtml(item.color)}">${escapeHtml(item.title)}</div>`:''}${item.description?`<div class="ann-callout-desc">${textToHtml(item.description)}</div>`:''}</div>`).join('');
   return `<svg class="ann-svg" viewBox="0 0 100 100" preserveAspectRatio="none"><defs><marker id="arrow-${uid}" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10z" fill="context-stroke"/></marker></defs>${svg}</svg>${badges}${callouts}`;
 };
 

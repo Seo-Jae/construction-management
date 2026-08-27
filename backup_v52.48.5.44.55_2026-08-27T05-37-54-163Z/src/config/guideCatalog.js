@@ -204,7 +204,7 @@ export const getGuideConnectorPoints = (item, itemMap, sourceGap = 1.8, targetGa
 export const normalizeGuideAnnotations = (value) => {
   if (!Array.isArray(value)) return [];
   const normalized = value.slice(0, 120).map((item, index) => {
-    const type = ['number', 'circle', 'box', 'arrow', 'connector', 'pointConnector'].includes(String(item?.type || ''))
+    const type = ['number', 'circle', 'box', 'arrow', 'connector'].includes(String(item?.type || ''))
       ? String(item.type)
       : 'number';
     const x = clamp(item?.x, 50);
@@ -236,7 +236,7 @@ export const normalizeGuideAnnotations = (value) => {
       labelY: clamp(item?.labelY, Math.min(96, badgeY + 5)),
       labelWidth: labelWidth(item?.labelWidth, 24),
       showLabel: item?.showLabel !== false,
-      strokeWidth: stroke(item?.strokeWidth, type === 'arrow' || type === 'connector' || type === 'pointConnector' ? 3 : 2.5),
+      strokeWidth: stroke(item?.strokeWidth, type === 'arrow' || type === 'connector' ? 3 : 2.5),
       fromId: String(item?.fromId || '').trim(),
       toId: String(item?.toId || '').trim(),
       sortOrder: Number.isFinite(Number(item?.sortOrder)) ? Number(item.sortOrder) : index,
