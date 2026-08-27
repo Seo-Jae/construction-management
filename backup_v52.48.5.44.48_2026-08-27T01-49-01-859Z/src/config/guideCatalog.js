@@ -1,4 +1,4 @@
-// v52.48.5.44.48 시스템 가이드 공통 메뉴 카탈로그 + 이미지 주석형 가이드 모델
+// v52.48.5.44.47 시스템 가이드 공통 메뉴 카탈로그
 export const GUIDE_IMAGE_BUCKET = 'system-guide-images';
 
 export const GUIDE_GROUPS = [
@@ -66,80 +66,27 @@ export const GUIDE_ITEMS = GUIDE_GROUPS.flatMap((group) => group.items.map((item
 })));
 
 const GUIDE_ITEM_MAP = new Map(GUIDE_ITEMS.map((item) => [item.id, item]));
+
 export const getGuideMeta = (menuKey) => GUIDE_ITEM_MAP.get(String(menuKey || '')) || null;
 
-const createId = (prefix) => (
-  globalThis.crypto?.randomUUID?.() || `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`
-);
-const clamp = (value, fallback = 0) => {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(0, Math.min(100, parsed));
-};
-const size = (value, fallback = 12) => Math.max(2, Math.min(100, Number(value) || fallback));
-const color = (value) => /^#[0-9a-f]{6}$/i.test(String(value || '')) ? String(value) : '#ef4444';
-
-export const createGuideAnnotation = (overrides = {}) => ({
-  id: createId('guide-mark'),
-  type: 'number',
-  number: 1,
-  title: '',
-  description: '',
-  color: '#ef4444',
-  x: 50,
-  y: 50,
-  width: 14,
-  height: 10,
-  x2: 68,
-  y2: 50,
-  sortOrder: 0,
-  ...overrides,
-});
-
-export const normalizeGuideAnnotations = (value) => {
-  if (!Array.isArray(value)) return [];
-  return value.slice(0, 80).map((item, index) => {
-    const type = ['number', 'circle', 'box', 'arrow'].includes(String(item?.type || ''))
-      ? String(item.type)
-      : 'number';
-    return {
-      id: String(item?.id || '').trim() || `guide-mark-${index + 1}`,
-      type,
-      number: Math.max(1, Math.min(999, Number(item?.number) || index + 1)),
-      title: String(item?.title || '').trim(),
-      description: String(item?.description || '').trim(),
-      color: color(item?.color),
-      x: clamp(item?.x, 50),
-      y: clamp(item?.y, 50),
-      width: size(item?.width, 14),
-      height: size(item?.height, 10),
-      x2: clamp(item?.x2, 68),
-      y2: clamp(item?.y2, 50),
-      sortOrder: Number.isFinite(Number(item?.sortOrder)) ? Number(item.sortOrder) : index,
-    };
-  }).sort((a, b) => a.sortOrder - b.sortOrder).map((item, index) => ({ ...item, sortOrder: index }));
-};
-
 export const createGuideSection = (overrides = {}) => ({
-  id: createId('guide-screen'),
+  id: globalThis.crypto?.randomUUID?.() || `guide-step-${Date.now()}-${Math.random().toString(16).slice(2)}`,
   title: '',
   content: '',
   imagePath: '',
   imageCaption: '',
   note: '',
-  annotations: [],
   ...overrides,
 });
 
 export const normalizeGuideSections = (value) => {
   if (!Array.isArray(value)) return [];
   return value.map((section, index) => ({
-    id: String(section?.id || '').trim() || `guide-screen-${index + 1}`,
+    id: String(section?.id || '').trim() || `guide-step-${index + 1}`,
     title: String(section?.title || ''),
     content: String(section?.content || ''),
     imagePath: String(section?.imagePath || section?.image_path || ''),
     imageCaption: String(section?.imageCaption || section?.image_caption || ''),
     note: String(section?.note || ''),
-    annotations: normalizeGuideAnnotations(section?.annotations),
   }));
 };
