@@ -1,4 +1,4 @@
-// v52.48.5.44.49 시스템 가이드 공통 메뉴 카탈로그 + 이미지 주석/연결 화살표 모델
+// v52.48.5.44.48 시스템 가이드 공통 메뉴 카탈로그 + 이미지 주석형 가이드 모델
 export const GUIDE_IMAGE_BUCKET = 'system-guide-images';
 
 export const GUIDE_GROUPS = [
@@ -92,50 +92,16 @@ export const createGuideAnnotation = (overrides = {}) => ({
   height: 10,
   x2: 68,
   y2: 50,
-  badgeX: 50,
-  badgeY: 50,
-  labelX: 56,
-  labelY: 54,
-  labelWidth: 24,
-  showLabel: true,
-  strokeWidth: 2.5,
-  fromId: '',
-  toId: '',
   sortOrder: 0,
   ...overrides,
 });
 
-const finite = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
-const stroke = (value, fallback = 2.5) => Math.max(1, Math.min(10, finite(value, fallback)));
-const labelWidth = (value, fallback = 24) => Math.max(12, Math.min(55, finite(value, fallback)));
-
-export const getGuideBadgePosition = (item) => {
-  const fallbackX = item?.type === 'number' ? clamp(item?.x, 50)
-    : item?.type === 'arrow' ? clamp(item?.x, 50)
-      : Math.min(98, clamp(item?.x, 50) + size(item?.width, 14));
-  const fallbackY = item?.type === 'number' ? clamp(item?.y, 50)
-    : item?.type === 'arrow' ? clamp(item?.y, 50)
-      : Math.max(2, clamp(item?.y, 50));
-  return {
-    x: clamp(item?.badgeX, fallbackX),
-    y: clamp(item?.badgeY, fallbackY),
-  };
-};
-
 export const normalizeGuideAnnotations = (value) => {
   if (!Array.isArray(value)) return [];
-  const normalized = value.slice(0, 120).map((item, index) => {
-    const type = ['number', 'circle', 'box', 'arrow', 'connector'].includes(String(item?.type || ''))
+  return value.slice(0, 80).map((item, index) => {
+    const type = ['number', 'circle', 'box', 'arrow'].includes(String(item?.type || ''))
       ? String(item.type)
       : 'number';
-    const x = clamp(item?.x, 50);
-    const y = clamp(item?.y, 50);
-    const width = size(item?.width, 14);
-    const height = size(item?.height, 10);
-    const naturalBadgeX = type === 'number' ? x : type === 'arrow' ? x : Math.min(98, x + width);
-    const naturalBadgeY = type === 'number' ? y : type === 'arrow' ? y : Math.max(2, y);
-    const badgeX = clamp(item?.badgeX, naturalBadgeX);
-    const badgeY = clamp(item?.badgeY, naturalBadgeY);
     return {
       id: String(item?.id || '').trim() || `guide-mark-${index + 1}`,
       type,
@@ -143,25 +109,15 @@ export const normalizeGuideAnnotations = (value) => {
       title: String(item?.title || '').trim(),
       description: String(item?.description || '').trim(),
       color: color(item?.color),
-      x,
-      y,
-      width,
-      height,
+      x: clamp(item?.x, 50),
+      y: clamp(item?.y, 50),
+      width: size(item?.width, 14),
+      height: size(item?.height, 10),
       x2: clamp(item?.x2, 68),
       y2: clamp(item?.y2, 50),
-      badgeX,
-      badgeY,
-      labelX: clamp(item?.labelX, Math.min(96, badgeX + 6)),
-      labelY: clamp(item?.labelY, Math.min(96, badgeY + 5)),
-      labelWidth: labelWidth(item?.labelWidth, 24),
-      showLabel: item?.showLabel !== false,
-      strokeWidth: stroke(item?.strokeWidth, type === 'arrow' || type === 'connector' ? 3 : 2.5),
-      fromId: String(item?.fromId || '').trim(),
-      toId: String(item?.toId || '').trim(),
       sortOrder: Number.isFinite(Number(item?.sortOrder)) ? Number(item.sortOrder) : index,
     };
-  });
-  return normalized.sort((a, b) => a.sortOrder - b.sortOrder).map((item, index) => ({ ...item, sortOrder: index }));
+  }).sort((a, b) => a.sortOrder - b.sortOrder).map((item, index) => ({ ...item, sortOrder: index }));
 };
 
 export const createGuideSection = (overrides = {}) => ({

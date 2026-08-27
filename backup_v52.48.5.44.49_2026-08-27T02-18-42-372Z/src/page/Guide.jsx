@@ -1,4 +1,4 @@
-// v52.48.5.44.49 최고관리자 전용 가이드 설정 - 화면 내 설명/연결 화살표 방식
+// v52.48.5.44.48 최고관리자 전용 가이드 설정 - 실제 화면 이미지/표시 편집 방식
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert, Box, Button, Chip, Collapse, Divider, IconButton, LinearProgress,
@@ -104,7 +104,7 @@ export default function Guide() {
       updateSection(id,'imagePath',path);
       updateSection(id,'annotations',[]);
       const previewUrl=await createPreviewUrl(path); setImagePreviewUrls((prev)=>({...prev,[id]:previewUrl}));
-      setMessage({severity:'success',text:'실제 화면 이미지를 등록했습니다. 이제 ‘표시 편집’에서 번호·동그라미·박스·화살표·화면 내 설명박스를 배치해주세요.'});
+      setMessage({severity:'success',text:'실제 화면 이미지를 등록했습니다. 이제 ‘표시 편집’에서 번호·동그라미·박스·화살표와 설명을 넣어주세요.'});
     }catch(error){setMessage({severity:'error',text:error?.message||'이미지를 업로드하지 못했습니다.'});}finally{setSaving(false);}
   };
   const removeSectionImage=(id)=>{ updateSection(id,'imagePath',''); updateSection(id,'annotations',[]); setImagePreviewUrls((prev)=>({...prev,[id]:''})); };
@@ -183,17 +183,15 @@ export default function Guide() {
       <Paper variant="outlined" sx={{minWidth:0,minHeight:0,overflow:'auto',borderColor:'#dbe3ed'}}>
         <Box sx={{p:1.5}}><Stack direction={{xs:'column',md:'row'}} spacing={1} alignItems={{xs:'stretch',md:'center'}} justifyContent="space-between"><Box><Typography sx={{color:'#64748b',fontSize:'.68rem',fontWeight:800}}>{selectedItem.breadcrumb}</Typography><Stack direction="row" spacing={.7} alignItems="center"><Typography sx={{fontSize:'1.05rem',fontWeight:900}}>{selectedItem.label}</Typography>{renderStatus(selectedItem)}{changed&&<Chip label="수정사항 있음" size="small" sx={{...statusChipSx,color:'#92400e',bgcolor:'#fef3c7'}}/>}</Stack></Box><Stack direction="row" spacing={.6} flexWrap="wrap" useFlexGap><Button size="small" variant="outlined" startIcon={<VisibilityRoundedIcon/>} onClick={previewDraft}>작성 미리보기</Button><Button size="small" variant="outlined" startIcon={<SaveRoundedIcon/>} onClick={saveDraft} disabled={saving}>저장</Button>{editor.status==='published'&&<Button size="small" variant="outlined" color="warning" startIcon={<VisibilityOffRoundedIcon/>} onClick={unpublishGuide} disabled={saving}>공개 중지</Button>}<Button size="small" variant="contained" startIcon={<PublishRoundedIcon/>} onClick={publishGuide} disabled={saving}>공개</Button></Stack></Stack></Box><Divider/>
         <Box sx={{p:1.5}}><Stack spacing={1.2}>
-          <Alert severity="info" sx={{py:.25}}>가이드는 <strong>실제 시스템 화면 캡처</strong>를 기준으로 만듭니다. <strong>표시 편집</strong>에서 번호/박스와 설명박스를 이미지 안에 배치하고, 작업 순서는 <strong>번호 연결 화살표</strong>로 이어주세요. 번호 원과 설명박스는 각각 이동할 수 있고 선 두께도 조절할 수 있습니다.</Alert>
+          <Alert severity="info" sx={{py:.25}}>가이드는 <strong>실제 시스템 화면 캡처</strong>를 기준으로 만듭니다. 화면 이미지를 등록한 뒤 <strong>표시 편집</strong>에서 번호·동그라미·점선박스·화살표와 해당 설명을 연결하세요.</Alert>
           <TextField size="small" label="가이드 제목" fullWidth value={editor.draft_title||''} onChange={(e)=>setEditor((p)=>({...p,draft_title:e.target.value}))}/>
           <TextField size="small" label="가이드 전체 안내(선택)" fullWidth multiline minRows={2} value={editor.draft_summary||''} onChange={(e)=>setEditor((p)=>({...p,draft_summary:e.target.value}))}/>
           <Stack direction="row" alignItems="center" justifyContent="space-between"><Box><Typography sx={{fontSize:'.82rem',fontWeight:900}}>가이드 화면 구성</Typography><Typography sx={{color:'#64748b',fontSize:'.68rem'}}>실제 작업 순서에 맞춰 화면을 추가합니다. 공개 가이드는 상단 ‘순서 한눈에 보기’와 하단 ‘상세 이용가이드’로 자동 구성됩니다.</Typography></Box><Button size="small" variant="outlined" startIcon={<AddRoundedIcon/>} onClick={addSection}>가이드 화면 추가</Button></Stack>
           {!normalizeGuideSections(editor.draft_content).length&&<Alert severity="info">‘가이드 화면 추가’를 눌러 실제 화면 기반 가이드를 작성하세요.</Alert>}
           {normalizeGuideSections(editor.draft_content).map((section,index)=>{
             const annotations=normalizeGuideAnnotations(section.annotations);
-            const numberedAnnotations=annotations.filter((item)=>item.type!=='connector');
-            const connectorCount=annotations.length-numberedAnnotations.length;
             return <Paper key={section.id} variant="outlined" sx={{p:1.2,borderColor:'#cbd5e1',bgcolor:'#f8fafc'}}>
-              <Stack direction="row" spacing={.5} alignItems="center" sx={{mb:1}}><Chip label={`화면 ${index+1}`} size="small" sx={{height:23,color:'#9a3412',bgcolor:'#ffedd5',fontWeight:900}}/><Chip label={`표시 ${numberedAnnotations.length}${connectorCount?` · 연결 ${connectorCount}`:''}`} size="small" sx={{height:23,color:'#334155',bgcolor:'#e2e8f0',fontWeight:900}}/><Box sx={{flex:1}}/><Tooltip title="위로"><span><IconButton size="small" disabled={index===0} onClick={()=>moveSection(index,-1)}><ArrowUpwardRoundedIcon fontSize="small"/></IconButton></span></Tooltip><Tooltip title="아래로"><span><IconButton size="small" disabled={index===normalizeGuideSections(editor.draft_content).length-1} onClick={()=>moveSection(index,1)}><ArrowDownwardRoundedIcon fontSize="small"/></IconButton></span></Tooltip><Tooltip title="화면 삭제"><IconButton size="small" color="error" onClick={()=>deleteSection(section.id)}><DeleteOutlineRoundedIcon fontSize="small"/></IconButton></Tooltip></Stack>
+              <Stack direction="row" spacing={.5} alignItems="center" sx={{mb:1}}><Chip label={`화면 ${index+1}`} size="small" sx={{height:23,color:'#9a3412',bgcolor:'#ffedd5',fontWeight:900}}/><Chip label={`표시 ${annotations.length}`} size="small" sx={{height:23,color:'#334155',bgcolor:'#e2e8f0',fontWeight:900}}/><Box sx={{flex:1}}/><Tooltip title="위로"><span><IconButton size="small" disabled={index===0} onClick={()=>moveSection(index,-1)}><ArrowUpwardRoundedIcon fontSize="small"/></IconButton></span></Tooltip><Tooltip title="아래로"><span><IconButton size="small" disabled={index===normalizeGuideSections(editor.draft_content).length-1} onClick={()=>moveSection(index,1)}><ArrowDownwardRoundedIcon fontSize="small"/></IconButton></span></Tooltip><Tooltip title="화면 삭제"><IconButton size="small" color="error" onClick={()=>deleteSection(section.id)}><DeleteOutlineRoundedIcon fontSize="small"/></IconButton></Tooltip></Stack>
               <Stack spacing={1}>
                 <TextField size="small" label="화면/순서 제목" fullWidth value={section.title} onChange={(e)=>updateSection(section.id,'title',e.target.value)} placeholder="예: 신규작성 → 항목 선택"/>
                 <TextField size="small" label="이 화면의 간단 안내(선택)" fullWidth multiline minRows={2} value={section.content} onChange={(e)=>updateSection(section.id,'content',e.target.value)} />
@@ -205,8 +203,8 @@ export default function Guide() {
                   <Button size="small" variant="contained" startIcon={<EditRoundedIcon/>} disabled={!section.imagePath} onClick={()=>editAnnotations(section)}>표시 편집</Button>
                   {section.imagePath&&<Button size="small" color="error" onClick={()=>removeSectionImage(section.id)}>초안에서 이미지 제거</Button>}
                 </Stack>
-                {!!numberedAnnotations.length&&<Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',md:'repeat(2,minmax(0,1fr))'},gap:.6}}>{numberedAnnotations.map((item)=><Box key={item.id} sx={{display:'grid',gridTemplateColumns:'26px minmax(0,1fr)',gap:.7,p:.7,border:'1px solid #e2e8f0',borderRadius:1,bgcolor:'#fff'}}><Box sx={{width:24,height:24,borderRadius:'50%',display:'grid',placeItems:'center',bgcolor:item.color,color:'#fff',fontSize:'.65rem',fontWeight:900}}>{item.number}</Box><Box><Typography sx={{fontSize:'.7rem',fontWeight:900}}>{item.title||'안내 제목 미입력'}</Typography>{item.description&&<Typography sx={{mt:.2,color:'#64748b',fontSize:'.64rem',whiteSpace:'pre-wrap'}}>{item.description}</Typography>}</Box></Box>)}</Box>}
-                <TextField size="small" label="하단 대표 안내 문구(선택)" helperText="1·2·3 세부 설명이 아니라 이 화면 전체를 대표하는 짧은 문구만 입력합니다." fullWidth value={section.imageCaption} onChange={(e)=>updateSection(section.id,'imageCaption',e.target.value)}/>
+                {!!annotations.length&&<Box sx={{display:'grid',gridTemplateColumns:{xs:'1fr',md:'repeat(2,minmax(0,1fr))'},gap:.6}}>{annotations.map((item)=><Box key={item.id} sx={{display:'grid',gridTemplateColumns:'26px minmax(0,1fr)',gap:.7,p:.7,border:'1px solid #e2e8f0',borderRadius:1,bgcolor:'#fff'}}><Box sx={{width:24,height:24,borderRadius:'50%',display:'grid',placeItems:'center',bgcolor:item.color,color:'#fff',fontSize:'.65rem',fontWeight:900}}>{item.number}</Box><Box><Typography sx={{fontSize:'.7rem',fontWeight:900}}>{item.title||'안내 제목 미입력'}</Typography>{item.description&&<Typography sx={{mt:.2,color:'#64748b',fontSize:'.64rem',whiteSpace:'pre-wrap'}}>{item.description}</Typography>}</Box></Box>)}</Box>}
+                <TextField size="small" label="이미지 하단 설명(선택)" fullWidth value={section.imageCaption} onChange={(e)=>updateSection(section.id,'imageCaption',e.target.value)}/>
                 <TextField size="small" label="주의 / 참고사항(선택)" fullWidth multiline minRows={2} value={section.note} onChange={(e)=>updateSection(section.id,'note',e.target.value)}/>
               </Stack>
             </Paper>;
