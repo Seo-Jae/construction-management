@@ -1,4 +1,4 @@
-// v52.48.5.44.59 시스템 가이드 이미지 표시 편집기 - 1000px 공통 기준 WYSIWYG
+// v52.48.5.44.58 시스템 가이드 이미지 표시 편집기 - 실제 가이드 출력 기준 WYSIWYG
 import { normalizeGuideAnnotations } from '../config/guideCatalog.js';
 
 const escapeHtml = (value) => String(value ?? '')
@@ -36,8 +36,8 @@ var items=${serialize(normalizeGuideAnnotations(annotations))};
 var sessionId=${serialize(sessionId)};
 var mode='select',selectedId='',dragging=null,drawing=null,connectorFromId='',pointConnectorFrom=null,dirty=false;
 var zoom=1,baseScale=1,pan={x:0,y:0},panState=null,spaceDown=false,stageWidth=1200,stageHeight=700,imageReady=false;
-function guideReferenceImageWidth(){return 1000}
-function syncGuideDisplayScale(){stage.style.setProperty('--guide-display-scale',String(Math.max(.25,Math.min(3,stageWidth/guideReferenceImageWidth()))))}
+function guideReferenceImageWidth(){var aw=(window.screen&&window.screen.availWidth)||window.innerWidth||1440;var popupWidth=Math.max(1160,Math.min(1360,Math.floor(aw*.76)));return Math.max(320,popupWidth-312)}
+function syncGuideDisplayScale(){stage.style.setProperty('--guide-display-scale',String(Math.max(.35,Math.min(3,stageWidth/guideReferenceImageWidth()))))}
 var stage=document.getElementById('stage'),viewport=document.getElementById('viewport'),guideImg=document.getElementById('guideImg'),shapeLayer=document.getElementById('shapeLayer'),badgeLayer=document.getElementById('badgeLayer'),calloutLayer=document.getElementById('calloutLayer'),handleLayer=document.getElementById('handleLayer'),list=document.getElementById('list'),fields=document.getElementById('fields'),draftRect=document.getElementById('draftRect'),hint=document.getElementById('hint'),zoomText=document.getElementById('zoomText');
 function esc(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;')}
 function clamp(v){v=Number(v);if(!isFinite(v))v=0;return Math.max(0,Math.min(100,v))}

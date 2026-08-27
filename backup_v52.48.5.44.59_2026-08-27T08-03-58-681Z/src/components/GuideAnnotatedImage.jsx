@@ -1,16 +1,19 @@
-// v52.48.5.44.59 가이드 화면 이미지 - 실제 가이드와 동일 비율 기준
+// v52.48.5.44.58 가이드 화면 이미지 - 실제 가이드 표시 크기 기준
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { Box } from '@mui/material';
+import { Box, Typography } from '@mui/material';
 import {
   getGuideBadgePosition,
   getGuideConnectorPoints,
   normalizeGuideAnnotations,
 } from '../config/guideCatalog.js';
 
-// 실제 공개 가이드에서 약 1000px 폭으로 보이는 상세 이미지를 기준으로
-// 번호 원/설명박스의 상대 크기를 고정한다.
-// 편집기/가이드설정 미리보기/공개 가이드가 모두 같은 기준을 사용한다.
-const GUIDE_ANNOTATION_REFERENCE_WIDTH = 1000;
+const getGuideReferenceImageWidth = () => {
+  if (typeof window === 'undefined') return 1048;
+  const aw = window.screen?.availWidth || window.innerWidth || 1440;
+  const popupWidth = Math.max(1160, Math.min(1360, Math.floor(aw * 0.76)));
+  // 실제 가이드 팝업: 좌우 여백 24 + 목차 230 + 간격 14 + 상세 카드 좌우 padding 44
+  return Math.max(320, popupWidth - 312);
+};
 
 export default function GuideAnnotatedImage({ src, alt = '가이드 화면', annotations = [], maxHeight = 620 }) {
   const markerId = `guide-arrow-${useId().replace(/:/g, '')}`;
@@ -29,7 +32,8 @@ export default function GuideAnnotatedImage({ src, alt = '가이드 화면', ann
       const naturalWidth = Number(image.naturalWidth) || 0;
       const renderedWidth = stage.getBoundingClientRect().width || 0;
       if (!naturalWidth || !renderedWidth) return;
-      const next = Math.max(0.25, Math.min(3, renderedWidth / GUIDE_ANNOTATION_REFERENCE_WIDTH));
+      const guideReferenceWidth = getGuideReferenceImageWidth();
+      const next = Math.max(0.35, Math.min(2, renderedWidth / guideReferenceWidth));
       setAnnotationScale((prev) => (Math.abs(prev - next) < 0.001 ? prev : next));
     };
 
@@ -69,43 +73,12 @@ export default function GuideAnnotatedImage({ src, alt = '가이드 화면', ann
         </Box>
         {items.filter((item) => item.type !== 'connector' && item.type !== 'pointConnector').map((item) => {
           const badge = getGuideBadgePosition(item);
-          return <Box key={`badge-${item.id}`} sx={{ position:'absolute', left:`${badge.x}%`, top:`${badge.y}%`, transform:`translate(-50%,-50%) scale(${s})`, transformOrigin:'center', width:28, height:28, borderRadius:'50%', display:'grid', placeItems:'center', bgcolor:item.color, color:'#fff', border:'2px solid #fff', boxShadow:'0 2px 7px rgba(0,0,0,.45)', fontFamily:'Arial, "Malgun Gothic", sans-serif', fontSize:11, fontWeight:950, lineHeight:1, pointerEvents:'none', zIndex:4 }}>{item.number}</Box>;
+          return <Box key={`badge-${item.id}`} sx={{ position:'absolute', left:`${badge.x}%`, top:`${badge.y}%`, transform:`translate(-50%,-50%) scale(${s})`, transformOrigin:'center', width:28, height:28, borderRadius:'50%', display:'grid', placeItems:'center', bgcolor:item.color, color:'#fff', border:'2px solid #fff', boxShadow:'0 2px 7px rgba(0,0,0,.45)', fontSize:11, fontWeight:950, lineHeight:1, pointerEvents:'none', zIndex:4 }}>{item.number}</Box>;
         })}
         {items.filter((item) => item.type !== 'connector' && item.type !== 'pointConnector' && item.showLabel && (item.title || item.description)).map((item) => (
-          <Box
-            key={`label-${item.id}`}
-            sx={{
-              position:'absolute',
-              left:`${item.labelX}%`,
-              top:`${item.labelY}%`,
-              width:'max-content',
-              maxWidth:360,
-              minWidth:0,
-              transform:`scale(${s})`,
-              transformOrigin:'top left',
-              px:'8px',
-              py:'6px',
-              bgcolor:'rgba(255,255,255,.97)',
-              border:`2px solid ${item.color}`,
-              borderRadius:'7px',
-              boxShadow:'0 4px 14px rgba(15,23,42,.2)',
-              fontFamily:'Arial, "Malgun Gothic", sans-serif',
-              lineHeight:1.35,
-              pointerEvents:'none',
-              zIndex:3,
-              overflowWrap:'anywhere',
-            }}
-          >
-            {item.title && (
-              <Box component="div" sx={{ color:item.color, fontFamily:'inherit', fontSize:11, fontWeight:950, lineHeight:1.35 }}>
-                {item.title}
-              </Box>
-            )}
-            {item.description && (
-              <Box component="div" sx={{ mt:item.title ? '3px' : 0, color:'#334155', fontFamily:'inherit', fontSize:10, fontWeight:700, lineHeight:1.5, whiteSpace:'pre-wrap' }}>
-                {item.description}
-              </Box>
-            )}
+          <Box key={`label-${item.id}`} sx={{ position:'absolute', left:`${item.labelX}%`, top:`${item.labelY}%`, width:'max-content', maxWidth:360, minWidth:0, transform:`scale(${s})`, transformOrigin:'top left', px:'8px', py:'6px', bgcolor:'rgba(255,255,255,.97)', border:`2px solid ${item.color}`, borderRadius:'7px', boxShadow:'0 4px 14px rgba(15,23,42,.2)', lineHeight:1.35, pointerEvents:'none', zIndex:3, overflowWrap:'anywhere' }}>
+            {item.title && <Typography sx={{ color:item.color, fontSize:11, fontWeight:950, lineHeight:1.35 }}>{item.title}</Typography>}
+            {item.description && <Typography sx={{ mt:item.title ? '3px' : 0, color:'#334155', fontSize:10, fontWeight:700, lineHeight:1.45, whiteSpace:'pre-wrap' }}>{item.description}</Typography>}
           </Box>
         ))}
       </Box>
