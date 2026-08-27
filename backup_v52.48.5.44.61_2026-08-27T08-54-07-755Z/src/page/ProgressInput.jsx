@@ -1,4 +1,3 @@
-// v52.48.5.44.61 타입별 세대 현황 패널 우측 도킹·이동범위 복구
 // v52.48.5.44.6.2 타입행 공통높이·색상 연동
 // v52.48.5.44.5.2 타입현황 공정선택 뒤배치 + 폭 축소
 // v52.48.5.44.5.1 타입현황 위치·최소화·닫기 동작 보정
@@ -242,7 +241,7 @@ const TYPE_SUMMARY_PANEL_MIN_WIDTH = TYPE_SUMMARY_PANEL_WIDTH;
 const getTypeSummaryPreferenceStorageKey = (projectName) =>
   `progress-input:${encodeURIComponent(
     String(projectName || 'default'),
-  )}:type-summary-panel-v4`;
+  )}:type-summary-panel-v3`;
 
 const getDefaultTypeSummaryPanelState = () => {
   const viewportWidth =
@@ -252,14 +251,13 @@ const getDefaultTypeSummaryPanelState = () => {
 
   return {
     minimized: false,
-    docked: true,
     x: Math.max(
-      4,
+      12,
       viewportWidth -
         TYPE_SUMMARY_PANEL_WIDTH -
-        4,
+        18,
     ),
-    // 실제 위치는 렌더링 후 우측 '펼치기/최소화' 버튼 하단에 다시 맞춥니다.
+    // 상단 공정선택 + 방통설정 영역과 겹치지 않도록 기본 위치를 하단으로 내립니다.
     y: 164,
   };
 };
@@ -288,8 +286,6 @@ const readStoredTypeSummaryPanelState = (projectName) => {
     return {
       minimized:
         parsed?.minimized === true,
-      docked:
-        parsed?.docked !== false,
       x: Number.isFinite(Number(parsed?.x))
         ? Number(parsed.x)
         : fallback.x,
@@ -325,8 +321,6 @@ const storeTypeSummaryPanelState = (
       JSON.stringify({
         minimized:
           panelState?.minimized === true,
-        docked:
-          panelState?.docked !== false,
         x: Number(panelState?.x) || 0,
         y: Number(panelState?.y) || 0,
       }),
@@ -1363,79 +1357,6 @@ export default function ProgressInput({
   const typeSummaryDragRef =
     useRef(null);
 
-  const typeSummaryPanelAnchorRef =
-    useRef(null);
-
-  const getDockedTypeSummaryPanelPosition =
-    useCallback(
-      (minimized = false) => {
-        if (
-          typeof window ===
-          'undefined'
-        ) {
-          return {
-            x: 12,
-            y: 164,
-          };
-        }
-
-        const width =
-          minimized
-            ? TYPE_SUMMARY_PANEL_MIN_WIDTH
-            : TYPE_SUMMARY_PANEL_WIDTH;
-        const rightGap = 4;
-        const maxX =
-          Math.max(
-            rightGap,
-            window.innerWidth -
-              width -
-              rightGap,
-          );
-        const maxY =
-          Math.max(
-            8,
-            window.innerHeight -
-              48,
-          );
-        const anchorRect =
-          typeSummaryPanelAnchorRef.current?.getBoundingClientRect?.();
-
-        /*
-          우측 목표설정 영역의 '펼치기/최소화' 버튼 오른쪽 끝과
-          타입별 세대현황 패널의 오른쪽 끝을 맞춥니다.
-          버튼을 아직 찾지 못한 최초 렌더에서는 화면 오른쪽 끝을 사용합니다.
-        */
-        const desiredX =
-          anchorRect
-            ? anchorRect.right -
-              width
-            : maxX;
-        const desiredY =
-          anchorRect
-            ? anchorRect.bottom +
-              8
-            : 164;
-
-        return {
-          x: Math.min(
-            Math.max(
-              rightGap,
-              desiredX,
-            ),
-            maxX,
-          ),
-          y: Math.min(
-            Math.max(
-              8,
-              desiredY,
-            ),
-            maxY,
-          ),
-        };
-      },
-      [],
-    );
-
   const selectionCount =
     selectedCells?.size ?? 0;
 
@@ -1755,64 +1676,14 @@ export default function ProgressInput({
   }, [loadProjectUnitTypes]);
 
   useEffect(() => {
-    const storedState =
+    setTypeSummaryPanelState(
       readStoredTypeSummaryPanelState(
         projectName,
-      );
-
-    setTypeSummaryPanelState(
-      storedState,
+      ),
     );
     typeSummaryDragRef.current =
       null;
-
-    /*
-      신규 기본값(docked=true)은 실제 버튼 DOM 위치를 읽은 뒤 한 번 더 맞춥니다.
-      사용자가 직접 드래그한 위치(docked=false)는 재진입 시 그대로 유지합니다.
-    */
-    const frameId =
-      window.requestAnimationFrame(
-        () => {
-          setTypeSummaryPanelState(
-            (previous) => {
-              if (
-                previous?.docked ===
-                false
-              ) {
-                return previous;
-              }
-
-              const dockedPosition =
-                getDockedTypeSummaryPanelPosition(
-                  previous?.minimized ===
-                    true,
-                );
-              const next = {
-                ...previous,
-                ...dockedPosition,
-                docked: true,
-              };
-
-              storeTypeSummaryPanelState(
-                projectName,
-                next,
-              );
-
-              return next;
-            },
-          );
-        },
-      );
-
-    return () => {
-      window.cancelAnimationFrame(
-        frameId,
-      );
-    };
-  }, [
-    projectName,
-    getDockedTypeSummaryPanelPosition,
-  ]);
+  }, [projectName]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -1822,50 +1693,36 @@ export default function ProgressInput({
             previous.minimized
               ? TYPE_SUMMARY_PANEL_MIN_WIDTH
               : TYPE_SUMMARY_PANEL_WIDTH;
-          const dockedPosition =
-            previous?.docked !==
-            false
-              ? getDockedTypeSummaryPanelPosition(
-                  previous.minimized,
-                )
-              : null;
-          const next =
-            dockedPosition
-              ? {
-                  ...previous,
-                  ...dockedPosition,
-                  docked: true,
-                }
-              : {
-                  ...previous,
-                  x: Math.min(
-                    Math.max(
-                      4,
-                      Number(
-                        previous.x,
-                      ) || 4,
-                    ),
-                    Math.max(
-                      4,
-                      window.innerWidth -
-                        width -
-                        4,
-                    ),
-                  ),
-                  y: Math.min(
-                    Math.max(
-                      8,
-                      Number(
-                        previous.y,
-                      ) || 8,
-                    ),
-                    Math.max(
-                      8,
-                      window.innerHeight -
-                        48,
-                    ),
-                  ),
-                };
+          const next = {
+            ...previous,
+            x: Math.min(
+              Math.max(
+                8,
+                Number(
+                  previous.x,
+                ) || 8,
+              ),
+              Math.max(
+                8,
+                window.innerWidth -
+                  width -
+                  8,
+              ),
+            ),
+            y: Math.min(
+              Math.max(
+                8,
+                Number(
+                  previous.y,
+                ) || 8,
+              ),
+              Math.max(
+                8,
+                window.innerHeight -
+                  48,
+              ),
+            ),
+          };
 
           storeTypeSummaryPanelState(
             projectName,
@@ -1888,10 +1745,7 @@ export default function ProgressInput({
         handleResize,
       );
     };
-  }, [
-    projectName,
-    getDockedTypeSummaryPanelPosition,
-  ]);
+  }, [projectName]);
 
   const loadProgressTargets =
     useCallback(async () => {
@@ -2824,10 +2678,10 @@ export default function ProgressInput({
 
       const maxX =
         Math.max(
-          4,
+          8,
           window.innerWidth -
             drag.width -
-            4,
+            8,
         );
       const maxY =
         Math.max(
@@ -2841,7 +2695,7 @@ export default function ProgressInput({
           ...previous,
           x: Math.min(
             Math.max(
-              4,
+              8,
               event.clientX -
                 drag.offsetX,
             ),
@@ -2855,8 +2709,6 @@ export default function ProgressInput({
             ),
             maxY,
           ),
-          // 직접 한 번이라도 끌면 자동 우측 도킹을 해제합니다.
-          docked: false,
         }),
       );
     };
@@ -4096,9 +3948,6 @@ export default function ProgressInput({
           </Button>
 
           <Button
-            ref={
-              typeSummaryPanelAnchorRef
-            }
             size="small"
             variant="outlined"
             disabled={
