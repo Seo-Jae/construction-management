@@ -34,7 +34,7 @@ const annotationGraphicHtml = (annotations, uid) => {
     if (item.type === 'pointConnector') return `<line x1="${item.x}" y1="${item.y}" x2="${item.x2}" y2="${item.y2}" stroke="${escapeHtml(item.color)}" stroke-width="${sw}" vector-effect="non-scaling-stroke" marker-end="url(#arrow-${uid})"/>`; 
     return '';
   }).join('');
-  const badges = items.filter((item)=>item.type!=='connector' && item.type!=='pointConnector' && item.type!=='note' && (item.type==='number' || item.showNumber!==false)).map((item) => {
+  const badges = items.filter((item)=>item.type!=='connector' && item.type!=='pointConnector' && item.type!=='note').map((item) => {
     const p=getGuideBadgePosition(item);
     return `<span class="ann-badge" style="left:${p.x}%;top:${p.y}%;background:${escapeHtml(item.color)}">${escapeHtml(item.number)}</span>`;
   }).join('');

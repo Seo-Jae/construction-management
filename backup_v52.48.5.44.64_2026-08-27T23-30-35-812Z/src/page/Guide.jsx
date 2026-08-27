@@ -190,7 +190,7 @@ export default function Guide() {
           {!normalizeGuideSections(editor.draft_content).length&&<Alert severity="info">‘가이드 화면 추가’를 눌러 실제 화면 기반 가이드를 작성하세요.</Alert>}
           {normalizeGuideSections(editor.draft_content).map((section,index)=>{
             const annotations=normalizeGuideAnnotations(section.annotations);
-            const numberedAnnotations=annotations.filter((item)=>item.type!=='connector'&&item.type!=='pointConnector'&&item.type!=='note'&&(item.type==='number'||item.showNumber!==false));
+            const numberedAnnotations=annotations.filter((item)=>item.type!=='connector'&&item.type!=='pointConnector'&&item.type!=='note');
             const noteCount=annotations.filter((item)=>item.type==='note').length;
             const connectorCount=annotations.filter((item)=>item.type==='connector'||item.type==='pointConnector').length;
             return <Paper key={section.id} variant="outlined" sx={{p:1.2,borderColor:'#cbd5e1',bgcolor:'#f8fafc'}}>
