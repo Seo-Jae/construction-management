@@ -1,4 +1,4 @@
-// v52.48.5.44.47 가이드 설정·현재 메뉴 팝업 가이드
+// v52.48.5.44.46 시스템 가이드 메뉴 기본 구조 추가
 // v52.48.5.44.35 화면배율 Portal 목록 좌표 전역 보정
 // v52.48.5.44.32 세대물량 기본 공정 정리·옵션비교 선택옵션 전용
 // v52.48.5.44.31 세대물량관리 공정별 갑지·Excel 연동
@@ -50,7 +50,6 @@ import {
 } from './utils/buildingUnits.js';
 import Sidebar from './components/Sidebar.jsx';
 import MessengerButton from './components/MessengerButton.jsx';
-import SystemGuideButton from './components/SystemGuideButton.jsx';
 import KoreanDatePicker from './components/KoreanDatePicker.jsx';
 import MainDashboard from './page/MainDashboard.jsx';
 import DailyReport from './page/DailyReport.jsx';
@@ -396,7 +395,7 @@ const viewTitles = {
   'weekly-overview': '주간업무작성',
   'weekly-overview-archive': '주간업무보관',
   attendance: '근태관리',
-  guide: '가이드 설정',
+  guide: '가이드',
 };
 
 const VIEW_PERMISSION_KEYS = {
@@ -936,7 +935,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   };
 
   const legacyCanAccessView = (view) => {
-    if (['user-management', 'project-management', 'guide'].includes(view)) return isSuperAdmin;
+    if (view === 'user-management' || view === 'project-management') return isSuperAdmin;
     if (
       [
         'admin-dashboard',
@@ -954,7 +953,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     projectName = '',
   ) => {
     if (view === 'messenger') return true;
-    if (['user-management', 'project-management', 'guide'].includes(view)) return isSuperAdmin;
+    if (view === 'user-management' || view === 'project-management') return isSuperAdmin;
 
     if (
       view === 'admin-dashboard' &&
@@ -1588,7 +1587,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
   const handleSidebarViewChange = (nextView) => {
     if (
-      ['user-management', 'project-management', 'guide'].includes(nextView) &&
+      ['user-management', 'project-management'].includes(nextView) &&
       !isSuperAdmin
     ) {
       return;
@@ -4101,8 +4100,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               ))}
             </Menu>
 
-            <SystemGuideButton currentView={currentView} />
-
             <MessengerButton
               userId={user?.id || userProfile?.auth_user_id || ''}
               active={false}
@@ -4317,7 +4314,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             />
           )}
 
-          {currentView === 'guide' && isSuperAdmin && (
+          {currentView === 'guide' && (
             <Guide />
           )}
 

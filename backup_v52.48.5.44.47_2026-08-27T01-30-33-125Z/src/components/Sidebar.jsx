@@ -1,4 +1,4 @@
-// v52.48.5.44.47 가이드 설정 최고관리자 전용
+// v52.48.5.44.46 시스템 가이드 메뉴 추가
 // v52.48.5.44.30 세대물량관리 독립 대메뉴 분리
 // v52.48.5.44.29 옵션관리 세대물량관리 메뉴 추가
 // v52.48.5.44.12 옵션관리 메뉴 추가
@@ -1462,38 +1462,36 @@ export default function Sidebar({
       </Collapse>        </>
       )}
 
-      {isSuperAdmin && (
-        <Tooltip
-          title={drawerOpen ? '' : '가이드 설정'}
-          placement="right"
-          arrow
+      <Tooltip
+        title={drawerOpen ? '' : '가이드'}
+        placement="right"
+        arrow
+      >
+        <ListItemButton
+          selected={currentView === 'guide'}
+          onClick={() => handleViewChange('guide')}
+          sx={topMenuSx(currentView === 'guide')}
         >
-          <ListItemButton
-            selected={currentView === 'guide'}
-            onClick={() => handleViewChange('guide')}
-            sx={topMenuSx(currentView === 'guide')}
+          <ListItemIcon
+            sx={{
+              minWidth: 34,
+              color: 'inherit',
+              justifyContent: 'center',
+            }}
           >
-            <ListItemIcon
-              sx={{
-                minWidth: 34,
-                color: 'inherit',
-                justifyContent: 'center',
-              }}
-            >
-              <MenuBookRoundedIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText
-              primary="가이드 설정"
-              primaryTypographyProps={{
-                noWrap: true,
-                fontSize: '0.8rem',
-                fontWeight: currentView === 'guide' ? 700 : 500,
-              }}
-              sx={{ opacity: drawerOpen ? 1 : 0 }}
-            />
-          </ListItemButton>
-        </Tooltip>
-      )}
+            <MenuBookRoundedIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText
+            primary="가이드"
+            primaryTypographyProps={{
+              noWrap: true,
+              fontSize: '0.8rem',
+              fontWeight: currentView === 'guide' ? 700 : 500,
+            }}
+            sx={{ opacity: drawerOpen ? 1 : 0 }}
+          />
+        </ListItemButton>
+      </Tooltip>
 
     </List>
   );
