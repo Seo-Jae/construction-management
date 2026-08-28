@@ -1,3 +1,4 @@
+// v52.48.5.44.69 지출결의서 소속현장 기본 작성권한
 // v52.48.5.44.47 가이드 설정·현재 메뉴 팝업 가이드
 // v52.48.5.44.35 화면배율 Portal 목록 좌표 전역 보정
 // v52.48.5.44.32 세대물량 기본 공정 정리·옵션비교 선택옵션 전용
@@ -955,6 +956,22 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   ) => {
     if (view === 'messenger') return true;
     if (['user-management', 'project-management', 'guide'].includes(view)) return isSuperAdmin;
+
+    // v52.48.5.44.69
+    // 지출결의서는 현장 담당자/현장 관리자가 자기 소속현장에서는
+    // 별도 ACL 설정이 없어도 기본적으로 조회·작성·수정·삭제 화면에 접근할 수 있습니다.
+    // 다른 현장은 기존 report.expense.view 권한 판정을 그대로 사용합니다.
+    const normalizedExpenseProjectName = String(
+      projectName || '',
+    ).trim();
+    const hasOwnExpenseProjectAccess =
+      view === 'report-expense-resolution' &&
+      ['담당자', '관리자'].includes(userRole) &&
+      normalizedExpenseProjectName &&
+      fallbackProjectName &&
+      normalizedExpenseProjectName === fallbackProjectName;
+
+    if (hasOwnExpenseProjectAccess) return true;
 
     if (
       view === 'admin-dashboard' &&
