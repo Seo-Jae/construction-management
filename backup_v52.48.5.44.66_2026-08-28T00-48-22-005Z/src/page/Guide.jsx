@@ -97,23 +97,14 @@ export default function Guide() {
     if(!file)return;
     if(!String(file.type||'').startsWith('image/')){setMessage({severity:'warning',text:'이미지 파일만 업로드할 수 있습니다.'});return;}
     if(file.size>12*1024*1024){setMessage({severity:'warning',text:'가이드 이미지는 12MB 이하만 업로드할 수 있습니다.'});return;}
-    const currentSection=normalizeGuideSections(editor.draft_content).find((section)=>section.id===id);
-    const isReplacing=Boolean(String(currentSection?.imagePath||'').trim());
-    const preservedCount=Array.isArray(currentSection?.annotations)?currentSection.annotations.length:0;
     setSaving(true);
     try{
       const path=`${selectedItem.id}/${Date.now()}-${safeFileName(file.name)}`;
       const {error}=await supabase.storage.from(GUIDE_IMAGE_BUCKET).upload(path,file,{upsert:false,contentType:file.type}); if(error)throw error;
-      // 이미지 교체 시 기존 표시(annotation)는 절대 초기화하지 않는다.
-      // 좌표가 이미지 기준 비율로 저장되므로 새 이미지에도 같은 위치/크기로 유지된다.
       updateSection(id,'imagePath',path);
+      updateSection(id,'annotations',[]);
       const previewUrl=await createPreviewUrl(path); setImagePreviewUrls((prev)=>({...prev,[id]:previewUrl}));
-      setMessage({
-        severity:'success',
-        text:isReplacing
-          ? `화면 이미지만 교체했습니다. 기존 표시 ${preservedCount}개는 그대로 유지됩니다. 필요하면 ‘표시 편집’에서 위치만 미세 조정해주세요.`
-          : '실제 화면 이미지를 등록했습니다. 이제 ‘표시 편집’에서 번호·동그라미·박스·화살표·화면 내 설명박스를 배치해주세요.'
-      });
+      setMessage({severity:'success',text:'실제 화면 이미지를 등록했습니다. 이제 ‘표시 편집’에서 번호·동그라미·박스·화살표·화면 내 설명박스를 배치해주세요.'});
     }catch(error){setMessage({severity:'error',text:error?.message||'이미지를 업로드하지 못했습니다.'});}finally{setSaving(false);}
   };
   const removeSectionImage=(id)=>{ updateSection(id,'imagePath',''); updateSection(id,'annotations',[]); setImagePreviewUrls((prev)=>({...prev,[id]:''})); };
