@@ -1078,7 +1078,7 @@ export default function WeeklyReportEditor({
         height: '100%',
         minHeight: 0,
         display: 'grid',
-        gridTemplateColumns: 'minmax(400px, 42%) minmax(600px, 58%)',
+        gridTemplateColumns: 'minmax(360px, 38%) minmax(620px, 62%)',
         gap: 1.5,
       }}
     >
