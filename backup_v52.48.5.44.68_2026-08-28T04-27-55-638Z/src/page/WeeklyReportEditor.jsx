@@ -740,12 +740,6 @@ export default function WeeklyReportEditor({
     );
   const [documentId, setDocumentId] = useState(editingDocument?.id || null);
   const [saving, setSaving] = useState(false);
-  const wasApprovedDocument =
-    editingDocument?.status === 'approved';
-  const [
-    requiresResubmission,
-    setRequiresResubmission,
-  ] = useState(wasApprovedDocument);
 
   const projectName = userProfile?.project_name || '';
   const managerName = userProfile?.manager_name || '';
@@ -942,79 +936,21 @@ export default function WeeklyReportEditor({
     setErrorMessage('');
 
     try {
-      let savedId = null;
-
-      if (
-        wasApprovedDocument &&
-        documentId
-      ) {
-        const {
-          data,
-          error,
-        } = await supabase.rpc(
-          'save_weekly_report_revision_draft',
-          {
-            p_document_id: documentId,
-            p_title:
-              `주간 업무 보고 - ${period.display}`,
-            p_report_key:
-              approvalReportKey,
-            p_project_name:
-              projectName,
-            p_payload:
-              reportPayload,
-          },
-        );
-
-        if (error) {
-          throw error;
-        }
-
-        savedId = data || documentId;
-        setRequiresResubmission(true);
-        window.dispatchEvent(
-          new Event(
-            'report-documents-changed',
-          ),
-        );
-        window.dispatchEvent(
-          new Event(
-            'approval-workflow-changed',
-          ),
-        );
-      } else {
-        savedId =
-          await saveReportDocumentDraft({
-            documentId,
-            reportType: 'weekly',
-            title: `주간 업무 보고 - ${period.display}`,
-            reportKey:
-              approvalReportKey,
-            projectName,
-            payload: reportPayload,
-          });
-      }
+      const savedId = await saveReportDocumentDraft({
+        documentId,
+        reportType: 'weekly',
+        title: `주간 업무 보고 - ${period.display}`,
+        reportKey: approvalReportKey,
+        projectName,
+        payload: reportPayload,
+      });
 
       setDocumentId(savedId);
-
-      if (!silent) {
-        window.alert(
-          wasApprovedDocument
-            ? '결재완료된 보고서를 수정본으로 저장했습니다. 수정 내용을 총괄에 반영하려면 다시 결재요청해주세요.'
-            : '작성 내용이 저장되었습니다.',
-        );
-      }
-
+      if (!silent) window.alert('작성 내용이 저장되었습니다.');
       return savedId;
     } catch (error) {
-      console.error(
-        '주간 업무 보고 저장 실패:',
-        error,
-      );
-      setErrorMessage(
-        error?.message ||
-          '작성 내용을 저장하지 못했습니다.',
-      );
+      console.error('주간 업무 보고 저장 실패:', error);
+      setErrorMessage(error?.message || '작성 내용을 저장하지 못했습니다.');
       return null;
     } finally {
       setSaving(false);
@@ -1025,9 +961,7 @@ export default function WeeklyReportEditor({
     if (saving || completing) return;
 
     const confirmed = window.confirm(
-      requiresResubmission
-        ? '수정된 주간 업무 보고를 다시 결재요청합니다. 결재완료 후 주간업무총괄도 최신 수정 내용으로 갱신됩니다.\n계속하시겠습니까?'
-        : '결재요청을 누르면 별도의 결재함을 거치지 않고 즉시 결재완료 처리되며 주간업무총괄에 등록됩니다.\n계속하시겠습니까?',
+      '결재요청을 누르면 별도의 결재함을 거치지 않고 즉시 결재완료 처리되며 주간업무총괄에 등록됩니다.\n계속하시겠습니까?',
     );
 
     if (!confirmed) return;
@@ -1061,12 +995,8 @@ export default function WeeklyReportEditor({
       window.dispatchEvent(new Event('weekly-report-completed'));
       window.dispatchEvent(new Event('weekly-overview-changed'));
 
-      setRequiresResubmission(false);
-
       window.alert(
-        requiresResubmission
-          ? '수정된 주간 업무 보고가 다시 결재완료 처리되어 주간업무총괄에 최신 내용으로 반영되었습니다.'
-          : '주간 업무 보고가 자동으로 결재완료 처리되어 주간업무총괄에 등록되었습니다.',
+        '주간 업무 보고가 자동으로 결재완료 처리되어 주간업무총괄에 등록되었습니다.',
       );
       onBackToList?.();
     } catch (error) {
@@ -1196,11 +1126,7 @@ export default function WeeklyReportEditor({
               },
             }}
           >
-            {completing
-              ? '처리중'
-              : requiresResubmission
-                ? '재결재요청'
-                : '결재요청'}
+            {completing ? '처리중' : '결재요청'}
           </Button>
 
           <Button
@@ -1274,20 +1200,6 @@ export default function WeeklyReportEditor({
         <Divider />
 
         <Box sx={{ p: 1.5, overflowY: 'auto' }}>
-          {requiresResubmission && (
-            <Alert
-              severity="warning"
-              sx={{
-                mb: 1.5,
-                fontSize: '0.74rem',
-                fontWeight: 700,
-              }}
-            >
-              결재완료된 보고서를 수정 중입니다. 수정 내용은 저장할 수 있으며,
-              주간업무총괄에 최신 내용을 반영하려면 상단의 재결재요청을 다시 눌러주세요.
-            </Alert>
-          )}
-
           {errorMessage && (
             <Alert severity="error" sx={{ mb: 1.5 }}>
               {errorMessage}

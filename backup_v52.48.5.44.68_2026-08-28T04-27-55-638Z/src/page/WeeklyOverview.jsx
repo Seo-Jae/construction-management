@@ -10,13 +10,6 @@ import {
   Box,
   Button,
   CircularProgress,
-  Checkbox,
-  Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  FormControlLabel,
   Paper,
   TextField,
   Typography,
@@ -78,149 +71,6 @@ const TEMPLATE_PROJECT_NAMES =
   TEMPLATE_PROJECTS.map(
     (project) => project.projectName,
   );
-
-const MAX_OVERVIEW_PROJECTS =
-  TEMPLATE_PROJECTS.length;
-
-const normalizeProjectNameList = (values) =>
-  Array.from(
-    new Set(
-      (Array.isArray(values) ? values : [])
-        .map((value) =>
-          String(
-            value?.project_name ??
-              value?.projectName ??
-              value ??
-              '',
-          ).trim(),
-        )
-        .filter(Boolean),
-    ),
-  );
-
-const buildOverviewProjects = (
-  projectNames,
-) =>
-  normalizeProjectNameList(projectNames)
-    .slice(0, MAX_OVERVIEW_PROJECTS)
-    .map((projectName, index) => ({
-      ...TEMPLATE_PROJECTS[index],
-      projectName,
-      slotIndex: index,
-      projectNameCell:
-        `B${6 + index * 4}`,
-    }));
-
-const deriveOverviewProjectNames = ({
-  systemProjectNames = [],
-  manualProjectNames = [],
-  excludedSystemProjectNames = [],
-  weeklyReports = [],
-  savedDisplayProjectNames = [],
-  readOnly = false,
-  hasSavedProjectSettings = false,
-}) => {
-  if (
-    readOnly &&
-    savedDisplayProjectNames.length > 0
-  ) {
-    return normalizeProjectNameList(
-      savedDisplayProjectNames,
-    ).slice(0, MAX_OVERVIEW_PROJECTS);
-  }
-
-  if (
-    readOnly &&
-    !hasSavedProjectSettings &&
-    savedDisplayProjectNames.length === 0
-  ) {
-    const reportNames =
-      normalizeProjectNameList(
-        weeklyReports.map(
-          (report) =>
-            report?.project_name,
-        ),
-      );
-
-    return (
-      reportNames.length > 0
-        ? reportNames
-        : TEMPLATE_PROJECT_NAMES
-    ).slice(0, MAX_OVERVIEW_PROJECTS);
-  }
-
-  const excluded =
-    new Set(
-      normalizeProjectNameList(
-        excludedSystemProjectNames,
-      ),
-    );
-
-  const systemNames =
-    normalizeProjectNameList(
-      systemProjectNames,
-    ).filter(
-      (projectName) =>
-        !excluded.has(projectName),
-    );
-
-  const manualNames =
-    normalizeProjectNameList(
-      manualProjectNames,
-    );
-
-  const reportNames =
-    normalizeProjectNameList(
-      weeklyReports.map(
-        (report) =>
-          report?.project_name,
-      ),
-    );
-
-  const reportNameSet =
-    new Set(reportNames);
-
-  const reportSystemNames =
-    reportNames.filter((name) =>
-      systemNames.includes(name),
-    );
-
-  const otherSystemNames =
-    systemNames.filter(
-      (name) =>
-        !reportNameSet.has(name),
-    );
-
-  const fallbackReportNames =
-    reportNames.filter(
-      (name) =>
-        !systemNames.includes(name) &&
-        !manualNames.includes(name),
-    );
-
-  const availableNames =
-    normalizeProjectNameList([
-      ...manualNames,
-      ...reportSystemNames,
-      ...otherSystemNames,
-      ...fallbackReportNames,
-    ]);
-
-  const savedNames =
-    normalizeProjectNameList(
-      savedDisplayProjectNames,
-    ).filter((name) =>
-      availableNames.includes(name),
-    );
-
-  return normalizeProjectNameList([
-    ...manualNames,
-    ...savedNames,
-    ...reportSystemNames,
-    ...otherSystemNames,
-    ...fallbackReportNames,
-  ]).slice(0, MAX_OVERVIEW_PROJECTS);
-};
 
 const TEMPLATE_CELL_ADDRESSES =
   TEMPLATE_PROJECTS.flatMap(
@@ -625,7 +475,6 @@ const getReportCellRows = (report) => {
 
 const createSourceCellRows = (
   weeklyReports,
-  projects = TEMPLATE_PROJECTS,
 ) => {
   const rowsByCell =
     createEmptyCellRows();
@@ -639,7 +488,7 @@ const createSourceCellRows = (
     ),
   );
 
-  projects.forEach(
+  TEMPLATE_PROJECTS.forEach(
     (project) => {
       const report = reportMap.get(
         project.projectName,
@@ -712,7 +561,6 @@ const migrateSavedOfficeRows = (
 
 const migrateSavedPayload = (
   payload,
-  projects = TEMPLATE_PROJECTS,
 ) => {
   const result =
     createEmptyCellRows();
@@ -758,7 +606,7 @@ const migrateSavedPayload = (
   oldProjects.forEach(
     (savedProject) => {
       const templateProject =
-        projects.find(
+        TEMPLATE_PROJECTS.find(
           (project) =>
             project.projectName ===
             savedProject.projectName,
@@ -2081,7 +1929,6 @@ function OfficePreviewRows({
 
 function ExcelTemplatePreview({
   cellRows,
-  projects = TEMPLATE_PROJECTS,
   nextMondayKey,
   scheduleDates,
   scheduleValues,
@@ -2322,7 +2169,7 @@ function ExcelTemplatePreview({
         </Box>
 
         <Box sx={{ width: '94.01%' }}>
-          {projects.map(
+          {TEMPLATE_PROJECTS.map(
             (project) => (
               <PreviewProjectRows
                 key={
@@ -2403,59 +2250,6 @@ export default function WeeklyOverview({
   ] = useState(new Set());
 
   const [
-    systemProjectNames,
-    setSystemProjectNames,
-  ] = useState([]);
-
-  const [
-    manualProjectNames,
-    setManualProjectNames,
-  ] = useState([]);
-
-  const [
-    excludedSystemProjectNames,
-    setExcludedSystemProjectNames,
-  ] = useState([]);
-
-  const [
-    displayProjectNames,
-    setDisplayProjectNames,
-  ] = useState(
-    TEMPLATE_PROJECT_NAMES,
-  );
-
-  const [
-    weeklyReports,
-    setWeeklyReports,
-  ] = useState([]);
-
-  const [
-    projectSettingsOpen,
-    setProjectSettingsOpen,
-  ] = useState(false);
-
-  const [
-    projectSettingsDraft,
-    setProjectSettingsDraft,
-  ] = useState({
-    manualProjectNames: [],
-    excludedSystemProjectNames: [],
-  });
-
-  const [
-    manualProjectInput,
-    setManualProjectInput,
-  ] = useState('');
-
-  const overviewProjects = useMemo(
-    () =>
-      buildOverviewProjects(
-        displayProjectNames,
-      ),
-    [displayProjectNames],
-  );
-
-  const [
     scheduleValues,
     setScheduleValues,
   ] = useState(
@@ -2514,36 +2308,74 @@ export default function WeeklyOverview({
     setSavedMetadata(null);
 
     let reports = [];
-    let savedOverview = null;
-    let systemNames = [];
 
     try {
       const {
         data,
         error,
-      } = await supabase.rpc(
-        'admin_list_projects_v1',
-      );
+      } = await supabase
+        .from('weekly_reports')
+        .select(
+          `
+          id,
+          project_name,
+          week_start,
+          week_end,
+          payload,
+          status,
+          author_name,
+          completed_at,
+          updated_at
+        `,
+        )
+        .eq(
+          'week_start',
+          weekRange.weekStart,
+        )
+        .eq('status', 'completed')
+        .in(
+          'project_name',
+          TEMPLATE_PROJECT_NAMES,
+        );
 
       if (error) {
         throw error;
       }
 
-      systemNames =
-        normalizeProjectNameList(data);
+      reports = data || [];
     } catch (error) {
       console.error(
-        '주간업무총괄 등록 현장 조회 실패:',
+        '주간업무 원본 조회 실패:',
         error,
       );
 
-      if (!readOnly) {
-        setWarningMessage(
-          '시스템 등록 현장 목록을 불러오지 못했습니다. ' +
-            '주간업무 완료 현장을 기준으로 표시합니다.',
-        );
-      }
+      setWarningMessage(
+        readOnly
+          ? '자동보관 원본을 불러오지 못했습니다.'
+          : '현재 주차 주간업무 원본을 불러오지 못했습니다. ' +
+            '입력 화면은 사용할 수 있습니다.',
+      );
     }
+
+    const nextSourceRows =
+      createSourceCellRows(reports);
+
+    setSourceCellRows(
+      nextSourceRows,
+    );
+
+    setRegisteredProjects(
+      new Set(
+        reports.map(
+          (report) =>
+            report.project_name,
+        ),
+      ),
+    );
+
+    let savedRows = null;
+    let savedScheduleValues = null;
+    let savedOfficeRows = null;
 
     try {
       const {
@@ -2572,22 +2404,41 @@ export default function WeeklyOverview({
         throw error;
       }
 
-      savedOverview = data || null;
-
-      if (savedOverview) {
+      if (data) {
         setSavedMetadata({
-          id: savedOverview.id,
+          id: data.id,
           weekStart:
-            savedOverview.week_start,
+            data.week_start,
           weekEnd:
-            savedOverview.week_end,
+            data.week_end,
           displayPeriod:
-            savedOverview.display_period,
+            data.display_period,
           updatedByName:
-            savedOverview.updated_by_name,
+            data.updated_by_name,
           updatedAt:
-            savedOverview.updated_at,
+            data.updated_at,
         });
+
+        savedRows =
+          migrateSavedPayload(
+            data.payload,
+          );
+
+        savedScheduleValues =
+          Array.from(
+            { length: 7 },
+            (_, index) =>
+              String(
+                data?.payload
+                  ?.scheduleValues
+                  ?.[index] || '',
+              ),
+          );
+
+        savedOfficeRows =
+          migrateSavedOfficeRows(
+            data.payload,
+          );
       }
     } catch (error) {
       console.error(
@@ -2599,195 +2450,8 @@ export default function WeeklyOverview({
         (previous) =>
           previous ||
           '저장 테이블을 확인하지 못했습니다. ' +
-            'SQL 적용 후 저장할 수 있습니다.',
+          'SQL 적용 후 저장할 수 있습니다.',
       );
-    }
-
-    try {
-      const {
-        data,
-        error,
-      } = await supabase
-        .from('weekly_reports')
-        .select(
-          `
-          id,
-          project_name,
-          week_start,
-          week_end,
-          payload,
-          status,
-          author_name,
-          completed_at,
-          updated_at
-        `,
-        )
-        .eq(
-          'week_start',
-          weekRange.weekStart,
-        )
-        .eq('status', 'completed')
-        .order('updated_at', {
-          ascending: false,
-        });
-
-      if (error) {
-        throw error;
-      }
-
-      reports = data || [];
-    } catch (error) {
-      console.error(
-        '주간업무 원본 조회 실패:',
-        error,
-      );
-
-      setWarningMessage(
-        (previous) =>
-          previous ||
-          (readOnly
-            ? '자동보관 원본을 불러오지 못했습니다.'
-            : '현재 주차 주간업무 원본을 불러오지 못했습니다. ' +
-              '입력 화면은 사용할 수 있습니다.'),
-      );
-    }
-
-    const draft =
-      readOnly
-        ? null
-        : readDraft(
-            draftStorageKey,
-          );
-
-    const savedProjectSettings =
-      savedOverview?.payload
-        ?.projectSettings || {};
-
-    const draftProjectSettings =
-      draft?.projectSettings || {};
-
-    const nextManualProjectNames =
-      normalizeProjectNameList(
-        draftProjectSettings
-          .manualProjectNames ??
-          savedProjectSettings
-            .manualProjectNames ??
-          [],
-      );
-
-    const nextExcludedSystemProjectNames =
-      normalizeProjectNameList(
-        draftProjectSettings
-          .excludedSystemProjectNames ??
-          savedProjectSettings
-            .excludedSystemProjectNames ??
-          [],
-      );
-
-    const savedDisplayProjectNames =
-      normalizeProjectNameList(
-        draftProjectSettings
-          .displayProjectNames ??
-          savedProjectSettings
-            .displayProjectNames ??
-          [],
-      );
-
-    if (
-      systemNames.length === 0 &&
-      !readOnly
-    ) {
-      systemNames =
-        normalizeProjectNameList(
-          reports.map(
-            (report) =>
-              report?.project_name,
-          ),
-        );
-    }
-
-    const nextDisplayProjectNames =
-      deriveOverviewProjectNames({
-        systemProjectNames:
-          systemNames,
-        manualProjectNames:
-          nextManualProjectNames,
-        excludedSystemProjectNames:
-          nextExcludedSystemProjectNames,
-        weeklyReports: reports,
-        savedDisplayProjectNames,
-        readOnly,
-        hasSavedProjectSettings:
-          Boolean(
-            savedOverview?.payload
-              ?.projectSettings,
-          ),
-      });
-
-    const nextProjects =
-      buildOverviewProjects(
-        nextDisplayProjectNames,
-      );
-
-    const nextSourceRows =
-      createSourceCellRows(
-        reports,
-        nextProjects,
-      );
-
-    setSystemProjectNames(
-      systemNames,
-    );
-    setManualProjectNames(
-      nextManualProjectNames,
-    );
-    setExcludedSystemProjectNames(
-      nextExcludedSystemProjectNames,
-    );
-    setDisplayProjectNames(
-      nextDisplayProjectNames,
-    );
-    setWeeklyReports(reports);
-
-    setSourceCellRows(
-      nextSourceRows,
-    );
-
-    setRegisteredProjects(
-      new Set(
-        reports.map(
-          (report) =>
-            report.project_name,
-        ),
-      ),
-    );
-
-    let savedRows = null;
-    let savedScheduleValues = null;
-    let savedOfficeRows = null;
-
-    if (savedOverview) {
-      savedRows =
-        migrateSavedPayload(
-          savedOverview.payload,
-          nextProjects,
-        );
-
-      savedScheduleValues =
-        Array.from(
-          { length: 7 },
-          (_, index) =>
-            String(
-              savedOverview?.payload
-                ?.scheduleValues
-                ?.[index] || '',
-            ),
-        );
-
-      savedOfficeRows =
-        migrateSavedOfficeRows(
-          savedOverview.payload,
-        );
     }
 
     if (
@@ -2842,15 +2506,19 @@ export default function WeeklyOverview({
       }
     }
 
+    const draft =
+      readOnly
+        ? null
+        : readDraft(
+            draftStorageKey,
+          );
+
     const nextCellRows =
       draft?.cellRows
-        ? migrateSavedPayload(
-            {
-              cellRows:
-                draft.cellRows,
-            },
-            nextProjects,
-          )
+        ? migrateSavedPayload({
+            cellRows:
+              draft.cellRows,
+          })
         : savedRows ||
           nextSourceRows;
 
@@ -2902,7 +2570,6 @@ export default function WeeklyOverview({
   }, [
     draftStorageKey,
     readOnly,
-    weekRange.weekEnd,
     weekRange.weekStart,
   ]);
 
@@ -2946,251 +2613,17 @@ export default function WeeklyOverview({
         cellRows,
         officeRows,
         scheduleValues,
-        projectSettings: {
-          manualProjectNames,
-          excludedSystemProjectNames,
-          displayProjectNames,
-        },
         savedAt:
           new Date().toISOString(),
       },
     );
   }, [
     cellRows,
-    displayProjectNames,
     draftStorageKey,
-    excludedSystemProjectNames,
-    manualProjectNames,
     officeRows,
     readOnly,
     scheduleValues,
   ]);
-
-  const handleOpenProjectSettings = () => {
-    setProjectSettingsDraft({
-      manualProjectNames: [
-        ...manualProjectNames,
-      ],
-      excludedSystemProjectNames: [
-        ...excludedSystemProjectNames,
-      ],
-    });
-    setManualProjectInput('');
-    setProjectSettingsOpen(true);
-  };
-
-  const handleToggleSystemProject = (
-    projectName,
-    checked,
-  ) => {
-    setProjectSettingsDraft(
-      (previous) => {
-        const excluded =
-          new Set(
-            normalizeProjectNameList(
-              previous
-                .excludedSystemProjectNames,
-            ),
-          );
-
-        if (checked) {
-          excluded.delete(projectName);
-        } else {
-          excluded.add(projectName);
-        }
-
-        return {
-          ...previous,
-          excludedSystemProjectNames:
-            Array.from(excluded),
-        };
-      },
-    );
-  };
-
-  const handleAddManualProject = () => {
-    const projectName =
-      String(
-        manualProjectInput || '',
-      ).trim();
-
-    if (!projectName) {
-      return;
-    }
-
-    if (
-      systemProjectNames.includes(
-        projectName,
-      )
-    ) {
-      window.alert(
-        '이미 시스템에 등록된 현장입니다. 시스템 등록 현장에서 선택해주세요.',
-      );
-      return;
-    }
-
-    setProjectSettingsDraft(
-      (previous) => ({
-        ...previous,
-        manualProjectNames:
-          normalizeProjectNameList([
-            ...previous
-              .manualProjectNames,
-            projectName,
-          ]),
-      }),
-    );
-
-    setManualProjectInput('');
-  };
-
-  const handleDeleteManualProject = (
-    projectName,
-  ) => {
-    setProjectSettingsDraft(
-      (previous) => ({
-        ...previous,
-        manualProjectNames:
-          previous.manualProjectNames.filter(
-            (name) =>
-              name !== projectName,
-          ),
-      }),
-    );
-  };
-
-  const handleApplyProjectSettings = () => {
-    const nextManual =
-      normalizeProjectNameList(
-        projectSettingsDraft
-          .manualProjectNames,
-      );
-
-    const nextExcluded =
-      normalizeProjectNameList(
-        projectSettingsDraft
-          .excludedSystemProjectNames,
-      );
-
-    const selectedSystemCount =
-      systemProjectNames.filter(
-        (name) =>
-          !nextExcluded.includes(name),
-      ).length;
-
-    const totalSelected =
-      selectedSystemCount +
-      nextManual.length;
-
-    const nextDisplay =
-      deriveOverviewProjectNames({
-        systemProjectNames,
-        manualProjectNames:
-          nextManual,
-        excludedSystemProjectNames:
-          nextExcluded,
-        weeklyReports,
-        savedDisplayProjectNames:
-          displayProjectNames,
-        readOnly: false,
-        hasSavedProjectSettings: true,
-      });
-
-    const nextProjects =
-      buildOverviewProjects(
-        nextDisplay,
-      );
-
-    const currentRowsByProject =
-      new Map(
-        overviewProjects.map(
-          (project) => [
-            project.projectName,
-            {
-              processRows:
-                normalizeRows(
-                  cellRows[
-                    project
-                      .processCell
-                  ],
-                ),
-              specialRows:
-                normalizeRows(
-                  cellRows[
-                    project
-                      .specialCell
-                  ],
-                ),
-            },
-          ],
-        ),
-      );
-
-    const nextSourceRows =
-      createSourceCellRows(
-        weeklyReports,
-        nextProjects,
-      );
-
-    const nextCellRows =
-      createEmptyCellRows();
-
-    nextProjects.forEach(
-      (project) => {
-        const previousRows =
-          currentRowsByProject.get(
-            project.projectName,
-          );
-
-        nextCellRows[
-          project.processCell
-        ] =
-          previousRows?.processRows ||
-          normalizeRows(
-            nextSourceRows[
-              project.processCell
-            ],
-          );
-
-        nextCellRows[
-          project.specialCell
-        ] =
-          previousRows?.specialRows ||
-          normalizeRows(
-            nextSourceRows[
-              project.specialCell
-            ],
-          );
-      },
-    );
-
-    setManualProjectNames(
-      nextManual,
-    );
-    setExcludedSystemProjectNames(
-      nextExcluded,
-    );
-    setDisplayProjectNames(
-      nextDisplay,
-    );
-    setSourceCellRows(
-      nextSourceRows,
-    );
-    setCellRows(nextCellRows);
-    setProjectSettingsOpen(false);
-
-    if (
-      totalSelected >
-      MAX_OVERVIEW_PROJECTS
-    ) {
-      setWarningMessage(
-        `주간업무총괄 양식은 최대 ${MAX_OVERVIEW_PROJECTS}개 현장을 표시합니다. ` +
-          `현재 ${totalSelected}개가 선택되어 있으며 수동 추가 현장과 주간업무 등록 현장을 우선 표시합니다.`,
-      );
-    }
-
-    markDirty();
-  };
 
   const handleOfficeRowChange = (
     fieldKey,
@@ -3678,21 +3111,6 @@ export default function WeeklyOverview({
         },
       );
 
-      TEMPLATE_PROJECTS.forEach(
-        (_slot, index) => {
-          const project =
-            overviewProjects[index];
-
-          const nameCell =
-            worksheet.getCell(
-              `B${6 + index * 4}`,
-            );
-
-          nameCell.value =
-            project?.projectName || '';
-        },
-      );
-
       worksheet.pageSetup.printArea =
         'A1:N74';
 
@@ -3815,11 +3233,6 @@ export default function WeeklyOverview({
               cellValues,
               scheduleValues,
               officeRows,
-              projectSettings: {
-                manualProjectNames,
-                excludedSystemProjectNames,
-                displayProjectNames,
-              },
             },
             updated_by: user.id,
             updated_by_name: name,
@@ -4013,7 +3426,6 @@ export default function WeeklyOverview({
         >
           {savedMetadata ? (
             <ExcelTemplatePreview
-              projects={overviewProjects}
               cellRows={cellRows}
               nextMondayKey={
                 weekRange.nextMonday
@@ -4117,23 +3529,6 @@ export default function WeeklyOverview({
               gap: 0.45,
             }}
           >
-            <Button
-              size="small"
-              variant="outlined"
-              onClick={
-                handleOpenProjectSettings
-              }
-              sx={{
-                minWidth: 76,
-                px: 0.75,
-                whiteSpace: 'nowrap',
-                fontSize: '0.62rem',
-                fontWeight: 900,
-              }}
-            >
-              현장 설정
-            </Button>
-
             <Button
               size="small"
               variant="contained"
@@ -4284,7 +3679,7 @@ export default function WeeklyOverview({
             boxSizing: 'border-box',
           }}
         >
-          {overviewProjects.map(
+          {TEMPLATE_PROJECTS.map(
             (project) => (
               <ProjectEditor
                 key={
@@ -4396,7 +3791,6 @@ export default function WeeklyOverview({
           }}
         >
           <ExcelTemplatePreview
-            projects={overviewProjects}
             cellRows={cellRows}
             nextMondayKey={
               weekRange.nextMonday
@@ -4413,258 +3807,6 @@ export default function WeeklyOverview({
           />
         </Box>
       </Paper>
-
-      <Dialog
-        open={projectSettingsOpen}
-        onClose={() =>
-          setProjectSettingsOpen(false)
-        }
-        fullWidth
-        maxWidth="sm"
-      >
-        <DialogTitle
-          sx={{
-            pb: 1,
-            fontSize: '1rem',
-            fontWeight: 900,
-          }}
-        >
-          주간업무총괄 현장 설정
-        </DialogTitle>
-
-        <DialogContent dividers>
-          <Alert
-            severity="info"
-            sx={{
-              mb: 1.5,
-              fontSize: '0.72rem',
-            }}
-          >
-            시스템에 등록된 현장은 기본으로 포함됩니다.
-            종료된 현장처럼 시스템에 없는 현장은 아래에서
-            이번 주 총괄용 수동 현장으로 추가할 수 있습니다.
-            양식에는 최대 {MAX_OVERVIEW_PROJECTS}개 현장이 표시됩니다.
-          </Alert>
-
-          <Typography
-            sx={{
-              mb: 0.7,
-              color: '#334155',
-              fontSize: '0.78rem',
-              fontWeight: 900,
-            }}
-          >
-            시스템 등록 현장
-          </Typography>
-
-          <Paper
-            variant="outlined"
-            sx={{
-              maxHeight: 250,
-              overflowY: 'auto',
-              p: 0.8,
-              borderColor: '#e2e8f0',
-              boxShadow: 'none',
-            }}
-          >
-            {systemProjectNames.length > 0 ? (
-              systemProjectNames.map(
-                (projectName) => (
-                  <FormControlLabel
-                    key={projectName}
-                    sx={{
-                      width: '100%',
-                      m: 0,
-                      py: 0.15,
-                      '& .MuiFormControlLabel-label':
-                        {
-                          fontSize:
-                            '0.75rem',
-                          fontWeight: 700,
-                        },
-                    }}
-                    control={
-                      <Checkbox
-                        size="small"
-                        checked={
-                          !projectSettingsDraft
-                            .excludedSystemProjectNames
-                            .includes(
-                              projectName,
-                            )
-                        }
-                        onChange={(
-                          event,
-                        ) =>
-                          handleToggleSystemProject(
-                            projectName,
-                            event.target
-                              .checked,
-                          )
-                        }
-                      />
-                    }
-                    label={projectName}
-                  />
-                ),
-              )
-            ) : (
-              <Typography
-                sx={{
-                  py: 1,
-                  color: '#94a3b8',
-                  fontSize: '0.72rem',
-                }}
-              >
-                시스템 등록 현장을 불러오지 못했습니다.
-              </Typography>
-            )}
-          </Paper>
-
-          <Typography
-            sx={{
-              mt: 1.6,
-              mb: 0.7,
-              color: '#334155',
-              fontSize: '0.78rem',
-              fontWeight: 900,
-            }}
-          >
-            이번 주 수동 현장
-          </Typography>
-
-          <Box
-            sx={{
-              display: 'flex',
-              gap: 0.6,
-              alignItems: 'center',
-            }}
-          >
-            <TextField
-              fullWidth
-              size="small"
-              value={manualProjectInput}
-              placeholder="예: 종료현장 하자보수"
-              onChange={(event) =>
-                setManualProjectInput(
-                  event.target.value,
-                )
-              }
-              onKeyDown={(event) => {
-                if (
-                  event.key === 'Enter'
-                ) {
-                  event.preventDefault();
-                  handleAddManualProject();
-                }
-              }}
-            />
-
-            <Button
-              variant="contained"
-              onClick={handleAddManualProject}
-              sx={{
-                minWidth: 64,
-                whiteSpace: 'nowrap',
-                fontWeight: 800,
-              }}
-            >
-              추가
-            </Button>
-          </Box>
-
-          <Box
-            sx={{
-              mt: 0.9,
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: 0.6,
-            }}
-          >
-            {projectSettingsDraft
-              .manualProjectNames
-              .map((projectName) => (
-                <Chip
-                  key={projectName}
-                  label={`${projectName} · 수동`}
-                  onDelete={() =>
-                    handleDeleteManualProject(
-                      projectName,
-                    )
-                  }
-                  size="small"
-                  color="warning"
-                  variant="outlined"
-                />
-              ))}
-
-            {projectSettingsDraft
-              .manualProjectNames
-              .length === 0 && (
-              <Typography
-                sx={{
-                  color: '#94a3b8',
-                  fontSize: '0.7rem',
-                }}
-              >
-                추가된 수동 현장이 없습니다.
-              </Typography>
-            )}
-          </Box>
-
-          {(
-            systemProjectNames.filter(
-              (name) =>
-                !projectSettingsDraft
-                  .excludedSystemProjectNames
-                  .includes(name),
-            ).length +
-            projectSettingsDraft
-              .manualProjectNames.length
-          ) > MAX_OVERVIEW_PROJECTS && (
-            <Alert
-              severity="warning"
-              sx={{
-                mt: 1.3,
-                fontSize: '0.72rem',
-              }}
-            >
-              현재 선택 현장이 {systemProjectNames.filter(
-                (name) =>
-                  !projectSettingsDraft
-                    .excludedSystemProjectNames
-                    .includes(name),
-              ).length +
-                projectSettingsDraft
-                  .manualProjectNames
-                  .length}개입니다.
-              최대 {MAX_OVERVIEW_PROJECTS}개까지 표시되므로,
-              필요 없는 시스템 현장의 체크를 해제해주세요.
-            </Alert>
-          )}
-        </DialogContent>
-
-        <DialogActions>
-          <Button
-            onClick={() =>
-              setProjectSettingsOpen(
-                false,
-              )
-            }
-          >
-            취소
-          </Button>
-
-          <Button
-            variant="contained"
-            onClick={
-              handleApplyProjectSettings
-            }
-          >
-            적용
-          </Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 }

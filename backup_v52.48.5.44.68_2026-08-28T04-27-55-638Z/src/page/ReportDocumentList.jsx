@@ -500,11 +500,7 @@ export default function ReportDocumentList({
                 <TableCell align="center" sx={{ ...headerCellSx, width: 126 }}>결재완료된 날</TableCell>
                 <TableCell align="center" sx={{ ...headerCellSx, width: 110 }}>상태</TableCell>
                 <TableCell align="center" sx={{ ...headerCellSx, width: reportType === 'proposal' ? 164 : 128, borderRight: 'none' }}>
-                  {reportType === 'proposal'
-                    ? '보기 / 다운로드 / 삭제'
-                    : reportType === 'weekly'
-                      ? '수정 / 보기 / 다운로드'
-                      : '보기 / 다운로드'}
+                  {reportType === 'proposal' ? '보기 / 다운로드 / 삭제' : '보기 / 다운로드'}
                 </TableCell>
               </TableRow>
             </TableHead>
@@ -522,11 +518,8 @@ export default function ReportDocumentList({
                     REPORT_STATUS_META[document.status] ||
                     REPORT_STATUS_META.pending;
                   const canEdit =
-                    document.author_user_id === currentUserId &&
-                    (
-                      reportType === 'weekly' ||
-                      ['draft', 'rejected'].includes(document.status)
-                    );
+                    ['draft', 'rejected'].includes(document.status) &&
+                    document.author_user_id === currentUserId;
                   const canDelete = canDeleteDocument(document);
                   const isSelected = selectedDocumentIds.includes(document.id);
 
