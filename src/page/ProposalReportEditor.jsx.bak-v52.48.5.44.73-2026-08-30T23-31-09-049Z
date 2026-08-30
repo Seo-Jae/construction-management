@@ -807,20 +807,11 @@ export default function ProposalReportEditor({
 
       worksheet.getCell('A13').value = narrative;
 
-      // 보고내용은 각 행을 A:G까지 병합하여 한 줄 영역으로 사용합니다.
-      // A16:G16, A17:G17 ... A31:G31
-      // 긴 문장은 병합된 전체 폭을 기준으로 줄바꿈되고 항상 왼쪽 정렬됩니다.
       for (let index = 0; index < MAX_REPORT_LINES; index += 1) {
-        const rowNumber = 16 + index;
-        const mergeRange = `A${rowNumber}:G${rowNumber}`;
-
-        worksheet.mergeCells(mergeRange);
-
-        const cell = worksheet.getCell(`A${rowNumber}`);
+        const cell = worksheet.getCell(`A${16 + index}`);
         cell.value = reportLines[index] || '';
         cell.alignment = {
           ...(cell.alignment || {}),
-          horizontal: 'left',
           vertical: 'middle',
           wrapText: true,
         };
