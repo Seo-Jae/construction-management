@@ -6,10 +6,6 @@ import {
   Checkbox,
   Chip,
   CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
   Fade,
   IconButton,
   Paper,
@@ -72,22 +68,6 @@ const formatDate = (value) => {
   }).format(date);
 };
 
-const formatDateTime = (value) => {
-  if (!value) return '-';
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return String(value);
-
-  return new Intl.DateTimeFormat('ko-KR', {
-    timeZone: 'Asia/Seoul',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(date);
-};
-
 const headerCellSx = {
   py: 1,
   px: 1,
@@ -124,7 +104,6 @@ export default function ReportDocumentList({
   const [currentUserRole, setCurrentUserRole] = useState('');
   const [selectedDocumentIds, setSelectedDocumentIds] = useState([]);
   const [deleting, setDeleting] = useState(false);
-  const [rejectionDocument, setRejectionDocument] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -593,67 +572,12 @@ export default function ReportDocumentList({
                       <TableCell align="center" sx={bodyCellSx}>
                         {document.status === 'approved' ? formatDate(document.completed_at) : '-'}
                       </TableCell>
-                      <TableCell
-                        align="center"
-                        sx={bodyCellSx}
-                        onClick={(event) => {
-                          if (
-                            reportType === 'proposal' &&
-                            document.status === 'rejected'
-                          ) {
-                            event.stopPropagation();
-                          }
-                        }}
-                      >
-                        <Tooltip
-                          title={
-                            reportType === 'proposal' &&
-                            document.status === 'rejected'
-                              ? '반려 의견 보기'
-                              : ''
-                          }
-                          disableHoverListener={
-                            !(
-                              reportType === 'proposal' &&
-                              document.status === 'rejected'
-                            )
-                          }
-                        >
-                          <Chip
-                            size="small"
-                            label={status.label}
-                            onClick={
-                              reportType === 'proposal' &&
-                              document.status === 'rejected'
-                                ? (event) => {
-                                    event.stopPropagation();
-                                    setRejectionDocument(document);
-                                  }
-                                : undefined
-                            }
-                            sx={{
-                              height: 22,
-                              color: status.color,
-                              bgcolor: status.bgcolor,
-                              fontSize: '0.62rem',
-                              fontWeight: 900,
-                              cursor:
-                                reportType === 'proposal' &&
-                                document.status === 'rejected'
-                                  ? 'pointer'
-                                  : 'default',
-                              '&:hover':
-                                reportType === 'proposal' &&
-                                document.status === 'rejected'
-                                  ? {
-                                      bgcolor: '#fecaca',
-                                      boxShadow:
-                                        '0 0 0 1px rgba(185,28,28,0.18)',
-                                    }
-                                  : undefined,
-                            }}
-                          />
-                        </Tooltip>
+                      <TableCell align="center" sx={bodyCellSx}>
+                        <Chip
+                          size="small"
+                          label={status.label}
+                          sx={{ height: 22, color: status.color, bgcolor: status.bgcolor, fontSize: '0.62rem', fontWeight: 900 }}
+                        />
                       </TableCell>
                       <TableCell align="center" sx={{ ...bodyCellSx, borderRight: 'none' }}>
                         {canEdit && (
@@ -721,144 +645,6 @@ export default function ReportDocumentList({
           </Table>
         </TableContainer>
       </Paper>
-
-      <Dialog
-        open={Boolean(rejectionDocument)}
-        onClose={() => setRejectionDocument(null)}
-        fullWidth
-        maxWidth="sm"
-      >
-        <DialogTitle
-          sx={{
-            pb: 1,
-            color: '#991b1b',
-            fontSize: '1rem',
-            fontWeight: 900,
-          }}
-        >
-          반려 의견
-        </DialogTitle>
-
-        <DialogContent dividers sx={{ py: 2 }}>
-          {rejectionDocument && (
-            <>
-              <Box sx={{ mb: 1.5 }}>
-                <Typography
-                  sx={{
-                    color: '#0f172a',
-                    fontSize: '0.82rem',
-                    fontWeight: 900,
-                  }}
-                >
-                  {rejectionDocument.title || '품의 보고'}
-                </Typography>
-                <Typography
-                  sx={{
-                    mt: 0.25,
-                    color: '#64748b',
-                    fontSize: '0.7rem',
-                  }}
-                >
-                  작성자: {rejectionDocument.author_name || '-'}
-                  {rejectionDocument.author_position
-                    ? ` · ${rejectionDocument.author_position}`
-                    : ''}
-                </Typography>
-              </Box>
-
-              {(rejectionDocument.approval_steps || [])
-                .filter((step) => step.status === 'rejected')
-                .map((step, index) => (
-                  <Paper
-                    key={step.id || `rejected-step-${index}`}
-                    variant="outlined"
-                    sx={{
-                      mb: 1,
-                      p: 1.5,
-                      borderColor: '#fecaca',
-                      bgcolor: '#fff7f7',
-                      boxShadow: 'none',
-                    }}
-                  >
-                    <Typography
-                      sx={{
-                        color: '#b91c1c',
-                        fontSize: '0.76rem',
-                        fontWeight: 900,
-                      }}
-                    >
-                      {step.approver_name || '결재자'}
-                      {step.approver_position
-                        ? ` · ${step.approver_position}`
-                        : ''}
-                    </Typography>
-                    <Typography
-                      sx={{
-                        mt: 0.2,
-                        color: '#94a3b8',
-                        fontSize: '0.66rem',
-                      }}
-                    >
-                      반려일시: {formatDateTime(step.acted_at)}
-                    </Typography>
-
-                    <Typography
-                      sx={{
-                        mt: 1.2,
-                        color: '#475569',
-                        fontSize: '0.7rem',
-                        fontWeight: 800,
-                      }}
-                    >
-                      수정·보완 요청사항
-                    </Typography>
-                    <Box
-                      sx={{
-                        mt: 0.45,
-                        p: 1.1,
-                        minHeight: 54,
-                        border: '1px solid #fee2e2',
-                        borderRadius: 1,
-                        bgcolor: '#ffffff',
-                      }}
-                    >
-                      <Typography
-                        sx={{
-                          color: '#7f1d1d',
-                          fontSize: '0.78rem',
-                          lineHeight: 1.65,
-                          whiteSpace: 'pre-wrap',
-                          wordBreak: 'break-word',
-                        }}
-                      >
-                        {String(step.comment || '').trim() ||
-                          '등록된 반려 의견이 없습니다.'}
-                      </Typography>
-                    </Box>
-                  </Paper>
-                ))}
-
-              {(rejectionDocument.approval_steps || []).filter(
-                (step) => step.status === 'rejected',
-              ).length === 0 && (
-                <Alert severity="warning">
-                  반려 상태는 확인되지만 저장된 반려 의견을 찾지 못했습니다.
-                  목록을 새로고침한 뒤 다시 확인해주세요.
-                </Alert>
-              )}
-            </>
-          )}
-        </DialogContent>
-
-        <DialogActions>
-          <Button
-            onClick={() => setRejectionDocument(null)}
-            sx={{ fontWeight: 800 }}
-          >
-            닫기
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       <ApprovalReportViewer
         open={Boolean(previewRequest)}
