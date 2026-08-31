@@ -1,3 +1,4 @@
+// v52.48.5.44.87 제보 목록 접수일 한 줄 및 제목 열 폭 조정
 // v52.48.5.44.86 제보 상태·답변 관리 및 처리완료 종결
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -419,18 +420,34 @@ export default function FeedbackCenter({
         </Stack>
 
         <TableContainer sx={{ maxHeight: 'calc(100vh - 365px)' }}>
-          <Table stickyHeader size="small">
+          <Table
+            stickyHeader
+            size="small"
+            sx={{
+              minWidth: isSuperAdmin && tab === 'all' ? 1220 : 1110,
+              tableLayout: 'fixed',
+            }}
+          >
+            <colgroup>
+              <col style={{ width: 180 }} />
+              <col style={{ width: 90 }} />
+              <col style={{ width: isSuperAdmin && tab === 'all' ? '34%' : '40%' }} />
+              <col style={{ width: 180 }} />
+              {isSuperAdmin && tab === 'all' && <col style={{ width: 110 }} />}
+              <col style={{ width: 160 }} />
+              <col style={{ width: 90 }} />
+            </colgroup>
             <TableHead>
               <TableRow>
-                <TableCell sx={{ fontWeight: 900, width: 125 }}>접수일</TableCell>
-                <TableCell sx={{ fontWeight: 900, width: 95 }}>구분</TableCell>
+                <TableCell sx={{ fontWeight: 900, whiteSpace: 'nowrap' }}>접수일</TableCell>
+                <TableCell sx={{ fontWeight: 900 }}>구분</TableCell>
                 <TableCell sx={{ fontWeight: 900 }}>제목</TableCell>
-                <TableCell sx={{ fontWeight: 900, width: 150 }}>현장</TableCell>
+                <TableCell sx={{ fontWeight: 900 }}>현장</TableCell>
                 {isSuperAdmin && tab === 'all' && (
-                  <TableCell sx={{ fontWeight: 900, width: 115 }}>작성자</TableCell>
+                  <TableCell sx={{ fontWeight: 900 }}>작성자</TableCell>
                 )}
-                <TableCell sx={{ fontWeight: 900, width: 150 }}>발생 메뉴</TableCell>
-                <TableCell sx={{ fontWeight: 900, width: 100 }} align="center">상태</TableCell>
+                <TableCell sx={{ fontWeight: 900 }}>발생 메뉴</TableCell>
+                <TableCell sx={{ fontWeight: 900 }} align="center">상태</TableCell>
               </TableRow>
             </TableHead>
 
@@ -462,7 +479,13 @@ export default function FeedbackCenter({
                     onClick={() => setSelected(row)}
                     sx={{ cursor: 'pointer' }}
                   >
-                    <TableCell sx={{ fontSize: '0.69rem' }}>
+                    <TableCell
+                      sx={{
+                        fontSize: '0.69rem',
+                        whiteSpace: 'nowrap',
+                        fontVariantNumeric: 'tabular-nums',
+                      }}
+                    >
                       {formatFeedbackDateTime(row.created_at)}
                     </TableCell>
 
@@ -483,7 +506,7 @@ export default function FeedbackCenter({
                     <TableCell>
                       <Typography
                         sx={{
-                          maxWidth: 520,
+                          maxWidth: '100%',
                           fontSize: '0.74rem',
                           fontWeight: 850,
                           overflow: 'hidden',
