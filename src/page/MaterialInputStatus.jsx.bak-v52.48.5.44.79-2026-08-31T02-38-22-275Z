@@ -5717,19 +5717,26 @@ export default function MaterialInputStatus({
               position: 'relative',
               zIndex: 1,
               flexShrink: 0,
-              fontSize: '0.72rem',
-              fontWeight: 900,
-              textTransform: 'none',
-              transition: 'all 160ms ease',
             },
             '& .MuiTab-root:first-of-type': {
               ml: 0.1,
             },
             '& .MuiTab-root:last-of-type': {
-              mr: 0.45,
+              mr: 0.1,
             },
             '& .MuiTab-root.Mui-selected': {
               zIndex: 2,
+            },
+            '& .MuiTab-root': {
+              minHeight: 29,
+              minWidth: 0,
+              px: 1.35,
+              py: 0.35,
+              borderRadius: 999,
+              fontSize: '0.72rem',
+              fontWeight: 900,
+              textTransform: 'none',
+              transition: 'all 160ms ease',
             },
             '& .MuiTab-root:nth-of-type(1)': {
               color: '#1d4ed8',
