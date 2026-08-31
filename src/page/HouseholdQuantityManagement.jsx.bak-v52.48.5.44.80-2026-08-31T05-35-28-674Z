@@ -1327,34 +1327,12 @@ export default function HouseholdQuantityManagement({
                 flex: 1,
                 minWidth: 0,
                 minHeight: 38,
-                /*
-                  화면 90% CSS zoom에서는 MUI Tabs 기본 indicator의
-                  left/width 계산값이 탭 실제 위치와 어긋날 수 있다.
-                  기본 indicator 대신 선택된 Tab 자체에 밑줄을 붙여
-                  배율과 관계없이 글자/탭 위치를 정확히 따라가게 한다.
-                */
-                '& .MuiTabs-indicator': {
-                  display: 'none',
-                },
                 '& .MuiTab-root': {
                   minHeight: 38,
                   py: 0.5,
                   px: 1.7,
-                  position: 'relative',
-                  overflow: 'visible',
                   fontSize: '0.72rem',
                   fontWeight: 800,
-                },
-                '& .MuiTab-root.Mui-selected::after': {
-                  content: '""',
-                  position: 'absolute',
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  height: 2,
-                  bgcolor: '#2563eb',
-                  borderRadius: '2px 2px 0 0',
-                  pointerEvents: 'none',
                 },
               }}
             >
