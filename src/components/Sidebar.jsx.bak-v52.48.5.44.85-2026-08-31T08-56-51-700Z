@@ -1484,10 +1484,11 @@ export default function Sidebar({
               sx={{
                 minWidth: 34,
                 color: 'inherit',
-                justifyContent: 'center',
               }}
             >
-              <FeedbackOutlinedIcon fontSize="small" />
+              <FeedbackOutlinedIcon
+                sx={{ fontSize: 19 }}
+              />
             </ListItemIcon>
 
             <ListItemText
