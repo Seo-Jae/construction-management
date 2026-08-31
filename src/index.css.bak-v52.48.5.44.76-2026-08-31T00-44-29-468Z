@@ -73,23 +73,6 @@ html.wooklim-dashboard-scaled
 }
 
 /*
-  v52.48.5.44.76
-  CSS zoom 상태에서 MUI Tooltip도 Portal(body)로 렌더링되기 때문에
-  기준 요소 좌표가 화면배율만큼 다시 축소되어 왼쪽/위쪽으로 밀린다.
-  Popper 좌표계에는 역배율을 적용하고 Tooltip 본체 크기는 현재 화면배율로
-  다시 맞춰 커서/버튼 위치와 설명 위치가 일치하도록 한다.
-*/
-html.wooklim-dashboard-scaled .MuiTooltip-popper {
-  zoom: var(--wooklim-dashboard-overlay-inverse-scale, 1);
-}
-
-html.wooklim-dashboard-scaled
-  .MuiTooltip-popper
-  .MuiTooltip-tooltip {
-  zoom: var(--wooklim-dashboard-scale, 1);
-}
-
-/*
   대시보드에서 선택한 화면 배율은 문서 최상위 요소에 적용된다.
   인쇄물은 화면 배율과 무관하게 항상 100%로 출력한다.
 */
