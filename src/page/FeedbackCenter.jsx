@@ -1,3 +1,4 @@
+// v52.48.5.44.86 제보 상태·답변 관리 및 처리완료 종결
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -38,9 +39,14 @@ import {
   FEEDBACK_BUCKET,
   FEEDBACK_CATEGORIES,
   FEEDBACK_STATUSES,
+  FEEDBACK_ADMIN_STATUSES,
+  FEEDBACK_SELECT_COLUMNS,
   formatFeedbackDateTime,
   getFeedbackCategoryMeta,
   getFeedbackStatusMeta,
+  isFeedbackCompleted,
+  normalizeFeedbackStatus,
+  resolveFeedbackAdminUpdate,
 } from '../config/feedbackCatalog.js';
 
 const allFilter = 'all';
@@ -74,11 +80,12 @@ export default function FeedbackCenter({
   const [adminDraft, setAdminDraft] = useState({
     status: 'received',
     admin_reply: '',
-    target_version: '',
-    completed_version: '',
   });
   const [savingAdmin, setSavingAdmin] = useState(false);
   const [message, setMessage] = useState(null);
+  const [adminMessage, setAdminMessage] = useState(null);
+  const selectedCompleted = isFeedbackCompleted(selected?.status);
+  const columnCount = isSuperAdmin && tab === 'all' ? 7 : 6;
 
   const loadRows = useCallback(async () => {
     if (!resolvedUserId) return;
@@ -88,7 +95,7 @@ export default function FeedbackCenter({
     try {
       let query = supabase
         .from('system_feedback')
-        .select('*')
+        .select(FEEDBACK_SELECT_COLUMNS)
         .order('created_at', { ascending: false });
 
       if (!isSuperAdmin || tab === 'mine') {
@@ -122,8 +129,9 @@ export default function FeedbackCenter({
   }, [loadRows]);
 
   useEffect(() => {
+    setAdminMessage(null);
+    setAttachmentUrls([]);
     if (!selected) {
-      setAttachmentUrls([]);
       return;
     }
 
@@ -150,10 +158,8 @@ export default function FeedbackCenter({
     });
 
     setAdminDraft({
-      status: selected.status || 'received',
+      status: normalizeFeedbackStatus(selected.status) || 'received',
       admin_reply: selected.admin_reply || '',
-      target_version: selected.target_version || '',
-      completed_version: selected.completed_version || '',
     });
 
     return () => {
@@ -169,7 +175,7 @@ export default function FeedbackCenter({
         return false;
       }
 
-      if (statusFilter !== allFilter && row.status !== statusFilter) {
+      if (statusFilter !== allFilter && normalizeFeedbackStatus(row.status) !== statusFilter) {
         return false;
       }
 
@@ -193,12 +199,13 @@ export default function FeedbackCenter({
       reviewing: 0,
       planned: 0,
       completed: 0,
-      held: 0,
+      rejected: 0,
     };
 
     rows.forEach((row) => {
-      if (Object.prototype.hasOwnProperty.call(result, row.status)) {
-        result[row.status] += 1;
+      const status = normalizeFeedbackStatus(row.status);
+      if (Object.prototype.hasOwnProperty.call(result, status)) {
+        result[status] += 1;
       }
     });
 
@@ -206,18 +213,24 @@ export default function FeedbackCenter({
   }, [rows]);
 
   const saveAdmin = async () => {
-    if (!isSuperAdmin || !selected) return;
+    if (!isSuperAdmin || !selected || savingAdmin) return;
+
+    let treatment;
+    try {
+      treatment = resolveFeedbackAdminUpdate(selected.status, adminDraft);
+    } catch (error) {
+      setAdminMessage({ severity: 'warning', text: error.message });
+      return;
+    }
 
     setSavingAdmin(true);
+    setAdminMessage(null);
 
     try {
       const now = new Date().toISOString();
 
       const updatePayload = {
-        status: adminDraft.status,
-        admin_reply: String(adminDraft.admin_reply || '').trim(),
-        target_version: String(adminDraft.target_version || '').trim(),
-        completed_version: String(adminDraft.completed_version || '').trim(),
+        ...treatment,
         handled_by: resolvedUserId || null,
         handled_by_name: String(userProfile?.manager_name || '').trim(),
         handled_at: now,
@@ -228,12 +241,17 @@ export default function FeedbackCenter({
         .from('system_feedback')
         .update(updatePayload)
         .eq('id', selected.id)
-        .select('*')
-        .single();
+        .eq('status', selected.status)
+        .eq('updated_at', selected.updated_at)
+        .select(FEEDBACK_SELECT_COLUMNS)
+        .maybeSingle();
 
       if (error) throw error;
+      if (!data) {
+        await loadRows();
+        throw new Error('다른 관리자가 먼저 처리했거나 자료가 변경되었습니다. 창을 닫고 해당 제보를 다시 열어 확인해주세요.');
+      }
 
-      setSelected(data);
       setRows((prev) => prev.map((row) => row.id === data.id ? data : row));
       setMessage({
         severity: 'success',
@@ -241,9 +259,11 @@ export default function FeedbackCenter({
       });
 
       window.dispatchEvent(new CustomEvent('system-feedback-changed'));
+      // 저장 결과는 목록 토스트에서 확인하고, 다시 열면 최종 상태로 표시합니다.
+      setSelected(null);
     } catch (error) {
       console.error('건의·오류 처리 저장 실패:', error);
-      setMessage({
+      setAdminMessage({
         severity: 'error',
         text: error?.message || '처리 내용을 저장하지 못했습니다.',
       });
@@ -336,7 +356,7 @@ export default function FeedbackCenter({
           <Typography sx={{ mt: 0.15, fontSize: '1.05rem', fontWeight: 950 }}>{stats.total}건</Typography>
         </Box>
 
-        {FEEDBACK_STATUSES.slice(0, 4).map((item) => (
+        {FEEDBACK_STATUSES.map((item) => (
           <Box key={item.value} sx={statCardSx}>
             <Typography sx={{ color: item.color, fontSize: '0.65rem', fontWeight: 850 }}>
               {item.label}
@@ -411,14 +431,13 @@ export default function FeedbackCenter({
                 )}
                 <TableCell sx={{ fontWeight: 900, width: 150 }}>발생 메뉴</TableCell>
                 <TableCell sx={{ fontWeight: 900, width: 100 }} align="center">상태</TableCell>
-                <TableCell sx={{ fontWeight: 900, width: 105 }}>반영 버전</TableCell>
               </TableRow>
             </TableHead>
 
             <TableBody>
               {loading && (
                 <TableRow>
-                  <TableCell colSpan={8} align="center" sx={{ py: 5 }}>
+                  <TableCell colSpan={columnCount} align="center" sx={{ py: 5 }}>
                     <CircularProgress size={24} />
                   </TableCell>
                 </TableRow>
@@ -426,7 +445,7 @@ export default function FeedbackCenter({
 
               {!loading && filteredRows.length === 0 && (
                 <TableRow>
-                  <TableCell colSpan={8} align="center" sx={{ py: 6, color: '#94a3b8' }}>
+                  <TableCell colSpan={columnCount} align="center" sx={{ py: 6, color: '#94a3b8' }}>
                     등록된 제보가 없습니다.
                   </TableCell>
                 </TableRow>
@@ -504,9 +523,6 @@ export default function FeedbackCenter({
                       />
                     </TableCell>
 
-                    <TableCell sx={{ fontSize: '0.69rem', fontWeight: 800 }}>
-                      {row.completed_version || row.target_version || '-'}
-                    </TableCell>
                   </TableRow>
                 );
               })}
@@ -528,7 +544,7 @@ export default function FeedbackCenter({
 
       <Dialog
         open={Boolean(selected)}
-        onClose={() => setSelected(null)}
+        onClose={savingAdmin ? undefined : () => setSelected(null)}
         fullWidth
         maxWidth="md"
       >
@@ -556,6 +572,14 @@ export default function FeedbackCenter({
         <DialogContent dividers>
           {selected && (
             <Stack spacing={1.4}>
+              {adminMessage && (
+                <Alert severity={adminMessage.severity}>{adminMessage.text}</Alert>
+              )}
+              {selectedCompleted && (
+                <Alert severity="success">
+                  처리완료로 종결된 제보입니다. 같은 문제가 다시 발생하면 새 제보로 등록해주세요.
+                </Alert>
+              )}
               <Stack direction="row" gap={1} flexWrap="wrap">
                 <Typography sx={{ color: '#64748b', fontSize: '0.69rem' }}>
                   작성자: <b>{selected.created_by_name || '-'}</b>
@@ -613,7 +637,7 @@ export default function FeedbackCenter({
 
               <Divider />
 
-              {isSuperAdmin ? (
+              {isSuperAdmin && !selectedCompleted ? (
                 <Stack spacing={1}>
                   <Typography sx={{ fontSize: '0.76rem', fontWeight: 950 }}>
                     관리자 처리
@@ -624,6 +648,7 @@ export default function FeedbackCenter({
                       select
                       size="small"
                       label="처리상태"
+                      disabled={savingAdmin}
                       value={adminDraft.status}
                       onChange={(event) => setAdminDraft((prev) => ({
                         ...prev,
@@ -631,40 +656,30 @@ export default function FeedbackCenter({
                       }))}
                       sx={{ minWidth: 150 }}
                     >
-                      {FEEDBACK_STATUSES.map((item) => (
+                      {adminDraft.status === 'received' && (
+                        <MenuItem value="received" disabled>접수</MenuItem>
+                      )}
+                      {FEEDBACK_ADMIN_STATUSES.map((item) => (
                         <MenuItem key={item.value} value={item.value}>{item.label}</MenuItem>
                       ))}
                     </TextField>
 
-                    <TextField
-                      size="small"
-                      label="반영 예정 버전"
-                      placeholder="예: v52.48.5.44.90"
-                      value={adminDraft.target_version}
-                      onChange={(event) => setAdminDraft((prev) => ({
-                        ...prev,
-                        target_version: event.target.value,
-                      }))}
-                      sx={{ flex: 1 }}
-                    />
-
-                    <TextField
-                      size="small"
-                      label="처리 완료 버전"
-                      placeholder="예: v52.48.5.44.91"
-                      value={adminDraft.completed_version}
-                      onChange={(event) => setAdminDraft((prev) => ({
-                        ...prev,
-                        completed_version: event.target.value,
-                      }))}
-                      sx={{ flex: 1 }}
-                    />
                   </Stack>
+
+                  {adminDraft.status === 'received' && (
+                    <Typography sx={{ color: '#64748b', fontSize: '0.69rem' }}>
+                      접수 상태에서 답변을 저장하면 자동으로 확인중으로 변경됩니다.
+                    </Typography>
+                  )}
+                  {adminDraft.status === 'completed' && (
+                    <Alert severity="info">저장하면 이 제보가 종결되며 처리상태와 답변을 다시 수정할 수 없습니다.</Alert>
+                  )}
 
                   <TextField
                     multiline
                     minRows={4}
                     label="관리자 답변 / 처리내용"
+                    disabled={savingAdmin}
                     value={adminDraft.admin_reply}
                     onChange={(event) => setAdminDraft((prev) => ({
                       ...prev,
@@ -705,13 +720,6 @@ export default function FeedbackCenter({
                       {selected.admin_reply || '아직 등록된 답변이 없습니다.'}
                     </Typography>
 
-                    {(selected.target_version || selected.completed_version) && (
-                      <Typography sx={{ mt: 0.7, color: '#475569', fontSize: '0.68rem' }}>
-                        {selected.completed_version
-                          ? `처리 버전: ${selected.completed_version}`
-                          : `반영 예정: ${selected.target_version}`}
-                      </Typography>
-                    )}
                   </Box>
                 </Box>
               )}
@@ -738,8 +746,8 @@ export default function FeedbackCenter({
         </DialogContent>
 
         <DialogActions>
-          <Button onClick={() => setSelected(null)}>닫기</Button>
-          {isSuperAdmin && (
+          <Button disabled={savingAdmin} onClick={() => setSelected(null)}>닫기</Button>
+          {isSuperAdmin && !selectedCompleted && (
             <Button
               variant="contained"
               startIcon={<SaveRoundedIcon />}
