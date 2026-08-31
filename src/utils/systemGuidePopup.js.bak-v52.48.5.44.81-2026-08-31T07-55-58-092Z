@@ -1,4 +1,3 @@
-// v52.48.5.44.81 시스템 가이드 인쇄 여백 정리 - 공개 문구/한눈에 보기 안내문 제거
 // v52.48.5.44.65 시스템 가이드 별도 팝업 - 번호 없는 설명박스 지원
 import { getGuideBadgePosition, getGuideConnectorPoints, isGuideAnnotationNumberVisible, normalizeGuideAnnotations, normalizeGuideSections } from '../config/guideCatalog.js';
 
@@ -70,13 +69,13 @@ export const renderSystemGuidePopup = (popup, { label='가이드', breadcrumb=la
   if (!published) return write(popup, shell({ title:label, breadcrumb, body:`<main class="main"><div class="empty"><div class="empty-card"><div class="empty-icon">?</div><div class="empty-title">가이드 준비중</div><div class="empty-desc">${textToHtml(message || '현재 메뉴의 가이드는 아직 공개되지 않았습니다.')}</div></div></div></main>` }));
 
   const withImages = normalized.filter((section)=>section.imageUrl);
-  const overview = withImages.length ? `<section class="overview" id="guide-overview"><h2 class="overview-title">사용 순서 한눈에 보기</h2><div class="overview-grid">${withImages.map((section,index)=>`<div class="overview-card">${imageHtml(section,`ov-${index}`,true)}<div class="overview-caption"><div class="overview-num">${index+1}</div><div><div class="overview-name">${textToHtml(section.title || `화면 ${index+1}`)}</div>${section.imageCaption?`<div class="overview-desc">${textToHtml(section.imageCaption)}</div>`:''}</div></div></div>`).join('')}</div></section>` : '';
+  const overview = withImages.length ? `<section class="overview" id="guide-overview"><h2 class="overview-title">사용 순서 한눈에 보기</h2><div class="overview-sub">각 화면의 대표 흐름만 빠르게 확인하고, 상세한 표시는 아래 이용가이드에서 확인하세요.</div><div class="overview-grid">${withImages.map((section,index)=>`<div class="overview-card">${imageHtml(section,`ov-${index}`,true)}<div class="overview-caption"><div class="overview-num">${index+1}</div><div><div class="overview-name">${textToHtml(section.title || `화면 ${index+1}`)}</div>${section.imageCaption?`<div class="overview-desc">${textToHtml(section.imageCaption)}</div>`:''}</div></div></div>`).join('')}</div></section>` : '';
 
   const detail = normalized.map((section,index)=>`<article class="section" id="guide-section-${index+1}"><div class="section-head"><div class="section-index">${index+1}.</div><div class="section-title">${textToHtml(section.title || `상세 이용가이드 ${index+1}`)}</div></div>${section.content?`<div class="section-content">${textToHtml(section.content)}</div>`:''}${imageHtml(section,`detail-${index}`,false)}${section.note?`<div class="note">${textToHtml(section.note)}</div>`:''}</article>`).join('');
 
   const toc = `<aside class="toc"><div class="toc-title">목차</div>${withImages.length?`<div class="toc-group"><div class="toc-label">빠른 보기</div><a href="#guide-overview" class="toc-link" data-target="guide-overview"><span class="toc-num">●</span><span class="toc-text">사용 순서 한눈에 보기</span></a></div>`:''}<div class="toc-group"><div class="toc-label">상세 이용가이드</div>${normalized.map((section,index)=>`<a href="#guide-section-${index+1}" class="toc-link" data-target="guide-section-${index+1}"><span class="toc-num">${index+1}.</span><span class="toc-text">${textToHtml(section.title || `상세 이용가이드 ${index+1}`)}</span></a>`).join('') || '<div class="toc-link" style="color:#94a3b8">등록된 항목 없음</div>'}</div></aside>`;
 
-  const content = `<div class="guide-content"><section class="hero" id="guide-top"><div class="breadcrumb">${escapeHtml(breadcrumb)}</div><h1>${escapeHtml(title)}</h1>${summary?`<div class="summary">${textToHtml(summary)}</div>`:''}</section>${overview}<section class="details"><h2 class="detail-title">상세 이용가이드</h2>${detail || '<article class="section">등록된 가이드 화면이 없습니다.</article>'}</section></div>`;
+  const content = `<div class="guide-content"><section class="hero" id="guide-top"><div class="breadcrumb">${escapeHtml(breadcrumb)}</div><h1>${escapeHtml(title)}</h1>${summary?`<div class="summary">${textToHtml(summary)}</div>`:''}<div class="status">공개 가이드</div></section>${overview}<section class="details"><h2 class="detail-title">상세 이용가이드</h2>${detail || '<article class="section">등록된 가이드 화면이 없습니다.</article>'}</section></div>`;
 
   return write(popup, shell({ title, breadcrumb, body:`<main class="main"><div class="guide-layout">${toc}${content}</div></main>` }));
 };
