@@ -1,0 +1,52 @@
+{
+  "version": "v52.48.5.44.84",
+  "dashboard_replacements": [
+    {
+      "label": "FeedbackButton import",
+      "oldText": "import SystemGuideButton from './components/SystemGuideButton.jsx';",
+      "newText": "import SystemGuideButton from './components/SystemGuideButton.jsx';\nimport FeedbackButton from './components/FeedbackButton.jsx';"
+    },
+    {
+      "label": "FeedbackCenter import",
+      "oldText": "import Guide from './page/Guide.jsx';",
+      "newText": "import Guide from './page/Guide.jsx';\nimport FeedbackCenter from './page/FeedbackCenter.jsx';"
+    },
+    {
+      "label": "현장 미선택 허용 화면 등록",
+      "oldText": "  'labor-worker-master',\n  'guide',",
+      "newText": "  'labor-worker-master',\n  'feedback',\n  'guide',"
+    },
+    {
+      "label": "화면 제목 등록",
+      "oldText": "  attendance: '근태관리',\n  guide: '가이드 설정',",
+      "newText": "  attendance: '근태관리',\n  feedback: '건의·오류',\n  guide: '가이드 설정',"
+    },
+    {
+      "label": "건의오류 메뉴 기본 접근 허용",
+      "oldText": "    if (view === 'messenger') return true;",
+      "newText": "    if (['messenger', 'feedback'].includes(view)) return true;"
+    },
+    {
+      "label": "상단 건의오류 버튼 추가",
+      "oldText": "            <SystemGuideButton currentView={currentView} />\n\n            <MessengerButton",
+      "newText": "            <SystemGuideButton currentView={currentView} />\n\n            <FeedbackButton\n              userId={user?.id || userProfile?.auth_user_id || ''}\n              userProfile={activeUserProfile}\n              currentView={currentView}\n              currentViewLabel={viewTitles[currentView] || currentView}\n              dashboardScale={dashboardScale}\n            />\n\n            <MessengerButton"
+    },
+    {
+      "label": "건의오류 화면 렌더링",
+      "oldText": "          {currentView === 'guide' && isSuperAdmin && (\n            <Guide />\n          )}",
+      "newText": "          {currentView === 'feedback' && (\n            <FeedbackCenter\n              userId={user?.id || userProfile?.auth_user_id || ''}\n              userProfile={activeUserProfile}\n              dashboardScale={dashboardScale}\n            />\n          )}\n\n          {currentView === 'guide' && isSuperAdmin && (\n            <Guide />\n          )}"
+    }
+  ],
+  "sidebar_replacements": [
+    {
+      "label": "건의오류 아이콘 import",
+      "oldText": "import MenuBookRoundedIcon from '@mui/icons-material/MenuBookRounded';",
+      "newText": "import MenuBookRoundedIcon from '@mui/icons-material/MenuBookRounded';\nimport FeedbackOutlinedIcon from '@mui/icons-material/FeedbackOutlined';"
+    },
+    {
+      "label": "건의오류 메뉴 추가",
+      "oldText": "      {isSuperAdmin && (\n        <Tooltip\n          title={drawerOpen ? '' : '가이드 설정'}",
+      "newText": "      {canAccessView('feedback') && (\n        <Tooltip\n          title={\n            drawerOpen\n              ? ''\n              : isSuperAdmin\n                ? '건의·오류 관리'\n                : '건의·오류 제보'\n          }\n          placement=\"right\"\n          arrow\n        >\n          <ListItemButton\n            selected={currentView === 'feedback'}\n            onClick={() => handleViewChange('feedback')}\n            sx={topMenuSx(currentView === 'feedback')}\n          >\n            <ListItemIcon\n              sx={{\n                minWidth: 34,\n                color: 'inherit',\n              }}\n            >\n              <FeedbackOutlinedIcon\n                sx={{ fontSize: 19 }}\n              />\n            </ListItemIcon>\n\n            <ListItemText\n              primary={\n                isSuperAdmin\n                  ? '건의·오류 관리'\n                  : '건의·오류 제보'\n              }\n              primaryTypographyProps={{\n                noWrap: true,\n                fontSize: '0.8rem',\n                fontWeight:\n                  currentView === 'feedback'\n                    ? 700\n                    : 500,\n              }}\n              sx={{\n                opacity:\n                  drawerOpen\n                    ? 1\n                    : 0,\n              }}\n            />\n          </ListItemButton>\n        </Tooltip>\n      )}\n\n      {isSuperAdmin && (\n        <Tooltip\n          title={drawerOpen ? '' : '가이드 설정'}"
+    }
+  ]
+}

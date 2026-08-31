@@ -27,7 +27,6 @@ import PunchClockRoundedIcon from '@mui/icons-material/PunchClockRounded';
 import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import TableRowsRoundedIcon from '@mui/icons-material/TableRowsRounded';
 import MenuBookRoundedIcon from '@mui/icons-material/MenuBookRounded';
-import FeedbackOutlinedIcon from '@mui/icons-material/FeedbackOutlined';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { fetchPendingApprovalSummary } from '../utils/approvalQueries.js';
@@ -1461,59 +1460,6 @@ export default function Sidebar({
           canView={canAccessView}
         />
       </Collapse>        </>
-      )}
-
-      {canAccessView('feedback') && (
-        <Tooltip
-          title={
-            drawerOpen
-              ? ''
-              : isSuperAdmin
-                ? '건의·오류 관리'
-                : '건의·오류 제보'
-          }
-          placement="right"
-          arrow
-        >
-          <ListItemButton
-            selected={currentView === 'feedback'}
-            onClick={() => handleViewChange('feedback')}
-            sx={topMenuSx(currentView === 'feedback')}
-          >
-            <ListItemIcon
-              sx={{
-                minWidth: 34,
-                color: 'inherit',
-              }}
-            >
-              <FeedbackOutlinedIcon
-                sx={{ fontSize: 19 }}
-              />
-            </ListItemIcon>
-
-            <ListItemText
-              primary={
-                isSuperAdmin
-                  ? '건의·오류 관리'
-                  : '건의·오류 제보'
-              }
-              primaryTypographyProps={{
-                noWrap: true,
-                fontSize: '0.8rem',
-                fontWeight:
-                  currentView === 'feedback'
-                    ? 700
-                    : 500,
-              }}
-              sx={{
-                opacity:
-                  drawerOpen
-                    ? 1
-                    : 0,
-              }}
-            />
-          </ListItemButton>
-        </Tooltip>
       )}
 
       {isSuperAdmin && (

@@ -1,0 +1,757 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  Alert,
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  IconButton,
+  MenuItem,
+  Paper,
+  Stack,
+  Tab,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Tabs,
+  TextField,
+  Tooltip,
+  Typography,
+} from '@mui/material';
+import AddRoundedIcon from '@mui/icons-material/AddRounded';
+import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded';
+import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
+import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
+import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
+import { supabase } from '../supabaseClient';
+import SystemPageTitle from '../components/SystemPageTitle.jsx';
+import FeedbackSubmitDialog from '../components/FeedbackSubmitDialog.jsx';
+import {
+  FEEDBACK_BUCKET,
+  FEEDBACK_CATEGORIES,
+  FEEDBACK_STATUSES,
+  formatFeedbackDateTime,
+  getFeedbackCategoryMeta,
+  getFeedbackStatusMeta,
+} from '../config/feedbackCatalog.js';
+
+const allFilter = 'all';
+
+const statCardSx = {
+  minWidth: 118,
+  px: 1.2,
+  py: 0.85,
+  border: '1px solid #e2e8f0',
+  borderRadius: 1,
+  bgcolor: '#fff',
+};
+
+export default function FeedbackCenter({
+  userId = '',
+  userProfile = {},
+  dashboardScale = 1,
+}) {
+  const isSuperAdmin = String(userProfile?.role || '').trim() === '최고관리자';
+  const resolvedUserId = String(userId || userProfile?.auth_user_id || '').trim();
+
+  const [tab, setTab] = useState(isSuperAdmin ? 'all' : 'mine');
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [selected, setSelected] = useState(null);
+  const [attachmentUrls, setAttachmentUrls] = useState([]);
+  const [categoryFilter, setCategoryFilter] = useState(allFilter);
+  const [statusFilter, setStatusFilter] = useState(allFilter);
+  const [keyword, setKeyword] = useState('');
+  const [adminDraft, setAdminDraft] = useState({
+    status: 'received',
+    admin_reply: '',
+    target_version: '',
+    completed_version: '',
+  });
+  const [savingAdmin, setSavingAdmin] = useState(false);
+  const [message, setMessage] = useState(null);
+
+  const loadRows = useCallback(async () => {
+    if (!resolvedUserId) return;
+
+    setLoading(true);
+
+    try {
+      let query = supabase
+        .from('system_feedback')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!isSuperAdmin || tab === 'mine') {
+        query = query.eq('created_by', resolvedUserId);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+
+      setRows(Array.isArray(data) ? data : []);
+    } catch (error) {
+      console.error('건의·오류 목록 조회 실패:', error);
+      setMessage({
+        severity: 'error',
+        text: error?.message || '제보 목록을 불러오지 못했습니다.',
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [isSuperAdmin, resolvedUserId, tab]);
+
+  useEffect(() => {
+    loadRows();
+
+    const handleChanged = () => loadRows();
+    window.addEventListener('system-feedback-changed', handleChanged);
+
+    return () => {
+      window.removeEventListener('system-feedback-changed', handleChanged);
+    };
+  }, [loadRows]);
+
+  useEffect(() => {
+    if (!selected) {
+      setAttachmentUrls([]);
+      return;
+    }
+
+    const attachments = Array.isArray(selected.attachments)
+      ? selected.attachments
+      : [];
+
+    let active = true;
+
+    Promise.all(
+      attachments.map(async (file) => {
+        const { data, error } = await supabase
+          .storage
+          .from(FEEDBACK_BUCKET)
+          .createSignedUrl(file.path, 60 * 30);
+
+        return {
+          ...file,
+          url: error ? '' : String(data?.signedUrl || ''),
+        };
+      }),
+    ).then((items) => {
+      if (active) setAttachmentUrls(items);
+    });
+
+    setAdminDraft({
+      status: selected.status || 'received',
+      admin_reply: selected.admin_reply || '',
+      target_version: selected.target_version || '',
+      completed_version: selected.completed_version || '',
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [selected]);
+
+  const filteredRows = useMemo(() => {
+    const normalizedKeyword = String(keyword || '').trim().toLowerCase();
+
+    return rows.filter((row) => {
+      if (categoryFilter !== allFilter && row.category !== categoryFilter) {
+        return false;
+      }
+
+      if (statusFilter !== allFilter && row.status !== statusFilter) {
+        return false;
+      }
+
+      if (!normalizedKeyword) return true;
+
+      return [
+        row.title,
+        row.content,
+        row.project_name,
+        row.created_by_name,
+        row.source_label,
+        row.admin_reply,
+      ].some((value) => String(value || '').toLowerCase().includes(normalizedKeyword));
+    });
+  }, [categoryFilter, keyword, rows, statusFilter]);
+
+  const stats = useMemo(() => {
+    const result = {
+      total: rows.length,
+      received: 0,
+      reviewing: 0,
+      planned: 0,
+      completed: 0,
+      held: 0,
+    };
+
+    rows.forEach((row) => {
+      if (Object.prototype.hasOwnProperty.call(result, row.status)) {
+        result[row.status] += 1;
+      }
+    });
+
+    return result;
+  }, [rows]);
+
+  const saveAdmin = async () => {
+    if (!isSuperAdmin || !selected) return;
+
+    setSavingAdmin(true);
+
+    try {
+      const now = new Date().toISOString();
+
+      const updatePayload = {
+        status: adminDraft.status,
+        admin_reply: String(adminDraft.admin_reply || '').trim(),
+        target_version: String(adminDraft.target_version || '').trim(),
+        completed_version: String(adminDraft.completed_version || '').trim(),
+        handled_by: resolvedUserId || null,
+        handled_by_name: String(userProfile?.manager_name || '').trim(),
+        handled_at: now,
+        updated_at: now,
+      };
+
+      const { data, error } = await supabase
+        .from('system_feedback')
+        .update(updatePayload)
+        .eq('id', selected.id)
+        .select('*')
+        .single();
+
+      if (error) throw error;
+
+      setSelected(data);
+      setRows((prev) => prev.map((row) => row.id === data.id ? data : row));
+      setMessage({
+        severity: 'success',
+        text: '처리 내용을 저장했습니다.',
+      });
+
+      window.dispatchEvent(new CustomEvent('system-feedback-changed'));
+    } catch (error) {
+      console.error('건의·오류 처리 저장 실패:', error);
+      setMessage({
+        severity: 'error',
+        text: error?.message || '처리 내용을 저장하지 못했습니다.',
+      });
+    } finally {
+      setSavingAdmin(false);
+    }
+  };
+
+  const pageTitle = isSuperAdmin ? '건의·오류 관리' : '건의·오류 제보';
+
+  return (
+    <Box sx={{ p: 1.5 }}>
+      <Paper
+        variant="outlined"
+        sx={{
+          p: 1.35,
+          borderColor: '#cbd5e1',
+        }}
+      >
+        <Stack
+          direction={{ xs: 'column', md: 'row' }}
+          alignItems={{ xs: 'stretch', md: 'center' }}
+          justifyContent="space-between"
+          gap={1}
+        >
+          <SystemPageTitle
+            title={pageTitle}
+            meta={isSuperAdmin
+              ? '전 현장의 건의사항·오류 제보를 확인하고 처리상태와 답변을 관리합니다.'
+              : '내가 등록한 건의사항·오류 제보와 처리상태를 확인합니다.'}
+            help={'사용 중 발견한 오류나 기능개선 의견을 등록할 수 있습니다.\n현재 메뉴·현장·브라우저 환경은 제보 시 자동 기록됩니다.'}
+          />
+
+          <Stack direction="row" gap={0.65} justifyContent="flex-end">
+            <Tooltip title="새로고침" arrow>
+              <span>
+                <IconButton
+                  size="small"
+                  onClick={loadRows}
+                  disabled={loading}
+                  sx={{ border: '1px solid #cbd5e1', borderRadius: 1 }}
+                >
+                  <RefreshRoundedIcon sx={{ fontSize: 18 }} />
+                </IconButton>
+              </span>
+            </Tooltip>
+
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={<AddRoundedIcon />}
+              onClick={() => setCreateOpen(true)}
+              sx={{ fontWeight: 900 }}
+            >
+              새 제보
+            </Button>
+          </Stack>
+        </Stack>
+      </Paper>
+
+      {message && (
+        <Alert
+          severity={message.severity}
+          onClose={() => setMessage(null)}
+          sx={{ mt: 1 }}
+        >
+          {message.text}
+        </Alert>
+      )}
+
+      {isSuperAdmin && (
+        <Paper variant="outlined" sx={{ mt: 1, px: 1, borderColor: '#cbd5e1' }}>
+          <Tabs
+            value={tab}
+            onChange={(_, value) => setTab(value)}
+            sx={{
+              minHeight: 38,
+              '& .MuiTab-root': { minHeight: 38, py: 0.4, fontSize: '0.73rem', fontWeight: 800 },
+            }}
+          >
+            <Tab value="all" label="전체 제보 관리" />
+            <Tab value="mine" label="내 제보" />
+          </Tabs>
+        </Paper>
+      )}
+
+      <Stack direction="row" gap={0.8} flexWrap="wrap" sx={{ mt: 1 }}>
+        <Box sx={statCardSx}>
+          <Typography sx={{ color: '#64748b', fontSize: '0.65rem', fontWeight: 800 }}>전체</Typography>
+          <Typography sx={{ mt: 0.15, fontSize: '1.05rem', fontWeight: 950 }}>{stats.total}건</Typography>
+        </Box>
+
+        {FEEDBACK_STATUSES.slice(0, 4).map((item) => (
+          <Box key={item.value} sx={statCardSx}>
+            <Typography sx={{ color: item.color, fontSize: '0.65rem', fontWeight: 850 }}>
+              {item.label}
+            </Typography>
+            <Typography sx={{ mt: 0.15, fontSize: '1.05rem', fontWeight: 950 }}>
+              {stats[item.value] || 0}건
+            </Typography>
+          </Box>
+        ))}
+      </Stack>
+
+      <Paper
+        variant="outlined"
+        sx={{
+          mt: 1,
+          borderColor: '#cbd5e1',
+          overflow: 'hidden',
+        }}
+      >
+        <Stack
+          direction={{ xs: 'column', lg: 'row' }}
+          gap={0.7}
+          sx={{ p: 0.9, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}
+        >
+          <TextField
+            select
+            size="small"
+            label="구분"
+            value={categoryFilter}
+            onChange={(event) => setCategoryFilter(event.target.value)}
+            sx={{ minWidth: 135 }}
+          >
+            <MenuItem value={allFilter}>전체</MenuItem>
+            {FEEDBACK_CATEGORIES.map((item) => (
+              <MenuItem key={item.value} value={item.value}>{item.label}</MenuItem>
+            ))}
+          </TextField>
+
+          <TextField
+            select
+            size="small"
+            label="상태"
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+            sx={{ minWidth: 135 }}
+          >
+            <MenuItem value={allFilter}>전체</MenuItem>
+            {FEEDBACK_STATUSES.map((item) => (
+              <MenuItem key={item.value} value={item.value}>{item.label}</MenuItem>
+            ))}
+          </TextField>
+
+          <TextField
+            size="small"
+            placeholder="제목·내용·현장·메뉴 검색"
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+            sx={{ minWidth: 260, flex: 1 }}
+          />
+        </Stack>
+
+        <TableContainer sx={{ maxHeight: 'calc(100vh - 365px)' }}>
+          <Table stickyHeader size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ fontWeight: 900, width: 125 }}>접수일</TableCell>
+                <TableCell sx={{ fontWeight: 900, width: 95 }}>구분</TableCell>
+                <TableCell sx={{ fontWeight: 900 }}>제목</TableCell>
+                <TableCell sx={{ fontWeight: 900, width: 150 }}>현장</TableCell>
+                {isSuperAdmin && tab === 'all' && (
+                  <TableCell sx={{ fontWeight: 900, width: 115 }}>작성자</TableCell>
+                )}
+                <TableCell sx={{ fontWeight: 900, width: 150 }}>발생 메뉴</TableCell>
+                <TableCell sx={{ fontWeight: 900, width: 100 }} align="center">상태</TableCell>
+                <TableCell sx={{ fontWeight: 900, width: 105 }}>반영 버전</TableCell>
+              </TableRow>
+            </TableHead>
+
+            <TableBody>
+              {loading && (
+                <TableRow>
+                  <TableCell colSpan={8} align="center" sx={{ py: 5 }}>
+                    <CircularProgress size={24} />
+                  </TableCell>
+                </TableRow>
+              )}
+
+              {!loading && filteredRows.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={8} align="center" sx={{ py: 6, color: '#94a3b8' }}>
+                    등록된 제보가 없습니다.
+                  </TableCell>
+                </TableRow>
+              )}
+
+              {!loading && filteredRows.map((row) => {
+                const category = getFeedbackCategoryMeta(row.category);
+                const status = getFeedbackStatusMeta(row.status);
+
+                return (
+                  <TableRow
+                    hover
+                    key={row.id}
+                    onClick={() => setSelected(row)}
+                    sx={{ cursor: 'pointer' }}
+                  >
+                    <TableCell sx={{ fontSize: '0.69rem' }}>
+                      {formatFeedbackDateTime(row.created_at)}
+                    </TableCell>
+
+                    <TableCell>
+                      <Chip
+                        size="small"
+                        label={category.label}
+                        sx={{
+                          height: 21,
+                          color: category.color,
+                          bgcolor: category.bgcolor,
+                          fontSize: '0.62rem',
+                          fontWeight: 900,
+                        }}
+                      />
+                    </TableCell>
+
+                    <TableCell>
+                      <Typography
+                        sx={{
+                          maxWidth: 520,
+                          fontSize: '0.74rem',
+                          fontWeight: 850,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {row.title}
+                      </Typography>
+                    </TableCell>
+
+                    <TableCell sx={{ fontSize: '0.69rem' }}>
+                      {row.project_name || '-'}
+                    </TableCell>
+
+                    {isSuperAdmin && tab === 'all' && (
+                      <TableCell sx={{ fontSize: '0.69rem' }}>
+                        {row.created_by_name || '-'}
+                      </TableCell>
+                    )}
+
+                    <TableCell sx={{ fontSize: '0.69rem' }}>
+                      {row.source_label || row.source_view || '-'}
+                    </TableCell>
+
+                    <TableCell align="center">
+                      <Chip
+                        size="small"
+                        label={status.label}
+                        sx={{
+                          height: 21,
+                          color: status.color,
+                          bgcolor: status.bgcolor,
+                          fontSize: '0.62rem',
+                          fontWeight: 900,
+                        }}
+                      />
+                    </TableCell>
+
+                    <TableCell sx={{ fontSize: '0.69rem', fontWeight: 800 }}>
+                      {row.completed_version || row.target_version || '-'}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Paper>
+
+      <FeedbackSubmitDialog
+        open={createOpen}
+        onClose={() => setCreateOpen(false)}
+        onSubmitted={() => loadRows()}
+        userId={resolvedUserId}
+        userProfile={userProfile}
+        sourceView="feedback"
+        sourceLabel="건의·오류 제보"
+        dashboardScale={dashboardScale}
+      />
+
+      <Dialog
+        open={Boolean(selected)}
+        onClose={() => setSelected(null)}
+        fullWidth
+        maxWidth="md"
+      >
+        <DialogTitle sx={{ pb: 1 }}>
+          <Stack direction="row" alignItems="center" gap={0.7} flexWrap="wrap">
+            {selected && (
+              <>
+                <Chip
+                  size="small"
+                  label={getFeedbackCategoryMeta(selected.category).label}
+                  sx={{
+                    color: getFeedbackCategoryMeta(selected.category).color,
+                    bgcolor: getFeedbackCategoryMeta(selected.category).bgcolor,
+                    fontWeight: 900,
+                  }}
+                />
+                <Typography sx={{ fontSize: '0.98rem', fontWeight: 950 }}>
+                  {selected.title}
+                </Typography>
+              </>
+            )}
+          </Stack>
+        </DialogTitle>
+
+        <DialogContent dividers>
+          {selected && (
+            <Stack spacing={1.4}>
+              <Stack direction="row" gap={1} flexWrap="wrap">
+                <Typography sx={{ color: '#64748b', fontSize: '0.69rem' }}>
+                  작성자: <b>{selected.created_by_name || '-'}</b>
+                </Typography>
+                <Typography sx={{ color: '#64748b', fontSize: '0.69rem' }}>
+                  현장: <b>{selected.project_name || '-'}</b>
+                </Typography>
+                <Typography sx={{ color: '#64748b', fontSize: '0.69rem' }}>
+                  메뉴: <b>{selected.source_label || '-'}</b>
+                </Typography>
+                <Typography sx={{ color: '#64748b', fontSize: '0.69rem' }}>
+                  접수: <b>{formatFeedbackDateTime(selected.created_at)}</b>
+                </Typography>
+              </Stack>
+
+              <Box
+                sx={{
+                  p: 1.3,
+                  minHeight: 100,
+                  border: '1px solid #e2e8f0',
+                  borderRadius: 1,
+                  bgcolor: '#f8fafc',
+                }}
+              >
+                <Typography sx={{ whiteSpace: 'pre-wrap', fontSize: '0.78rem', lineHeight: 1.7 }}>
+                  {selected.content}
+                </Typography>
+              </Box>
+
+              {attachmentUrls.length > 0 && (
+                <Box>
+                  <Typography sx={{ mb: 0.55, fontSize: '0.7rem', fontWeight: 900 }}>
+                    첨부파일
+                  </Typography>
+                  <Stack direction="row" gap={0.55} flexWrap="wrap">
+                    {attachmentUrls.map((file, index) => (
+                      <Button
+                        key={`${file.path}-${index}`}
+                        size="small"
+                        variant="outlined"
+                        startIcon={<AttachFileRoundedIcon />}
+                        endIcon={file.url ? <OpenInNewRoundedIcon /> : undefined}
+                        onClick={() => {
+                          if (file.url) window.open(file.url, '_blank', 'noopener,noreferrer');
+                        }}
+                        disabled={!file.url}
+                        sx={{ textTransform: 'none' }}
+                      >
+                        {file.name || `첨부 ${index + 1}`}
+                      </Button>
+                    ))}
+                  </Stack>
+                </Box>
+              )}
+
+              <Divider />
+
+              {isSuperAdmin ? (
+                <Stack spacing={1}>
+                  <Typography sx={{ fontSize: '0.76rem', fontWeight: 950 }}>
+                    관리자 처리
+                  </Typography>
+
+                  <Stack direction={{ xs: 'column', sm: 'row' }} gap={0.8}>
+                    <TextField
+                      select
+                      size="small"
+                      label="처리상태"
+                      value={adminDraft.status}
+                      onChange={(event) => setAdminDraft((prev) => ({
+                        ...prev,
+                        status: event.target.value,
+                      }))}
+                      sx={{ minWidth: 150 }}
+                    >
+                      {FEEDBACK_STATUSES.map((item) => (
+                        <MenuItem key={item.value} value={item.value}>{item.label}</MenuItem>
+                      ))}
+                    </TextField>
+
+                    <TextField
+                      size="small"
+                      label="반영 예정 버전"
+                      placeholder="예: v52.48.5.44.90"
+                      value={adminDraft.target_version}
+                      onChange={(event) => setAdminDraft((prev) => ({
+                        ...prev,
+                        target_version: event.target.value,
+                      }))}
+                      sx={{ flex: 1 }}
+                    />
+
+                    <TextField
+                      size="small"
+                      label="처리 완료 버전"
+                      placeholder="예: v52.48.5.44.91"
+                      value={adminDraft.completed_version}
+                      onChange={(event) => setAdminDraft((prev) => ({
+                        ...prev,
+                        completed_version: event.target.value,
+                      }))}
+                      sx={{ flex: 1 }}
+                    />
+                  </Stack>
+
+                  <TextField
+                    multiline
+                    minRows={4}
+                    label="관리자 답변 / 처리내용"
+                    value={adminDraft.admin_reply}
+                    onChange={(event) => setAdminDraft((prev) => ({
+                      ...prev,
+                      admin_reply: event.target.value,
+                    }))}
+                  />
+                </Stack>
+              ) : (
+                <Box>
+                  <Stack direction="row" alignItems="center" gap={0.7}>
+                    <Typography sx={{ fontSize: '0.72rem', fontWeight: 900 }}>
+                      처리상태
+                    </Typography>
+                    <Chip
+                      size="small"
+                      label={getFeedbackStatusMeta(selected.status).label}
+                      sx={{
+                        color: getFeedbackStatusMeta(selected.status).color,
+                        bgcolor: getFeedbackStatusMeta(selected.status).bgcolor,
+                        fontWeight: 900,
+                      }}
+                    />
+                  </Stack>
+
+                  <Box
+                    sx={{
+                      mt: 1,
+                      p: 1.2,
+                      border: '1px solid #dbeafe',
+                      borderRadius: 1,
+                      bgcolor: '#eff6ff',
+                    }}
+                  >
+                    <Typography sx={{ color: '#1e3a8a', fontSize: '0.69rem', fontWeight: 900 }}>
+                      관리자 답변
+                    </Typography>
+                    <Typography sx={{ mt: 0.45, color: '#334155', fontSize: '0.76rem', whiteSpace: 'pre-wrap', lineHeight: 1.65 }}>
+                      {selected.admin_reply || '아직 등록된 답변이 없습니다.'}
+                    </Typography>
+
+                    {(selected.target_version || selected.completed_version) && (
+                      <Typography sx={{ mt: 0.7, color: '#475569', fontSize: '0.68rem' }}>
+                        {selected.completed_version
+                          ? `처리 버전: ${selected.completed_version}`
+                          : `반영 예정: ${selected.target_version}`}
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
+              )}
+
+              <Box
+                sx={{
+                  p: 1,
+                  border: '1px solid #e2e8f0',
+                  borderRadius: 1,
+                  bgcolor: '#fff',
+                }}
+              >
+                <Typography sx={{ color: '#94a3b8', fontSize: '0.63rem', fontWeight: 800 }}>
+                  자동 기록 환경
+                </Typography>
+                <Typography sx={{ mt: 0.25, color: '#64748b', fontSize: '0.65rem', wordBreak: 'break-all' }}>
+                  화면배율 {selected.client_meta?.dashboardScale ?? '-'} ·
+                  뷰포트 {selected.client_meta?.viewport || '-'} ·
+                  {selected.client_meta?.userAgent || '-'}
+                </Typography>
+              </Box>
+            </Stack>
+          )}
+        </DialogContent>
+
+        <DialogActions>
+          <Button onClick={() => setSelected(null)}>닫기</Button>
+          {isSuperAdmin && (
+            <Button
+              variant="contained"
+              startIcon={<SaveRoundedIcon />}
+              onClick={saveAdmin}
+              disabled={savingAdmin}
+              sx={{ fontWeight: 900 }}
+            >
+              처리내용 저장
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
+}

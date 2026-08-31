@@ -52,7 +52,6 @@ import {
 import Sidebar from './components/Sidebar.jsx';
 import MessengerButton from './components/MessengerButton.jsx';
 import SystemGuideButton from './components/SystemGuideButton.jsx';
-import FeedbackButton from './components/FeedbackButton.jsx';
 import KoreanDatePicker from './components/KoreanDatePicker.jsx';
 import MainDashboard from './page/MainDashboard.jsx';
 import DailyReport from './page/DailyReport.jsx';
@@ -87,7 +86,6 @@ import AttendanceManagement from './page/AttendanceManagement.jsx';
 import OptionManagementOverview from './page/OptionManagementOverview.jsx';
 import HouseholdQuantityManagement from './page/HouseholdQuantityManagement.jsx';
 import Guide from './page/Guide.jsx';
-import FeedbackCenter from './page/FeedbackCenter.jsx';
 
 const drawerWidth = 240;
 const SUPABASE_PAGE_SIZE = 1000;
@@ -129,7 +127,6 @@ const PROJECT_FREE_VIEWS = [
   'weekly-overview-archive',
   'daily-cumulative-workers',
   'labor-worker-master',
-  'feedback',
   'guide',
 ];
 
@@ -400,7 +397,6 @@ const viewTitles = {
   'weekly-overview': '주간업무작성',
   'weekly-overview-archive': '주간업무보관',
   attendance: '근태관리',
-  feedback: '건의·오류',
   guide: '가이드 설정',
 };
 
@@ -958,7 +954,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     view,
     projectName = '',
   ) => {
-    if (['messenger', 'feedback'].includes(view)) return true;
+    if (view === 'messenger') return true;
     if (['user-management', 'project-management', 'guide'].includes(view)) return isSuperAdmin;
 
     // v52.48.5.44.69
@@ -4124,14 +4120,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
             <SystemGuideButton currentView={currentView} />
 
-            <FeedbackButton
-              userId={user?.id || userProfile?.auth_user_id || ''}
-              userProfile={activeUserProfile}
-              currentView={currentView}
-              currentViewLabel={viewTitles[currentView] || currentView}
-              dashboardScale={dashboardScale}
-            />
-
             <MessengerButton
               userId={user?.id || userProfile?.auth_user_id || ''}
               active={false}
@@ -4343,14 +4331,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             <OrganizationChart
               userRole={userRole}
               currentUserId={user?.id || ''}
-            />
-          )}
-
-          {currentView === 'feedback' && (
-            <FeedbackCenter
-              userId={user?.id || userProfile?.auth_user_id || ''}
-              userProfile={activeUserProfile}
-              dashboardScale={dashboardScale}
             />
           )}
 
