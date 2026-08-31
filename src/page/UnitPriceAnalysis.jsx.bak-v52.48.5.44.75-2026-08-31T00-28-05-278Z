@@ -3487,113 +3487,42 @@ export default function UnitPriceAnalysis({
                     variant="outlined"
                     sx={{
                       minHeight: 34,
-                      pl: 1.15,
-                      pr: 0.75,
+                      px: 0.75,
                       py: 0.35,
                       mb: 0.8,
                       display: 'flex',
                       alignItems: 'center',
                       gap: 0.45,
-                      position: 'relative',
-                      overflow: 'visible',
-                      isolation: 'isolate',
                       borderColor: '#94a3b8',
                       boxShadow: 'none',
                     }}
                   >
-                    <Box
-                      component="span"
-                      title="빈 항목 추가"
-                      sx={{ display: 'inline-flex', flex: '0 0 30px', width: 30, height: 30 }}
-                    >
-                      <IconButton
-                        size="small"
-                        color="primary"
-                        aria-label="빈 항목 추가"
-                        onClick={addBlankDraftRow}
-                        sx={{
-                          width: 30,
-                          height: 30,
-                          p: 0,
-                          position: 'relative',
-                          zIndex: 2,
-                          pointerEvents: 'auto',
-                          transform: 'none',
-                        }}
-                      >
+                    <Tooltip title="빈 항목 추가" arrow>
+                      <IconButton size="small" color="primary" aria-label="빈 항목 추가" onClick={addBlankDraftRow}>
                         <AddCircleOutlineRoundedIcon fontSize="small" />
                       </IconButton>
-                    </Box>
-                    <Box
-                      component="span"
-                      title="선택 항목 삭제"
-                      sx={{ display: 'inline-flex', flex: '0 0 30px', width: 30, height: 30 }}
-                    >
-                      <IconButton
-                        size="small"
-                        color="error"
-                        aria-label="선택 항목 삭제"
-                        disabled={selectedRowIds.size === 0}
-                        onClick={removeSelectedDraftRows}
-                        sx={{
-                          width: 30,
-                          height: 30,
-                          p: 0,
-                          position: 'relative',
-                          zIndex: 2,
-                          pointerEvents: 'auto',
-                          transform: 'none',
-                        }}
-                      >
-                        <RemoveCircleOutlineRoundedIcon fontSize="small" />
-                      </IconButton>
-                    </Box>
-                    <Box
-                      component="span"
-                      title="선택 항목 위로 이동"
-                      sx={{ display: 'inline-flex', flex: '0 0 30px', width: 30, height: 30 }}
-                    >
-                      <IconButton
-                        size="small"
-                        aria-label="선택 항목 위로 이동"
-                        disabled={selectedRowIds.size === 0}
-                        onClick={() => moveSelectedDraftRows(-1)}
-                        sx={{
-                          width: 30,
-                          height: 30,
-                          p: 0,
-                          position: 'relative',
-                          zIndex: 2,
-                          pointerEvents: 'auto',
-                          transform: 'none',
-                        }}
-                      >
-                        <ArrowUpwardRoundedIcon fontSize="small" />
-                      </IconButton>
-                    </Box>
-                    <Box
-                      component="span"
-                      title="선택 항목 아래로 이동"
-                      sx={{ display: 'inline-flex', flex: '0 0 30px', width: 30, height: 30 }}
-                    >
-                      <IconButton
-                        size="small"
-                        aria-label="선택 항목 아래로 이동"
-                        disabled={selectedRowIds.size === 0}
-                        onClick={() => moveSelectedDraftRows(1)}
-                        sx={{
-                          width: 30,
-                          height: 30,
-                          p: 0,
-                          position: 'relative',
-                          zIndex: 2,
-                          pointerEvents: 'auto',
-                          transform: 'none',
-                        }}
-                      >
-                        <ArrowDownwardRoundedIcon fontSize="small" />
-                      </IconButton>
-                    </Box>
+                    </Tooltip>
+                    <Tooltip title="선택 항목 삭제" arrow>
+                      <span>
+                        <IconButton size="small" color="error" aria-label="선택 항목 삭제" disabled={selectedRowIds.size === 0} onClick={removeSelectedDraftRows}>
+                          <RemoveCircleOutlineRoundedIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                    <Tooltip title="선택 항목 위로 이동" arrow>
+                      <span>
+                        <IconButton size="small" aria-label="선택 항목 위로 이동" disabled={selectedRowIds.size === 0} onClick={() => moveSelectedDraftRows(-1)}>
+                          <ArrowUpwardRoundedIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                    <Tooltip title="선택 항목 아래로 이동" arrow>
+                      <span>
+                        <IconButton size="small" aria-label="선택 항목 아래로 이동" disabled={selectedRowIds.size === 0} onClick={() => moveSelectedDraftRows(1)}>
+                          <ArrowDownwardRoundedIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Tooltip>
                     <Divider orientation="vertical" flexItem sx={{ mx: 0.35 }} />
                     <Typography sx={{ fontSize: '0.65rem', color: '#64748b' }}>
                       선택 {selectedRowIds.size.toLocaleString()}개
