@@ -1181,462 +1181,6 @@ const safeFileName = (
     )
     .replace(/\s+/g, '_');
 
-const getExcelColumnLetter = (
-  columnNumber,
-) => {
-  let value =
-    Math.max(
-      1,
-      Number(columnNumber) || 1,
-    );
-
-  let result = '';
-
-  while (value > 0) {
-    const remainder =
-      (value - 1) % 26;
-
-    result =
-      String.fromCharCode(
-        65 + remainder,
-      ) + result;
-
-    value =
-      Math.floor(
-        (value - 1) / 26,
-      );
-  }
-
-  return result;
-};
-
-const formatMaterialExportWorksheet = ({
-  worksheet,
-  title,
-  projectName,
-  periodLabel,
-  moneyColumns = [],
-  quantityColumns = [],
-  integerColumns = [],
-  centerColumns = [],
-  totalRowNumber = null,
-}) => {
-  if (!worksheet) {
-    return;
-  }
-
-  const originalColumnCount =
-    Math.max(
-      worksheet.columnCount,
-      1,
-    );
-
-  /*
-    기존 1행 제목을 5행으로 내리고
-    상단에 문서 제목·현장·조회조건을 배치합니다.
-  */
-  worksheet.spliceRows(
-    1,
-    0,
-    [],
-    [],
-    [],
-    [],
-  );
-
-  const headerRowNumber = 5;
-
-  const lastColumnLetter =
-    getExcelColumnLetter(
-      originalColumnCount,
-    );
-
-  const generatedAt =
-    new Date().toLocaleString(
-      'ko-KR',
-      {
-        timeZone:
-          'Asia/Seoul',
-      },
-    );
-
-  worksheet.mergeCells(
-    `A1:${lastColumnLetter}1`,
-  );
-
-  worksheet.mergeCells(
-    `A2:${lastColumnLetter}2`,
-  );
-
-  worksheet.mergeCells(
-    `A3:${lastColumnLetter}3`,
-  );
-
-  const titleCell =
-    worksheet.getCell('A1');
-
-  titleCell.value =
-    title;
-
-  titleCell.font = {
-    name: '맑은 고딕',
-    size: 16,
-    bold: true,
-    color: {
-      argb: 'FF0F172A',
-    },
-  };
-
-  titleCell.alignment = {
-    horizontal: 'center',
-    vertical: 'middle',
-  };
-
-  worksheet.getRow(1).height =
-    28;
-
-  const projectCell =
-    worksheet.getCell('A2');
-
-  projectCell.value =
-    `현장명 : ${projectName || '-'}`;
-
-  projectCell.font = {
-    name: '맑은 고딕',
-    size: 10,
-    bold: true,
-    color: {
-      argb: 'FF334155',
-    },
-  };
-
-  projectCell.alignment = {
-    horizontal: 'left',
-    vertical: 'middle',
-  };
-
-  worksheet.getRow(2).height =
-    20;
-
-  const infoCell =
-    worksheet.getCell('A3');
-
-  infoCell.value =
-    `조회기간 : ${periodLabel || '-'}    /    출력일시 : ${generatedAt}`;
-
-  infoCell.font = {
-    name: '맑은 고딕',
-    size: 9,
-    color: {
-      argb: 'FF64748B',
-    },
-  };
-
-  infoCell.alignment = {
-    horizontal: 'left',
-    vertical: 'middle',
-  };
-
-  worksheet.getRow(3).height =
-    19;
-
-  worksheet.getRow(4).height =
-    7;
-
-  const headerRow =
-    worksheet.getRow(
-      headerRowNumber,
-    );
-
-  headerRow.height =
-    26;
-
-  headerRow.eachCell(
-    {
-      includeEmpty: true,
-    },
-    (cell) => {
-      cell.fill = {
-        type: 'pattern',
-        pattern: 'solid',
-        fgColor: {
-          argb: 'FF1E3A5F',
-        },
-      };
-
-      cell.font = {
-        name: '맑은 고딕',
-        size: 9,
-        bold: true,
-        color: {
-          argb: 'FFFFFFFF',
-        },
-      };
-
-      cell.alignment = {
-        horizontal: 'center',
-        vertical: 'middle',
-        wrapText: true,
-      };
-
-      cell.border = {
-        top: {
-          style: 'thin',
-          color: {
-            argb: 'FF94A3B8',
-          },
-        },
-        left: {
-          style: 'thin',
-          color: {
-            argb: 'FF94A3B8',
-          },
-        },
-        bottom: {
-          style: 'thin',
-          color: {
-            argb: 'FF64748B',
-          },
-        },
-        right: {
-          style: 'thin',
-          color: {
-            argb: 'FF94A3B8',
-          },
-        },
-      };
-    },
-  );
-
-  const adjustedTotalRowNumber =
-    totalRowNumber
-      ? totalRowNumber + 4
-      : null;
-
-  for (
-    let rowNumber =
-      headerRowNumber + 1;
-    rowNumber <=
-      worksheet.rowCount;
-    rowNumber += 1
-  ) {
-    const row =
-      worksheet.getRow(
-        rowNumber,
-      );
-
-    row.height =
-      Math.max(
-        Number(row.height) || 0,
-        20,
-      );
-
-    row.eachCell(
-      {
-        includeEmpty: true,
-      },
-      (cell) => {
-        cell.font = {
-          ...cell.font,
-          name: '맑은 고딕',
-          size: 9,
-        };
-
-        cell.alignment = {
-          ...cell.alignment,
-          vertical: 'middle',
-          wrapText: true,
-        };
-
-        cell.border = {
-          top: {
-            style: 'thin',
-            color: {
-              argb: 'FFE2E8F0',
-            },
-          },
-          left: {
-            style: 'thin',
-            color: {
-              argb: 'FFE2E8F0',
-            },
-          },
-          bottom: {
-            style: 'thin',
-            color: {
-              argb: 'FFE2E8F0',
-            },
-          },
-          right: {
-            style: 'thin',
-            color: {
-              argb: 'FFE2E8F0',
-            },
-          },
-        };
-      },
-    );
-
-    if (
-      adjustedTotalRowNumber &&
-      rowNumber ===
-        adjustedTotalRowNumber
-    ) {
-      row.eachCell(
-        {
-          includeEmpty: true,
-        },
-        (cell) => {
-          cell.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: {
-              argb: 'FFEFF6FF',
-            },
-          };
-
-          cell.font = {
-            ...cell.font,
-            bold: true,
-            color: {
-              argb: 'FF1E3A8A',
-            },
-          };
-
-          cell.border = {
-            ...cell.border,
-            top: {
-              style: 'medium',
-              color: {
-                argb: 'FF60A5FA',
-              },
-            },
-          };
-        },
-      );
-    }
-  }
-
-  moneyColumns.forEach(
-    (columnNumber) => {
-      const column =
-        worksheet.getColumn(
-          columnNumber,
-        );
-
-      column.numFmt =
-        '#,##0;[Red]-#,##0;0';
-
-      column.alignment = {
-        horizontal: 'right',
-        vertical: 'middle',
-      };
-    },
-  );
-
-  quantityColumns.forEach(
-    (columnNumber) => {
-      const column =
-        worksheet.getColumn(
-          columnNumber,
-        );
-
-      column.numFmt =
-        '#,##0.####';
-
-      column.alignment = {
-        horizontal: 'right',
-        vertical: 'middle',
-      };
-    },
-  );
-
-  integerColumns.forEach(
-    (columnNumber) => {
-      const column =
-        worksheet.getColumn(
-          columnNumber,
-        );
-
-      column.numFmt =
-        '#,##0';
-
-      column.alignment = {
-        horizontal: 'right',
-        vertical: 'middle',
-      };
-    },
-  );
-
-  centerColumns.forEach(
-    (columnNumber) => {
-      worksheet.getColumn(
-        columnNumber,
-      ).alignment = {
-        horizontal: 'center',
-        vertical: 'middle',
-        wrapText: true,
-      };
-    },
-  );
-
-  worksheet.autoFilter = {
-    from: {
-      row: headerRowNumber,
-      column: 1,
-    },
-    to: {
-      row: headerRowNumber,
-      column:
-        originalColumnCount,
-    },
-  };
-
-  worksheet.views = [
-    {
-      state: 'frozen',
-      ySplit:
-        headerRowNumber,
-    },
-  ];
-
-  worksheet.pageSetup.orientation =
-    'landscape';
-
-  worksheet.pageSetup.paperSize =
-    9;
-
-  worksheet.pageSetup.fitToPage =
-    true;
-
-  worksheet.pageSetup.fitToWidth =
-    1;
-
-  worksheet.pageSetup.fitToHeight =
-    0;
-
-  worksheet.pageSetup.horizontalCentered =
-    true;
-
-  worksheet.pageSetup.margins = {
-    left: 0.25,
-    right: 0.25,
-    top: 0.5,
-    bottom: 0.5,
-    header: 0.2,
-    footer: 0.2,
-  };
-
-  worksheet.pageSetup.printTitlesRow =
-    '1:5';
-
-  worksheet.pageSetup.printArea =
-    `A1:${lastColumnLetter}${worksheet.rowCount}`;
-
-  worksheet.headerFooter.oddFooter =
-    `&L${projectName || ''}&C자재투입현황&R&P / &N`;
-};
-
 const parseHeadOfficeWorkbook =
   async ({
     file,
@@ -4672,38 +4216,12 @@ export default function MaterialInputStatus({
           bold: true,
         };
 
-        formatMaterialExportWorksheet({
-          worksheet:
-            detailWorksheet,
-          title:
-            '자재투입현황 - 월 원본 상세',
-          projectName,
-          periodLabel:
-            supplierPeriodLabel,
-          moneyColumns: [
-            12,
-            13,
-            14,
-            15,
-            16,
-          ],
-          quantityColumns: [
-            11,
-          ],
-          integerColumns: [
-            1,
-          ],
-          centerColumns: [
-            2,
-            3,
-            4,
-            5,
-            6,
-            10,
-          ],
-          totalRowNumber:
-            detailTotalRow.number,
-        });
+        detailWorksheet.views = [
+          {
+            state: 'frozen',
+            ySplit: 1,
+          },
+        ];
 
         downloadSuffix =
           `업체별월누계_${supplierPeriodStart}_${supplierPeriodEnd}`;
@@ -4778,58 +4296,18 @@ export default function MaterialInputStatus({
           `품목별월누계_${selectedStartMonth}_${selectedMonth}`;
       }
 
-      formatMaterialExportWorksheet({
-        worksheet,
-        title:
-          tabValue === 1
-            ? '자재투입현황 - 업체별 월·누계'
-            : '자재투입현황 - 품목별 월·누계',
-        projectName,
-        periodLabel:
-          tabValue === 1
-            ? supplierPeriodLabel
-            : selectedPeriodLabel,
-        moneyColumns:
-          tabValue === 1
-            ? [
-                3,
-                4,
-                5,
-                6,
-                7,
-                8,
-              ]
-            : [
-                6,
-                8,
-              ],
-        quantityColumns:
-          tabValue === 1
-            ? []
-            : [
-                5,
-                7,
-              ],
-        integerColumns:
-          tabValue === 1
-            ? [
-                9,
-                10,
-                11,
-              ]
-            : [
-                10,
-              ],
-        centerColumns:
-          tabValue === 1
-            ? [
-                2,
-              ]
-            : [
-                3,
-                9,
-              ],
-      });
+      worksheet.getRow(
+        1,
+      ).font = {
+        bold: true,
+      };
+
+      worksheet.views = [
+        {
+          state: 'frozen',
+          ySplit: 1,
+        },
+      ];
 
       const buffer =
         await workbook.xlsx.writeBuffer();
@@ -5673,7 +5151,8 @@ export default function MaterialInputStatus({
       >
         <Tabs
           value={tabValue}
-          variant="standard"
+          variant="scrollable"
+          scrollButtons={false}
           onChange={(
             _event,
             value,
@@ -5686,21 +5165,15 @@ export default function MaterialInputStatus({
             maxWidth: 'calc(100% - 16px)',
             m: 0.8,
             mb: 0.65,
-            px: 0.55,
-            py: 0.45,
-            overflow: 'visible',
+            p: 0.35,
             border: '1px solid #cbd5e1',
             borderRadius: 999,
             bgcolor: '#f8fafc',
-            '& .MuiTabs-scroller': {
-              overflow: 'visible !important',
-            },
             '& .MuiTabs-indicator': {
               display: 'none',
             },
             '& .MuiTabs-flexContainer': {
               gap: 0.45,
-              overflow: 'visible',
             },
             '& .MuiTab-root': {
               minHeight: 29,
