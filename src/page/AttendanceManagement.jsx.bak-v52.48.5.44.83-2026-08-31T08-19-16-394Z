@@ -1,4 +1,3 @@
-// v52.48.5.44.83 근태관리 상단 탭 선택 밑줄 화면배율 위치 보정
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -1165,17 +1164,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
         </Alert>
       </Snackbar>
       <Paper variant="outlined" sx={{ px: 1.5, borderColor: '#cbd5e1' }}>
-        <Tabs
-          value={tab}
-          onChange={handleTabChange}
-          variant="scrollable"
-          scrollButtons="auto"
-          sx={{
-            '& .MuiTabs-indicator': {
-              display: 'none',
-            },
-          }}
-        >
+        <Tabs value={tab} onChange={handleTabChange} variant="scrollable" scrollButtons="auto">
           {tabItems.map((item) => (
             <Tab
               key={item.value}
@@ -1183,23 +1172,7 @@ export default function AttendanceManagement({ projectName, canManage = false, o
               icon={item.icon}
               iconPosition="start"
               label={`${item.label}${item.value === 'approval' && pendingCount ? ` ${pendingCount}` : item.value === 'devices' && deviceCount ? ` ${deviceCount}` : item.value === 'progress-review' && progressPendingCount ? ` ${progressPendingCount}` : ''}`}
-              sx={{
-                minHeight: 52,
-                fontWeight: 800,
-                position: 'relative',
-                overflow: 'visible',
-                '&.Mui-selected::after': {
-                  content: '""',
-                  position: 'absolute',
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  height: 2,
-                  bgcolor: '#2563eb',
-                  borderRadius: '2px 2px 0 0',
-                  pointerEvents: 'none',
-                },
-              }}
+              sx={{ minHeight: 52, fontWeight: 800 }}
             />
           ))}
         </Tabs>
