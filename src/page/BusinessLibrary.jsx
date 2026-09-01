@@ -1,3 +1,4 @@
+// v52.48.5.44.97 업무자료 분류필터-상세보기 동기화·빈목록 중앙정렬
 // v52.48.5.44.96 업무자료 팝업 입력박스 실제 간격 보정
 // v52.48.5.44.95 업무자료 목록 선택·전체선택 다운로드
 // v52.48.5.44.94 업무자료 팝업 라벨 간격·상세 설명 가독성
@@ -162,8 +163,8 @@ export default function BusinessLibrary({
   }, [categoryFilter, keyword, latestRows, projectName, scopeFilter]);
 
   const selected = useMemo(
-    () => latestRows.find((row) => String(row.id) === String(selectedId)) || filteredRows[0] || null,
-    [filteredRows, latestRows, selectedId],
+    () => filteredRows.find((row) => String(row.id) === String(selectedId)) || filteredRows[0] || null,
+    [filteredRows, selectedId],
   );
 
   const selectedHistory = useMemo(
@@ -234,6 +235,11 @@ export default function BusinessLibrary({
   useEffect(() => {
     const visibleIds = new Set(filteredRows.map((row) => String(row.id)));
     setCheckedIds((current) => current.filter((id) => visibleIds.has(String(id))));
+    setSelectedId((current) => (
+      visibleIds.has(String(current))
+        ? current
+        : String(filteredRows[0]?.id || '')
+    ));
   }, [filteredRows]);
 
   useEffect(() => {
@@ -750,11 +756,11 @@ export default function BusinessLibrary({
               선택 다운로드
             </Button>
           </Box>
-          <Box sx={{ flex:1, overflowY:'auto' }}>
+          <Box sx={{ flex:1, minHeight:0, overflowY:'auto', position:'relative' }}>
             {loading ? (
-              <Stack alignItems="center" justifyContent="center" sx={{ height:'100%', minHeight:180 }}><CircularProgress size={28} /></Stack>
+              <Stack alignItems="center" justifyContent="center" sx={{ position:'absolute', inset:0, minHeight:180 }}><CircularProgress size={28} /></Stack>
             ) : filteredRows.length === 0 ? (
-              <Stack alignItems="center" justifyContent="center" sx={{ height:'100%', minHeight:180, color:'#94a3b8' }}>
+              <Stack alignItems="center" justifyContent="center" sx={{ position:'absolute', inset:0, minHeight:180, px:2, textAlign:'center', color:'#94a3b8' }}>
                 <DescriptionOutlinedIcon sx={{ fontSize:38, mb:0.7 }} />
                 <Typography sx={{ fontSize:12 }}>조건에 맞는 자료가 없습니다.</Typography>
               </Stack>
