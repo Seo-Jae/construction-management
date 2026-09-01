@@ -1,3 +1,4 @@
+// v52.48.5.44.106 업무자료실 연동 다운로드 파일명 지정 지원
 // v52.48.5.44.15 단열 옵션 Excel 메모 제거·동 간격 1열(너비 5.42)
 // v52.48.5.44.14 옵션현황(단열) 전체 동 단일시트·빈 세대셀·무색상 양식
 // v52.48.5.44.13 옵션현황(단열) 골구도 엑셀 다운로드·업로드
@@ -109,6 +110,7 @@ export const saveInsulationOptionWorkbook = async ({
   projectName,
   buildingConfigs = {},
   optionData = {},
+  downloadFileName = '',
 }) => {
   const entries = Object.entries(buildingConfigs || {}).sort(
     ([first], [second]) =>
@@ -402,7 +404,8 @@ export const saveInsulationOptionWorkbook = async ({
 
   await downloadWorkbook(
     workbook,
-    `옵션현황_단열_${toSafeFilenamePart(projectName)}.xlsx`,
+    String(downloadFileName || '').trim()
+      || `옵션현황_단열_${toSafeFilenamePart(projectName)}.xlsx`,
   );
   return totalUnits;
 };

@@ -1,3 +1,4 @@
+// v52.48.5.44.106 업무자료실 현장연동 시스템양식에 골구도 전달
 // v52.48.5.44.89 업무자료실 메뉴·조회·최고관리자 관리
 // v52.48.5.44.69 지출결의서 소속현장 기본 작성권한
 // v52.48.5.44.47 가이드 설정·현재 메뉴 팝업 가이드
@@ -4361,6 +4362,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           {currentView === 'business-library' && (
             <BusinessLibrary
               projectName={activeProjectName}
+              buildingConfigs={buildingConfigs}
               userId={user?.id || userProfile?.auth_user_id || ''}
               userProfile={activeUserProfile}
             />

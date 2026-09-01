@@ -1,3 +1,4 @@
+// v52.48.5.44.106 업무자료실 연동 다운로드 파일명 지정 지원
 // v52.48.5.44.20 선택옵션 30개(D:AG) 확장 및 AH 세대키 이동
 // v52.48.5.44.19 선택옵션 옵션명 검정색·셀에맞춤·열너비 12 및 전체 선택셀 가운데정렬
 // v52.48.5.44.18 선택옵션 동·호·타입 3열 및 담당자 수정값 누적
@@ -381,6 +382,7 @@ export const saveSelectionOptionWorkbook = async ({
   projectName,
   buildingConfigs = {},
   selectionDocument = {},
+  downloadFileName = '',
 }) => {
   const response = await fetch(getTemplateUrl());
   if (!response.ok) {
@@ -395,7 +397,8 @@ export const saveSelectionOptionWorkbook = async ({
   });
   await downloadWorkbook(
     workbook,
-    `옵션현황_선택_${toSafeFilenamePart(projectName)}.xlsx`,
+    String(downloadFileName || '').trim()
+      || `옵션현황_선택_${toSafeFilenamePart(projectName)}.xlsx`,
   );
   return rowCount;
 };

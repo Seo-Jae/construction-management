@@ -1,3 +1,4 @@
+// v52.48.5.44.106 업무자료실 현장연동 골구도·선택옵션 시스템양식
 // v52.48.5.44.105 업무자료실 최고관리자 자료 순서 이동·분류 고정정렬
 // v52.48.5.44.104 업무자료실 하단 외곽 여백 균형 보정
 // v52.48.5.44.103 업무자료실 하단 여백 실측 보정
@@ -70,6 +71,11 @@ import {
   formatBusinessLibraryDate,
   getBusinessLibraryExtension,
 } from '../config/businessLibraryCatalog.js';
+import { saveInsulationOptionWorkbook } from '../utils/optionInsulationExcel.js';
+import {
+  normalizeSelectionOptionDocument,
+  saveSelectionOptionWorkbook,
+} from '../utils/optionSelectionExcel.js';
 
 const EMPTY_FORM = {
   category:'회사양식',
@@ -81,6 +87,21 @@ const EMPTY_FORM = {
   external_url:'',
   version_label:'v1',
 };
+
+const SYSTEM_TEMPLATE_CONFIG = {
+  option_skeleton: {
+    optionCategory:'insulation',
+    defaultFileName:'(양식)_골구도.xlsx',
+  },
+  option_selection: {
+    optionCategory:'selection',
+    defaultFileName:'(양식)_옵션(선택)양식.xlsx',
+  },
+};
+
+const getSystemTemplateConfig = (row) => (
+  SYSTEM_TEMPLATE_CONFIG[String(row?.system_template_key || '').trim()] || null
+);
 
 const fieldSx = {
   '& .MuiInputBase-root': { fontSize:12 },
@@ -156,6 +177,7 @@ const storageTone = (percent) => {
 
 export default function BusinessLibrary({
   projectName = '',
+  buildingConfigs = {},
   userId = '',
   userProfile = {},
 }) {
@@ -184,6 +206,7 @@ export default function BusinessLibrary({
   const [selectedId, setSelectedId] = useState('');
   const [checkedIds, setCheckedIds] = useState([]);
   const [bulkDownloading, setBulkDownloading] = useState(false);
+  const [systemTemplateDownloadingKey, setSystemTemplateDownloadingKey] = useState('');
   const [reordering, setReordering] = useState(false);
   const [descriptionImages, setDescriptionImages] = useState([]);
   const [descriptionImageFiles, setDescriptionImageFiles] = useState([]);
@@ -798,10 +821,58 @@ export default function BusinessLibrary({
     }
   };
 
+  const downloadSystemTemplate = async (row) => {
+    const templateConfig = getSystemTemplateConfig(row);
+    if (!templateConfig) throw new Error('시스템 양식 연결정보를 확인할 수 없습니다.');
+
+    const activeProject = String(projectName || '').trim();
+    if (!activeProject) {
+      throw new Error('상단에서 현장을 선택한 후 다운로드해주세요.');
+    }
+    if (Object.keys(buildingConfigs || {}).length === 0) {
+      throw new Error('선택된 현장의 골구도 정보가 없습니다. 현장관리의 동·층·세대 설정을 확인해주세요.');
+    }
+
+    setSystemTemplateDownloadingKey(String(row.system_template_key || ''));
+    try {
+      const { data, error } = await supabase
+        .from('option_status_documents')
+        .select('unit_values')
+        .eq('project_name', activeProject)
+        .eq('option_category', templateConfig.optionCategory)
+        .maybeSingle();
+      if (error) throw error;
+
+      const downloadFileName = String(
+        row.original_file_name || templateConfig.defaultFileName,
+      ).trim() || templateConfig.defaultFileName;
+
+      if (templateConfig.optionCategory === 'insulation') {
+        await saveInsulationOptionWorkbook({
+          projectName:activeProject,
+          buildingConfigs,
+          optionData:data?.unit_values || {},
+          downloadFileName,
+        });
+      } else {
+        await saveSelectionOptionWorkbook({
+          projectName:activeProject,
+          buildingConfigs,
+          selectionDocument:normalizeSelectionOptionDocument(data?.unit_values),
+          downloadFileName,
+        });
+      }
+    } finally {
+      setSystemTemplateDownloadingKey('');
+    }
+  };
+
   const openDocument = async (row, { silent = false } = {}) => {
     if (!row) return false;
     try {
-      if (row.storage_provider === 'external') {
+      if (getSystemTemplateConfig(row)) {
+        await downloadSystemTemplate(row);
+      } else if (row.storage_provider === 'external') {
         const url = String(row.external_url || '');
         if (!url) throw new Error('외부 자료 주소를 확인할 수 없습니다.');
         window.open(url, '_blank', 'noopener,noreferrer');
@@ -1122,6 +1193,7 @@ export default function BusinessLibrary({
                     variant="contained"
                     startIcon={selected.storage_provider === 'external' ? <OpenInNewRoundedIcon sx={{ fontSize:'15px !important' }} /> : <CloudDownloadRoundedIcon sx={{ fontSize:'15px !important' }} />}
                     onClick={() => openDocument(selected)}
+                    disabled={Boolean(systemTemplateDownloadingKey)}
                     sx={{ minWidth:'auto', height:24, px:0.9, py:0, fontSize:10, lineHeight:1, '& .MuiButton-startIcon':{ mr:0.45 } }}
                   >
                     {selected.storage_provider === 'external' ? '링크 열기' : '다운로드'}
@@ -1129,8 +1201,12 @@ export default function BusinessLibrary({
                   {isSuperAdmin && (
                     <>
                       <Tooltip title="자료 정보 수정"><IconButton size="small" onClick={openEdit} sx={{ width:24, height:24 }}><EditOutlinedIcon sx={{ fontSize:16 }} /></IconButton></Tooltip>
-                      <Tooltip title="새 버전 등록"><IconButton size="small" onClick={openNewVersion} sx={{ width:24, height:24 }}><HistoryRoundedIcon sx={{ fontSize:16 }} /></IconButton></Tooltip>
-                      <Tooltip title="자료 삭제"><IconButton size="small" color="error" onClick={() => setDeleteOpen(true)} sx={{ width:24, height:24 }}><DeleteOutlineRoundedIcon sx={{ fontSize:16 }} /></IconButton></Tooltip>
+                      {!getSystemTemplateConfig(selected) && (
+                        <>
+                          <Tooltip title="새 버전 등록"><IconButton size="small" onClick={openNewVersion} sx={{ width:24, height:24 }}><HistoryRoundedIcon sx={{ fontSize:16 }} /></IconButton></Tooltip>
+                          <Tooltip title="자료 삭제"><IconButton size="small" color="error" onClick={() => setDeleteOpen(true)} sx={{ width:24, height:24 }}><DeleteOutlineRoundedIcon sx={{ fontSize:16 }} /></IconButton></Tooltip>
+                        </>
+                      )}
                     </>
                   )}
                 </Stack>
@@ -1165,7 +1241,7 @@ export default function BusinessLibrary({
                     <Typography sx={{ fontSize:10.5, color:'#64748b' }}>파일/링크</Typography>
                     <Typography sx={{ fontSize:10.5, fontWeight:700, wordBreak:'break-all' }}>{selected.original_file_name || selected.external_url}</Typography>
                     <Typography sx={{ fontSize:10.5, color:'#64748b' }}>크기</Typography>
-                    <Typography sx={{ fontSize:10.5 }}>{selected.storage_provider === 'external' ? '외부 저장소' : formatBusinessLibraryBytes(selected.file_size)}</Typography>
+                    <Typography sx={{ fontSize:10.5 }}>{getSystemTemplateConfig(selected) ? '현장별 즉시 생성' : selected.storage_provider === 'external' ? '외부 저장소' : formatBusinessLibraryBytes(selected.file_size)}</Typography>
                     <Typography sx={{ fontSize:10.5, color:'#64748b' }}>등록자</Typography>
                     <Typography sx={{ fontSize:10.5 }}>{getCreatorLabel(selected)}</Typography>
                     <Typography sx={{ fontSize:10.5, color:'#64748b' }}>등록일</Typography>
@@ -1291,7 +1367,11 @@ export default function BusinessLibrary({
             </Stack>
 
             {editorMode === 'edit' ? (
-              <Alert severity="info">파일을 교체해야 한다면 저장 후 ‘새 버전 등록’을 이용해주세요. 이전 파일도 버전 이력에 보관됩니다.</Alert>
+              getSystemTemplateConfig(selected) ? (
+                <Alert severity="info">시스템 생성 양식입니다. 제목·설명·분류는 자유롭게 수정할 수 있으며, 다운로드 연결은 제목과 무관하게 유지됩니다.</Alert>
+              ) : (
+                <Alert severity="info">파일을 교체해야 한다면 저장 후 ‘새 버전 등록’을 이용해주세요. 이전 파일도 버전 이력에 보관됩니다.</Alert>
+              )
             ) : (
               <>
                 <TextField select size="small" label="등록 방식" value={form.storage_provider} onChange={updateForm('storage_provider')} sx={{ ...fieldSx, maxWidth:260 }}>
