@@ -1,3 +1,4 @@
+// v52.48.5.44.92 업무자료실 목록 한 줄·헤더 높이·용량 상태 간격
 // v52.48.5.44.91 업무자료실 UI 정렬·등록자·원본 다운로드명 보정
 // v52.48.5.44.90 업무자료실 Storage 내부 키 ASCII 전용화
 // v52.48.5.44.89 업무자료실: 비공개 파일·외부 링크·버전 관리
@@ -612,7 +613,7 @@ export default function BusinessLibrary({
               </Box>
             </Stack>
             <Box sx={{ flex:1, minWidth:220 }}>
-              <Stack direction="row" alignItems="center" gap={1.2} sx={{ mb:0.7 }}>
+              <Stack direction="row" alignItems="center" sx={{ mb:0.7, columnGap:'28px' }}>
                 <Chip size="small" color={tone.color} label={tone.label} sx={{ fontSize:10, height:21 }} />
                 <Typography sx={{ fontSize:10.5, color:'#64748b' }}>
                   전체 사용률 {storagePercent.toFixed(1)}% · 업무자료실 {formatBusinessLibraryBytes(storageUsage?.library_bytes || 0)} ({Number(storageUsage?.library_file_count || 0).toLocaleString()}개 파일)
@@ -655,10 +656,10 @@ export default function BusinessLibrary({
 
       <Paper variant="outlined" sx={{ display:'grid', gridTemplateColumns:{ xs:'1fr', lg:'minmax(390px, 42%) minmax(0, 58%)' }, height:{ xs:'auto', lg:'calc(100vh - 330px)' }, minHeight:{ xs:640, lg:510 }, overflow:'hidden', borderColor:'#d8e0ea' }}>
         <Box sx={{ minWidth:0, borderRight:{ lg:'1px solid #e2e8f0' }, borderBottom:{ xs:'1px solid #e2e8f0', lg:0 }, display:'flex', flexDirection:'column', minHeight:0 }}>
-          <Stack direction="row" alignItems="center" sx={{ height:36, px:1.2, bgcolor:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
-            <Typography sx={{ display:'flex', alignItems:'baseline', gap:0.45, fontSize:12, fontWeight:800, lineHeight:1 }}>
+          <Stack direction="row" alignItems="center" sx={{ height:44, px:1.2, bgcolor:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
+            <Typography sx={{ display:'flex', alignItems:'baseline', gap:0.55, fontSize:14, fontWeight:800, lineHeight:1 }}>
               자료 목록
-              <Box component="span" sx={{ fontSize:10.5, fontWeight:500, color:'#64748b' }}>
+              <Box component="span" sx={{ fontSize:11, fontWeight:500, color:'#64748b' }}>
                 {filteredRows.length.toLocaleString()}건
               </Box>
             </Typography>
@@ -679,23 +680,13 @@ export default function BusinessLibrary({
                   component="button"
                   type="button"
                   onClick={() => setSelectedId(String(row.id))}
-                  sx={{ width:'100%', textAlign:'left', border:0, borderBottom:'1px solid #edf1f5', bgcolor:active ? '#eff6ff' : '#fff', px:1.2, py:1, cursor:'pointer', '&:hover':{ bgcolor:active ? '#eff6ff' : '#f8fafc' } }}
+                  sx={{ display:'flex', alignItems:'center', width:'100%', minHeight:36, textAlign:'left', border:0, borderBottom:'1px solid #edf1f5', bgcolor:active ? '#eff6ff' : '#fff', px:1.2, py:0.55, cursor:'pointer', '&:hover':{ bgcolor:active ? '#eff6ff' : '#f8fafc' } }}
                 >
-                  <Stack direction="row" gap={0.8} alignItems="flex-start">
-                    <InsertDriveFileOutlinedIcon sx={{ mt:0.15, fontSize:19, color:active ? '#2563eb' : '#64748b' }} />
-                    <Box sx={{ minWidth:0, flex:1 }}>
-                      <Stack direction="row" gap={0.5} alignItems="center" flexWrap="wrap">
-                        <Chip size="small" label={row.category} sx={{ height:19, fontSize:9.5, bgcolor:'#eef2ff', color:'#4338ca' }} />
-                        <Chip size="small" variant="outlined" label={getScopeLabel(row)} sx={{ height:19, fontSize:9.5 }} />
-                        <Typography sx={{ ml:'auto', fontSize:9.5, color:'#64748b' }}>{row.version_label}</Typography>
-                      </Stack>
-                      <Typography noWrap title={row.title} sx={{ mt:0.55, fontSize:12, fontWeight:active ? 800 : 700, color:'#0f172a' }}>{row.title}</Typography>
-                      <Typography noWrap sx={{ mt:0.25, fontSize:10.5, color:'#64748b' }}>{row.original_file_name || row.external_url}</Typography>
-                      <Stack direction="row" justifyContent="space-between" sx={{ mt:0.45 }}>
-                        <Typography sx={{ fontSize:9.5, color:'#94a3b8' }}>{formatBusinessLibraryDate(row.created_at)}</Typography>
-                        <Typography sx={{ fontSize:9.5, color:'#94a3b8' }}>다운로드 {Number(row.download_count || 0).toLocaleString()}</Typography>
-                      </Stack>
-                    </Box>
+                  <Stack direction="row" gap={0.75} alignItems="center" sx={{ width:'100%', minWidth:0 }}>
+                    <InsertDriveFileOutlinedIcon sx={{ flexShrink:0, fontSize:18, color:active ? '#2563eb' : '#64748b' }} />
+                    <Typography noWrap title={row.title} sx={{ minWidth:0, fontSize:12, fontWeight:active ? 800 : 700, color:'#0f172a' }}>
+                      {row.title}
+                    </Typography>
                   </Stack>
                 </Box>
               );
