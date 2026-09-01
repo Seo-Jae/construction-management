@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Autocomplete,
@@ -15,6 +15,8 @@ import {
   Typography,
 } from '@mui/material';
 import { supabase } from './supabaseClient';
+import SystemNoticeDetailDialog from './components/SystemNoticeDialog.jsx';
+import { fetchSystemNotices } from './utils/systemNotices.js';
 
 const DEFAULT_NOTICES = [
   {
@@ -101,23 +103,20 @@ export default function Login({ loginNotice = '' }) {
   );
   const [logoError, setLogoError] = useState(false);
   const [notices, setNotices] = useState(DEFAULT_NOTICES);
+  const [noticeViewerOpen, setNoticeViewerOpen] = useState(false);
+  const [selectedNoticeId, setSelectedNoticeId] = useState('');
 
   useEffect(() => {
     let active = true;
 
     const loadNotices = async () => {
-      const { data, error } = await supabase
-        .from('system_notices')
-        .select('id, category, title, content, updated_at')
-        .order('id', { ascending: true });
-
-      if (error) {
+      try {
+        const data = await fetchSystemNotices();
+        if (active && data.length > 0) {
+          setNotices(data);
+        }
+      } catch (error) {
         console.error('로그인 공지사항 조회 오류:', error);
-        return;
-      }
-
-      if (active && Array.isArray(data) && data.length > 0) {
-        setNotices(data);
       }
     };
 
@@ -340,6 +339,13 @@ export default function Login({ loginNotice = '' }) {
         overflow: 'hidden',
       }}
     >
+      <SystemNoticeDetailDialog
+        open={noticeViewerOpen}
+        notices={notices}
+        selectedId={selectedNoticeId}
+        onSelect={setSelectedNoticeId}
+        onClose={() => setNoticeViewerOpen(false)}
+      />
       <Box
         sx={{
           position: 'absolute',
@@ -732,15 +738,28 @@ export default function Login({ loginNotice = '' }) {
             </Typography>
 
             <Box sx={{ mt: 3.2, display: 'flex', flexDirection: 'column', gap: 1.25 }}>
-              {notices.map((notice, index) => (
+              {notices.slice(0, 3).map((notice, index) => (
                 <Box
                   key={notice.id}
+                  component="button"
+                  type="button"
+                  onClick={() => {
+                    setSelectedNoticeId(notice.id);
+                    setNoticeViewerOpen(true);
+                  }}
                   sx={{
+                    width: '100%',
                     p: 2,
+                    display: 'block',
+                    color: 'inherit',
+                    textAlign: 'left',
+                    font: 'inherit',
+                    cursor: 'pointer',
                     borderRadius: 2,
                     border: '1px solid rgba(255,255,255,0.13)',
                     bgcolor: index === 0 ? 'rgba(255,255,255,0.13)' : 'rgba(255,255,255,0.075)',
                     backdropFilter: 'blur(8px)',
+                    '&:hover': { bgcolor: 'rgba(255,255,255,0.17)' },
                   }}
                 >
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mb: 0.65 }}>
@@ -748,14 +767,14 @@ export default function Login({ loginNotice = '' }) {
                       {notice.category}
                     </Box>
                     <Typography sx={{ color: 'rgba(255,255,255,0.55)', fontSize: '0.66rem' }}>
-                      {formatNoticeDate(notice.updated_at)}
+                      {formatNoticeDate(notice.published_at || notice.updated_at)}
                     </Typography>
                   </Box>
                   <Typography sx={{ color: '#ffffff', fontSize: '0.87rem', fontWeight: 900, lineHeight: 1.5 }}>
                     {notice.title}
                   </Typography>
                   <Typography sx={{ mt: 0.55, color: 'rgba(255,255,255,0.7)', fontSize: '0.72rem', lineHeight: 1.65 }}>
-                    {notice.content}
+                    {notice.summary || notice.content}
                   </Typography>
                 </Box>
               ))}

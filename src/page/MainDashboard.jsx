@@ -1,5 +1,5 @@
-// v52.48.5.44.8 현장관리 시작일·종료일 연동
-import React, {
+// v52.48.5.44.88 공지사항 목록·상세·이미지 팝업
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -28,6 +28,7 @@ import {
   Typography,
 } from '@mui/material';
 import AddOutlinedIcon from '@mui/icons-material/AddOutlined';
+import AddPhotoAlternateOutlinedIcon from '@mui/icons-material/AddPhotoAlternateOutlined';
 import CampaignOutlinedIcon from '@mui/icons-material/CampaignOutlined';
 import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
@@ -43,6 +44,14 @@ import { supabase } from '../supabaseClient';
 import { getProjectCellKeys } from '../utils/buildingUnits.js';
 import MainWorkAlertDialog from './MainWorkAlertDialog.jsx';
 import KoreanDatePicker from '../components/KoreanDatePicker.jsx';
+import SystemNoticeDetailDialog from '../components/SystemNoticeDialog.jsx';
+import {
+  SYSTEM_NOTICE_BUCKET,
+  fetchSystemNotices,
+  formatSystemNoticeDate,
+  getSystemNoticeImageUrl,
+  normalizeSystemNotice,
+} from '../utils/systemNotices.js';
 
 const MAIN_PROGRESS_CACHE = new Map();
 const MAIN_LABOR_CACHE = new Map();
@@ -174,6 +183,16 @@ const DEFAULT_NOTICES = [
 ];
 
 const NOTICE_CATEGORIES = ['공지', '안내', '업데이트'];
+
+const createEmptyNoticeDraft = () => ({
+  id: '',
+  category: '공지',
+  title: '',
+  summary: '',
+  content: '',
+  image_paths: [],
+  published_at: '',
+});
 
 const formatNoticeDate = (value) => {
   if (!value) return '';
@@ -875,7 +894,7 @@ function LaborContractCard({
   );
 }
 
-function NoticePanel({ notices, canEdit, onEdit }) {
+function NoticePanel({ notices, canEdit, onEdit, onOpen }) {
   return (
     <Paper
       variant="outlined"
@@ -923,7 +942,10 @@ function NoticePanel({ notices, canEdit, onEdit }) {
             <IconButton
               size="small"
               aria-label="공지사항 수정"
-              onClick={onEdit}
+              onClick={(event) => {
+                event.stopPropagation();
+                onEdit?.();
+              }}
               sx={{
                 ml: 'auto',
                 width: 28,
@@ -952,12 +974,29 @@ function NoticePanel({ notices, canEdit, onEdit }) {
         {notices.map((notice, index) => (
           <Box
             key={notice.id}
+            component="button"
+            type="button"
+            onClick={() => onOpen?.(notice.id)}
             sx={{
+              width: '100%',
               py: 1.15,
+              px: 0.4,
+              display: 'block',
+              textAlign: 'left',
+              color: 'inherit',
+              font: 'inherit',
+              borderTop: 0,
+              borderLeft: 0,
+              borderRight: 0,
+              bgcolor: 'transparent',
+              cursor: 'pointer',
               borderBottom:
                 index === notices.length - 1
                   ? 'none'
                   : '1px solid #eef2f7',
+              '&:hover': {
+                bgcolor: '#f8fbff',
+              },
             }}
           >
             <Box
@@ -1009,7 +1048,7 @@ function NoticePanel({ notices, canEdit, onEdit }) {
                 lineHeight: 1.55,
               }}
             >
-              {notice.content}
+              {notice.summary || notice.content}
             </Typography>
 
             <Typography
@@ -1020,7 +1059,7 @@ function NoticePanel({ notices, canEdit, onEdit }) {
                 textAlign: 'right',
               }}
             >
-              {formatNoticeDate(notice.updated_at)}
+              {formatNoticeDate(notice.published_at || notice.updated_at)}
             </Typography>
           </Box>
         ))}
@@ -1029,12 +1068,19 @@ function NoticePanel({ notices, canEdit, onEdit }) {
   );
 }
 
-function NoticeEditDialog({
+function NoticeManageDialog({
   open,
-  drafts,
+  notices,
+  draft,
+  imageFiles,
   saving,
   errorMessage,
+  onSelect,
+  onNew,
   onChange,
+  onAddImages,
+  onRemoveImage,
+  onRemoveNewImage,
   onClose,
   onSave,
 }) {
@@ -1043,7 +1089,15 @@ function NoticeEditDialog({
       open={open}
       onClose={saving ? undefined : onClose}
       fullWidth
-      maxWidth="md"
+      maxWidth="lg"
+      slotProps={{
+        paper: {
+          sx: {
+            height: { xs: '92vh', md: '82vh' },
+            maxHeight: { xs: '92vh', md: '820px' },
+          },
+        },
+      }}
     >
       <DialogTitle
         sx={{
@@ -1052,124 +1106,220 @@ function NoticeEditDialog({
           fontWeight: 900,
         }}
       >
-        공지사항 수정
+        공지사항 관리
       </DialogTitle>
 
-      <DialogContent dividers>
-        <Typography
-          sx={{
-            mb: 1.5,
-            color: '#64748b',
-            fontSize: '0.76rem',
-          }}
-        >
-          수정한 공지만 저장일이 오늘 날짜로 변경됩니다.
-        </Typography>
-
-        {errorMessage && (
-          <Alert severity="error" sx={{ mb: 1.5 }}>
-            {errorMessage}
-          </Alert>
-        )}
-
+      <DialogContent dividers sx={{ p: 0, minHeight: 0, overflow: 'hidden' }}>
         <Box
           sx={{
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 1.4,
+            height: '100%',
+            display: 'grid',
+            gridTemplateColumns: { xs: '1fr', md: '300px minmax(0, 1fr)' },
+            gridTemplateRows: { xs: '210px minmax(0, 1fr)', md: '1fr' },
           }}
         >
-          {drafts.map((notice, index) => (
-            <Paper
-              key={notice.id}
-              variant="outlined"
+          <Box
+            sx={{
+              minHeight: 0,
+              overflowY: 'auto',
+              p: 1.25,
+              bgcolor: '#f8fafc',
+              borderRight: { md: '1px solid #e2e8f0' },
+              borderBottom: { xs: '1px solid #e2e8f0', md: 'none' },
+            }}
+          >
+            <Button
+              fullWidth
+              variant="contained"
+              startIcon={<AddOutlinedIcon />}
+              onClick={onNew}
+              disabled={saving}
               sx={{
-                p: 1.5,
-                borderColor: '#dbe3ee',
-                bgcolor: '#f8fafc',
+                mb: 1,
+                justifyContent: 'flex-start',
+                fontWeight: 900,
               }}
             >
-              <Typography
-                sx={{
-                  mb: 1,
-                  color: '#334155',
-                  fontSize: '0.76rem',
-                  fontWeight: 900,
-                }}
-              >
-                공지 {index + 1}
-              </Typography>
+              새 공지 작성
+            </Button>
 
+            {notices.map((notice) => {
+              const selected = String(draft?.id) === String(notice.id);
+              return (
+                <Paper
+                  key={notice.id}
+                  component="button"
+                  type="button"
+                  variant="outlined"
+                  onClick={() => onSelect(notice)}
+                  disabled={saving}
+                  sx={{
+                    width: '100%',
+                    mb: 0.7,
+                    p: 1,
+                    display: 'block',
+                    textAlign: 'left',
+                    font: 'inherit',
+                    cursor: 'pointer',
+                    borderColor: selected ? '#60a5fa' : '#e2e8f0',
+                    bgcolor: selected ? '#eff6ff' : '#ffffff',
+                  }}
+                >
+                  <Typography noWrap sx={{ color: '#1e293b', fontSize: '0.75rem', fontWeight: 900 }}>
+                    {notice.title}
+                  </Typography>
+                  <Typography sx={{ mt: 0.35, color: '#94a3b8', fontSize: '0.61rem' }}>
+                    {formatSystemNoticeDate(notice.published_at || notice.updated_at)}
+                  </Typography>
+                </Paper>
+              );
+            })}
+          </Box>
+
+          <Box sx={{ minWidth: 0, minHeight: 0, overflowY: 'auto', p: { xs: 1.5, md: 2.5 } }}>
+            <Typography
+              sx={{
+                mb: 1.5,
+                color: '#334155',
+                fontSize: '0.82rem',
+                fontWeight: 900,
+              }}
+            >
+              {draft?.id ? '공지 수정' : '새 공지 작성'}
+            </Typography>
+
+            {errorMessage && (
+              <Alert severity="error" sx={{ mb: 1.5 }}>
+                {errorMessage}
+              </Alert>
+            )}
+
+            <Box
+              sx={{
+                display: 'grid',
+                gridTemplateColumns: { xs: '1fr', sm: '130px minmax(0, 1fr)' },
+                gap: 1.2,
+              }}
+            >
+              <TextField
+                select
+                size="small"
+                label="분류"
+                value={draft?.category || '공지'}
+                disabled={saving}
+                onChange={(event) => onChange('category', event.target.value)}
+              >
+                {NOTICE_CATEGORIES.map((category) => (
+                  <MenuItem key={category} value={category}>
+                    {category}
+                  </MenuItem>
+                ))}
+              </TextField>
+
+              <TextField
+                size="small"
+                label="제목"
+                value={draft?.title || ''}
+                disabled={saving}
+                inputProps={{ maxLength: 120 }}
+                onChange={(event) => onChange('title', event.target.value)}
+              />
+
+              <TextField
+                multiline
+                minRows={2}
+                label="목록에 표시할 간략 내용"
+                value={draft?.summary || ''}
+                disabled={saving}
+                inputProps={{ maxLength: 500 }}
+                onChange={(event) => onChange('summary', event.target.value)}
+                sx={{
+                  gridColumn: { xs: 'auto', sm: '1 / -1' },
+                }}
+              />
+
+              <TextField
+                multiline
+                minRows={7}
+                label="상세 내용"
+                value={draft?.content || ''}
+                disabled={saving}
+                inputProps={{ maxLength: 10000 }}
+                onChange={(event) => onChange('content', event.target.value)}
+                sx={{
+                  gridColumn: { xs: 'auto', sm: '1 / -1' },
+                }}
+              />
+            </Box>
+
+            <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+              <Button
+                component="label"
+                variant="outlined"
+                size="small"
+                startIcon={<AddPhotoAlternateOutlinedIcon />}
+                disabled={saving || ((draft?.image_paths?.length || 0) + imageFiles.length >= 5)}
+              >
+                이미지 추가
+                <input
+                  hidden
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  multiple
+                  onChange={onAddImages}
+                />
+              </Button>
+              <Typography sx={{ color: '#64748b', fontSize: '0.68rem' }}>
+                최대 5장 · 장당 8MB 이하
+              </Typography>
+            </Box>
+
+            {((draft?.image_paths?.length || 0) > 0 || imageFiles.length > 0) && (
               <Box
                 sx={{
+                  mt: 1.2,
                   display: 'grid',
-                  gridTemplateColumns: {
-                    xs: '1fr',
-                    sm: '130px minmax(0, 1fr)',
-                  },
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))',
                   gap: 1,
                 }}
               >
-                <TextField
-                  select
-                  size="small"
-                  label="분류"
-                  value={notice.category}
-                  disabled={saving}
-                  onChange={(event) =>
-                    onChange(
-                      notice.id,
-                      'category',
-                      event.target.value,
-                    )
-                  }
-                >
-                  {NOTICE_CATEGORIES.map((category) => (
-                    <MenuItem key={category} value={category}>
-                      {category}
-                    </MenuItem>
-                  ))}
-                </TextField>
+                {(draft?.image_paths || []).map((path) => (
+                  <Box key={path} sx={{ position: 'relative', border: '1px solid #e2e8f0', borderRadius: 1, overflow: 'hidden' }}>
+                    <Box component="img" src={getSystemNoticeImageUrl(path)} alt="기존 공지 첨부" sx={{ display: 'block', width: '100%', height: 105, objectFit: 'cover' }} />
+                    <IconButton
+                      size="small"
+                      aria-label="기존 이미지 제거"
+                      onClick={() => onRemoveImage(path)}
+                      disabled={saving}
+                      sx={{ position: 'absolute', top: 4, right: 4, bgcolor: 'rgba(255,255,255,0.92)', '&:hover': { bgcolor: '#ffffff' } }}
+                    >
+                      <DeleteOutlinedIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  </Box>
+                ))}
 
-                <TextField
-                  size="small"
-                  label="제목"
-                  value={notice.title}
-                  disabled={saving}
-                  inputProps={{ maxLength: 120 }}
-                  onChange={(event) =>
-                    onChange(
-                      notice.id,
-                      'title',
-                      event.target.value,
-                    )
-                  }
-                />
-
-                <TextField
-                  multiline
-                  minRows={2}
-                  label="내용"
-                  value={notice.content}
-                  disabled={saving}
-                  inputProps={{ maxLength: 500 }}
-                  onChange={(event) =>
-                    onChange(
-                      notice.id,
-                      'content',
-                      event.target.value,
-                    )
-                  }
-                  sx={{
-                    gridColumn: {
-                      xs: 'auto',
-                      sm: '1 / -1',
-                    },
-                  }}
-                />
+                {imageFiles.map((file, index) => (
+                  <Box key={`${file.name}-${file.lastModified}-${index}`} sx={{ position: 'relative', p: 1, minHeight: 105, border: '1px solid #bfdbfe', borderRadius: 1, bgcolor: '#eff6ff' }}>
+                    <Typography sx={{ pr: 3, color: '#1e3a8a', fontSize: '0.68rem', fontWeight: 800, overflowWrap: 'anywhere' }}>
+                      {file.name}
+                    </Typography>
+                    <Typography sx={{ mt: 0.5, color: '#64748b', fontSize: '0.61rem' }}>
+                      {(file.size / 1024 / 1024).toFixed(2)}MB · 저장 예정
+                    </Typography>
+                    <IconButton
+                      size="small"
+                      aria-label="새 이미지 제거"
+                      onClick={() => onRemoveNewImage(index)}
+                      disabled={saving}
+                      sx={{ position: 'absolute', top: 4, right: 4 }}
+                    >
+                      <DeleteOutlinedIcon sx={{ fontSize: 16 }} />
+                    </IconButton>
+                  </Box>
+                ))}
               </Box>
-            </Paper>
-          ))}
+            )}
+          </Box>
         </Box>
       </DialogContent>
 
@@ -2328,9 +2478,15 @@ export default function MainDashboard({
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [notices, setNotices] = useState(DEFAULT_NOTICES);
+  const [noticeViewerOpen, setNoticeViewerOpen] = useState(false);
+  const [selectedNoticeId, setSelectedNoticeId] = useState('');
   const [noticeDialogOpen, setNoticeDialogOpen] =
     useState(false);
-  const [noticeDrafts, setNoticeDrafts] = useState([]);
+  const [noticeAdminRows, setNoticeAdminRows] = useState([]);
+  const [noticeDraft, setNoticeDraft] = useState(
+    createEmptyNoticeDraft,
+  );
+  const [noticeImageFiles, setNoticeImageFiles] = useState([]);
   const [noticeSaving, setNoticeSaving] = useState(false);
   const [noticeErrorMessage, setNoticeErrorMessage] =
     useState('');
@@ -2505,23 +2661,13 @@ export default function MainDashboard({
       return;
     }
 
-    const { data, error } = await supabase
-      .from('system_notices')
-      .select('id, category, title, content, updated_at')
-      .order('id', { ascending: true });
-
-    if (error) {
-      throw error;
-    }
-
-    if (Array.isArray(data) && data.length > 0) {
-      setCachedValue(
-        MAIN_NOTICE_CACHE,
-        MAIN_NOTICE_CACHE_KEY,
-        data,
-      );
-      setNotices(data);
-    }
+    const data = await fetchSystemNotices();
+    setCachedValue(
+      MAIN_NOTICE_CACHE,
+      MAIN_NOTICE_CACHE_KEY,
+      data,
+    );
+    setNotices(data);
   }, []);
 
   useEffect(() => {
@@ -2530,104 +2676,170 @@ export default function MainDashboard({
     });
   }, [loadNotices]);
 
+  const handleOpenNoticeViewer = (noticeId) => {
+    setSelectedNoticeId(noticeId || notices[0]?.id || '');
+    setNoticeViewerOpen(true);
+  };
+
+  const handleSelectNoticeDraft = (notice) => {
+    setNoticeDraft(normalizeSystemNotice(notice));
+    setNoticeImageFiles([]);
+    setNoticeErrorMessage('');
+  };
+
+  const handleNewNoticeDraft = () => {
+    setNoticeDraft(createEmptyNoticeDraft());
+    setNoticeImageFiles([]);
+    setNoticeErrorMessage('');
+  };
+
   const handleOpenNoticeEditor = () => {
     if (!isSuperAdmin) return;
 
-    setNoticeDrafts(
-      notices.map((notice) => ({ ...notice })),
+    const nextRows = notices.map(normalizeSystemNotice);
+    setNoticeAdminRows(nextRows);
+    setNoticeDraft(
+      nextRows[0] || createEmptyNoticeDraft(),
     );
+    setNoticeImageFiles([]);
     setNoticeErrorMessage('');
     setNoticeDialogOpen(true);
   };
 
-  const handleChangeNoticeDraft = (
-    noticeId,
-    field,
-    value,
-  ) => {
-    setNoticeDrafts((previous) =>
-      previous.map((notice) =>
-        notice.id === noticeId
-          ? { ...notice, [field]: value }
-          : notice,
-      ),
-    );
+  const handleChangeNoticeDraft = (field, value) => {
+    setNoticeDraft((previous) => ({
+      ...previous,
+      [field]: value,
+    }));
   };
 
-  const handleSaveNotices = async () => {
-    if (!isSuperAdmin || noticeSaving) return;
+  const handleAddNoticeImages = (event) => {
+    const files = Array.from(event.target.files || []);
+    event.target.value = '';
 
-    const preparedDrafts = noticeDrafts.map((notice) => ({
-      ...notice,
-      category: String(notice.category || '').trim(),
-      title: String(notice.title || '').trim(),
-      content: String(notice.content || '').trim(),
-    }));
-
-    if (
-      preparedDrafts.some(
-        (notice) =>
-          !notice.category || !notice.title || !notice.content,
-      )
-    ) {
-      setNoticeErrorMessage(
-        '각 공지의 분류, 제목, 내용을 모두 입력해주세요.',
-      );
+    const invalidType = files.find(
+      (file) => !['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type),
+    );
+    if (invalidType) {
+      setNoticeErrorMessage('JPG, PNG, WEBP, GIF 이미지만 첨부할 수 있습니다.');
       return;
     }
 
-    const changedNotices = preparedDrafts.filter((draft) => {
-      const original = notices.find(
-        (notice) => notice.id === draft.id,
-      );
+    const oversized = files.find((file) => file.size > 8 * 1024 * 1024);
+    if (oversized) {
+      setNoticeErrorMessage(`이미지는 장당 8MB 이하여야 합니다: ${oversized.name}`);
+      return;
+    }
 
-      return Boolean(
-        !original ||
-          draft.category !== original.category ||
-          draft.title !== original.title ||
-          draft.content !== original.content,
-      );
-    });
+    const availableCount = Math.max(
+      0,
+      5 - (noticeDraft.image_paths?.length || 0) - noticeImageFiles.length,
+    );
+    if (files.length > availableCount) {
+      setNoticeErrorMessage('공지 이미지에는 최대 5장까지 첨부할 수 있습니다.');
+      return;
+    }
 
-    if (changedNotices.length === 0) {
-      setNoticeDialogOpen(false);
+    setNoticeImageFiles((previous) => [...previous, ...files]);
+    setNoticeErrorMessage('');
+  };
+
+  const handleSaveNotice = async () => {
+    if (!isSuperAdmin || noticeSaving) return;
+
+    const prepared = {
+      ...noticeDraft,
+      category: String(noticeDraft.category || '').trim(),
+      title: String(noticeDraft.title || '').trim(),
+      summary: String(noticeDraft.summary || '').trim(),
+      content: String(noticeDraft.content || '').trim(),
+      image_paths: Array.isArray(noticeDraft.image_paths)
+        ? noticeDraft.image_paths.filter(Boolean)
+        : [],
+    };
+
+    if (!prepared.category || !prepared.title || !prepared.summary || !prepared.content) {
+      setNoticeErrorMessage(
+        '분류, 제목, 간략 내용, 상세 내용을 모두 입력해주세요.',
+      );
       return;
     }
 
     setNoticeSaving(true);
     setNoticeErrorMessage('');
 
+    const noticeId = prepared.id || window.crypto.randomUUID();
+    const uploadedPaths = [];
+    const original = noticeAdminRows.find(
+      (notice) => String(notice.id) === String(prepared.id),
+    );
+    const originalPaths = original?.image_paths || [];
+    const removedPaths = originalPaths.filter(
+      (path) => !prepared.image_paths.includes(path),
+    );
+
     try {
-      const savedNotices = [];
+      for (const [index, file] of noticeImageFiles.entries()) {
+        const extension = String(file.name || '')
+          .split('.')
+          .pop()
+          .toLowerCase()
+          .replace(/[^a-z0-9]/g, '') || 'jpg';
+        const path = `${noticeId}/${Date.now()}-${index}-${window.crypto.randomUUID().slice(0, 8)}.${extension}`;
+        const uploadResult = await supabase.storage
+          .from(SYSTEM_NOTICE_BUCKET)
+          .upload(path, file, {
+            contentType: file.type,
+            cacheControl: '3600',
+            upsert: false,
+          });
 
-      for (const notice of changedNotices) {
-        const { data, error } = await supabase
-          .from('system_notices')
-          .update({
-            category: notice.category,
-            title: notice.title,
-            content: notice.content,
-          })
-          .eq('id', notice.id)
-          .select(
-            'id, category, title, content, updated_at',
-          )
-          .single();
-
-        if (error) {
-          throw error;
-        }
-
-        savedNotices.push(data);
+        if (uploadResult.error) throw uploadResult.error;
+        uploadedPaths.push(path);
       }
 
-      const savedById = new Map(
-        savedNotices.map((notice) => [notice.id, notice]),
-      );
+      const now = new Date().toISOString();
+      const payload = {
+        category: prepared.category,
+        title: prepared.title,
+        summary: prepared.summary,
+        content: prepared.content,
+        image_paths: [...prepared.image_paths, ...uploadedPaths],
+        is_published: true,
+        updated_at: now,
+      };
 
-      const nextNotices = notices.map(
-        (notice) => savedById.get(notice.id) || notice,
-      );
+      const saveQuery = prepared.id
+        ? supabase
+            .from('system_notice_posts')
+            .update(payload)
+            .eq('id', prepared.id)
+        : supabase
+            .from('system_notice_posts')
+            .insert({
+              id: noticeId,
+              ...payload,
+              published_at: now,
+            });
+
+      const { data, error } = await saveQuery
+        .select(
+          'id, category, title, summary, content, image_paths, published_at, created_at, updated_at',
+        )
+        .single();
+
+      if (error) throw error;
+
+      if (removedPaths.length > 0) {
+        const removeResult = await supabase.storage
+          .from(SYSTEM_NOTICE_BUCKET)
+          .remove(removedPaths);
+        if (removeResult.error) {
+          console.error('공지사항 기존 이미지 삭제 오류:', removeResult.error);
+        }
+      }
+
+      const nextNotices = await fetchSystemNotices();
 
       setCachedValue(
         MAIN_NOTICE_CACHE,
@@ -2635,20 +2847,30 @@ export default function MainDashboard({
         nextNotices,
       );
       setNotices(nextNotices);
+      setNoticeAdminRows(nextNotices);
+      setNoticeDraft(normalizeSystemNotice(data));
+      setNoticeImageFiles([]);
       setNoticeDialogOpen(false);
+      setToast({
+        open: true,
+        severity: 'success',
+        message: prepared.id
+          ? '공지사항을 수정했습니다.'
+          : '새 공지사항을 등록했습니다.',
+      });
     } catch (error) {
       console.error('Main 공지사항 저장 오류:', error);
+
+      if (uploadedPaths.length > 0) {
+        await supabase.storage
+          .from(SYSTEM_NOTICE_BUCKET)
+          .remove(uploadedPaths);
+      }
+
       setNoticeErrorMessage(
         error?.message ||
-          '공지사항을 저장하지 못했습니다. 잠시 후 다시 시도해주세요.',
+          '공지사항을 저장하지 못했습니다. v88 SQL 적용 여부를 확인해주세요.',
       );
-
-      loadNotices({ force: true }).catch((loadError) => {
-        console.error(
-          'Main 공지사항 재조회 오류:',
-          loadError,
-        );
-      });
     } finally {
       setNoticeSaving(false);
     }
@@ -3100,14 +3322,43 @@ export default function MainDashboard({
         onNavigate={onNavigate}
       />
 
-      <NoticeEditDialog
+      <SystemNoticeDetailDialog
+        open={noticeViewerOpen}
+        notices={notices}
+        selectedId={selectedNoticeId}
+        onSelect={setSelectedNoticeId}
+        onClose={() => setNoticeViewerOpen(false)}
+      />
+
+      <NoticeManageDialog
         open={noticeDialogOpen}
-        drafts={noticeDrafts}
+        notices={noticeAdminRows}
+        draft={noticeDraft}
+        imageFiles={noticeImageFiles}
         saving={noticeSaving}
         errorMessage={noticeErrorMessage}
+        onSelect={handleSelectNoticeDraft}
+        onNew={handleNewNoticeDraft}
         onChange={handleChangeNoticeDraft}
-        onClose={() => setNoticeDialogOpen(false)}
-        onSave={handleSaveNotices}
+        onAddImages={handleAddNoticeImages}
+        onRemoveImage={(path) =>
+          setNoticeDraft((previous) => ({
+            ...previous,
+            image_paths: (previous.image_paths || []).filter(
+              (item) => item !== path,
+            ),
+          }))
+        }
+        onRemoveNewImage={(index) =>
+          setNoticeImageFiles((previous) =>
+            previous.filter((_, itemIndex) => itemIndex !== index),
+          )
+        }
+        onClose={() => {
+          setNoticeDialogOpen(false);
+          setNoticeImageFiles([]);
+        }}
+        onSave={handleSaveNotice}
       />
 
       <CalendarIssueEditDialog
@@ -3182,9 +3433,10 @@ export default function MainDashboard({
         }}
       >
         <NoticePanel
-          notices={notices}
+          notices={notices.slice(0, 3)}
           canEdit={isSuperAdmin}
           onEdit={handleOpenNoticeEditor}
+          onOpen={handleOpenNoticeViewer}
         />
 
         <CalendarPanel
