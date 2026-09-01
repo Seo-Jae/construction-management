@@ -1,3 +1,4 @@
+// v52.48.5.44.112 업무자료 목록 분류박스 동일폭
 // v52.48.5.44.111 업무자료 목록 분류표시
 // v52.48.5.44.110 업무자료 순서변경 토스트팝업
 // v52.48.5.44.108 업무자료실 골구도 변경양식 레이아웃 적용
@@ -1206,12 +1207,22 @@ export default function BusinessLibrary({
                     color={active ? 'primary' : 'default'}
                     sx={{
                       flexShrink:0,
+                      width:76,
+                      minWidth:76,
+                      maxWidth:76,
                       height:20,
                       mr:0.55,
                       fontSize:9,
                       fontWeight:700,
                       bgcolor:active ? '#ffffff' : '#f8fafc',
-                      '& .MuiChip-label':{ px:0.65 },
+                      '& .MuiChip-label':{
+                        width:'100%',
+                        px:0.5,
+                        textAlign:'center',
+                        overflow:'hidden',
+                        textOverflow:'ellipsis',
+                        whiteSpace:'nowrap',
+                      },
                     }}
                   />
                   <Stack direction="row" gap={0.55} alignItems="center" sx={{ width:'100%', minWidth:0 }}>
