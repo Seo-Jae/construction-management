@@ -1,3 +1,4 @@
+// v52.48.5.44.96 업무자료 팝업 입력박스 실제 간격 보정
 // v52.48.5.44.95 업무자료 목록 선택·전체선택 다운로드
 // v52.48.5.44.94 업무자료 팝업 라벨 간격·상세 설명 가독성
 // v52.48.5.44.93 업무자료실 좌우 헤더 세로 정렬
@@ -18,7 +19,6 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  Divider,
   FormControl,
   IconButton,
   InputLabel,
@@ -886,8 +886,8 @@ export default function BusinessLibrary({
           {editorMode === 'create' ? '업무자료 등록' : editorMode === 'version' ? '새 버전 등록' : '업무자료 수정'}
         </DialogTitle>
         <DialogContent dividers sx={{ pt:2.5, overflowY:'auto' }}>
-          <Stack gap={2}>
-            <Stack direction={{ xs:'column', sm:'row' }} gap={1}>
+          <Stack sx={{ rowGap:2 }}>
+            <Stack direction={{ xs:'column', sm:'row' }} sx={{ gap:1.5 }}>
               <TextField select size="small" label="분류" value={form.category} onChange={updateForm('category')} sx={{ ...fieldSx, minWidth:180 }}>
                 {BUSINESS_LIBRARY_CATEGORIES.map((category) => <MenuItem key={category} value={category}>{category}</MenuItem>)}
               </TextField>
@@ -895,8 +895,7 @@ export default function BusinessLibrary({
             </Stack>
             <TextField size="small" label="자료 제목" value={form.title} onChange={updateForm('title')} inputProps={{ maxLength:200 }} fullWidth sx={fieldSx} />
             <TextField multiline minRows={4} maxRows={8} label="설명" value={form.description} onChange={updateForm('description')} inputProps={{ maxLength:10000 }} fullWidth sx={fieldSx} />
-            <Divider />
-            <Stack direction={{ xs:'column', sm:'row' }} gap={1}>
+            <Stack direction={{ xs:'column', sm:'row' }} sx={{ gap:1.5 }}>
               <TextField select size="small" label="자료 범위" value={form.scope_type} onChange={updateForm('scope_type')} sx={{ ...fieldSx, minWidth:180 }}>
                 {BUSINESS_LIBRARY_SCOPES.map((scope) => <MenuItem key={scope.value} value={scope.value}>{scope.label}</MenuItem>)}
               </TextField>
