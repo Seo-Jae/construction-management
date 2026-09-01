@@ -1,3 +1,4 @@
+// v52.48.5.44.95 업무자료 목록 선택·전체선택 다운로드
 // v52.48.5.44.94 업무자료 팝업 라벨 간격·상세 설명 가독성
 // v52.48.5.44.93 업무자료실 좌우 헤더 세로 정렬
 // v52.48.5.44.92 업무자료실 목록 한 줄·헤더 높이·용량 상태 간격
@@ -10,6 +11,7 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
@@ -122,6 +124,8 @@ export default function BusinessLibrary({
   const [scopeFilter, setScopeFilter] = useState('all');
   const [keyword, setKeyword] = useState('');
   const [selectedId, setSelectedId] = useState('');
+  const [checkedIds, setCheckedIds] = useState([]);
+  const [bulkDownloading, setBulkDownloading] = useState(false);
   const [previewUrl, setPreviewUrl] = useState('');
   const [previewLoading, setPreviewLoading] = useState(false);
   const [storageUsage, setStorageUsage] = useState(null);
@@ -168,6 +172,15 @@ export default function BusinessLibrary({
       .sort((a, b) => Number(b.version_number) - Number(a.version_number)),
     [rows, selected],
   );
+
+  const checkedRows = useMemo(() => {
+    const checkedSet = new Set(checkedIds.map(String));
+    return filteredRows.filter((row) => checkedSet.has(String(row.id)));
+  }, [checkedIds, filteredRows]);
+
+  const allVisibleChecked = filteredRows.length > 0
+    && checkedRows.length === filteredRows.length;
+  const someVisibleChecked = checkedRows.length > 0 && !allVisibleChecked;
 
   const getCreatorLabel = useCallback((row) => {
     const stored = String(row?.created_by_name || '').trim();
@@ -217,6 +230,11 @@ export default function BusinessLibrary({
     loadRows();
     loadStorageUsage();
   }, [loadRows, loadStorageUsage]);
+
+  useEffect(() => {
+    const visibleIds = new Set(filteredRows.map((row) => String(row.id)));
+    setCheckedIds((current) => current.filter((id) => visibleIds.has(String(id))));
+  }, [filteredRows]);
 
   useEffect(() => {
     let active = true;
@@ -509,8 +527,8 @@ export default function BusinessLibrary({
     }
   };
 
-  const openDocument = async (row) => {
-    if (!row) return;
+  const openDocument = async (row, { silent = false } = {}) => {
+    if (!row) return false;
     try {
       if (row.storage_provider === 'external') {
         const url = String(row.external_url || '');
@@ -545,9 +563,50 @@ export default function BusinessLibrary({
       setRows((current) => current.map((item) => item.id === row.id
         ? { ...item, download_count:Number(item.download_count || 0) + 1 }
         : item));
+      return true;
     } catch (error) {
-      setMessage({ severity:'error', text:error?.message || '자료를 열지 못했습니다.' });
+      if (!silent) {
+        setMessage({ severity:'error', text:error?.message || '자료를 열지 못했습니다.' });
+      }
+      return false;
     }
+  };
+
+  const toggleAllVisible = () => {
+    if (bulkDownloading || filteredRows.length === 0) return;
+    setCheckedIds(allVisibleChecked ? [] : filteredRows.map((row) => String(row.id)));
+  };
+
+  const toggleCheckedRow = (rowId) => {
+    if (bulkDownloading) return;
+    const normalizedId = String(rowId);
+    setCheckedIds((current) => current.some((id) => String(id) === normalizedId)
+      ? current.filter((id) => String(id) !== normalizedId)
+      : [...current, normalizedId]);
+  };
+
+  const downloadCheckedDocuments = async () => {
+    if (bulkDownloading || checkedRows.length === 0) return;
+    setBulkDownloading(true);
+    let completed = 0;
+    let failed = 0;
+    for (const row of checkedRows) {
+      // Blob 다운로드는 한 번의 사용자 동작 안에서 순서대로 실행해 원본 파일명을 유지합니다.
+      // 외부 링크 자료는 기존 단건 다운로드와 동일하게 새 창으로 엽니다.
+      const succeeded = await openDocument(row, { silent:true });
+      if (succeeded) completed += 1;
+      else failed += 1;
+    }
+    if (failed > 0) {
+      setMessage({
+        severity:'warning',
+        text:`선택한 자료 중 ${completed}건을 처리했고 ${failed}건은 다운로드하지 못했습니다.`,
+      });
+    } else {
+      setMessage({ severity:'success', text:`선택한 자료 ${completed}건을 다운로드했습니다.` });
+      setCheckedIds([]);
+    }
+    setBulkDownloading(false);
   };
 
   const deleteDocument = async () => {
@@ -659,12 +718,37 @@ export default function BusinessLibrary({
       <Paper variant="outlined" sx={{ display:'grid', gridTemplateColumns:{ xs:'1fr', lg:'minmax(390px, 42%) minmax(0, 58%)' }, height:{ xs:'auto', lg:'calc(100vh - 330px)' }, minHeight:{ xs:640, lg:510 }, overflow:'hidden', borderColor:'#d8e0ea' }}>
         <Box sx={{ minWidth:0, borderRight:{ lg:'1px solid #e2e8f0' }, borderBottom:{ xs:'1px solid #e2e8f0', lg:0 }, display:'flex', flexDirection:'column', minHeight:0 }}>
           <Box sx={{ display:'flex', alignItems:'center', gap:0.55, width:'100%', minHeight:44, px:1.4, py:0.7, bgcolor:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
+            <Tooltip title="현재 목록 전체 선택">
+              <span>
+                <Checkbox
+                  size="small"
+                  checked={allVisibleChecked}
+                  indeterminate={someVisibleChecked}
+                  disabled={bulkDownloading || filteredRows.length === 0}
+                  onChange={toggleAllVisible}
+                  inputProps={{ 'aria-label':'현재 자료 목록 전체 선택' }}
+                  sx={{ p:0.25, mr:0.15, '& .MuiSvgIcon-root':{ fontSize:18 } }}
+                />
+              </span>
+            </Tooltip>
             <Typography noWrap sx={{ mr:0.2, minWidth:0, fontSize:14, fontWeight:800, color:'#0f172a' }}>
               자료 목록
             </Typography>
             <Typography component="span" sx={{ flexShrink:0, fontSize:11, fontWeight:500, color:'#64748b' }}>
               {filteredRows.length.toLocaleString()}건
             </Typography>
+            <Button
+              size="small"
+              variant="contained"
+              startIcon={bulkDownloading
+                ? <CircularProgress size={12} color="inherit" />
+                : <CloudDownloadRoundedIcon sx={{ fontSize:'15px !important' }} />}
+              disabled={bulkDownloading || checkedRows.length === 0}
+              onClick={downloadCheckedDocuments}
+              sx={{ ml:'auto', minWidth:'auto', height:24, px:0.9, py:0, fontSize:10, lineHeight:1, flexShrink:0, '& .MuiButton-startIcon':{ mr:0.45 } }}
+            >
+              선택 다운로드
+            </Button>
           </Box>
           <Box sx={{ flex:1, overflowY:'auto' }}>
             {loading ? (
@@ -679,11 +763,27 @@ export default function BusinessLibrary({
               return (
                 <Box
                   key={row.id}
-                  component="button"
-                  type="button"
                   onClick={() => setSelectedId(String(row.id))}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setSelectedId(String(row.id));
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
                   sx={{ display:'flex', alignItems:'center', width:'100%', minHeight:36, textAlign:'left', border:0, borderBottom:'1px solid #edf1f5', bgcolor:active ? '#eff6ff' : '#fff', px:1.2, py:0.55, cursor:'pointer', '&:hover':{ bgcolor:active ? '#eff6ff' : '#f8fafc' } }}
                 >
+                  <Checkbox
+                    size="small"
+                    checked={checkedIds.some((id) => String(id) === String(row.id))}
+                    disabled={bulkDownloading}
+                    onClick={(event) => event.stopPropagation()}
+                    onKeyDown={(event) => event.stopPropagation()}
+                    onChange={() => toggleCheckedRow(row.id)}
+                    inputProps={{ 'aria-label':`${row.title} 선택` }}
+                    sx={{ flexShrink:0, p:0.25, mr:0.45, '& .MuiSvgIcon-root':{ fontSize:18 } }}
+                  />
                   <Stack direction="row" gap={0.75} alignItems="center" sx={{ width:'100%', minWidth:0 }}>
                     <InsertDriveFileOutlinedIcon sx={{ flexShrink:0, fontSize:18, color:active ? '#2563eb' : '#64748b' }} />
                     <Typography noWrap title={row.title} sx={{ minWidth:0, fontSize:12, fontWeight:active ? 800 : 700, color:'#0f172a' }}>
