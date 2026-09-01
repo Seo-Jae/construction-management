@@ -1,3 +1,4 @@
+// v52.48.5.44.89 업무자료실 메뉴·조회·최고관리자 관리
 // v52.48.5.44.69 지출결의서 소속현장 기본 작성권한
 // v52.48.5.44.47 가이드 설정·현재 메뉴 팝업 가이드
 // v52.48.5.44.35 화면배율 Portal 목록 좌표 전역 보정
@@ -88,6 +89,7 @@ import OptionManagementOverview from './page/OptionManagementOverview.jsx';
 import HouseholdQuantityManagement from './page/HouseholdQuantityManagement.jsx';
 import Guide from './page/Guide.jsx';
 import FeedbackCenter from './page/FeedbackCenter.jsx';
+import BusinessLibrary from './page/BusinessLibrary.jsx';
 
 const drawerWidth = 240;
 const SUPABASE_PAGE_SIZE = 1000;
@@ -129,6 +131,7 @@ const PROJECT_FREE_VIEWS = [
   'weekly-overview-archive',
   'daily-cumulative-workers',
   'labor-worker-master',
+  'business-library',
   'feedback',
   'guide',
 ];
@@ -400,6 +403,7 @@ const viewTitles = {
   'weekly-overview': '주간업무작성',
   'weekly-overview-archive': '주간업무보관',
   attendance: '근태관리',
+  'business-library': '업무자료실',
   feedback: '건의·오류',
   guide: '가이드 설정',
 };
@@ -958,7 +962,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     view,
     projectName = '',
   ) => {
-    if (['messenger', 'feedback'].includes(view)) return true;
+    if (['messenger', 'feedback', 'business-library'].includes(view)) return true;
     if (['user-management', 'project-management', 'guide'].includes(view)) return isSuperAdmin;
 
     // v52.48.5.44.69
@@ -1634,7 +1638,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     }
 
     if (
-      !['daily-cumulative-workers', 'guide'].includes(nextView) &&
+      !['daily-cumulative-workers', 'guide', 'business-library'].includes(nextView) &&
       selectedProjectName === ALL_PROJECTS_OPTION
     ) {
       const restoreProjectName =
@@ -4351,6 +4355,14 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               userId={user?.id || userProfile?.auth_user_id || ''}
               userProfile={activeUserProfile}
               dashboardScale={dashboardScale}
+            />
+          )}
+
+          {currentView === 'business-library' && (
+            <BusinessLibrary
+              projectName={activeProjectName}
+              userId={user?.id || userProfile?.auth_user_id || ''}
+              userProfile={activeUserProfile}
             />
           )}
 

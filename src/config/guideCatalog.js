@@ -56,6 +56,7 @@ export const GUIDE_GROUPS = [
     { id: 'report-outsourcing-approval', label: '외주 품의 보고', systemPreparing: true },
     { id: 'report-accident', label: '사고 경위 보고', systemPreparing: true },
   ] },
+  { id: 'business-library-group', label: '업무자료실', direct: true, items: [{ id: 'business-library', label: '업무자료실' }] },
 ];
 
 export const GUIDE_ITEMS = GUIDE_GROUPS.flatMap((group) => group.items.map((item) => ({

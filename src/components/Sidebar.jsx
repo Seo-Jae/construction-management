@@ -1,3 +1,4 @@
+// v52.48.5.44.89 업무자료실 대메뉴
 // v52.48.5.44.47 가이드 설정 최고관리자 전용
 // v52.48.5.44.30 세대물량관리 독립 대메뉴 분리
 // v52.48.5.44.29 옵션관리 세대물량관리 메뉴 추가
@@ -28,6 +29,7 @@ import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import TableRowsRoundedIcon from '@mui/icons-material/TableRowsRounded';
 import MenuBookRoundedIcon from '@mui/icons-material/MenuBookRounded';
 import FeedbackOutlinedIcon from '@mui/icons-material/FeedbackOutlined';
+import FolderCopyOutlinedIcon from '@mui/icons-material/FolderCopyOutlined';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { fetchPendingApprovalSummary } from '../utils/approvalQueries.js';
@@ -1461,6 +1463,39 @@ export default function Sidebar({
           canView={canAccessView}
         />
       </Collapse>        </>
+      )}
+
+      {canAccessView('business-library') && (
+        <Tooltip
+          title={drawerOpen ? '' : '업무자료실'}
+          placement="right"
+          arrow
+        >
+          <ListItemButton
+            selected={currentView === 'business-library'}
+            onClick={() => handleViewChange('business-library')}
+            sx={topMenuSx(currentView === 'business-library')}
+          >
+            <ListItemIcon
+              sx={{
+                minWidth: 34,
+                color: 'inherit',
+                justifyContent: 'center',
+              }}
+            >
+              <FolderCopyOutlinedIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText
+              primary="업무자료실"
+              primaryTypographyProps={{
+                noWrap: true,
+                fontSize: '0.8rem',
+                fontWeight: currentView === 'business-library' ? 700 : 500,
+              }}
+              sx={{ opacity: drawerOpen ? 1 : 0 }}
+            />
+          </ListItemButton>
+        </Tooltip>
       )}
 
       {canAccessView('feedback') && (
