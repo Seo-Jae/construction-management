@@ -1,3 +1,4 @@
+// v52.48.5.44.99 업무자료 설명 이미지 첨부·파일 미리보기 제거
 // v52.48.5.44.98 업무자료 빈상태 아이콘·문구 완전 중앙정렬
 // v52.48.5.44.97 업무자료 분류필터-상세보기 동기화·빈목록 중앙정렬
 // v52.48.5.44.96 업무자료 팝업 입력박스 실제 간격 보정
@@ -34,14 +35,14 @@ import {
   Typography,
 } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
-import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded';
+import AddPhotoAlternateOutlinedIcon from '@mui/icons-material/AddPhotoAlternateOutlined';
 import CloudDownloadRoundedIcon from '@mui/icons-material/CloudDownloadRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
-import LinkRoundedIcon from '@mui/icons-material/LinkRounded';
+import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
@@ -82,10 +83,13 @@ const fieldSx = {
 const safeUuid = () => globalThis.crypto?.randomUUID?.()
   || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-const isPreviewableImage = (row) => String(row?.mime_type || '').startsWith('image/');
-const isPreviewablePdf = (row) => (
-  String(row?.mime_type || '').includes('pdf')
-  || String(row?.file_extension || '').toLowerCase() === 'pdf'
+const DESCRIPTION_IMAGE_MAX_COUNT = 5;
+const DESCRIPTION_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+const getDescriptionImages = (row) => (
+  Array.isArray(row?.description_images)
+    ? row.description_images.filter((image) => String(image?.path || '').trim())
+    : []
 );
 
 const getScopeLabel = (row) => row?.scope_type === 'project'
@@ -128,8 +132,10 @@ export default function BusinessLibrary({
   const [selectedId, setSelectedId] = useState('');
   const [checkedIds, setCheckedIds] = useState([]);
   const [bulkDownloading, setBulkDownloading] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState('');
-  const [previewLoading, setPreviewLoading] = useState(false);
+  const [descriptionImages, setDescriptionImages] = useState([]);
+  const [descriptionImageFiles, setDescriptionImageFiles] = useState([]);
+  const [descriptionImageError, setDescriptionImageError] = useState('');
+  const [selectedDescriptionImageUrls, setSelectedDescriptionImageUrls] = useState([]);
   const [storageUsage, setStorageUsage] = useState(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editorMode, setEditorMode] = useState('create');
@@ -173,6 +179,11 @@ export default function BusinessLibrary({
       .filter((row) => selected && row.document_group_id === selected.document_group_id)
       .sort((a, b) => Number(b.version_number) - Number(a.version_number)),
     [rows, selected],
+  );
+
+  const selectedDescriptionImages = useMemo(
+    () => getDescriptionImages(selected),
+    [selected],
   );
 
   const checkedRows = useMemo(() => {
@@ -245,21 +256,22 @@ export default function BusinessLibrary({
 
   useEffect(() => {
     let active = true;
-    setPreviewUrl('');
-    if (!selected || selected.storage_provider !== 'supabase'
-      || (!isPreviewableImage(selected) && !isPreviewablePdf(selected))) return undefined;
+    setSelectedDescriptionImageUrls([]);
+    if (!selected || selectedDescriptionImages.length === 0) return undefined;
 
-    setPreviewLoading(true);
-    supabase.storage
-      .from(BUSINESS_LIBRARY_BUCKET)
-      .createSignedUrl(selected.storage_path, 60 * 10)
-      .then(({ data, error }) => {
-        if (!active) return;
-        if (!error) setPreviewUrl(String(data?.signedUrl || ''));
-        setPreviewLoading(false);
-      });
+    Promise.all(selectedDescriptionImages.map(async (image) => {
+      const { data, error } = await supabase.storage
+        .from(BUSINESS_LIBRARY_BUCKET)
+        .createSignedUrl(image.path, 60 * 10);
+      if (error || !data?.signedUrl) return null;
+      return { ...image, url:String(data.signedUrl) };
+    })).then((images) => {
+      if (!active) return;
+      setSelectedDescriptionImageUrls(images.filter(Boolean));
+    });
+
     return () => { active = false; };
-  }, [selected]);
+  }, [selected, selectedDescriptionImages]);
 
   useEffect(() => () => {
     activeUploadRef.current?.abort?.(true);
@@ -269,6 +281,9 @@ export default function BusinessLibrary({
     setEditorMode('create');
     setForm({ ...EMPTY_FORM, project_name:String(projectName || '') });
     setSelectedFile(null);
+    setDescriptionImages([]);
+    setDescriptionImageFiles([]);
+    setDescriptionImageError('');
     setUploadProgress(0);
     setEditorOpen(true);
   };
@@ -287,6 +302,9 @@ export default function BusinessLibrary({
       version_label:selected.version_label || `v${selected.version_number}`,
     });
     setSelectedFile(null);
+    setDescriptionImages(getDescriptionImages(selected));
+    setDescriptionImageFiles([]);
+    setDescriptionImageError('');
     setUploadProgress(0);
     setEditorOpen(true);
   };
@@ -306,6 +324,9 @@ export default function BusinessLibrary({
       version_label:`v${nextVersion}`,
     });
     setSelectedFile(null);
+    setDescriptionImages(getDescriptionImages(selected));
+    setDescriptionImageFiles([]);
+    setDescriptionImageError('');
     setUploadProgress(0);
     setEditorOpen(true);
   };
@@ -313,6 +334,40 @@ export default function BusinessLibrary({
   const updateForm = (key) => (event) => {
     const value = event.target.value;
     setForm((current) => ({ ...current, [key]:value }));
+  };
+
+  const addDescriptionImageFiles = (event) => {
+    const picked = Array.from(event.target.files || []);
+    event.target.value = '';
+    if (picked.length === 0) return;
+
+    const invalidType = picked.find((file) => !String(file.type || '').startsWith('image/'));
+    if (invalidType) {
+      setDescriptionImageError('설명에는 이미지 파일만 첨부할 수 있습니다.');
+      return;
+    }
+    const oversized = picked.find((file) => Number(file.size || 0) > DESCRIPTION_IMAGE_MAX_BYTES);
+    if (oversized) {
+      setDescriptionImageError('설명 이미지는 파일당 5MB까지 첨부할 수 있습니다.');
+      return;
+    }
+    if (descriptionImages.length + descriptionImageFiles.length + picked.length > DESCRIPTION_IMAGE_MAX_COUNT) {
+      setDescriptionImageError(`설명 이미지는 최대 ${DESCRIPTION_IMAGE_MAX_COUNT}장까지 첨부할 수 있습니다.`);
+      return;
+    }
+
+    setDescriptionImageFiles((current) => [...current, ...picked]);
+    setDescriptionImageError('');
+  };
+
+  const removeExistingDescriptionImage = (index) => {
+    setDescriptionImages((current) => current.filter((_, itemIndex) => itemIndex !== index));
+    setDescriptionImageError('');
+  };
+
+  const removeNewDescriptionImage = (index) => {
+    setDescriptionImageFiles((current) => current.filter((_, itemIndex) => itemIndex !== index));
+    setDescriptionImageError('');
   };
 
   const validateForm = () => {
@@ -325,6 +380,15 @@ export default function BusinessLibrary({
     }
     if (selectedFile && selectedFile.size > BUSINESS_LIBRARY_MAX_FILE_BYTES) {
       return '직접 등록은 파일당 45MB까지 가능합니다. 외부 링크 등록을 이용해주세요.';
+    }
+    if (descriptionImages.length + descriptionImageFiles.length > DESCRIPTION_IMAGE_MAX_COUNT) {
+      return `설명 이미지는 최대 ${DESCRIPTION_IMAGE_MAX_COUNT}장까지 첨부할 수 있습니다.`;
+    }
+    if (descriptionImageFiles.some((file) => !String(file.type || '').startsWith('image/'))) {
+      return '설명에는 이미지 파일만 첨부할 수 있습니다.';
+    }
+    if (descriptionImageFiles.some((file) => Number(file.size || 0) > DESCRIPTION_IMAGE_MAX_BYTES)) {
+      return '설명 이미지는 파일당 5MB까지 첨부할 수 있습니다.';
     }
     if (editorMode !== 'edit' && form.storage_provider === 'external') {
       try {
@@ -398,6 +462,41 @@ export default function BusinessLibrary({
     setUploadProgress(100);
   };
 
+  const uploadDescriptionImages = async (files, groupId) => {
+    if (!files.length) return [];
+    const uploaded = [];
+    try {
+      for (const file of files) {
+        const safeExtension = getBusinessLibraryExtension(file.name)
+          .replace(/[^0-9a-z]/gi, '')
+          .slice(0, 12);
+        const storageFileName = `${safeUuid()}${safeExtension ? `.${safeExtension}` : ''}`;
+        const storagePath = `${groupId}/description-images/${storageFileName}`;
+        const { error } = await supabase.storage
+          .from(BUSINESS_LIBRARY_BUCKET)
+          .upload(storagePath, file, {
+            cacheControl:'3600',
+            contentType:file.type || 'application/octet-stream',
+            upsert:false,
+          });
+        if (error) throw error;
+        uploaded.push({
+          path:storagePath,
+          original_file_name:file.name,
+          file_size:Number(file.size || 0),
+          mime_type:file.type || 'application/octet-stream',
+        });
+      }
+      return uploaded;
+    } catch (error) {
+      const partialPaths = uploaded.map((image) => image.path).filter(Boolean);
+      if (partialPaths.length) {
+        await supabase.storage.from(BUSINESS_LIBRARY_BUCKET).remove(partialPaths);
+      }
+      throw error;
+    }
+  };
+
   const saveDocument = async () => {
     if (!isSuperAdmin || saving) return;
     const validation = validateForm();
@@ -409,20 +508,33 @@ export default function BusinessLibrary({
     setSaving(true);
     setUploadProgress(0);
     let uploadedPath = '';
+    let uploadedDescriptionPaths = [];
+    let descriptionImagesPersisted = false;
+    let documentPersisted = false;
     try {
       if (editorMode === 'edit') {
+        const uploadedDescriptionImages = await uploadDescriptionImages(
+          descriptionImageFiles,
+          selected.document_group_id,
+        );
+        uploadedDescriptionPaths = uploadedDescriptionImages.map((image) => image.path);
+        const nextDescriptionImages = [...descriptionImages, ...uploadedDescriptionImages];
+
         const { error } = await supabase
           .from('business_library_documents')
           .update({
             category:form.category,
             title:String(form.title).trim(),
             description:String(form.description || '').trim(),
+            description_images:nextDescriptionImages,
             scope_type:form.scope_type,
             project_name:form.scope_type === 'project' ? String(form.project_name).trim() : '',
             updated_at:new Date().toISOString(),
           })
           .eq('document_group_id', selected.document_group_id);
         if (error) throw error;
+        descriptionImagesPersisted = true;
+
         const { error:versionError } = await supabase
           .from('business_library_documents')
           .update({
@@ -431,6 +543,17 @@ export default function BusinessLibrary({
           })
           .eq('id', selected.id);
         if (versionError) throw versionError;
+
+        const keptPaths = new Set(nextDescriptionImages.map((image) => String(image?.path || '')).filter(Boolean));
+        const removedPaths = [...new Set(
+          selectedHistory.flatMap((row) => getDescriptionImages(row).map((image) => String(image.path || ''))),
+        )].filter((path) => path && !keptPaths.has(path));
+        if (removedPaths.length) {
+          const { error:removeError } = await supabase.storage
+            .from(BUSINESS_LIBRARY_BUCKET)
+            .remove(removedPaths);
+          if (removeError) console.warn('설명 이미지 정리 실패:', removeError);
+        }
       } else {
         const groupId = editorMode === 'version' ? selected.document_group_id : safeUuid();
         const versionNumber = editorMode === 'version'
@@ -479,6 +602,10 @@ export default function BusinessLibrary({
           sourceFields.file_extension = 'LINK';
         }
 
+        const uploadedDescriptionImages = await uploadDescriptionImages(descriptionImageFiles, groupId);
+        uploadedDescriptionPaths = uploadedDescriptionImages.map((image) => image.path);
+        const nextDescriptionImages = [...descriptionImages, ...uploadedDescriptionImages];
+
         if (editorMode === 'version') {
           const { error:latestError } = await supabase
             .from('business_library_documents')
@@ -497,6 +624,7 @@ export default function BusinessLibrary({
             category:form.category,
             title:String(form.title).trim(),
             description:String(form.description || '').trim(),
+            description_images:nextDescriptionImages,
             scope_type:form.scope_type,
             project_name:form.scope_type === 'project' ? String(form.project_name).trim() : '',
             storage_provider:form.storage_provider,
@@ -516,6 +644,8 @@ export default function BusinessLibrary({
           }
           throw insertError;
         }
+        descriptionImagesPersisted = true;
+        documentPersisted = true;
         setSelectedId(String(inserted?.id || ''));
       }
 
@@ -524,8 +654,11 @@ export default function BusinessLibrary({
       await Promise.all([loadRows(), loadStorageUsage()]);
     } catch (error) {
       console.error('업무자료 저장 실패:', error);
-      if (uploadedPath) {
-        await supabase.storage.from(BUSINESS_LIBRARY_BUCKET).remove([uploadedPath]);
+      const rollbackPaths = [];
+      if (uploadedPath && !documentPersisted) rollbackPaths.push(uploadedPath);
+      if (!descriptionImagesPersisted) rollbackPaths.push(...uploadedDescriptionPaths);
+      if (rollbackPaths.length) {
+        await supabase.storage.from(BUSINESS_LIBRARY_BUCKET).remove([...new Set(rollbackPaths)]);
       }
       setMessage({ severity:'error', text:error?.message || '자료를 저장하지 못했습니다.' });
     } finally {
@@ -620,9 +753,13 @@ export default function BusinessLibrary({
     if (!isSuperAdmin || !selected) return;
     setSaving(true);
     try {
-      const paths = selectedHistory
+      const filePaths = selectedHistory
         .filter((row) => row.storage_provider === 'supabase' && row.storage_path)
         .map((row) => row.storage_path);
+      const descriptionPaths = selectedHistory
+        .flatMap((row) => getDescriptionImages(row).map((image) => String(image.path || '')))
+        .filter(Boolean);
+      const paths = [...new Set([...filePaths, ...descriptionPaths])];
       if (paths.length) {
         const { error:storageError } = await supabase.storage
           .from(BUSINESS_LIBRARY_BUCKET).remove(paths);
@@ -844,6 +981,20 @@ export default function BusinessLibrary({
                 {selected.description && (
                   <Typography sx={{ mb:1.2, fontSize:13, color:'#334155', lineHeight:1.7, whiteSpace:'pre-wrap' }}>{selected.description}</Typography>
                 )}
+                {selectedDescriptionImageUrls.length > 0 && (
+                  <Stack gap={1} sx={{ mb:1.2 }}>
+                    {selectedDescriptionImageUrls.map((image, index) => (
+                      <Box
+                        key={`${image.path}-${index}`}
+                        component="img"
+                        src={image.url}
+                        alt={image.original_file_name || `설명 이미지 ${index + 1}`}
+                        onClick={() => window.open(image.url, '_blank', 'noopener,noreferrer')}
+                        sx={{ display:'block', maxWidth:'100%', maxHeight:460, mx:'auto', objectFit:'contain', border:'1px solid #d8e0ea', borderRadius:1, bgcolor:'#fff', cursor:'zoom-in' }}
+                      />
+                    ))}
+                  </Stack>
+                )}
                 <Paper variant="outlined" sx={{ p:1, mb:1.2, bgcolor:'#f8fafc' }}>
                   <Box sx={{ display:'grid', gridTemplateColumns:'92px minmax(0, 1fr)', rowGap:0.55, columnGap:1 }}>
                     <Typography sx={{ fontSize:10.5, color:'#64748b' }}>파일/링크</Typography>
@@ -856,20 +1007,6 @@ export default function BusinessLibrary({
                     <Typography sx={{ fontSize:10.5 }}>{formatBusinessLibraryDate(selected.created_at)}</Typography>
                   </Box>
                 </Paper>
-
-                {previewLoading && <LinearProgress sx={{ mb:1 }} />}
-                {previewUrl && isPreviewableImage(selected) && (
-                  <Box component="img" src={previewUrl} alt={selected.title} sx={{ display:'block', maxWidth:'100%', maxHeight:520, mx:'auto', objectFit:'contain', border:'1px solid #e2e8f0' }} />
-                )}
-                {previewUrl && isPreviewablePdf(selected) && (
-                  <Box component="iframe" title={`${selected.title} 미리보기`} src={previewUrl} sx={{ width:'100%', height:520, border:'1px solid #e2e8f0', bgcolor:'#fff' }} />
-                )}
-                {!previewUrl && !previewLoading && (
-                  <Stack alignItems="center" justifyContent="center" sx={{ minHeight:180, border:'1px dashed #cbd5e1', borderRadius:1, color:'#94a3b8' }}>
-                    {selected.storage_provider === 'external' ? <LinkRoundedIcon sx={{ fontSize:36 }} /> : <AttachFileRoundedIcon sx={{ fontSize:36 }} />}
-                    <Typography sx={{ mt:0.7, fontSize:11 }}>이 형식은 화면 미리보기를 제공하지 않습니다.</Typography>
-                  </Stack>
-                )}
 
                 {selectedHistory.length > 1 && (
                   <Box sx={{ mt:1.5 }}>
@@ -906,6 +1043,52 @@ export default function BusinessLibrary({
             </Stack>
             <TextField size="small" label="자료 제목" value={form.title} onChange={updateForm('title')} inputProps={{ maxLength:200 }} fullWidth sx={fieldSx} />
             <TextField multiline minRows={4} maxRows={8} label="설명" value={form.description} onChange={updateForm('description')} inputProps={{ maxLength:10000 }} fullWidth sx={fieldSx} />
+            <Paper variant="outlined" sx={{ p:1.2, borderColor:'#d8e0ea', bgcolor:'#fbfdff' }}>
+              <Stack direction={{ xs:'column', sm:'row' }} gap={1} alignItems={{ sm:'center' }}>
+                <Box sx={{ flex:1, minWidth:0 }}>
+                  <Typography sx={{ fontSize:11.5, fontWeight:800, color:'#334155' }}>설명 이미지</Typography>
+                  <Typography sx={{ mt:0.2, fontSize:10, color:'#64748b' }}>차단 해제 안내 화면처럼 설명에 필요한 이미지를 함께 첨부할 수 있습니다. · 파일당 5MB · 최대 5장</Typography>
+                </Box>
+                <Button
+                  component="label"
+                  size="small"
+                  variant="outlined"
+                  startIcon={<AddPhotoAlternateOutlinedIcon sx={{ fontSize:'17px !important' }} />}
+                  disabled={saving || descriptionImages.length + descriptionImageFiles.length >= DESCRIPTION_IMAGE_MAX_COUNT}
+                  sx={{ flexShrink:0 }}
+                >
+                  이미지 첨부
+                  <input hidden multiple accept="image/*" type="file" onChange={addDescriptionImageFiles} />
+                </Button>
+              </Stack>
+              {descriptionImageError && (
+                <Typography sx={{ mt:0.7, fontSize:10.5, color:'#dc2626' }}>{descriptionImageError}</Typography>
+              )}
+              {(descriptionImages.length > 0 || descriptionImageFiles.length > 0) && (
+                <Stack gap={0.55} sx={{ mt:1 }}>
+                  {descriptionImages.map((image, index) => (
+                    <Stack key={`${image.path}-${index}`} direction="row" alignItems="center" gap={0.7} sx={{ minHeight:32, px:0.8, py:0.45, border:'1px solid #e2e8f0', borderRadius:1, bgcolor:'#fff' }}>
+                      <Chip size="small" label="기존" sx={{ height:19, fontSize:9 }} />
+                      <Typography noWrap title={image.original_file_name || image.path} sx={{ flex:1, minWidth:0, fontSize:10.5 }}>{image.original_file_name || '설명 이미지'}</Typography>
+                      <Typography sx={{ flexShrink:0, fontSize:9.5, color:'#94a3b8' }}>{formatBusinessLibraryBytes(image.file_size || 0)}</Typography>
+                      <IconButton size="small" disabled={saving} onClick={() => removeExistingDescriptionImage(index)} sx={{ width:24, height:24 }}>
+                        <CloseRoundedIcon sx={{ fontSize:16 }} />
+                      </IconButton>
+                    </Stack>
+                  ))}
+                  {descriptionImageFiles.map((file, index) => (
+                    <Stack key={`${file.name}-${file.size}-${index}`} direction="row" alignItems="center" gap={0.7} sx={{ minHeight:32, px:0.8, py:0.45, border:'1px solid #bfdbfe', borderRadius:1, bgcolor:'#eff6ff' }}>
+                      <Chip size="small" color="primary" label="추가" sx={{ height:19, fontSize:9 }} />
+                      <Typography noWrap title={file.name} sx={{ flex:1, minWidth:0, fontSize:10.5 }}>{file.name}</Typography>
+                      <Typography sx={{ flexShrink:0, fontSize:9.5, color:'#64748b' }}>{formatBusinessLibraryBytes(file.size)}</Typography>
+                      <IconButton size="small" disabled={saving} onClick={() => removeNewDescriptionImage(index)} sx={{ width:24, height:24 }}>
+                        <CloseRoundedIcon sx={{ fontSize:16 }} />
+                      </IconButton>
+                    </Stack>
+                  ))}
+                </Stack>
+              )}
+            </Paper>
             <Stack direction={{ xs:'column', sm:'row' }} sx={{ gap:1.5 }}>
               <TextField select size="small" label="자료 범위" value={form.scope_type} onChange={updateForm('scope_type')} sx={{ ...fieldSx, minWidth:180 }}>
                 {BUSINESS_LIBRARY_SCOPES.map((scope) => <MenuItem key={scope.value} value={scope.value}>{scope.label}</MenuItem>)}
