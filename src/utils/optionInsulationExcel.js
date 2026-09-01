@@ -1,3 +1,4 @@
+// v52.48.5.44.109 골구도 계단형 외곽선 검정 실선 보정
 // v52.48.5.44.108 변경 골구도 양식 레이아웃·타입수량·하단안내
 // v52.48.5.44.107 업무자료실용 빈 골구도·제목/시트명 지정 지원
 // v52.48.5.44.106 업무자료실 연동 다운로드 파일명 지정 지원
@@ -311,6 +312,30 @@ const saveBasicSkeletonWorkbook = async ({
       }
     }
 
+    const occupiedVisualUnitsByFloor = new Map();
+    for (let occupancyFloor = 1; occupancyFloor <= floors; occupancyFloor += 1) {
+      const occupiedUnits = new Set();
+      buildFloorVisualCells(config, occupancyFloor).forEach((occupancyCell) => {
+        if (occupancyCell.type === 'empty') return;
+        for (
+          let visualUnit = occupancyCell.visualStart;
+          visualUnit <= occupancyCell.visualEnd;
+          visualUnit += 1
+        ) {
+          occupiedUnits.add(visualUnit);
+        }
+      });
+      occupiedVisualUnitsByFloor.set(occupancyFloor, occupiedUnits);
+    }
+
+    const isOccupiedVisualUnit = (floor, visualUnit) => (
+      floor >= 1
+      && floor <= floors
+      && visualUnit >= 1
+      && visualUnit <= unitsPerFloor
+      && occupiedVisualUnitsByFloor.get(floor)?.has(visualUnit) === true
+    );
+
     Array.from({ length: floors }, (_, index) => floors - index).forEach(
       (floor, floorIndex) => {
         const rowNumber = floorStartRow + floorIndex;
@@ -344,11 +369,28 @@ const saveBasicSkeletonWorkbook = async ({
             fgColor: { argb: 'FFFFFFFF' },
           };
           applyCenteredFont(cell, { bold: true, size: 8 });
+          const coveredVisualUnits = Array.from(
+            { length: visualCell.visualEnd - visualCell.visualStart + 1 },
+            (_, offset) => visualCell.visualStart + offset,
+          );
+          const topOuter = floor === floors
+            || coveredVisualUnits.some(
+              (visualUnit) => !isOccupiedVisualUnit(floor + 1, visualUnit),
+            );
+          const bottomOuter = floor === 1
+            || coveredVisualUnits.some(
+              (visualUnit) => !isOccupiedVisualUnit(floor - 1, visualUnit),
+            );
+          const leftOuter = visualCell.visualStart === 1
+            || !isOccupiedVisualUnit(floor, visualCell.visualStart - 1);
+          const rightOuter = visualCell.visualEnd === unitsPerFloor
+            || !isOccupiedVisualUnit(floor, visualCell.visualEnd + 1);
+
           setGridBorder(cell, {
-            topOuter: floor === floors,
-            bottomOuter: floor === 1,
-            leftOuter: visualCell.visualStart === 1,
-            rightOuter: visualCell.visualEnd === unitsPerFloor,
+            topOuter,
+            bottomOuter,
+            leftOuter,
+            rightOuter,
             diagonal: visualCell.type === 'piloti',
           });
 
