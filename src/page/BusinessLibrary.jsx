@@ -811,7 +811,7 @@ export default function BusinessLibrary({
   const tone = storageTone(storagePercent);
 
   return (
-    <Box sx={{ display:'flex', flexDirection:'column', gap:1, minHeight:0 }}>
+    <Box sx={{ display:'flex', flexDirection:'column', gap:1, minHeight:0, height:{ xs:'auto', lg:'calc(100dvh - 72px)' } }}>
       <Paper variant="outlined" sx={{ px:1.4, py:1, borderColor:'#d8e0ea' }}>
         <Box sx={{ display:'flex', alignItems:'center', width:'100%', gap:1 }}>
           <SystemPageTitle
@@ -884,7 +884,7 @@ export default function BusinessLibrary({
         </Stack>
       </Paper>
 
-      <Paper variant="outlined" sx={{ display:'grid', gridTemplateColumns:{ xs:'1fr', lg:'minmax(390px, 42%) minmax(0, 58%)' }, height:{ xs:'auto', lg:'calc(100vh - 330px)' }, minHeight:{ xs:640, lg:510 }, overflow:'hidden', borderColor:'#d8e0ea' }}>
+      <Paper variant="outlined" sx={{ display:'grid', gridTemplateColumns:{ xs:'1fr', lg:'minmax(390px, 42%) minmax(0, 58%)' }, flex:{ lg:1 }, height:{ xs:'auto', lg:'auto' }, minHeight:{ xs:640, lg:0 }, overflow:'hidden', borderColor:'#d8e0ea' }}>
         <Box sx={{ minWidth:0, borderRight:{ lg:'1px solid #e2e8f0' }, borderBottom:{ xs:'1px solid #e2e8f0', lg:0 }, display:'flex', flexDirection:'column', minHeight:0 }}>
           <Box sx={{ display:'flex', alignItems:'center', gap:0.55, width:'100%', minHeight:44, px:1.4, py:0.7, bgcolor:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
             <Tooltip title="현재 목록 전체 선택">
