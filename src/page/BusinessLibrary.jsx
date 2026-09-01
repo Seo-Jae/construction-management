@@ -1,3 +1,4 @@
+// v52.48.5.44.93 업무자료실 좌우 헤더 세로 정렬
 // v52.48.5.44.92 업무자료실 목록 한 줄·헤더 높이·용량 상태 간격
 // v52.48.5.44.91 업무자료실 UI 정렬·등록자·원본 다운로드명 보정
 // v52.48.5.44.90 업무자료실 Storage 내부 키 ASCII 전용화
@@ -656,14 +657,14 @@ export default function BusinessLibrary({
 
       <Paper variant="outlined" sx={{ display:'grid', gridTemplateColumns:{ xs:'1fr', lg:'minmax(390px, 42%) minmax(0, 58%)' }, height:{ xs:'auto', lg:'calc(100vh - 330px)' }, minHeight:{ xs:640, lg:510 }, overflow:'hidden', borderColor:'#d8e0ea' }}>
         <Box sx={{ minWidth:0, borderRight:{ lg:'1px solid #e2e8f0' }, borderBottom:{ xs:'1px solid #e2e8f0', lg:0 }, display:'flex', flexDirection:'column', minHeight:0 }}>
-          <Stack direction="row" alignItems="center" sx={{ height:44, px:1.2, bgcolor:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
-            <Typography sx={{ display:'flex', alignItems:'baseline', gap:0.55, fontSize:14, fontWeight:800, lineHeight:1 }}>
+          <Box sx={{ display:'flex', alignItems:'center', gap:0.55, width:'100%', minHeight:44, px:1.4, py:0.7, bgcolor:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
+            <Typography noWrap sx={{ mr:0.2, minWidth:0, fontSize:14, fontWeight:800, color:'#0f172a' }}>
               자료 목록
-              <Box component="span" sx={{ fontSize:11, fontWeight:500, color:'#64748b' }}>
-                {filteredRows.length.toLocaleString()}건
-              </Box>
             </Typography>
-          </Stack>
+            <Typography component="span" sx={{ flexShrink:0, fontSize:11, fontWeight:500, color:'#64748b' }}>
+              {filteredRows.length.toLocaleString()}건
+            </Typography>
+          </Box>
           <Box sx={{ flex:1, overflowY:'auto' }}>
             {loading ? (
               <Stack alignItems="center" justifyContent="center" sx={{ height:'100%', minHeight:180 }}><CircularProgress size={28} /></Stack>
