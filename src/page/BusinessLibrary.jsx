@@ -1,3 +1,4 @@
+// v52.48.5.44.91 업무자료실 UI 정렬·등록자·원본 다운로드명 보정
 // v52.48.5.44.90 업무자료실 Storage 내부 키 ASCII 전용화
 // v52.48.5.44.89 업무자료실: 비공개 파일·외부 링크·버전 관리
 /* eslint-disable react-hooks/set-state-in-effect */
@@ -98,8 +99,18 @@ export default function BusinessLibrary({
   const isSuperAdmin = String(userProfile?.role || '').trim() === '최고관리자';
   const resolvedUserId = String(userId || userProfile?.auth_user_id || '').trim();
   const resolvedUserName = String(
-    userProfile?.name || userProfile?.user_name || userProfile?.display_name || '',
+    userProfile?.manager_name
+      || userProfile?.name
+      || userProfile?.user_name
+      || userProfile?.display_name
+      || '',
   ).trim();
+  const resolvedUserPosition = String(
+    userProfile?.position_title || userProfile?.role || '',
+  ).trim();
+  const resolvedUploaderLabel = [resolvedUserName, resolvedUserPosition]
+    .filter(Boolean)
+    .join(' (') + (resolvedUserName && resolvedUserPosition ? ')' : '');
 
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -154,6 +165,14 @@ export default function BusinessLibrary({
       .sort((a, b) => Number(b.version_number) - Number(a.version_number)),
     [rows, selected],
   );
+
+  const getCreatorLabel = useCallback((row) => {
+    const stored = String(row?.created_by_name || '').trim();
+    if (stored) return stored;
+    return String(row?.created_by || '') === resolvedUserId
+      ? resolvedUploaderLabel || '-'
+      : '-';
+  }, [resolvedUploaderLabel, resolvedUserId]);
 
   const loadRows = useCallback(async () => {
     setLoading(true);
@@ -455,7 +474,7 @@ export default function BusinessLibrary({
             storage_provider:form.storage_provider,
             version_label:String(form.version_label || '').trim() || `v${versionNumber}`,
             created_by:resolvedUserId,
-            created_by_name:resolvedUserName,
+            created_by_name:resolvedUploaderLabel,
             ...sourceFields,
           })
           .select('id')
@@ -487,46 +506,43 @@ export default function BusinessLibrary({
     }
   };
 
-  const openDocument = async (row, download = false) => {
+  const openDocument = async (row) => {
     if (!row) return;
-    const popup = window.open('about:blank', '_blank');
-    if (popup) popup.opener = null;
     try {
-      let url = '';
       if (row.storage_provider === 'external') {
-        url = String(row.external_url || '');
+        const url = String(row.external_url || '');
+        if (!url) throw new Error('외부 자료 주소를 확인할 수 없습니다.');
+        window.open(url, '_blank', 'noopener,noreferrer');
       } else if (row.storage_provider === 'supabase') {
-        const options = download ? { download:row.original_file_name || true } : undefined;
         const { data, error } = await supabase.storage
           .from(BUSINESS_LIBRARY_BUCKET)
-          .createSignedUrl(row.storage_path, 60 * 5, options);
+          .download(row.storage_path);
         if (error) throw error;
-        url = String(data?.signedUrl || '');
-      } else {
-        url = String(row.external_url || row.storage_path || '');
-      }
-      if (!url) throw new Error('파일 주소를 확인할 수 없습니다.');
+        if (!(data instanceof Blob)) throw new Error('다운로드 파일을 확인할 수 없습니다.');
 
-      await supabase.rpc('business_library_record_download', {
-        p_document_id:row.id,
-        p_user_name:resolvedUserName,
-      });
-      if (popup) {
-        popup.location.replace(url);
-      } else {
+        const objectUrl = URL.createObjectURL(data);
         const anchor = document.createElement('a');
-        anchor.href = url;
-        anchor.target = '_blank';
-        anchor.rel = 'noopener noreferrer';
+        anchor.href = objectUrl;
+        anchor.download = String(row.original_file_name || 'download').trim() || 'download';
+        anchor.style.display = 'none';
         document.body.appendChild(anchor);
         anchor.click();
         anchor.remove();
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60 * 1000);
+      } else {
+        const url = String(row.external_url || row.storage_path || '');
+        if (!url) throw new Error('자료 주소를 확인할 수 없습니다.');
+        window.open(url, '_blank', 'noopener,noreferrer');
       }
+
+      await supabase.rpc('business_library_record_download', {
+        p_document_id:row.id,
+        p_user_name:resolvedUploaderLabel,
+      });
       setRows((current) => current.map((item) => item.id === row.id
         ? { ...item, download_count:Number(item.download_count || 0) + 1 }
         : item));
     } catch (error) {
-      popup?.close();
       setMessage({ severity:'error', text:error?.message || '자료를 열지 못했습니다.' });
     }
   };
@@ -566,27 +582,27 @@ export default function BusinessLibrary({
   return (
     <Box sx={{ display:'flex', flexDirection:'column', gap:1, minHeight:0 }}>
       <Paper variant="outlined" sx={{ px:1.4, py:1, borderColor:'#d8e0ea' }}>
-        <Stack direction={{ xs:'column', sm:'row' }} justifyContent="space-between" alignItems={{ xs:'stretch', sm:'center' }} gap={1}>
+        <Box sx={{ display:'flex', alignItems:'center', width:'100%', gap:1 }}>
           <SystemPageTitle
             title="업무자료실"
             help={'회사 공통 양식과 현장 업무자료를 한곳에서 조회하고 내려받습니다.\n자료 등록·수정·삭제와 저장용량 관리는 최고관리자만 사용할 수 있습니다.'}
             meta="회사양식, 시공계획서, 카탈로그, 시방서 등 최신 업무자료를 공유합니다."
           />
-          <Stack direction="row" gap={0.7} justifyContent="flex-end">
-            <Tooltip title="새로고침"><IconButton size="small" onClick={() => Promise.all([loadRows(), loadStorageUsage()])}><RefreshRoundedIcon fontSize="small" /></IconButton></Tooltip>
+          <Stack direction="row" gap={0.7} alignItems="center" sx={{ ml:'auto', flexShrink:0 }}>
             {isSuperAdmin && (
               <Button size="small" variant="contained" startIcon={<AddRoundedIcon />} onClick={openCreate}>자료 등록</Button>
             )}
+            <Tooltip title="새로고침"><IconButton size="small" onClick={() => Promise.all([loadRows(), loadStorageUsage()])}><RefreshRoundedIcon fontSize="small" /></IconButton></Tooltip>
           </Stack>
-        </Stack>
+        </Box>
       </Paper>
 
       {message && <Alert severity={message.severity} onClose={() => setMessage(null)} sx={{ py:0 }}>{message.text}</Alert>}
 
       {isSuperAdmin && (
         <Paper variant="outlined" sx={{ p:1.2, borderColor:'#d8e0ea' }}>
-          <Stack direction={{ xs:'column', md:'row' }} gap={1.5} alignItems={{ md:'center' }}>
-            <Stack direction="row" gap={1} alignItems="center" sx={{ minWidth:235 }}>
+          <Stack direction={{ xs:'column', md:'row' }} gap={{ xs:1.2, md:2.4 }} alignItems={{ md:'center' }}>
+            <Stack direction="row" gap={1} alignItems="center" sx={{ minWidth:245 }}>
               <StorageRoundedIcon sx={{ color:'#475569' }} />
               <Box>
                 <Typography sx={{ fontSize:12, fontWeight:800 }}>Supabase 저장용량</Typography>
@@ -594,17 +610,16 @@ export default function BusinessLibrary({
                   전체 {formatBusinessLibraryBytes(totalBytes)} / 1 GB
                 </Typography>
               </Box>
-              <Chip size="small" color={tone.color} label={tone.label} sx={{ ml:'auto', fontSize:10, height:21 }} />
             </Stack>
-            <Box sx={{ flex:1, minWidth:180 }}>
+            <Box sx={{ flex:1, minWidth:220 }}>
+              <Stack direction="row" alignItems="center" gap={1.2} sx={{ mb:0.7 }}>
+                <Chip size="small" color={tone.color} label={tone.label} sx={{ fontSize:10, height:21 }} />
+                <Typography sx={{ fontSize:10.5, color:'#64748b' }}>
+                  전체 사용률 {storagePercent.toFixed(1)}% · 업무자료실 {formatBusinessLibraryBytes(storageUsage?.library_bytes || 0)} ({Number(storageUsage?.library_file_count || 0).toLocaleString()}개 파일)
+                </Typography>
+              </Stack>
               <LinearProgress variant="determinate" value={storagePercent} color={tone.color} sx={{ height:8, borderRadius:4 }} />
-              <Typography sx={{ mt:0.35, fontSize:10.5, color:'#64748b' }}>
-                전체 사용률 {storagePercent.toFixed(1)}% · 업무자료실 {formatBusinessLibraryBytes(storageUsage?.library_bytes || 0)} ({Number(storageUsage?.library_file_count || 0).toLocaleString()}개 파일)
-              </Typography>
             </Box>
-            <Typography sx={{ maxWidth:360, fontSize:10.5, color:'#64748b', lineHeight:1.45 }}>
-              파일당 45MB까지 직접 등록됩니다. 큰 자료는 외부 링크로 등록하면 현재 저장용량을 사용하지 않습니다.
-            </Typography>
           </Stack>
         </Paper>
       )}
@@ -640,9 +655,13 @@ export default function BusinessLibrary({
 
       <Paper variant="outlined" sx={{ display:'grid', gridTemplateColumns:{ xs:'1fr', lg:'minmax(390px, 42%) minmax(0, 58%)' }, height:{ xs:'auto', lg:'calc(100vh - 330px)' }, minHeight:{ xs:640, lg:510 }, overflow:'hidden', borderColor:'#d8e0ea' }}>
         <Box sx={{ minWidth:0, borderRight:{ lg:'1px solid #e2e8f0' }, borderBottom:{ xs:'1px solid #e2e8f0', lg:0 }, display:'flex', flexDirection:'column', minHeight:0 }}>
-          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ px:1.2, py:0.85, bgcolor:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
-            <Typography sx={{ fontSize:12, fontWeight:800 }}>자료 목록</Typography>
-            <Typography sx={{ fontSize:10.5, color:'#64748b' }}>{filteredRows.length.toLocaleString()}건</Typography>
+          <Stack direction="row" alignItems="center" sx={{ height:36, px:1.2, bgcolor:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
+            <Typography sx={{ display:'flex', alignItems:'baseline', gap:0.45, fontSize:12, fontWeight:800, lineHeight:1 }}>
+              자료 목록
+              <Box component="span" sx={{ fontSize:10.5, fontWeight:500, color:'#64748b' }}>
+                {filteredRows.length.toLocaleString()}건
+              </Box>
+            </Typography>
           </Stack>
           <Box sx={{ flex:1, overflowY:'auto' }}>
             {loading ? (
@@ -692,28 +711,30 @@ export default function BusinessLibrary({
             </Stack>
           ) : (
             <>
-              <Stack direction={{ xs:'column', sm:'row' }} justifyContent="space-between" gap={0.8} sx={{ px:1.4, py:1, borderBottom:'1px solid #e2e8f0' }}>
-                <Box sx={{ minWidth:0 }}>
-                  <Typography sx={{ fontSize:14, fontWeight:800, color:'#0f172a' }}>{selected.title}</Typography>
-                  <Stack direction="row" gap={0.6} alignItems="center" flexWrap="wrap" sx={{ mt:0.5 }}>
-                    <Chip size="small" label={selected.category} color="primary" variant="outlined" sx={{ height:21, fontSize:10 }} />
-                    <Chip size="small" label={getScopeLabel(selected)} variant="outlined" sx={{ height:21, fontSize:10 }} />
-                    <Chip size="small" label={selected.version_label} sx={{ height:21, fontSize:10 }} />
-                  </Stack>
-                </Box>
-                <Stack direction="row" gap={0.5} alignItems="flex-start" flexWrap="wrap">
-                  <Button size="small" variant="contained" startIcon={selected.storage_provider === 'external' ? <OpenInNewRoundedIcon /> : <CloudDownloadRoundedIcon />} onClick={() => openDocument(selected, true)}>
+              <Box sx={{ display:'flex', alignItems:'center', gap:0.65, width:'100%', minHeight:44, px:1.4, py:0.7, borderBottom:'1px solid #e2e8f0' }}>
+                <Typography noWrap title={selected.title} sx={{ mr:0.2, minWidth:0, maxWidth:'38%', fontSize:14, fontWeight:800, color:'#0f172a' }}>{selected.title}</Typography>
+                <Chip size="small" label={selected.category} color="primary" variant="outlined" sx={{ flexShrink:0, height:24, fontSize:10 }} />
+                <Chip size="small" label={getScopeLabel(selected)} variant="outlined" sx={{ flexShrink:0, height:24, fontSize:10 }} />
+                <Chip size="small" label={selected.version_label} sx={{ flexShrink:0, height:24, fontSize:10 }} />
+                <Stack direction="row" gap={0.45} alignItems="center" sx={{ ml:'auto', flexShrink:0 }}>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    startIcon={selected.storage_provider === 'external' ? <OpenInNewRoundedIcon sx={{ fontSize:'15px !important' }} /> : <CloudDownloadRoundedIcon sx={{ fontSize:'15px !important' }} />}
+                    onClick={() => openDocument(selected)}
+                    sx={{ minWidth:'auto', height:24, px:0.9, py:0, fontSize:10, lineHeight:1, '& .MuiButton-startIcon':{ mr:0.45 } }}
+                  >
                     {selected.storage_provider === 'external' ? '링크 열기' : '다운로드'}
                   </Button>
                   {isSuperAdmin && (
                     <>
-                      <Tooltip title="자료 정보 수정"><IconButton size="small" onClick={openEdit}><EditOutlinedIcon fontSize="small" /></IconButton></Tooltip>
-                      <Tooltip title="새 버전 등록"><IconButton size="small" onClick={openNewVersion}><HistoryRoundedIcon fontSize="small" /></IconButton></Tooltip>
-                      <Tooltip title="자료 삭제"><IconButton size="small" color="error" onClick={() => setDeleteOpen(true)}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton></Tooltip>
+                      <Tooltip title="자료 정보 수정"><IconButton size="small" onClick={openEdit} sx={{ width:24, height:24 }}><EditOutlinedIcon sx={{ fontSize:16 }} /></IconButton></Tooltip>
+                      <Tooltip title="새 버전 등록"><IconButton size="small" onClick={openNewVersion} sx={{ width:24, height:24 }}><HistoryRoundedIcon sx={{ fontSize:16 }} /></IconButton></Tooltip>
+                      <Tooltip title="자료 삭제"><IconButton size="small" color="error" onClick={() => setDeleteOpen(true)} sx={{ width:24, height:24 }}><DeleteOutlineRoundedIcon sx={{ fontSize:16 }} /></IconButton></Tooltip>
                     </>
                   )}
                 </Stack>
-              </Stack>
+              </Box>
 
               <Box sx={{ flex:1, minHeight:0, overflowY:'auto', p:1.4 }}>
                 {selected.description && (
@@ -726,7 +747,7 @@ export default function BusinessLibrary({
                     <Typography sx={{ fontSize:10.5, color:'#64748b' }}>크기</Typography>
                     <Typography sx={{ fontSize:10.5 }}>{selected.storage_provider === 'external' ? '외부 저장소' : formatBusinessLibraryBytes(selected.file_size)}</Typography>
                     <Typography sx={{ fontSize:10.5, color:'#64748b' }}>등록자</Typography>
-                    <Typography sx={{ fontSize:10.5 }}>{selected.created_by_name || '-'}</Typography>
+                    <Typography sx={{ fontSize:10.5 }}>{getCreatorLabel(selected)}</Typography>
                     <Typography sx={{ fontSize:10.5, color:'#64748b' }}>등록일</Typography>
                     <Typography sx={{ fontSize:10.5 }}>{formatBusinessLibraryDate(selected.created_at)}</Typography>
                   </Box>
@@ -743,7 +764,6 @@ export default function BusinessLibrary({
                   <Stack alignItems="center" justifyContent="center" sx={{ minHeight:180, border:'1px dashed #cbd5e1', borderRadius:1, color:'#94a3b8' }}>
                     {selected.storage_provider === 'external' ? <LinkRoundedIcon sx={{ fontSize:36 }} /> : <AttachFileRoundedIcon sx={{ fontSize:36 }} />}
                     <Typography sx={{ mt:0.7, fontSize:11 }}>이 형식은 화면 미리보기를 제공하지 않습니다.</Typography>
-                    <Button size="small" sx={{ mt:0.5 }} onClick={() => openDocument(selected, false)}>자료 열기</Button>
                   </Stack>
                 )}
 
@@ -756,7 +776,7 @@ export default function BusinessLibrary({
                           <Chip size="small" label={history.version_label} sx={{ height:20, fontSize:9.5 }} />
                           <Typography noWrap sx={{ flex:1, fontSize:10.5 }}>{history.original_file_name || '외부 링크'}</Typography>
                           <Typography sx={{ fontSize:9.5, color:'#64748b' }}>{formatBusinessLibraryDate(history.created_at)}</Typography>
-                          <IconButton size="small" onClick={() => openDocument(history, true)}><CloudDownloadRoundedIcon sx={{ fontSize:17 }} /></IconButton>
+                          <IconButton size="small" onClick={() => openDocument(history)}><CloudDownloadRoundedIcon sx={{ fontSize:17 }} /></IconButton>
                         </Stack>
                       ))}
                     </Stack>
