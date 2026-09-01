@@ -1,3 +1,4 @@
+// v52.48.5.44.110 업무자료 순서변경 토스트팝업
 // v52.48.5.44.108 업무자료실 골구도 변경양식 레이아웃 적용
 // v52.48.5.44.107 업무자료실 골구도 양식 옵션값 제외·제목/시트명 정리
 // v52.48.5.44.106 업무자료실 현장연동 골구도·선택옵션 시스템양식
@@ -37,6 +38,7 @@ import {
   MenuItem,
   Paper,
   Select,
+  Snackbar,
   Stack,
   TextField,
   Tooltip,
@@ -202,6 +204,7 @@ export default function BusinessLibrary({
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState(null);
+  const [toast, setToast] = useState(null);
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [scopeFilter, setScopeFilter] = useState('all');
   const [keyword, setKeyword] = useState('');
@@ -344,15 +347,15 @@ export default function BusinessLibrary({
       });
       if (error) throw error;
       await loadRows();
-      setMessage({
-        severity:'success',
+      setToast({
+        severity:data === false ? 'info' : 'success',
         text:data === false
           ? '더 이상 이동할 수 없습니다.'
           : `자료 순서를 ${direction === 'up' ? '위로' : '아래로'} 이동했습니다.`,
       });
     } catch (error) {
       console.error('업무자료 순서 변경 실패:', error);
-      setMessage({ severity:'error', text:error?.message || '자료 순서를 변경하지 못했습니다.' });
+      setToast({ severity:'error', text:error?.message || '자료 순서를 변경하지 못했습니다.' });
     } finally {
       setReordering(false);
     }
@@ -995,6 +998,35 @@ export default function BusinessLibrary({
 
   return (
     <Box sx={{ display:'flex', flexDirection:'column', gap:1, minHeight:0, height:{ xs:'auto', lg:'calc(100dvh + 18px)' } }}>
+      <Snackbar
+        open={Boolean(toast)}
+        autoHideDuration={2200}
+        anchorOrigin={{ vertical:'top', horizontal:'center' }}
+        onClose={(_event, reason) => {
+          if (reason === 'clickaway') return;
+          setToast(null);
+        }}
+        sx={{
+          top:'68px !important',
+          zIndex:(theme) => theme.zIndex.snackbar + 10,
+        }}
+      >
+        <Alert
+          severity={toast?.severity || 'success'}
+          variant="filled"
+          onClose={() => setToast(null)}
+          sx={{
+            minWidth:280,
+            width:'max-content',
+            maxWidth:'min(640px, calc(100vw - 32px))',
+            py:0.15,
+            boxShadow:'0 10px 28px rgba(15,23,42,0.22)',
+          }}
+        >
+          {toast?.text || ''}
+        </Alert>
+      </Snackbar>
+
       <Paper variant="outlined" sx={{ px:1.4, py:1, borderColor:'#d8e0ea' }}>
         <Box sx={{ display:'flex', alignItems:'center', width:'100%', gap:1 }}>
           <SystemPageTitle
