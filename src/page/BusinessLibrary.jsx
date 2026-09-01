@@ -1,3 +1,4 @@
+// v52.48.5.44.105 업무자료실 최고관리자 자료 순서 이동·분류 고정정렬
 // v52.48.5.44.104 업무자료실 하단 외곽 여백 균형 보정
 // v52.48.5.44.103 업무자료실 하단 여백 실측 보정
 // v52.48.5.44.102 업무자료실 하단 여백 좌우 여백 수준으로 축소
@@ -45,6 +46,8 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
+import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
+import KeyboardArrowUpRoundedIcon from '@mui/icons-material/KeyboardArrowUpRounded';
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
@@ -86,6 +89,46 @@ const fieldSx = {
 
 const safeUuid = () => globalThis.crypto?.randomUUID?.()
   || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+const getLeadingFileNumber = (value) => {
+  const match = String(value || '').trim().match(/^(\d+)/);
+  if (!match) return null;
+  const number = Number(match[1]);
+  return Number.isFinite(number) ? number : null;
+};
+
+const getCategoryRank = (category) => {
+  const index = BUSINESS_LIBRARY_CATEGORIES.indexOf(String(category || ''));
+  return index >= 0 ? index : BUSINESS_LIBRARY_CATEGORIES.length;
+};
+
+const compareBusinessLibraryRows = (a, b) => {
+  const categoryDiff = getCategoryRank(a?.category) - getCategoryRank(b?.category);
+  if (categoryDiff !== 0) return categoryDiff;
+
+  const rawOrderA = Number(a?.sort_order || 0);
+  const rawOrderB = Number(b?.sort_order || 0);
+  const orderA = rawOrderA > 0 ? rawOrderA : Number.MAX_SAFE_INTEGER;
+  const orderB = rawOrderB > 0 ? rawOrderB : Number.MAX_SAFE_INTEGER;
+  if (orderA !== orderB) return orderA - orderB;
+
+  const fileNumberA = getLeadingFileNumber(a?.original_file_name);
+  const fileNumberB = getLeadingFileNumber(b?.original_file_name);
+  if (fileNumberA !== null || fileNumberB !== null) {
+    if (fileNumberA === null) return 1;
+    if (fileNumberB === null) return -1;
+    if (fileNumberA !== fileNumberB) return fileNumberA - fileNumberB;
+  }
+
+  const fileNameDiff = String(a?.original_file_name || a?.title || '').localeCompare(
+    String(b?.original_file_name || b?.title || ''),
+    'ko',
+    { numeric:true, sensitivity:'base' },
+  );
+  if (fileNameDiff !== 0) return fileNameDiff;
+
+  return String(a?.created_at || '').localeCompare(String(b?.created_at || ''));
+};
 
 const DESCRIPTION_IMAGE_MAX_COUNT = 5;
 const DESCRIPTION_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
@@ -141,6 +184,7 @@ export default function BusinessLibrary({
   const [selectedId, setSelectedId] = useState('');
   const [checkedIds, setCheckedIds] = useState([]);
   const [bulkDownloading, setBulkDownloading] = useState(false);
+  const [reordering, setReordering] = useState(false);
   const [descriptionImages, setDescriptionImages] = useState([]);
   const [descriptionImageFiles, setDescriptionImageFiles] = useState([]);
   const [descriptionImageError, setDescriptionImageError] = useState('');
@@ -176,13 +220,32 @@ export default function BusinessLibrary({
         row.original_file_name, row.version_label,
         ...getDescriptionImages(row).map((image) => image.caption),
       ].some((value) => String(value || '').toLowerCase().includes(normalized));
-    });
+    }).sort(compareBusinessLibraryRows);
   }, [categoryFilter, keyword, latestRows, projectName, scopeFilter]);
 
   const selected = useMemo(
     () => filteredRows.find((row) => String(row.id) === String(selectedId)) || filteredRows[0] || null,
     [filteredRows, selectedId],
   );
+
+  const selectedCategoryRows = useMemo(() => (
+    selected
+      ? latestRows
+        .filter((row) => row.category === selected.category)
+        .sort(compareBusinessLibraryRows)
+      : []
+  ), [latestRows, selected]);
+
+  const selectedOrderIndex = useMemo(() => (
+    selected
+      ? selectedCategoryRows.findIndex((row) => row.document_group_id === selected.document_group_id)
+      : -1
+  ), [selected, selectedCategoryRows]);
+
+  const canMoveSelectedUp = isSuperAdmin && selectedOrderIndex > 0;
+  const canMoveSelectedDown = isSuperAdmin
+    && selectedOrderIndex >= 0
+    && selectedOrderIndex < selectedCategoryRows.length - 1;
 
   const selectedHistory = useMemo(
     () => rows
@@ -204,6 +267,16 @@ export default function BusinessLibrary({
   const allVisibleChecked = filteredRows.length > 0
     && checkedRows.length === filteredRows.length;
   const someVisibleChecked = checkedRows.length > 0 && !allVisibleChecked;
+
+  const getSuggestedSortOrder = useCallback((category, fileName = '') => {
+    const leadingNumber = getLeadingFileNumber(fileName);
+    if (leadingNumber !== null) return Math.max(1, leadingNumber) * 1000;
+
+    const maxOrder = latestRows
+      .filter((row) => row.category === category)
+      .reduce((max, row) => Math.max(max, Number(row.sort_order || 0)), 0);
+    return maxOrder + 1000;
+  }, [latestRows]);
 
   const getCreatorLabel = useCallback((row) => {
     const stored = String(row?.created_by_name || '').trim();
@@ -235,6 +308,30 @@ export default function BusinessLibrary({
       setLoading(false);
     }
   }, []);
+
+  const moveSelectedDocument = async (direction) => {
+    if (!isSuperAdmin || !selected || reordering) return;
+    setReordering(true);
+    try {
+      const { data, error } = await supabase.rpc('business_library_move_document', {
+        p_document_group_id:selected.document_group_id,
+        p_direction:direction,
+      });
+      if (error) throw error;
+      await loadRows();
+      setMessage({
+        severity:'success',
+        text:data === false
+          ? '더 이상 이동할 수 없습니다.'
+          : `자료 순서를 ${direction === 'up' ? '위로' : '아래로'} 이동했습니다.`,
+      });
+    } catch (error) {
+      console.error('업무자료 순서 변경 실패:', error);
+      setMessage({ severity:'error', text:error?.message || '자료 순서를 변경하지 못했습니다.' });
+    } finally {
+      setReordering(false);
+    }
+  };
 
   const loadStorageUsage = useCallback(async () => {
     if (!isSuperAdmin) return;
@@ -555,6 +652,9 @@ export default function BusinessLibrary({
             title:String(form.title).trim(),
             description:String(form.description || '').trim(),
             description_images:nextDescriptionImages,
+            sort_order:form.category === selected.category
+              ? Number(selected.sort_order || 0)
+              : getSuggestedSortOrder(form.category, selected.original_file_name),
             scope_type:form.scope_type,
             project_name:form.scope_type === 'project' ? String(form.project_name).trim() : '',
             updated_at:new Date().toISOString(),
@@ -653,6 +753,9 @@ export default function BusinessLibrary({
             title:String(form.title).trim(),
             description:String(form.description || '').trim(),
             description_images:nextDescriptionImages,
+            sort_order:editorMode === 'version'
+              ? Number(selected.sort_order || 0)
+              : getSuggestedSortOrder(form.category, sourceFields.original_file_name),
             scope_type:form.scope_type,
             project_name:form.scope_type === 'project' ? String(form.project_name).trim() : '',
             storage_provider:form.storage_provider,
@@ -909,6 +1012,34 @@ export default function BusinessLibrary({
             <Typography component="span" sx={{ flexShrink:0, fontSize:11, fontWeight:500, color:'#64748b' }}>
               {filteredRows.length.toLocaleString()}건
             </Typography>
+            {isSuperAdmin && (
+              <Stack direction="row" gap={0.1} alignItems="center" sx={{ ml:0.35, flexShrink:0 }}>
+                <Tooltip title="동일 분류에서 위로 이동">
+                  <span>
+                    <IconButton
+                      size="small"
+                      disabled={!canMoveSelectedUp || reordering}
+                      onClick={() => moveSelectedDocument('up')}
+                      sx={{ width:24, height:24, p:0.2 }}
+                    >
+                      <KeyboardArrowUpRoundedIcon sx={{ fontSize:19 }} />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+                <Tooltip title="동일 분류에서 아래로 이동">
+                  <span>
+                    <IconButton
+                      size="small"
+                      disabled={!canMoveSelectedDown || reordering}
+                      onClick={() => moveSelectedDocument('down')}
+                      sx={{ width:24, height:24, p:0.2 }}
+                    >
+                      <KeyboardArrowDownRoundedIcon sx={{ fontSize:19 }} />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              </Stack>
+            )}
             <Button
               size="small"
               variant="contained"
