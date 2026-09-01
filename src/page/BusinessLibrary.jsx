@@ -1,3 +1,4 @@
+// v52.48.5.44.94 업무자료 팝업 라벨 간격·상세 설명 가독성
 // v52.48.5.44.93 업무자료실 좌우 헤더 세로 정렬
 // v52.48.5.44.92 업무자료실 목록 한 줄·헤더 높이·용량 상태 간격
 // v52.48.5.44.91 업무자료실 UI 정렬·등록자·원본 다운로드명 보정
@@ -730,7 +731,7 @@ export default function BusinessLibrary({
 
               <Box sx={{ flex:1, minHeight:0, overflowY:'auto', p:1.4 }}>
                 {selected.description && (
-                  <Typography sx={{ mb:1.2, fontSize:11.5, color:'#334155', lineHeight:1.65, whiteSpace:'pre-wrap' }}>{selected.description}</Typography>
+                  <Typography sx={{ mb:1.2, fontSize:13, color:'#334155', lineHeight:1.7, whiteSpace:'pre-wrap' }}>{selected.description}</Typography>
                 )}
                 <Paper variant="outlined" sx={{ p:1, mb:1.2, bgcolor:'#f8fafc' }}>
                   <Box sx={{ display:'grid', gridTemplateColumns:'92px minmax(0, 1fr)', rowGap:0.55, columnGap:1 }}>
@@ -784,8 +785,8 @@ export default function BusinessLibrary({
         <DialogTitle sx={{ fontSize:15, fontWeight:800 }}>
           {editorMode === 'create' ? '업무자료 등록' : editorMode === 'version' ? '새 버전 등록' : '업무자료 수정'}
         </DialogTitle>
-        <DialogContent dividers sx={{ overflowY:'auto' }}>
-          <Stack gap={1.2}>
+        <DialogContent dividers sx={{ pt:2.5, overflowY:'auto' }}>
+          <Stack gap={2}>
             <Stack direction={{ xs:'column', sm:'row' }} gap={1}>
               <TextField select size="small" label="분류" value={form.category} onChange={updateForm('category')} sx={{ ...fieldSx, minWidth:180 }}>
                 {BUSINESS_LIBRARY_CATEGORIES.map((category) => <MenuItem key={category} value={category}>{category}</MenuItem>)}
