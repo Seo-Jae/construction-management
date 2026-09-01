@@ -1,3 +1,4 @@
+// v52.48.5.44.108 업무자료실 골구도 변경양식 레이아웃 적용
 // v52.48.5.44.107 업무자료실 골구도 양식 옵션값 제외·제목/시트명 정리
 // v52.48.5.44.106 업무자료실 현장연동 골구도·선택옵션 시스템양식
 // v52.48.5.44.105 업무자료실 최고관리자 자료 순서 이동·분류 고정정렬
@@ -857,6 +858,7 @@ export default function BusinessLibrary({
           includeOptionValues:false,
           worksheetName:'골구도 양식',
           titleText:`${activeProject} · 골구도`,
+          layoutMode:'skeleton',
         });
       } else {
         await saveSelectionOptionWorkbook({
