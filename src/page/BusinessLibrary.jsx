@@ -1,3 +1,4 @@
+// v52.48.5.44.103 업무자료실 하단 여백 실측 보정
 // v52.48.5.44.102 업무자료실 하단 여백 좌우 여백 수준으로 축소
 // v52.48.5.44.100 업무자료 설명 이미지별 설명 입력·표시
 // v52.48.5.44.99 업무자료 설명 이미지 첨부·파일 미리보기 제거
@@ -812,7 +813,7 @@ export default function BusinessLibrary({
   const tone = storageTone(storagePercent);
 
   return (
-    <Box sx={{ display:'flex', flexDirection:'column', gap:1, minHeight:0, height:{ xs:'auto', lg:'calc(100dvh - 60px)' } }}>
+    <Box sx={{ display:'flex', flexDirection:'column', gap:1, minHeight:0, height:{ xs:'auto', lg:'calc(100dvh + 36px)' } }}>
       <Paper variant="outlined" sx={{ px:1.4, py:1, borderColor:'#d8e0ea' }}>
         <Box sx={{ display:'flex', alignItems:'center', width:'100%', gap:1 }}>
           <SystemPageTitle
