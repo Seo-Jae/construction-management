@@ -1,3 +1,4 @@
+// v52.48.5.44.90 업무자료실 Storage 내부 키 ASCII 전용화
 // v52.48.5.44.89 업무자료실: 비공개 파일·외부 링크·버전 관리
 /* eslint-disable react-hooks/set-state-in-effect */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -52,7 +53,6 @@ import {
   formatBusinessLibraryBytes,
   formatBusinessLibraryDate,
   getBusinessLibraryExtension,
-  sanitizeBusinessLibraryFileName,
 } from '../config/businessLibraryCatalog.js';
 
 const EMPTY_FORM = {
@@ -409,7 +409,13 @@ export default function BusinessLibrary({
             }
           }
 
-          uploadedPath = `${groupId}/${versionNumber}-${Date.now()}-${sanitizeBusinessLibraryFileName(selectedFile.name)}`;
+          // 원본 파일명은 DB에 보존하고 Storage 객체 키는 ASCII UUID만 사용합니다.
+          // 한글·괄호·공백이 포함된 파일도 TUS InvalidKey 없이 업로드됩니다.
+          const safeExtension = getBusinessLibraryExtension(selectedFile.name)
+            .replace(/[^0-9a-z]/gi, '')
+            .slice(0, 20);
+          const storageFileName = `${safeUuid()}${safeExtension ? `.${safeExtension}` : ''}`;
+          uploadedPath = `${groupId}/v${versionNumber}/${storageFileName}`;
           await uploadFile(selectedFile, uploadedPath);
           sourceFields = {
             storage_path:uploadedPath,

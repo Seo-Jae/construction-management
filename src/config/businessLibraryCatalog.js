@@ -1,3 +1,4 @@
+// v52.48.5.44.90 Storage 내부 파일명 ASCII 전용 정규화
 // v52.48.5.44.89 업무자료실 공통 분류·파일 정책
 export const BUSINESS_LIBRARY_BUCKET = 'business-library-files';
 export const BUSINESS_LIBRARY_MAX_FILE_BYTES = 45 * 1024 * 1024;
@@ -49,11 +50,13 @@ export const getBusinessLibraryExtension = (fileName) => {
 };
 
 export const sanitizeBusinessLibraryFileName = (fileName) => {
-  const extension = getBusinessLibraryExtension(fileName);
+  const extension = getBusinessLibraryExtension(fileName)
+    .replace(/[^0-9a-z]/gi, '')
+    .slice(0, 20);
   const base = String(fileName || 'file')
     .replace(/\.[^.]+$/, '')
     .normalize('NFKC')
-    .replace(/[^0-9A-Za-z가-힣_-]+/g, '-')
+    .replace(/[^0-9A-Za-z_-]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 80) || 'file';
   return extension ? `${base}.${extension}` : base;
