@@ -1,3 +1,4 @@
+// v52.48.5.44.111 업무자료 목록 분류표시
 // v52.48.5.44.110 업무자료 순서변경 토스트팝업
 // v52.48.5.44.108 업무자료실 골구도 변경양식 레이아웃 적용
 // v52.48.5.44.107 업무자료실 골구도 양식 옵션값 제외·제목/시트명 정리
@@ -1196,9 +1197,24 @@ export default function BusinessLibrary({
                     onKeyDown={(event) => event.stopPropagation()}
                     onChange={() => toggleCheckedRow(row.id)}
                     inputProps={{ 'aria-label':`${row.title} 선택` }}
-                    sx={{ flexShrink:0, p:0.25, mr:0.45, '& .MuiSvgIcon-root':{ fontSize:18 } }}
+                    sx={{ flexShrink:0, p:0.25, mr:0.25, '& .MuiSvgIcon-root':{ fontSize:18 } }}
                   />
-                  <Stack direction="row" gap={0.75} alignItems="center" sx={{ width:'100%', minWidth:0 }}>
+                  <Chip
+                    size="small"
+                    label={row.category}
+                    variant="outlined"
+                    color={active ? 'primary' : 'default'}
+                    sx={{
+                      flexShrink:0,
+                      height:20,
+                      mr:0.55,
+                      fontSize:9,
+                      fontWeight:700,
+                      bgcolor:active ? '#ffffff' : '#f8fafc',
+                      '& .MuiChip-label':{ px:0.65 },
+                    }}
+                  />
+                  <Stack direction="row" gap={0.55} alignItems="center" sx={{ width:'100%', minWidth:0 }}>
                     <InsertDriveFileOutlinedIcon sx={{ flexShrink:0, fontSize:18, color:active ? '#2563eb' : '#64748b' }} />
                     <Typography noWrap title={row.title} sx={{ minWidth:0, fontSize:12, fontWeight:active ? 800 : 700, color:'#0f172a' }}>
                       {row.title}
