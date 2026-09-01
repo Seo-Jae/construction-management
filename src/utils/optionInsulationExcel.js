@@ -1,3 +1,4 @@
+// v52.48.5.44.107 업무자료실용 빈 골구도·제목/시트명 지정 지원
 // v52.48.5.44.106 업무자료실 연동 다운로드 파일명 지정 지원
 // v52.48.5.44.15 단열 옵션 Excel 메모 제거·동 간격 1열(너비 5.42)
 // v52.48.5.44.14 옵션현황(단열) 전체 동 단일시트·빈 세대셀·무색상 양식
@@ -111,7 +112,15 @@ export const saveInsulationOptionWorkbook = async ({
   buildingConfigs = {},
   optionData = {},
   downloadFileName = '',
+  includeOptionValues = true,
+  worksheetName = '',
+  titleText = '',
 }) => {
+  const resolvedWorksheetName = String(worksheetName || '').trim() || DATA_SHEET_NAME;
+  const resolvedTitleText = String(titleText || '').trim()
+    || `${projectName || '현장명 미등록'} · 단열 옵션 골구도`;
+  const shouldIncludeOptionValues = includeOptionValues !== false;
+
   const entries = Object.entries(buildingConfigs || {}).sort(
     ([first], [second]) =>
       first.localeCompare(second, 'ko-KR', { numeric: true }),
@@ -157,7 +166,7 @@ export const saveInsulationOptionWorkbook = async ({
   });
 
   const lastColumn = Math.max(1, blocks[blocks.length - 1]?.endColumn || 1);
-  const sheet = workbook.addWorksheet(DATA_SHEET_NAME, {
+  const sheet = workbook.addWorksheet(resolvedWorksheetName, {
     views: [
       {
         state: 'frozen',
@@ -189,9 +198,7 @@ export const saveInsulationOptionWorkbook = async ({
   });
 
   sheet.mergeCells(TITLE_ROW, 1, TITLE_ROW, lastColumn);
-  sheet.getCell(TITLE_ROW, 1).value = `${
-    projectName || '현장명 미등록'
-  } · 단열 옵션 골구도`;
+  sheet.getCell(TITLE_ROW, 1).value = resolvedTitleText;
   sheet.getCell(TITLE_ROW, 1).font = {
     name: '맑은 고딕',
     size: 15,
@@ -337,7 +344,9 @@ export const saveInsulationOptionWorkbook = async ({
             }
 
             const cellKey = getCellKey(buildingName, visualCell.unitCode);
-            const optionValue = normalizeText(optionData?.[cellKey]?.value);
+            const optionValue = shouldIncludeOptionValues
+              ? normalizeText(optionData?.[cellKey]?.value)
+              : '';
             const unitType = getUnitType(
               config,
               floor,
@@ -353,7 +362,7 @@ export const saveInsulationOptionWorkbook = async ({
             applyBorder(cell);
 
             metaSheet.getRow(metaRowNumber).values = [
-              DATA_SHEET_NAME,
+              resolvedWorksheetName,
               cell.address,
               buildingName,
               visualCell.unitCode,
