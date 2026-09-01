@@ -1,3 +1,4 @@
+// v52.48.5.44.98 업무자료 빈상태 아이콘·문구 완전 중앙정렬
 // v52.48.5.44.97 업무자료 분류필터-상세보기 동기화·빈목록 중앙정렬
 // v52.48.5.44.96 업무자료 팝업 입력박스 실제 간격 보정
 // v52.48.5.44.95 업무자료 목록 선택·전체선택 다운로드
@@ -760,10 +761,12 @@ export default function BusinessLibrary({
             {loading ? (
               <Stack alignItems="center" justifyContent="center" sx={{ position:'absolute', inset:0, minHeight:180 }}><CircularProgress size={28} /></Stack>
             ) : filteredRows.length === 0 ? (
-              <Stack alignItems="center" justifyContent="center" sx={{ position:'absolute', inset:0, minHeight:180, px:2, textAlign:'center', color:'#94a3b8' }}>
-                <DescriptionOutlinedIcon sx={{ fontSize:38, mb:0.7 }} />
-                <Typography sx={{ fontSize:12 }}>조건에 맞는 자료가 없습니다.</Typography>
-              </Stack>
+              <Box sx={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', px:2 }}>
+                <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ textAlign:'center', color:'#94a3b8' }}>
+                  <DescriptionOutlinedIcon sx={{ fontSize:46 }} />
+                  <Typography sx={{ fontSize:12, lineHeight:1.6 }}>조건에 맞는 자료가 없습니다.</Typography>
+                </Stack>
+              </Box>
             ) : filteredRows.map((row) => {
               const active = selected?.id === row.id;
               return (
@@ -802,12 +805,14 @@ export default function BusinessLibrary({
           </Box>
         </Box>
 
-        <Box sx={{ minWidth:0, minHeight:0, display:'flex', flexDirection:'column' }}>
+        <Box sx={{ minWidth:0, minHeight:0, display:'flex', flexDirection:'column', position:'relative' }}>
           {!selected ? (
-            <Stack alignItems="center" justifyContent="center" sx={{ height:'100%', minHeight:300, color:'#94a3b8' }}>
-              <DescriptionOutlinedIcon sx={{ fontSize:46, mb:1 }} />
-              <Typography sx={{ fontSize:12 }}>왼쪽 목록에서 자료를 선택해주세요.</Typography>
-            </Stack>
+            <Box sx={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', px:2 }}>
+              <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ textAlign:'center', color:'#94a3b8' }}>
+                <DescriptionOutlinedIcon sx={{ fontSize:46 }} />
+                <Typography sx={{ fontSize:12, lineHeight:1.6 }}>왼쪽 목록에서 자료를 선택해주세요.</Typography>
+              </Stack>
+            </Box>
           ) : (
             <>
               <Box sx={{ display:'flex', alignItems:'center', gap:0.65, width:'100%', minHeight:44, px:1.4, py:0.7, borderBottom:'1px solid #e2e8f0' }}>
