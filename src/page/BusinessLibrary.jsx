@@ -1,3 +1,4 @@
+// v52.48.5.44.100 업무자료 설명 이미지별 설명 입력·표시
 // v52.48.5.44.99 업무자료 설명 이미지 첨부·파일 미리보기 제거
 // v52.48.5.44.98 업무자료 빈상태 아이콘·문구 완전 중앙정렬
 // v52.48.5.44.97 업무자료 분류필터-상세보기 동기화·빈목록 중앙정렬
@@ -88,7 +89,12 @@ const DESCRIPTION_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 
 const getDescriptionImages = (row) => (
   Array.isArray(row?.description_images)
-    ? row.description_images.filter((image) => String(image?.path || '').trim())
+    ? row.description_images
+      .filter((image) => String(image?.path || '').trim())
+      .map((image) => ({
+        ...image,
+        caption:String(image?.caption || ''),
+      }))
     : []
 );
 
@@ -165,6 +171,7 @@ export default function BusinessLibrary({
       return [
         row.title, row.description, row.category, row.project_name,
         row.original_file_name, row.version_label,
+        ...getDescriptionImages(row).map((image) => image.caption),
       ].some((value) => String(value || '').toLowerCase().includes(normalized));
     });
   }, [categoryFilter, keyword, latestRows, projectName, scopeFilter]);
@@ -356,8 +363,23 @@ export default function BusinessLibrary({
       return;
     }
 
-    setDescriptionImageFiles((current) => [...current, ...picked]);
+    setDescriptionImageFiles((current) => [
+      ...current,
+      ...picked.map((file) => ({ file, caption:'' })),
+    ]);
     setDescriptionImageError('');
+  };
+
+  const updateExistingDescriptionImageCaption = (index, caption) => {
+    setDescriptionImages((current) => current.map((image, itemIndex) => (
+      itemIndex === index ? { ...image, caption } : image
+    )));
+  };
+
+  const updateNewDescriptionImageCaption = (index, caption) => {
+    setDescriptionImageFiles((current) => current.map((item, itemIndex) => (
+      itemIndex === index ? { ...item, caption } : item
+    )));
   };
 
   const removeExistingDescriptionImage = (index) => {
@@ -384,10 +406,10 @@ export default function BusinessLibrary({
     if (descriptionImages.length + descriptionImageFiles.length > DESCRIPTION_IMAGE_MAX_COUNT) {
       return `설명 이미지는 최대 ${DESCRIPTION_IMAGE_MAX_COUNT}장까지 첨부할 수 있습니다.`;
     }
-    if (descriptionImageFiles.some((file) => !String(file.type || '').startsWith('image/'))) {
+    if (descriptionImageFiles.some((item) => !String(item?.file?.type || '').startsWith('image/'))) {
       return '설명에는 이미지 파일만 첨부할 수 있습니다.';
     }
-    if (descriptionImageFiles.some((file) => Number(file.size || 0) > DESCRIPTION_IMAGE_MAX_BYTES)) {
+    if (descriptionImageFiles.some((item) => Number(item?.file?.size || 0) > DESCRIPTION_IMAGE_MAX_BYTES)) {
       return '설명 이미지는 파일당 5MB까지 첨부할 수 있습니다.';
     }
     if (editorMode !== 'edit' && form.storage_provider === 'external') {
@@ -462,11 +484,13 @@ export default function BusinessLibrary({
     setUploadProgress(100);
   };
 
-  const uploadDescriptionImages = async (files, groupId) => {
-    if (!files.length) return [];
+  const uploadDescriptionImages = async (items, groupId) => {
+    if (!items.length) return [];
     const uploaded = [];
     try {
-      for (const file of files) {
+      for (const item of items) {
+        const file = item?.file;
+        if (!file) continue;
         const safeExtension = getBusinessLibraryExtension(file.name)
           .replace(/[^0-9a-z]/gi, '')
           .slice(0, 12);
@@ -485,6 +509,7 @@ export default function BusinessLibrary({
           original_file_name:file.name,
           file_size:Number(file.size || 0),
           mime_type:file.type || 'application/octet-stream',
+          caption:String(item?.caption || '').trim(),
         });
       }
       return uploaded;
@@ -982,16 +1007,22 @@ export default function BusinessLibrary({
                   <Typography sx={{ mb:1.2, fontSize:13, color:'#334155', lineHeight:1.7, whiteSpace:'pre-wrap' }}>{selected.description}</Typography>
                 )}
                 {selectedDescriptionImageUrls.length > 0 && (
-                  <Stack gap={1} sx={{ mb:1.2 }}>
+                  <Stack gap={1.5} sx={{ mb:1.2 }}>
                     {selectedDescriptionImageUrls.map((image, index) => (
-                      <Box
-                        key={`${image.path}-${index}`}
-                        component="img"
-                        src={image.url}
-                        alt={image.original_file_name || `설명 이미지 ${index + 1}`}
-                        onClick={() => window.open(image.url, '_blank', 'noopener,noreferrer')}
-                        sx={{ display:'block', maxWidth:'100%', maxHeight:460, mx:'auto', objectFit:'contain', border:'1px solid #d8e0ea', borderRadius:1, bgcolor:'#fff', cursor:'zoom-in' }}
-                      />
+                      <Box key={`${image.path}-${index}`}>
+                        {String(image.caption || '').trim() && (
+                          <Typography sx={{ mb:0.65, fontSize:12.5, fontWeight:700, color:'#334155', lineHeight:1.6, whiteSpace:'pre-wrap' }}>
+                            {index + 1}. {image.caption}
+                          </Typography>
+                        )}
+                        <Box
+                          component="img"
+                          src={image.url}
+                          alt={image.original_file_name || `설명 이미지 ${index + 1}`}
+                          onClick={() => window.open(image.url, '_blank', 'noopener,noreferrer')}
+                          sx={{ display:'block', maxWidth:'100%', maxHeight:460, mx:'auto', objectFit:'contain', border:'1px solid #d8e0ea', borderRadius:1, bgcolor:'#fff', cursor:'zoom-in' }}
+                        />
+                      </Box>
                     ))}
                   </Stack>
                 )}
@@ -1047,7 +1078,7 @@ export default function BusinessLibrary({
               <Stack direction={{ xs:'column', sm:'row' }} gap={1} alignItems={{ sm:'center' }}>
                 <Box sx={{ flex:1, minWidth:0 }}>
                   <Typography sx={{ fontSize:11.5, fontWeight:800, color:'#334155' }}>설명 이미지</Typography>
-                  <Typography sx={{ mt:0.2, fontSize:10, color:'#64748b' }}>차단 해제 안내 화면처럼 설명에 필요한 이미지를 함께 첨부할 수 있습니다. · 파일당 5MB · 최대 5장</Typography>
+                  <Typography sx={{ mt:0.2, fontSize:10, color:'#64748b' }}>이미지를 첨부한 뒤 각 이미지마다 설명을 입력할 수 있습니다. 상세보기에서는 설명과 이미지가 한 묶음으로 표시됩니다. · 파일당 5MB · 최대 5장</Typography>
                 </Box>
                 <Button
                   component="label"
@@ -1067,25 +1098,52 @@ export default function BusinessLibrary({
               {(descriptionImages.length > 0 || descriptionImageFiles.length > 0) && (
                 <Stack gap={0.55} sx={{ mt:1 }}>
                   {descriptionImages.map((image, index) => (
-                    <Stack key={`${image.path}-${index}`} direction="row" alignItems="center" gap={0.7} sx={{ minHeight:32, px:0.8, py:0.45, border:'1px solid #e2e8f0', borderRadius:1, bgcolor:'#fff' }}>
-                      <Chip size="small" label="기존" sx={{ height:19, fontSize:9 }} />
-                      <Typography noWrap title={image.original_file_name || image.path} sx={{ flex:1, minWidth:0, fontSize:10.5 }}>{image.original_file_name || '설명 이미지'}</Typography>
-                      <Typography sx={{ flexShrink:0, fontSize:9.5, color:'#94a3b8' }}>{formatBusinessLibraryBytes(image.file_size || 0)}</Typography>
-                      <IconButton size="small" disabled={saving} onClick={() => removeExistingDescriptionImage(index)} sx={{ width:24, height:24 }}>
-                        <CloseRoundedIcon sx={{ fontSize:16 }} />
-                      </IconButton>
-                    </Stack>
+                    <Box key={`${image.path}-${index}`} sx={{ p:0.8, border:'1px solid #e2e8f0', borderRadius:1, bgcolor:'#fff' }}>
+                      <Stack direction="row" alignItems="center" gap={0.7}>
+                        <Chip size="small" label={`기존 ${index + 1}`} sx={{ height:19, fontSize:9 }} />
+                        <Typography noWrap title={image.original_file_name || image.path} sx={{ flex:1, minWidth:0, fontSize:10.5 }}>{image.original_file_name || '설명 이미지'}</Typography>
+                        <Typography sx={{ flexShrink:0, fontSize:9.5, color:'#94a3b8' }}>{formatBusinessLibraryBytes(image.file_size || 0)}</Typography>
+                        <IconButton size="small" disabled={saving} onClick={() => removeExistingDescriptionImage(index)} sx={{ width:24, height:24 }}>
+                          <CloseRoundedIcon sx={{ fontSize:16 }} />
+                        </IconButton>
+                      </Stack>
+                      <TextField
+                        size="small"
+                        label="이미지 설명"
+                        value={image.caption || ''}
+                        onChange={(event) => updateExistingDescriptionImageCaption(index, event.target.value)}
+                        placeholder="이 이미지 위에 표시할 설명을 입력하세요."
+                        inputProps={{ maxLength:1000 }}
+                        fullWidth
+                        sx={{ ...fieldSx, mt:0.75 }}
+                      />
+                    </Box>
                   ))}
-                  {descriptionImageFiles.map((file, index) => (
-                    <Stack key={`${file.name}-${file.size}-${index}`} direction="row" alignItems="center" gap={0.7} sx={{ minHeight:32, px:0.8, py:0.45, border:'1px solid #bfdbfe', borderRadius:1, bgcolor:'#eff6ff' }}>
-                      <Chip size="small" color="primary" label="추가" sx={{ height:19, fontSize:9 }} />
-                      <Typography noWrap title={file.name} sx={{ flex:1, minWidth:0, fontSize:10.5 }}>{file.name}</Typography>
-                      <Typography sx={{ flexShrink:0, fontSize:9.5, color:'#64748b' }}>{formatBusinessLibraryBytes(file.size)}</Typography>
-                      <IconButton size="small" disabled={saving} onClick={() => removeNewDescriptionImage(index)} sx={{ width:24, height:24 }}>
-                        <CloseRoundedIcon sx={{ fontSize:16 }} />
-                      </IconButton>
-                    </Stack>
-                  ))}
+                  {descriptionImageFiles.map((item, index) => {
+                    const file = item.file;
+                    return (
+                      <Box key={`${file.name}-${file.size}-${index}`} sx={{ p:0.8, border:'1px solid #bfdbfe', borderRadius:1, bgcolor:'#eff6ff' }}>
+                        <Stack direction="row" alignItems="center" gap={0.7}>
+                          <Chip size="small" color="primary" label={`추가 ${descriptionImages.length + index + 1}`} sx={{ height:19, fontSize:9 }} />
+                          <Typography noWrap title={file.name} sx={{ flex:1, minWidth:0, fontSize:10.5 }}>{file.name}</Typography>
+                          <Typography sx={{ flexShrink:0, fontSize:9.5, color:'#64748b' }}>{formatBusinessLibraryBytes(file.size)}</Typography>
+                          <IconButton size="small" disabled={saving} onClick={() => removeNewDescriptionImage(index)} sx={{ width:24, height:24 }}>
+                            <CloseRoundedIcon sx={{ fontSize:16 }} />
+                          </IconButton>
+                        </Stack>
+                        <TextField
+                          size="small"
+                          label="이미지 설명"
+                          value={item.caption || ''}
+                          onChange={(event) => updateNewDescriptionImageCaption(index, event.target.value)}
+                          placeholder="이 이미지 위에 표시할 설명을 입력하세요."
+                          inputProps={{ maxLength:1000 }}
+                          fullWidth
+                          sx={{ ...fieldSx, mt:0.75 }}
+                        />
+                      </Box>
+                    );
+                  })}
                 </Stack>
               )}
             </Paper>
