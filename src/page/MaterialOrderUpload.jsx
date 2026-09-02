@@ -1,3 +1,4 @@
+// v52.48.5.44.126 자재발주 상단 탭 밑줄 화면배율 독립 정렬
 // v52.48.5.44.125 기본설정 탭 밑줄 화면배율 독립 정렬
 // v52.48.5.44.124 기본설정 탭 이중 하단선 제거
 // v52.48.5.44.123 기본설정 탭 밑줄 정렬
@@ -1277,7 +1278,32 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
               setSettingsDialogOpen(true);
             }
           }}
-          sx={{ ml: 'auto', minHeight: 34, '& .MuiTab-root': { minHeight: 34, py: 0.4, fontSize: '0.72rem', fontWeight: 850 } }}
+          sx={{
+            ml: 'auto',
+            minHeight: 34,
+            '& .MuiTabs-indicator': {
+              display: 'none',
+            },
+            '& .MuiTab-root': {
+              minHeight: 34,
+              py: 0.4,
+              position: 'relative',
+              overflow: 'visible',
+              fontSize: '0.72rem',
+              fontWeight: 850,
+            },
+            '& .MuiTab-root.Mui-selected::after': {
+              content: '""',
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: '2px',
+              bgcolor: '#2563eb',
+              borderRadius: '2px 2px 0 0',
+              pointerEvents: 'none',
+            },
+          }}
         >
           <Tab value="order" icon={<AddShoppingCartRoundedIcon fontSize="small" />} iconPosition="start" label="발주서 작성" />
           <Tab value="master" icon={<Inventory2RoundedIcon fontSize="small" />} iconPosition="start" label="자재 마스터" />
