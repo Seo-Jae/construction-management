@@ -1,3 +1,4 @@
+// v52.48.5.44.129 기본설정 닫기 복원·주기적 입력폼 재조회 방지
 // v52.48.5.44.128 자재마스터 연속등록 보호·기본설정 표시순서 안내
 // v52.48.5.44.127 자재발주 테스트 초기화 (발주서·기본설정)
 // v52.48.5.44.126 자재발주 상단 탭 밑줄 화면배율 독립 정렬
@@ -246,6 +247,7 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
   const [resetting, setResetting] = useState(false);
 
   const currentUserId = getProfileId(userProfile);
+  const currentUserName = getProfileName(userProfile);
   const isSuperAdmin = isSuperAdminProfile(userProfile);
   const isLocked = order.status === 'confirmed' || order.status === 'cancelled';
 
@@ -432,7 +434,7 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
       const nextForm = {
         requesterName:
           settingsRow?.default_requester_name ||
-          getProfileName(userProfile),
+          currentUserName,
         receiverName: settingsRow?.default_receiver_name || '',
         receiverPhone: settingsRow?.default_receiver_phone || '',
         deliveryLocation: settingsRow?.default_delivery_location || '',
@@ -461,7 +463,7 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
           requesterName:
             current.requesterName ||
             nextForm.requesterName ||
-            getProfileName(userProfile),
+            currentUserName,
           receiverName: current.receiverName || nextForm.receiverName,
           receiverPhone: current.receiverPhone || nextForm.receiverPhone,
           deliveryLocation:
@@ -480,9 +482,9 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
     }
   }, [
     handleSchemaError,
+    currentUserName,
     notify,
     projectName,
-    userProfile,
   ]);
 
   const loadMasterRows = useCallback(async () => {
@@ -2095,14 +2097,12 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
             </Button>
           )}
 
-          {!settingsRequired && (
-            <Button
-              onClick={() => setSettingsDialogOpen(false)}
-              disabled={settingsSaving}
-            >
-              닫기
-            </Button>
-          )}
+          <Button
+            onClick={() => setSettingsDialogOpen(false)}
+            disabled={settingsSaving || resetting}
+          >
+            닫기
+          </Button>
 
           <Button
             variant="contained"
