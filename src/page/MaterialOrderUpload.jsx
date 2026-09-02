@@ -1,3 +1,4 @@
+// v52.48.5.44.124 기본설정 탭 이중 하단선 제거
 // v52.48.5.44.123 기본설정 탭 밑줄 정렬
 // v52.48.5.44.122 자재발주 기본설정·주요자재 실행물량·변경이력
 // v52.48.5.44.121 납품희망일 라벨 상단 고정
@@ -1616,7 +1617,14 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
           />
         </Tabs>
 
-        <DialogContent dividers sx={{ p: 1.5, minHeight: 430 }}>
+        <DialogContent
+          dividers
+          sx={{
+            p: 1.5,
+            minHeight: 430,
+            borderTop: 'none',
+          }}
+        >
           {settingsLoading ? (
             <Box sx={{ minHeight: 360, display: 'grid', placeItems: 'center' }}>
               <CircularProgress size={26} />
