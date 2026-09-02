@@ -1,3 +1,4 @@
+// v52.48.5.44.127 자재발주 테스트 초기화 (발주서·기본설정)
 // v52.48.5.44.126 자재발주 상단 탭 밑줄 화면배율 독립 정렬
 // v52.48.5.44.125 기본설정 탭 밑줄 화면배율 독립 정렬
 // v52.48.5.44.124 기본설정 탭 이중 하단선 제거
@@ -52,6 +53,7 @@ import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import Inventory2RoundedIcon from '@mui/icons-material/Inventory2Rounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
+import RestartAltRoundedIcon from '@mui/icons-material/RestartAltRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
 import PlaylistAddRoundedIcon from '@mui/icons-material/PlaylistAddRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
@@ -161,6 +163,28 @@ const getProfileName = (profile) =>
 const getProfileId = (profile) =>
   normalizeText(profile?.id || profile?.user_id || profile?.auth_id || '');
 
+const isSuperAdminProfile = (profile) => {
+  if (profile?.is_super_admin === true || profile?.isSuperAdmin === true) {
+    return true;
+  }
+
+  return [
+    profile?.role,
+    profile?.user_role,
+    profile?.userRole,
+    profile?.permission,
+    profile?.authority,
+    profile?.access_level,
+  ].some((value) => {
+    const normalized = normalizeText(value).replace(/\s+/g, '').toLowerCase();
+    return (
+      normalized.includes('최고관리자') ||
+      normalized.includes('superadmin') ||
+      normalized.includes('masteradmin')
+    );
+  });
+};
+
 const buildSearchText = (master) =>
   [
     master.standardName,
@@ -216,8 +240,12 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
   const [settingsRequired, setSettingsRequired] = useState(true);
+  const [resetDialogOpen, setResetDialogOpen] = useState(false);
+  const [resetConfirmText, setResetConfirmText] = useState('');
+  const [resetting, setResetting] = useState(false);
 
   const currentUserId = getProfileId(userProfile);
+  const isSuperAdmin = isSuperAdminProfile(userProfile);
   const isLocked = order.status === 'confirmed' || order.status === 'cancelled';
 
   const notify = useCallback((severity, text) => {
@@ -1128,6 +1156,55 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
     loadOrders();
   };
 
+  const resetMaterialOrderTestData = async () => {
+    if (!projectName || !isSuperAdmin || resetting) return;
+    if (resetConfirmText.trim() !== projectName.trim()) {
+      notify('warning', '초기화할 현장명을 정확히 입력해주세요.');
+      return;
+    }
+
+    setResetting(true);
+    try {
+      const { data, error } = await supabase.rpc(
+        'admin_reset_material_order_test_v1',
+        { p_project_name: projectName },
+      );
+      if (error) throw error;
+
+      setResetDialogOpen(false);
+      setResetConfirmText('');
+      setOrders([]);
+      setProjectSettings(null);
+      setSettingsHistory([]);
+      setSettingsRequired(true);
+      setSettingsTab('basic');
+      setOrder({
+        ...EMPTY_ORDER,
+        orderDate: getKoreaToday(),
+        requesterName: getProfileName(userProfile),
+      });
+      setOrderItems([]);
+      setMainTab('order');
+
+      await Promise.all([
+        loadOrders(),
+        loadProjectSettings({ openWhenIncomplete: false }),
+      ]);
+
+      const deletedOrders = Number(data?.deleted_orders || 0);
+      notify(
+        'success',
+        `발주서 ${deletedOrders}건과 발주 기본설정을 초기화했습니다. 자재 마스터는 유지됩니다.`,
+      );
+    } catch (error) {
+      if (!handleSchemaError(error)) {
+        notify('error', `자재발주 초기화 실패: ${error.message}`);
+      }
+    } finally {
+      setResetting(false);
+    }
+  };
+
   const openNewMaster = () => {
     setMasterForm({
       ...EMPTY_MASTER,
@@ -1985,6 +2062,22 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
         </DialogContent>
 
         <DialogActions sx={{ px: 1.5, py: 1 }}>
+          {isSuperAdmin && (
+            <Button
+              color="error"
+              variant="outlined"
+              startIcon={<RestartAltRoundedIcon />}
+              onClick={() => {
+                setResetConfirmText('');
+                setResetDialogOpen(true);
+              }}
+              disabled={settingsLoading || settingsSaving || resetting}
+              sx={{ mr: 'auto' }}
+            >
+              발주 테스트 초기화
+            </Button>
+          )}
+
           {settingsRequired && (
             <Button
               color="inherit"
@@ -2020,6 +2113,80 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
             }
           >
             기본설정 저장
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={resetDialogOpen}
+        onClose={() => {
+          if (!resetting) {
+            setResetDialogOpen(false);
+            setResetConfirmText('');
+          }
+        }}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle sx={{ fontSize: '1rem', fontWeight: 900, color: '#b91c1c' }}>
+          자재발주 테스트 자료 초기화
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 1.5 }}>
+          <Alert severity="error" sx={{ mb: 1.2 }}>
+            현재 현장의 작성중·발주완료 발주서, 발주품목, 누계발주량, 발주번호 순번, 기본설정, 주요자재 실행물량과 변경이력을 모두 삭제합니다. 삭제한 자료는 복구할 수 없습니다.
+          </Alert>
+
+          <Paper variant="outlined" sx={{ p: 1.2, mb: 1.2, bgcolor: '#f8fafc' }}>
+            <Typography sx={{ fontSize: '0.72rem', fontWeight: 900 }}>
+              초기화 대상 현장
+            </Typography>
+            <Typography sx={{ mt: 0.35, fontSize: '0.8rem', color: '#b91c1c', fontWeight: 900 }}>
+              {projectName}
+            </Typography>
+            <Typography sx={{ mt: 0.55, fontSize: '0.66rem', color: '#475569', lineHeight: 1.65 }}>
+              유지 자료: 자재 마스터, 자재분류
+            </Typography>
+          </Paper>
+
+          <TextField
+            autoFocus
+            fullWidth
+            size="small"
+            label="확인을 위해 현장명을 입력"
+            value={resetConfirmText}
+            onChange={(event) => setResetConfirmText(event.target.value)}
+            placeholder={projectName}
+            disabled={resetting}
+            helperText="위 현장명과 동일하게 입력해야 초기화할 수 있습니다."
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 1.5, py: 1 }}>
+          <Button
+            onClick={() => {
+              setResetDialogOpen(false);
+              setResetConfirmText('');
+            }}
+            disabled={resetting}
+          >
+            취소
+          </Button>
+          <Button
+            color="error"
+            variant="contained"
+            startIcon={
+              resetting ? (
+                <CircularProgress size={14} color="inherit" />
+              ) : (
+                <RestartAltRoundedIcon />
+              )
+            }
+            onClick={resetMaterialOrderTestData}
+            disabled={
+              resetting ||
+              resetConfirmText.trim() !== projectName.trim()
+            }
+          >
+            완전 초기화
           </Button>
         </DialogActions>
       </Dialog>
