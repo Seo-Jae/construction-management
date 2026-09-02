@@ -1,3 +1,4 @@
+// v52.48.5.44.128 자재마스터 연속등록 보호·기본설정 표시순서 안내
 // v52.48.5.44.127 자재발주 테스트 초기화 (발주서·기본설정)
 // v52.48.5.44.126 자재발주 상단 탭 밑줄 화면배율 독립 정렬
 // v52.48.5.44.125 기본설정 탭 밑줄 화면배율 독립 정렬
@@ -528,7 +529,10 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
     setSchemaMissing(false);
     loadCategories();
     loadOrders();
-    loadProjectSettings({ openWhenIncomplete: true });
+    // 자재 마스터 등록 중 기본항목이 추가되더라도 기본설정 팝업으로
+    // 작업을 가로채지 않는다. 설정 필요 상태만 갱신하고, 실제 발주
+    // 작업을 시작하거나 기본설정 버튼을 눌렀을 때만 팝업을 연다.
+    loadProjectSettings({ openWhenIncomplete: false });
   }, [
     loadCategories,
     loadOrders,
@@ -2294,7 +2298,7 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
             <TextField
               size="small"
               type="number"
-              label="주요자재 기본순서"
+              label="기본설정 표시순서"
               value={masterForm.mainSortOrder}
               onChange={(event) =>
                 setMasterForm((current) => ({
@@ -2304,6 +2308,7 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
               }
               disabled={!masterForm.isMainMaterial}
               inputProps={{ min: 1, step: 1 }}
+              helperText="숫자가 작을수록 기본설정 목록 위에 표시됩니다."
             />
             <TextField size="small" multiline minRows={2} label="비고" value={masterForm.note} onChange={(e) => setMasterForm((current) => ({ ...current, note: e.target.value }))} sx={{ gridColumn: '1 / -1' }} />
           </Box>
