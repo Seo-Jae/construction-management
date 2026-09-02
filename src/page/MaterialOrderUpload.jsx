@@ -1,3 +1,4 @@
+// v52.48.5.44.121 납품희망일 라벨 상단 고정
 // v52.48.5.44.120 자재발주작성 1차 - 사급자재 표준화·자재마스터·발주작성
 import React, {
   useCallback,
@@ -920,14 +921,14 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
 
             <Box sx={{ p: 0.9, borderBottom: '1px solid #e2e8f0' }}>
               <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: 0.7 }}>
-                <TextField size="small" label="발주일" type="date" InputLabelProps={{ shrink: true }} value={order.orderDate} onChange={(e) => setOrder((current) => ({ ...current, orderDate: e.target.value }))} disabled={isLocked} />
+                <TextField size="small" label="발주일" type="date" InputLabelProps={{ shrink: true }} slotProps={{ inputLabel: { shrink: true } }} value={order.orderDate} onChange={(e) => setOrder((current) => ({ ...current, orderDate: e.target.value }))} disabled={isLocked} />
                 <TextField size="small" label="요청자" value={order.requesterName} onChange={(e) => setOrder((current) => ({ ...current, requesterName: e.target.value }))} disabled={isLocked} />
                 <TextField select size="small" label="자재분류" value={order.categoryId} onChange={(e) => setOrder((current) => ({ ...current, categoryId: e.target.value }))} disabled={isLocked}>
                   <MenuItem value="">전체/혼합</MenuItem>
                   {categories.map((row) => <MenuItem key={row.id} value={row.id}>{row.name}</MenuItem>)}
                 </TextField>
                 <Autocomplete freeSolo size="small" options={PROCESS_OPTIONS} value={order.processName || ''} onInputChange={(_, value) => setOrder((current) => ({ ...current, processName: value }))} disabled={isLocked} renderInput={(params) => <TextField {...params} label="공정" />} />
-                <TextField size="small" label="납품희망일" type="date" InputLabelProps={{ shrink: true }} value={order.deliveryDate} onChange={(e) => setOrder((current) => ({ ...current, deliveryDate: e.target.value }))} disabled={isLocked} />
+                <TextField size="small" label="납품희망일" type="date" InputLabelProps={{ shrink: true }} slotProps={{ inputLabel: { shrink: true } }} value={order.deliveryDate} onChange={(e) => setOrder((current) => ({ ...current, deliveryDate: e.target.value }))} disabled={isLocked} />
                 <TextField size="small" label="납품장소" value={order.deliveryLocation} onChange={(e) => setOrder((current) => ({ ...current, deliveryLocation: e.target.value }))} disabled={isLocked} />
                 <TextField size="small" label="수령자" value={order.receiverName} onChange={(e) => setOrder((current) => ({ ...current, receiverName: e.target.value }))} disabled={isLocked} />
                 <TextField size="small" label="연락처" value={order.receiverPhone} onChange={(e) => setOrder((current) => ({ ...current, receiverPhone: e.target.value }))} disabled={isLocked} />
