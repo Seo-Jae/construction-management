@@ -1,3 +1,4 @@
+// v52.48.5.44.125 기본설정 탭 밑줄 화면배율 독립 정렬
 // v52.48.5.44.124 기본설정 탭 이중 하단선 제거
 // v52.48.5.44.123 기본설정 탭 밑줄 정렬
 // v52.48.5.44.122 자재발주 기본설정·주요자재 실행물량·변경이력
@@ -1591,18 +1592,35 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
               height: '1px',
               bgcolor: '#e2e8f0',
               pointerEvents: 'none',
+              zIndex: 0,
             },
+            /*
+              화면 90% CSS zoom에서는 MUI 기본 indicator가 getBoundingClientRect로
+              계산한 left/width와 실제 Tab 위치가 어긋날 수 있다. 기본 indicator를
+              숨기고 선택된 Tab 자체에 밑줄을 붙여 화면배율과 무관하게 정렬한다.
+            */
             '& .MuiTabs-indicator': {
-              bottom: 0,
-              height: '2px',
-              borderRadius: '2px 2px 0 0',
-              zIndex: 1,
+              display: 'none',
             },
             '& .MuiTab-root': {
               minHeight: 36,
               py: 0.4,
+              position: 'relative',
+              overflow: 'visible',
               fontSize: '0.74rem',
               fontWeight: 850,
+            },
+            '& .MuiTab-root.Mui-selected::after': {
+              content: '""',
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: '2px',
+              bgcolor: '#2563eb',
+              borderRadius: '2px 2px 0 0',
+              pointerEvents: 'none',
+              zIndex: 1,
             },
           }}
         >
