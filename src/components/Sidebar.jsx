@@ -1,3 +1,4 @@
+// v52.48.5.44.120 자재발주작성 1차 메뉴 활성화
 // v52.48.5.44.119 Dashboard 차단계정 Main 최상단
 // v52.48.5.44.118 좌측메뉴 목록 폭 고정
 // v52.48.5.44.89 업무자료실 대메뉴
@@ -84,8 +85,6 @@ const materialMenus = [
   {
     value: 'material-order',
     label: '자재발주작성',
-    disabled: true,
-    statusLabel: INACTIVE_MENU_STATUS,
   },
   {
     value: 'material-input-status',

@@ -1,12 +1,13 @@
+// v52.48.5.44.120 자재발주작성 1차 - 사급자재 표준화·자재마스터·발주작성
 import React, {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react';
 import {
   Alert,
+  Autocomplete,
   Box,
   Button,
   Chip,
@@ -16,2574 +17,1070 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
-  LinearProgress,
+  IconButton,
+  InputAdornment,
+  MenuItem,
   Paper,
+  Snackbar,
+  Stack,
+  Tab,
+  Tabs,
   Table,
   TableBody,
   TableCell,
   TableContainer,
   TableHead,
   TableRow,
+  TextField,
+  Tooltip,
   Typography,
 } from '@mui/material';
-import DownloadIcon from '@mui/icons-material/Download';
-import UploadFileIcon from '@mui/icons-material/UploadFile';
-import SaveIcon from '@mui/icons-material/Save';
-import RefreshIcon from '@mui/icons-material/Refresh';
-import ExcelJS from 'exceljs';
+import AddRoundedIcon from '@mui/icons-material/AddRounded';
+import AddShoppingCartRoundedIcon from '@mui/icons-material/AddShoppingCartRounded';
+import CategoryRoundedIcon from '@mui/icons-material/CategoryRounded';
+import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import EditRoundedIcon from '@mui/icons-material/EditRounded';
+import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
+import Inventory2RoundedIcon from '@mui/icons-material/Inventory2Rounded';
+import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
+import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
+import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import { supabase } from '../supabaseClient';
 
-const TEMPLATE_URL =
-  '/templates/발주서양식.xlsx';
-
-const TEMPLATE_VERSION =
-  'MATERIAL_ORDER_V3_CATEGORY';
-
-const ITEM_INSERT_CHUNK_SIZE =
-  500;
-
-const TITLE_KEY =
-  '자재발주의뢰서';
-
-const MATERIAL_CATEGORIES = [
-  '잡자재',
+const PROCESS_OPTIONS = [
   '경량벽체',
-  '단열합지',
-  '합판',
-  '천정',
+  '단열',
+  '합지',
+  '세대천정',
+  '공용부천정',
   '몰딩',
   '걸레받이',
-  '안전용품',
+  '수장',
+  '안전',
+  '가설',
+  '기타',
 ];
 
-const REQUIRED_HEADERS = [
-  {
-    column: 'A',
-    label: '자재분류',
-  },
-  {
-    column: 'B',
-    label: '품명',
-  },
-  {
-    column: 'C',
-    label: '규격',
-  },
-  {
-    column: 'E',
-    label: '단위',
-  },
-  {
-    column: 'F',
-    label: '실행물량',
-  },
-  {
-    column: 'G',
-    label: '전회발주량',
-  },
-  {
-    column: 'H',
-    label: '금회발주량',
-  },
-  {
-    column: 'I',
-    label: '누계발주량',
-  },
-  {
-    column: 'J',
-    label:
-      '실행물량대비누계물량비',
-  },
-  {
-    column: 'K',
-    label: '비고',
-  },
-];
-
-const normalizeText = (
-  value,
-) =>
-  String(value ?? '')
-    .replace(/\u00a0/g, ' ')
-    .trim()
-    .replace(/\s+/g, ' ');
-
-const normalizeComparable = (
-  value,
-) =>
-  normalizeText(value)
-    .replace(
-      /㈜|\(주\)|주식회사/gi,
-      '',
-    )
-    .replace(
-      /[^0-9a-zA-Z가-힣]/g,
-      '',
-    )
-    .toLowerCase();
-
-const getCellRawValue = (
-  cell,
-) => {
-  const value = cell?.value;
-
-  if (
-    value &&
-    typeof value ===
-      'object' &&
-    !(value instanceof Date)
-  ) {
-    if (
-      Array.isArray(
-        value.richText,
-      )
-    ) {
-      return value.richText
-        .map(
-          (part) =>
-            part?.text || '',
-        )
-        .join('');
-    }
-
-    if (
-      Object.prototype.hasOwnProperty.call(
-        value,
-        'result',
-      )
-    ) {
-      return value.result;
-    }
-
-    if (
-      Object.prototype.hasOwnProperty.call(
-        value,
-        'text',
-      )
-    ) {
-      return value.text;
-    }
-
-    if (
-      Object.prototype.hasOwnProperty.call(
-        value,
-        'formula',
-      )
-    ) {
-      return (
-        value.result ?? ''
-      );
-    }
-  }
-
-  return value;
+const ORDER_STATUS_LABELS = {
+  draft: '작성중',
+  confirmed: '발주완료',
+  cancelled: '취소',
 };
 
-const getCellText = (
-  worksheet,
-  address,
-) =>
+const EMPTY_ORDER = {
+  id: '',
+  orderNo: '',
+  orderDate: '',
+  requesterName: '',
+  deliveryDate: '',
+  deliveryLocation: '',
+  receiverName: '',
+  receiverPhone: '',
+  categoryId: '',
+  processName: '',
+  note: '',
+  status: 'draft',
+};
+
+const EMPTY_MASTER = {
+  id: '',
+  categoryId: '',
+  processName: '',
+  standardName: '',
+  specification: '',
+  unit: '',
+  manufacturer: '',
+  aliasesText: '',
+  executionQuantity: '',
+  note: '',
+  isActive: true,
+};
+
+const normalizeText = (value) => String(value ?? '').trim().replace(/\s+/g, ' ');
+const numberValue = (value) => {
+  const parsed = Number(String(value ?? '').replace(/,/g, ''));
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+const formatNumber = (value, digits = 2) => {
+  const number = Number(value || 0);
+  return number.toLocaleString('ko-KR', {
+    maximumFractionDigits: digits,
+  });
+};
+const getKoreaToday = () =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Seoul',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date());
+
+const getProfileName = (profile) =>
   normalizeText(
-    getCellRawValue(
-      worksheet.getCell(
-        address,
-      ),
-    ),
+    profile?.name ||
+      profile?.full_name ||
+      profile?.display_name ||
+      profile?.user_name ||
+      '',
   );
 
-const excelSerialToDate = (
-  serial,
-) => {
-  if (
-    typeof serial !==
-      'number' ||
-    !Number.isFinite(serial)
-  ) {
-    return null;
-  }
+const getProfileId = (profile) =>
+  normalizeText(profile?.id || profile?.user_id || profile?.auth_id || '');
 
-  const milliseconds =
-    Date.UTC(
-      1899,
-      11,
-      30,
-    ) +
-    Math.round(
-      serial *
-        24 *
-        60 *
-        60 *
-        1000,
-    );
+const buildSearchText = (master) =>
+  [
+    master.standardName,
+    master.specification,
+    master.manufacturer,
+    master.processName,
+    master.aliasesText,
+  ]
+    .map(normalizeText)
+    .filter(Boolean)
+    .join(' ');
 
-  const date =
-    new Date(milliseconds);
+const categoryNameById = (categories, id) =>
+  categories.find((row) => row.id === id)?.name || '-';
 
-  return [
-    date.getUTCFullYear(),
-    String(
-      date.getUTCMonth() +
-        1,
-    ).padStart(2, '0'),
-    String(
-      date.getUTCDate(),
-    ).padStart(2, '0'),
-  ].join('-');
-};
+export default function MaterialOrderUpload({ projectName, userProfile }) {
+  const [mainTab, setMainTab] = useState('order');
+  const [supplyTab, setSupplyTab] = useState('private');
+  const [categories, setCategories] = useState([]);
+  const [orders, setOrders] = useState([]);
+  const [masterRows, setMasterRows] = useState([]);
+  const [masterSearch, setMasterSearch] = useState('');
+  const [masterCategoryId, setMasterCategoryId] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [masterLoading, setMasterLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [schemaMissing, setSchemaMissing] = useState(false);
+  const [toast, setToast] = useState(null);
+  const [order, setOrder] = useState({
+    ...EMPTY_ORDER,
+    orderDate: getKoreaToday(),
+    requesterName: getProfileName(userProfile),
+  });
+  const [orderItems, setOrderItems] = useState([]);
+  const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
+  const [materialPickerSearch, setMaterialPickerSearch] = useState('');
+  const [materialPickerRows, setMaterialPickerRows] = useState([]);
+  const [materialPickerLoading, setMaterialPickerLoading] = useState(false);
+  const [masterDialogOpen, setMasterDialogOpen] = useState(false);
+  const [masterForm, setMasterForm] = useState(EMPTY_MASTER);
+  const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
 
-const parseDateValue = (
-  value,
-) => {
-  if (value instanceof Date) {
-    return [
-      value.getFullYear(),
-      String(
-        value.getMonth() +
-          1,
-      ).padStart(2, '0'),
-      String(
-        value.getDate(),
-      ).padStart(2, '0'),
-    ].join('-');
-  }
+  const currentUserId = getProfileId(userProfile);
+  const isLocked = order.status === 'confirmed' || order.status === 'cancelled';
 
-  if (
-    typeof value ===
-    'number'
-  ) {
-    return excelSerialToDate(
-      value,
-    );
-  }
+  const notify = useCallback((severity, text) => {
+    setToast({ severity, text });
+  }, []);
 
-  const text =
-    normalizeText(value);
-
-  if (!text) {
-    return '';
-  }
-
-  const match =
-    text.match(
-      /(\d{4})\D+(\d{1,2})\D+(\d{1,2})/,
-    ) ||
-    text.match(
-      /(\d{2})\D+(\d{1,2})\D+(\d{1,2})/,
-    );
-
-  if (!match) {
-    return '';
-  }
-
-  const rawYear =
-    Number(match[1]);
-
-  const year =
-    rawYear < 100
-      ? 2000 + rawYear
-      : rawYear;
-
-  const month =
-    Number(match[2]);
-
-  const day =
-    Number(match[3]);
-
-  const date =
-    new Date(
-      year,
-      month - 1,
-      day,
-    );
-
-  if (
-    date.getFullYear() !==
-      year ||
-    date.getMonth() !==
-      month - 1 ||
-    date.getDate() !==
-      day
-  ) {
-    return '';
-  }
-
-  return [
-    year,
-    String(month).padStart(
-      2,
-      '0',
-    ),
-    String(day).padStart(
-      2,
-      '0',
-    ),
-  ].join('-');
-};
-
-const getCellDate = (
-  worksheet,
-  address,
-) =>
-  parseDateValue(
-    getCellRawValue(
-      worksheet.getCell(
-        address,
-      ),
-    ),
+  const handleSchemaError = useCallback(
+    (error) => {
+      if (error?.code === '42P01' || String(error?.message || '').includes('does not exist')) {
+        setSchemaMissing(true);
+        notify('error', '자재발주 1차 DB 구조가 아직 적용되지 않았습니다. 제공된 SQL을 먼저 실행해주세요.');
+        return true;
+      }
+      return false;
+    },
+    [notify],
   );
 
-const parseNumber = (
-  value,
-) => {
-  const raw =
-    value &&
-    typeof value ===
-      'object' &&
-    !Array.isArray(value)
-      ? (
-          value.result ??
-          value.text ??
-          ''
-        )
-      : value;
+  const loadCategories = useCallback(async () => {
+    if (!projectName) return;
+    const { data, error } = await supabase
+      .from('material_supply_categories')
+      .select('id, name, sort_order, is_active')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true })
+      .order('name', { ascending: true });
 
-  if (
-    raw === null ||
-    raw === undefined ||
-    raw === ''
-  ) {
-    return null;
-  }
-
-  if (
-    typeof raw ===
-      'number' &&
-    Number.isFinite(raw)
-  ) {
-    return raw;
-  }
-
-  const text =
-    normalizeText(raw)
-      .replace(/,/g, '')
-      .replace(/%/g, '');
-
-  if (!text) {
-    return null;
-  }
-
-  const number =
-    Number(text);
-
-  return Number.isFinite(
-    number,
-  )
-    ? number
-    : null;
-};
-
-const getKoreaTodayKey =
-  () => {
-    const formatter =
-      new Intl.DateTimeFormat(
-        'en-CA',
-        {
-          timeZone:
-            'Asia/Seoul',
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-        },
-      );
-
-    const parts = {};
-
-    formatter
-      .formatToParts(
-        new Date(),
-      )
-      .forEach((part) => {
-        if (
-          part.type !==
-          'literal'
-        ) {
-          parts[part.type] =
-            part.value;
-        }
-      });
-
-    return (
-      `${parts.year}-` +
-      `${parts.month}-` +
-      `${parts.day}`
-    );
-  };
-
-const safeFileName = (
-  value,
-) =>
-  normalizeText(value)
-    .replace(
-      /[\\/:*?"<>|]/g,
-      '_',
-    )
-    .replace(/\s+/g, '_');
-
-const clearWorkbookDefinedNames = (
-  workbook,
-) => {
-  try {
-    if (
-      workbook?.definedNames
-    ) {
-      /*
-        원본 엑셀에 남아 있는 #REF 이름 범위나
-        삭제된 다른 통합문서의 이름 범위를 제거합니다.
-
-        ExcelJS가 이를 그대로 다시 저장하면
-        Excel에서 복구 안내가 표시될 수 있습니다.
-      */
-      workbook.definedNames.model =
-        [];
+    if (error) {
+      if (!handleSchemaError(error)) notify('error', `자재분류 조회 실패: ${error.message}`);
+      return;
     }
-  } catch (error) {
-    console.warn(
-      '발주서 이름 범위 정리 실패:',
-      error,
-    );
-  }
-};
 
-const splitIntoChunks = (
-  rows,
-  size,
-) => {
-  const chunks = [];
+    setCategories(data || []);
+  }, [handleSchemaError, notify, projectName]);
 
-  for (
-    let index = 0;
-    index < rows.length;
-    index += size
-  ) {
-    chunks.push(
-      rows.slice(
-        index,
-        index + size,
-      ),
-    );
-  }
+  const loadOrders = useCallback(async () => {
+    if (!projectName) return;
+    const { data, error } = await supabase
+      .from('material_supply_orders')
+      .select('*')
+      .eq('project_name', projectName)
+      .order('order_date', { ascending: false })
+      .order('created_at', { ascending: false })
+      .limit(150);
 
-  return chunks;
-};
+    if (error) {
+      if (!handleSchemaError(error)) notify('error', `발주서 목록 조회 실패: ${error.message}`);
+      return;
+    }
 
-const createFileHash =
-  async (
-    arrayBuffer,
-    file,
-  ) => {
+    setOrders(data || []);
+  }, [handleSchemaError, notify, projectName]);
+
+  const loadMasterRows = useCallback(async () => {
+    if (!projectName) return;
+    setMasterLoading(true);
     try {
-      const digest =
-        await crypto.subtle.digest(
-          'SHA-256',
-          arrayBuffer,
-        );
+      let query = supabase
+        .from('material_master_items')
+        .select('id, category_id, process_name, standard_name, specification, unit, manufacturer, aliases, note, is_active, updated_at')
+        .eq('is_active', true)
+        .order('standard_name', { ascending: true })
+        .limit(300);
 
-      return Array.from(
-        new Uint8Array(
-          digest,
-        ),
-      )
-        .map((byte) =>
-          byte
-            .toString(16)
-            .padStart(2, '0'),
-        )
-        .join('');
-    } catch {
-      return [
-        file?.name || '',
-        file?.size || 0,
-        file?.lastModified ||
-          0,
-      ].join('-');
+      if (masterCategoryId) query = query.eq('category_id', masterCategoryId);
+      const keyword = normalizeText(masterSearch);
+      if (keyword) query = query.ilike('search_text', `%${keyword}%`);
+
+      const { data: materials, error } = await query;
+      if (error) throw error;
+
+      const materialIds = (materials || []).map((row) => row.id);
+      let projectQuantities = [];
+      if (materialIds.length > 0) {
+        const { data, error: quantityError } = await supabase
+          .from('material_project_materials')
+          .select('material_id, execution_quantity, note')
+          .eq('project_name', projectName)
+          .in('material_id', materialIds);
+        if (quantityError) throw quantityError;
+        projectQuantities = data || [];
+      }
+
+      const quantityMap = new Map(projectQuantities.map((row) => [row.material_id, row]));
+      setMasterRows(
+        (materials || []).map((row) => ({
+          ...row,
+          execution_quantity: quantityMap.get(row.id)?.execution_quantity ?? 0,
+          project_note: quantityMap.get(row.id)?.note || '',
+        })),
+      );
+    } catch (error) {
+      if (!handleSchemaError(error)) notify('error', `자재 마스터 조회 실패: ${error.message}`);
+    } finally {
+      setMasterLoading(false);
     }
-  };
-
-const validateHeaders = ({
-  worksheet,
-  headerRow,
-}) => {
-  const mismatches = [];
-
-  REQUIRED_HEADERS.forEach(
-    ({
-      column,
-      label,
-    }) => {
-      const actual =
-        getCellText(
-          worksheet,
-          `${column}${headerRow}`,
-        );
-
-      if (
-        !normalizeComparable(
-          actual,
-        ).includes(
-          normalizeComparable(
-            label,
-          ),
-        )
-      ) {
-        mismatches.push(
-          {
-            column,
-            expected: label,
-            actual:
-              actual || '(빈칸)',
-          },
-        );
-      }
-    },
-  );
-
-  return mismatches;
-};
-
-const parseOrderWorkbook =
-  async ({
-    file,
-    projectName,
-  }) => {
-    const arrayBuffer =
-      await file.arrayBuffer();
-
-    const hash =
-      await createFileHash(
-        arrayBuffer,
-        file,
-      );
-
-    const workbook =
-      new ExcelJS.Workbook();
-
-    await workbook.xlsx.load(
-      arrayBuffer,
-    );
-
-    const systemSheet =
-      workbook.getWorksheet(
-        '_SYSTEM',
-      );
-
-    const templateVersion =
-      normalizeText(
-        systemSheet?.getCell(
-          'B1',
-        )?.value,
-      ) || TEMPLATE_VERSION;
-
-    const errors = [];
-    const warnings = [];
-    const orders = [];
-
-    workbook.worksheets
-      .filter(
-        (worksheet) =>
-          worksheet.name !==
-          '_SYSTEM',
-      )
-      .forEach(
-        (worksheet) => {
-          const titleRows = [];
-
-          const maxRow =
-            Math.max(
-              worksheet.rowCount,
-              1,
-            );
-
-          for (
-            let row = 1;
-            row <= maxRow;
-            row += 1
-          ) {
-            const titleText =
-              getCellText(
-                worksheet,
-                `A${row}`,
-              );
-
-            if (
-              normalizeComparable(
-                titleText,
-              ) ===
-              normalizeComparable(
-                TITLE_KEY,
-              )
-            ) {
-              titleRows.push(
-                row,
-              );
-            }
-          }
-
-          titleRows.forEach(
-            (
-              titleRow,
-              titleIndex,
-            ) => {
-              const infoRow1 =
-                titleRow + 1;
-
-              const infoRow2 =
-                titleRow + 2;
-
-              const infoRow3 =
-                titleRow + 3;
-
-              const headerRow =
-                titleRow + 5;
-
-              const nextTitleRow =
-                titleRows[
-                  titleIndex + 1
-                ];
-
-              const blockEndRow =
-                nextTitleRow
-                  ? nextTitleRow -
-                    1
-                  : maxRow;
-
-              const headerMismatches =
-                validateHeaders({
-                  worksheet,
-                  headerRow,
-                });
-
-              if (
-                headerMismatches.length >
-                0
-              ) {
-                errors.push(
-                  `${worksheet.name} ${titleIndex + 1}번째 발주서의 표 제목이 양식과 다릅니다: ` +
-                    headerMismatches
-                      .map(
-                        (
-                          mismatch,
-                        ) =>
-                          `${mismatch.column}열 ${mismatch.expected}→${mismatch.actual}`,
-                      )
-                      .join(', '),
-                );
-
-                return;
-              }
-
-              const orderDate =
-                getCellDate(
-                  worksheet,
-                  `B${infoRow1}`,
-                );
-
-              const authorName =
-                getCellText(
-                  worksheet,
-                  `B${infoRow2}`,
-                );
-
-              const excelProjectName =
-                getCellText(
-                  worksheet,
-                  `B${infoRow3}`,
-                );
-
-              const deliveryLocation =
-                getCellText(
-                  worksheet,
-                  `F${infoRow1}`,
-                );
-
-              const receiverName =
-                getCellText(
-                  worksheet,
-                  `F${infoRow2}`,
-                );
-
-              const receiverPhone =
-                getCellText(
-                  worksheet,
-                  `G${infoRow2}`,
-                ).replace(
-                  /^연락처\s*:\s*/i,
-                  '',
-                );
-
-              const deliveryDate =
-                getCellDate(
-                  worksheet,
-                  `F${infoRow3}`,
-                );
-
-              const items = [];
-              let ignoredRowCount =
-                0;
-              let foundAnyInput =
-                Boolean(
-                  orderDate ||
-                    authorName ||
-                    excelProjectName ||
-                    deliveryLocation ||
-                    receiverName ||
-                    receiverPhone ||
-                    deliveryDate,
-                );
-
-              for (
-                let row =
-                  headerRow + 1;
-                row <=
-                blockEndRow;
-                row += 1
-              ) {
-                const category =
-                  getCellText(
-                    worksheet,
-                    `A${row}`,
-                  );
-
-                const itemName =
-                  getCellText(
-                    worksheet,
-                    `B${row}`,
-                  );
-
-                const specification =
-                  getCellText(
-                    worksheet,
-                    `C${row}`,
-                  );
-
-                const unit =
-                  getCellText(
-                    worksheet,
-                    `E${row}`,
-                  );
-
-                const executionQuantity =
-                  parseNumber(
-                    getCellRawValue(
-                      worksheet.getCell(
-                        `F${row}`,
-                      ),
-                    ),
-                  );
-
-                const previousQuantity =
-                  parseNumber(
-                    getCellRawValue(
-                      worksheet.getCell(
-                        `G${row}`,
-                      ),
-                    ),
-                  );
-
-                const currentQuantity =
-                  parseNumber(
-                    getCellRawValue(
-                      worksheet.getCell(
-                        `H${row}`,
-                      ),
-                    ),
-                  );
-
-                const note =
-                  getCellText(
-                    worksheet,
-                    `K${row}`,
-                  );
-
-                const rowHasValue =
-                  Boolean(
-                    category ||
-                      itemName ||
-                      specification ||
-                      unit ||
-                      note ||
-                      executionQuantity !==
-                        null ||
-                      previousQuantity !==
-                        null ||
-                      currentQuantity !==
-                        null,
-                  );
-
-                if (!rowHasValue) {
-                  continue;
-                }
-
-                foundAnyInput =
-                  true;
-
-                if (!itemName) {
-                  warnings.push(
-                    `${worksheet.name} ${row}행은 품명이 없어 제외했습니다.`,
-                  );
-
-                  ignoredRowCount +=
-                    1;
-
-                  continue;
-                }
-
-                /*
-                  금회발주량이 없는 행은 품목 기준표 또는
-                  이전 발주 이력으로 보고 이번 발주 데이터에서는 제외합니다.
-                */
-                if (
-                  currentQuantity ===
-                    null ||
-                  currentQuantity <=
-                    0
-                ) {
-                  ignoredRowCount +=
-                    1;
-
-                  continue;
-                }
-
-                if (!category) {
-                  errors.push(
-                    `${worksheet.name} ${row}행의 자재분류를 선택해주세요.`,
-                  );
-
-                  continue;
-                }
-
-                if (
-                  !MATERIAL_CATEGORIES.includes(
-                    category,
-                  )
-                ) {
-                  errors.push(
-                    `${worksheet.name} ${row}행의 자재분류(${category})는 허용된 분류가 아닙니다.`,
-                  );
-
-                  continue;
-                }
-
-                const cumulativeQuantity =
-                  (
-                    previousQuantity ||
-                    0
-                  ) +
-                  currentQuantity;
-
-                const executionRatio =
-                  executionQuantity &&
-                  executionQuantity > 0
-                    ? cumulativeQuantity /
-                      executionQuantity
-                    : null;
-
-                items.push({
-                  lineNo:
-                    items.length +
-                    1,
-                  sourceRow: row,
-                  category,
-                  itemName,
-                  specification,
-                  unit,
-                  executionQuantity,
-                  previousOrderQuantity:
-                    previousQuantity,
-                  currentOrderQuantity:
-                    currentQuantity,
-                  cumulativeOrderQuantity:
-                    cumulativeQuantity,
-                  executionRatio,
-                  note,
-                  rawRow: {
-                    category,
-                    itemName,
-                    specification,
-                    unit,
-                    executionQuantity,
-                    previousQuantity,
-                    currentQuantity,
-                    note,
-                  },
-                });
-              }
-
-              /*
-                발주서 기본정보와 자재 입력이 모두 비어 있으면
-                빈 양식으로 보고 저장 대상에서 제외합니다.
-              */
-              if (
-                !foundAnyInput
-              ) {
-                return;
-              }
-
-              if (
-                items.length ===
-                0
-              ) {
-                warnings.push(
-                  `${worksheet.name} ${titleIndex + 1}번째 발주서는 금회발주량이 입력된 자재가 없어 저장 대상에서 제외했습니다.`,
-                );
-
-                return;
-              }
-
-              if (!orderDate) {
-                errors.push(
-                  `${worksheet.name} ${titleIndex + 1}번째 발주서의 작성일을 확인할 수 없습니다.`,
-                );
-              }
-
-              if (
-                !excelProjectName
-              ) {
-                warnings.push(
-                  `${worksheet.name} ${titleIndex + 1}번째 발주서에 현장명이 없습니다. 현재 현장(${projectName})으로 저장됩니다.`,
-                );
-              } else {
-                const excelProjectKey =
-                  normalizeComparable(
-                    excelProjectName,
-                  );
-
-                const activeProjectKey =
-                  normalizeComparable(
-                    projectName,
-                  );
-
-                const shareMeaningfulName =
-                  excelProjectKey &&
-                  activeProjectKey &&
-                  (
-                    excelProjectKey.includes(
-                      activeProjectKey,
-                    ) ||
-                    activeProjectKey.includes(
-                      excelProjectKey,
-                    ) ||
-                    (
-                      excelProjectKey.includes(
-                        '용인금어지구',
-                      ) &&
-                      activeProjectKey.includes(
-                        '용인금어지구',
-                      )
-                    ) ||
-                    (
-                      excelProjectKey.includes(
-                        '마크밸리',
-                      ) &&
-                      activeProjectKey.includes(
-                        '마크밸리',
-                      )
-                    )
-                  );
-
-                if (
-                  !shareMeaningfulName
-                ) {
-                  warnings.push(
-                    `${worksheet.name} ${titleIndex + 1}번째 발주서의 현장명(${excelProjectName})과 현재 선택 현장(${projectName})이 다를 수 있습니다.`,
-                  );
-                }
-              }
-
-              if (!deliveryDate) {
-                warnings.push(
-                  `${worksheet.name} ${titleIndex + 1}번째 발주서의 납품일자가 비어 있습니다. 월별 집계는 작성일 기준으로 처리됩니다.`,
-                );
-              }
-
-              orders.push({
-                sheetName:
-                  worksheet.name,
-                blockNo:
-                  titleIndex + 1,
-                orderDate,
-                authorName,
-                excelProjectName,
-                deliveryLocation,
-                receiverName,
-                receiverPhone,
-                deliveryDate,
-                ignoredRowCount,
-                items,
-              });
-            },
-          );
-
-          if (
-            titleRows.length ===
-            0
-          ) {
-            warnings.push(
-              `${worksheet.name} 시트에서는 자재발주의뢰서 제목을 찾지 못했습니다.`,
-            );
-          }
-        },
-      );
-
-    if (
-      orders.length === 0 &&
-      errors.length === 0
-    ) {
-      errors.push(
-        '발주서 7행~27행에서 금회발주량이 입력된 자재를 찾지 못했습니다.',
-      );
-    }
-
-    const totalItemCount =
-      orders.reduce(
-        (
-          total,
-          order,
-        ) =>
-          total +
-          order.items.length,
-        0,
-      );
-
-    const totalCurrentQuantity =
-      orders.reduce(
-        (
-          total,
-          order,
-        ) =>
-          total +
-          order.items.reduce(
-            (
-              itemTotal,
-              item,
-            ) =>
-              itemTotal +
-              (
-                item.currentOrderQuantity ||
-                0
-              ),
-            0,
-          ),
-        0,
-      );
-
-    return {
-      fileName:
-        file.name,
-      fileSize:
-        file.size,
-      fileHash: hash,
-      templateVersion,
-      orders,
-      errors,
-      warnings,
-      totalItemCount,
-      totalCurrentQuantity,
-    };
-  };
-
-const formatNumber = (
-  value,
-) =>
-  Number(
-    value || 0,
-  ).toLocaleString(
-    'ko-KR',
-    {
-      maximumFractionDigits: 4,
-    },
-  );
-
-const formatDate = (
-  value,
-) =>
-  value
-    ? value.replace(
-        /-/g,
-        '.',
-      )
-    : '-';
-
-export default function MaterialOrderUpload({
-  projectName = '',
-  userProfile = {},
-}) {
-  const fileInputRef =
-    useRef(null);
-
-  const [
-    analysis,
-    setAnalysis,
-  ] = useState(null);
-
-  const [
-    analyzing,
-    setAnalyzing,
-  ] = useState(false);
-
-  const [
-    saving,
-    setSaving,
-  ] = useState(false);
-
-  const [
-    downloading,
-    setDownloading,
-  ] = useState(false);
-
-  const [
-    message,
-    setMessage,
-  ] = useState(null);
-
-  const [
-    recentOrders,
-    setRecentOrders,
-  ] = useState([]);
-
-  const [
-    recentLoading,
-    setRecentLoading,
-  ] = useState(false);
-
-  const [
-    guideOpen,
-    setGuideOpen,
-  ] = useState(false);
-
-  const loadRecentOrders =
-    useCallback(async () => {
-      if (!projectName) {
-        setRecentOrders([]);
-        return;
-      }
-
-      setRecentLoading(true);
-
-      try {
-        const {
-          data,
-          error,
-        } = await supabase
-          .from(
-            'material_orders',
-          )
-          .select(
-            `
-            id,
-            order_code,
-            order_date,
-            delivery_date,
-            author_name,
-            source_file_name,
-            source_sheet_name,
-            source_block_no,
-            created_at
-          `,
-          )
-          .eq(
-            'project_name',
-            projectName,
-          )
-          .order(
-            'created_at',
-            {
-              ascending: false,
-            },
-          )
-          .limit(20);
-
-        if (error) {
-          if (
-            error.code ===
-            '42P01'
-          ) {
-            setRecentOrders([]);
-            return;
-          }
-
-          throw error;
-        }
-
-        setRecentOrders(
-          data || [],
-        );
-      } catch (error) {
-        console.error(
-          '최근 자재발주 조회 실패:',
-          error,
-        );
-      } finally {
-        setRecentLoading(false);
-      }
-    }, [projectName]);
+  }, [handleSchemaError, masterCategoryId, masterSearch, notify, projectName]);
 
   useEffect(() => {
-    loadRecentOrders();
-  }, [loadRecentOrders]);
+    setSchemaMissing(false);
+    loadCategories();
+    loadOrders();
+  }, [loadCategories, loadOrders, projectName]);
 
-  const previewItems =
-    useMemo(
-      () =>
-        (
-          analysis?.orders ||
-          []
-        ).flatMap(
-          (order) =>
-            order.items.map(
-              (item) => ({
-                ...item,
-                orderDate:
-                  order.orderDate,
-                deliveryDate:
-                  order.deliveryDate,
-                blockNo:
-                  order.blockNo,
-                sheetName:
-                  order.sheetName,
-              }),
-            ),
-        ),
-      [analysis],
+  useEffect(() => {
+    if (mainTab === 'master') loadMasterRows();
+  }, [loadMasterRows, mainTab]);
+
+  const createNewOrder = useCallback(() => {
+    setOrder({
+      ...EMPTY_ORDER,
+      orderDate: getKoreaToday(),
+      requesterName: getProfileName(userProfile),
+    });
+    setOrderItems([]);
+    setMainTab('order');
+  }, [userProfile]);
+
+  const refreshBalances = useCallback(
+    async (items) => {
+      if (!projectName || items.length === 0) return items;
+      const ids = [...new Set(items.map((row) => row.materialId).filter(Boolean))];
+      if (ids.length === 0) return items;
+
+      const { data, error } = await supabase
+        .from('material_supply_cumulative')
+        .select('material_id, cumulative_order_quantity')
+        .eq('project_name', projectName)
+        .in('material_id', ids);
+
+      if (error) throw error;
+      const cumulativeMap = new Map(
+        (data || []).map((row) => [row.material_id, numberValue(row.cumulative_order_quantity)]),
+      );
+
+      return items.map((row) => {
+        const previous = cumulativeMap.get(row.materialId) || 0;
+        const current = numberValue(row.currentQuantity);
+        const cumulative = previous + current;
+        const execution = numberValue(row.executionQuantity);
+        return {
+          ...row,
+          previousQuantity: previous,
+          cumulativeQuantity: cumulative,
+          executionRatio: execution > 0 ? (cumulative / execution) * 100 : 0,
+        };
+      });
+    },
+    [projectName],
+  );
+
+  const openOrder = useCallback(
+    async (row) => {
+      setLoading(true);
+      try {
+        const { data: items, error } = await supabase
+          .from('material_supply_order_items')
+          .select('*')
+          .eq('order_id', row.id)
+          .order('sort_order', { ascending: true });
+        if (error) throw error;
+
+        let mapped = (items || []).map((item) => ({
+          id: item.id,
+          materialId: item.material_id,
+          categoryId: item.category_id || '',
+          processName: item.process_name || '',
+          standardName: item.standard_name,
+          specification: item.specification || '',
+          unit: item.unit || '',
+          executionQuantity: numberValue(item.execution_quantity),
+          previousQuantity: numberValue(item.previous_order_quantity),
+          currentQuantity: numberValue(item.current_order_quantity),
+          cumulativeQuantity: numberValue(item.cumulative_order_quantity),
+          executionRatio: numberValue(item.execution_ratio),
+          note: item.note || '',
+        }));
+
+        if (row.status === 'draft') mapped = await refreshBalances(mapped);
+
+        setOrder({
+          id: row.id,
+          orderNo: row.order_no || '',
+          orderDate: row.order_date || getKoreaToday(),
+          requesterName: row.requester_name || '',
+          deliveryDate: row.delivery_date || '',
+          deliveryLocation: row.delivery_location || '',
+          receiverName: row.receiver_name || '',
+          receiverPhone: row.receiver_phone || '',
+          categoryId: row.category_id || '',
+          processName: row.process_name || '',
+          note: row.note || '',
+          status: row.status || 'draft',
+        });
+        setOrderItems(mapped);
+        setMainTab('order');
+      } catch (error) {
+        notify('error', `발주서 불러오기 실패: ${error.message}`);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [notify, refreshBalances],
+  );
+
+  const loadMaterialPicker = useCallback(async () => {
+    if (!projectName) return;
+    setMaterialPickerLoading(true);
+    try {
+      let query = supabase
+        .from('material_master_items')
+        .select('id, category_id, process_name, standard_name, specification, unit, manufacturer, aliases, search_text')
+        .eq('is_active', true)
+        .order('standard_name', { ascending: true })
+        .limit(200);
+
+      if (order.categoryId) query = query.eq('category_id', order.categoryId);
+      if (order.processName) query = query.eq('process_name', order.processName);
+      const keyword = normalizeText(materialPickerSearch);
+      if (keyword) query = query.ilike('search_text', `%${keyword}%`);
+
+      const { data: materials, error } = await query;
+      if (error) throw error;
+
+      const ids = (materials || []).map((row) => row.id);
+      let quantities = [];
+      let cumulative = [];
+
+      if (ids.length > 0) {
+        const [quantityResult, cumulativeResult] = await Promise.all([
+          supabase
+            .from('material_project_materials')
+            .select('material_id, execution_quantity')
+            .eq('project_name', projectName)
+            .in('material_id', ids),
+          supabase
+            .from('material_supply_cumulative')
+            .select('material_id, cumulative_order_quantity')
+            .eq('project_name', projectName)
+            .in('material_id', ids),
+        ]);
+        if (quantityResult.error) throw quantityResult.error;
+        if (cumulativeResult.error) throw cumulativeResult.error;
+        quantities = quantityResult.data || [];
+        cumulative = cumulativeResult.data || [];
+      }
+
+      const quantityMap = new Map(quantities.map((row) => [row.material_id, numberValue(row.execution_quantity)]));
+      const cumulativeMap = new Map(cumulative.map((row) => [row.material_id, numberValue(row.cumulative_order_quantity)]));
+
+      setMaterialPickerRows(
+        (materials || []).map((row) => ({
+          ...row,
+          executionQuantity: quantityMap.get(row.id) || 0,
+          previousQuantity: cumulativeMap.get(row.id) || 0,
+        })),
+      );
+    } catch (error) {
+      notify('error', `자재 검색 실패: ${error.message}`);
+    } finally {
+      setMaterialPickerLoading(false);
+    }
+  }, [materialPickerSearch, notify, order.categoryId, order.processName, projectName]);
+
+  useEffect(() => {
+    if (!materialPickerOpen) return;
+    const timer = window.setTimeout(loadMaterialPicker, 180);
+    return () => window.clearTimeout(timer);
+  }, [loadMaterialPicker, materialPickerOpen]);
+
+  const addMaterialToOrder = (material) => {
+    if (orderItems.some((row) => row.materialId === material.id)) {
+      notify('warning', '이미 발주서에 추가된 자재입니다.');
+      return;
+    }
+    const previous = numberValue(material.previousQuantity);
+    const execution = numberValue(material.executionQuantity);
+    setOrderItems((current) => [
+      ...current,
+      {
+        id: '',
+        materialId: material.id,
+        categoryId: material.category_id || '',
+        processName: material.process_name || '',
+        standardName: material.standard_name,
+        specification: material.specification || '',
+        unit: material.unit || '',
+        executionQuantity: execution,
+        previousQuantity: previous,
+        currentQuantity: 0,
+        cumulativeQuantity: previous,
+        executionRatio: execution > 0 ? (previous / execution) * 100 : 0,
+        note: '',
+      },
+    ]);
+  };
+
+  const updateOrderItem = (index, field, value) => {
+    setOrderItems((current) =>
+      current.map((row, rowIndex) => {
+        if (rowIndex !== index) return row;
+        const nextRow = { ...row, [field]: value };
+        if (field === 'currentQuantity') {
+          const currentQuantity = numberValue(value);
+          const previous = numberValue(nextRow.previousQuantity);
+          const execution = numberValue(nextRow.executionQuantity);
+          nextRow.currentQuantity = currentQuantity;
+          nextRow.cumulativeQuantity = previous + currentQuantity;
+          nextRow.executionRatio = execution > 0 ? (nextRow.cumulativeQuantity / execution) * 100 : 0;
+        }
+        return nextRow;
+      }),
     );
+  };
 
-  const handleDownloadTemplate =
-    async () => {
-      setDownloading(true);
-      setMessage(null);
+  const saveOrder = async (status = 'draft') => {
+    if (!projectName || isLocked) return;
+    if (!order.orderDate) {
+      notify('warning', '발주일을 입력해주세요.');
+      return;
+    }
+    if (orderItems.length === 0) {
+      notify('warning', '발주 자재를 하나 이상 추가해주세요.');
+      return;
+    }
+    if (status === 'confirmed' && orderItems.every((row) => numberValue(row.currentQuantity) <= 0)) {
+      notify('warning', '금회발주량을 입력해주세요.');
+      return;
+    }
 
-      try {
-        const response =
-          await fetch(
-            TEMPLATE_URL,
-            {
-              cache:
-                'no-store',
-            },
-          );
+    setSaving(true);
+    try {
+      let orderId = order.id;
+      let orderNo = order.orderNo;
 
-        if (!response.ok) {
-          throw new Error(
-            '발주서 양식 파일을 찾지 못했습니다. public/templates/발주서양식.xlsx 경로를 확인해주세요.',
-          );
-        }
-
-        const arrayBuffer =
-          await response.arrayBuffer();
-
-        const workbook =
-          new ExcelJS.Workbook();
-
-        try {
-          await workbook.xlsx.load(
-            arrayBuffer,
-          );
-        } catch (loadError) {
-          console.error(
-            '발주서 양식 ExcelJS 읽기 실패:',
-            loadError,
-          );
-
-          throw new Error(
-            '발주서 양식 내부 형식을 읽지 못했습니다. public/templates/발주서양식.xlsx 파일을 최신 호환 양식으로 교체해주세요.',
-          );
-        }
-
-        clearWorkbookDefinedNames(
-          workbook,
+      if (!orderId) {
+        const { data: nextNo, error: numberError } = await supabase.rpc(
+          'next_material_supply_order_no',
+          { p_project_name: projectName, p_order_date: order.orderDate },
         );
-
-        const worksheet =
-          workbook.getWorksheet(
-            '발주서',
-          ) ||
-          workbook.worksheets[0];
-
-        if (!worksheet) {
-          throw new Error(
-            '발주서 시트를 찾지 못했습니다.',
-          );
-        }
-
-        const today =
-          getKoreaTodayKey();
-
-        const [
-          year,
-          month,
-          day,
-        ] = today
-          .split('-')
-          .map(Number);
-
-        const authorName =
-          userProfile
-            ?.manager_name ||
-          userProfile
-            ?.name ||
-          '';
-
-        const clearOrderBlock =
-          ({
-            titleRow,
-            itemStartRow,
-            itemEndRow,
-          }) => {
-            const infoRow1 =
-              titleRow + 1;
-
-            const infoRow2 =
-              titleRow + 2;
-
-            const infoRow3 =
-              titleRow + 3;
-
-            worksheet.getCell(
-              `B${infoRow1}`,
-            ).value =
-              new Date(
-                year,
-                month - 1,
-                day,
-              );
-
-            worksheet.getCell(
-              `B${infoRow1}`,
-            ).numFmt =
-              'yyyy.mm.dd';
-
-            worksheet.getCell(
-              `B${infoRow2}`,
-            ).value =
-              authorName;
-
-            worksheet.getCell(
-              `B${infoRow3}`,
-            ).value =
-              projectName;
-
-            worksheet.getCell(
-              `F${infoRow1}`,
-            ).value = null;
-
-            worksheet.getCell(
-              `F${infoRow2}`,
-            ).value = null;
-
-            worksheet.getCell(
-              `G${infoRow2}`,
-            ).value = null;
-
-            worksheet.getCell(
-              `F${infoRow3}`,
-            ).value = null;
-
-            for (
-              let row =
-                itemStartRow;
-              row <= itemEndRow;
-              row += 1
-            ) {
-              [
-                'A',
-                'B',
-                'C',
-                'E',
-                'F',
-                'G',
-                'H',
-                'K',
-              ].forEach(
-                (column) => {
-                  worksheet.getCell(
-                    `${column}${row}`,
-                  ).value = null;
-                },
-              );
-
-              worksheet.getCell(
-                `I${row}`,
-              ).value = {
-                formula:
-                  `IF(AND(G${row}="",H${row}=""),"",N(G${row})+N(H${row}))`,
-              };
-
-              worksheet.getCell(
-                `J${row}`,
-              ).value = {
-                formula:
-                  `IFERROR(I${row}/F${row},"-")`,
-              };
-
-              worksheet.getCell(
-                `J${row}`,
-              ).numFmt =
-                '0%';
-            }
-          };
-
-        clearOrderBlock({
-          titleRow: 1,
-          itemStartRow: 7,
-          itemEndRow: 27,
-        });
-
-        /*
-          이름 범위를 제거한 뒤 정상 인쇄영역만 다시 지정합니다.
-          숨김 시스템 시트는 만들지 않습니다.
-        */
-        worksheet.pageSetup.printArea =
-          'A1:K27';
-
-        workbook.calcProperties.fullCalcOnLoad =
-          true;
-
-        workbook.calcProperties.forceFullCalc =
-          true;
-
-        const outputBuffer =
-          await workbook.xlsx.writeBuffer();
-
-        const blob =
-          new Blob(
-            [outputBuffer],
-            {
-              type:
-                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-            },
-          );
-
-        const url =
-          URL.createObjectURL(
-            blob,
-          );
-
-        const link =
-          document.createElement(
-            'a',
-          );
-
-        link.href = url;
-
-        link.download =
-          `자재발주서_${safeFileName(
-            projectName,
-          )}_${today.replace(
-            /-/g,
-            '',
-          )}.xlsx`;
-
-        document.body.appendChild(
-          link,
-        );
-
-        link.click();
-
-        document.body.removeChild(
-          link,
-        );
-
-        URL.revokeObjectURL(
-          url,
-        );
-
-        setMessage({
-          severity:
-            'success',
-          text:
-            '현재 현장명과 작성일을 반영한 자재발주서 양식을 다운로드했습니다.',
-        });
-      } catch (error) {
-        console.error(
-          '자재발주서 다운로드 실패:',
-          error,
-        );
-
-        setMessage({
-          severity: 'error',
-          text:
-            error?.message ||
-            '자재발주서 양식을 다운로드하지 못했습니다.',
-        });
-      } finally {
-        setDownloading(false);
-      }
-    };
-
-  const analyzeFile =
-    async (file) => {
-      if (!file) {
-        return;
+        if (numberError) throw numberError;
+        orderNo = nextNo;
       }
 
-      const lowerName =
-        file.name.toLowerCase();
+      const headerPayload = {
+        project_name: projectName,
+        order_no: orderNo,
+        order_date: order.orderDate,
+        requester_name: normalizeText(order.requesterName) || null,
+        delivery_date: order.deliveryDate || null,
+        delivery_location: normalizeText(order.deliveryLocation) || null,
+        receiver_name: normalizeText(order.receiverName) || null,
+        receiver_phone: normalizeText(order.receiverPhone) || null,
+        category_id: order.categoryId || null,
+        process_name: normalizeText(order.processName) || null,
+        note: normalizeText(order.note) || null,
+        status,
+        updated_by: currentUserId || null,
+        updated_at: new Date().toISOString(),
+        ...(status === 'confirmed' ? { confirmed_at: new Date().toISOString() } : {}),
+      };
 
-      if (
-        !lowerName.endsWith(
-          '.xlsx',
-        ) &&
-        !lowerName.endsWith(
-          '.xlsm',
-        )
-      ) {
-        setMessage({
-          severity: 'error',
-          text:
-            '엑셀 파일(.xlsx 또는 .xlsm)만 업로드할 수 있습니다.',
-        });
-
-        return;
+      if (!orderId) {
+        const { data: inserted, error } = await supabase
+          .from('material_supply_orders')
+          .insert({ ...headerPayload, created_by: currentUserId || null })
+          .select('id')
+          .single();
+        if (error) throw error;
+        orderId = inserted.id;
+      } else {
+        const { error } = await supabase
+          .from('material_supply_orders')
+          .update(headerPayload)
+          .eq('id', orderId)
+          .eq('status', 'draft');
+        if (error) throw error;
+        const { error: deleteError } = await supabase
+          .from('material_supply_order_items')
+          .delete()
+          .eq('order_id', orderId);
+        if (deleteError) throw deleteError;
       }
 
-      setAnalyzing(true);
-      setAnalysis(null);
-      setMessage(null);
+      const refreshedItems = status === 'confirmed' ? await refreshBalances(orderItems) : orderItems;
+      const itemPayloads = refreshedItems.map((row, index) => ({
+        order_id: orderId,
+        material_id: row.materialId,
+        sort_order: index + 1,
+        category_id: row.categoryId || null,
+        process_name: row.processName || null,
+        standard_name: row.standardName,
+        specification: row.specification || null,
+        unit: row.unit || null,
+        execution_quantity: numberValue(row.executionQuantity),
+        previous_order_quantity: numberValue(row.previousQuantity),
+        current_order_quantity: numberValue(row.currentQuantity),
+        cumulative_order_quantity: numberValue(row.previousQuantity) + numberValue(row.currentQuantity),
+        execution_ratio:
+          numberValue(row.executionQuantity) > 0
+            ? ((numberValue(row.previousQuantity) + numberValue(row.currentQuantity)) /
+                numberValue(row.executionQuantity)) *
+              100
+            : 0,
+        note: normalizeText(row.note) || null,
+      }));
 
-      try {
-        const result =
-          await parseOrderWorkbook({
-            file,
-            projectName,
-          });
+      const { error: itemError } = await supabase
+        .from('material_supply_order_items')
+        .insert(itemPayloads);
+      if (itemError) throw itemError;
 
-        setAnalysis(
-          result,
+      notify('success', status === 'confirmed' ? '발주서를 발주완료 처리했습니다.' : '발주서를 저장했습니다.');
+      await loadOrders();
+      const savedRow = {
+        ...order,
+        id: orderId,
+        order_no: orderNo,
+        order_date: order.orderDate,
+        requester_name: order.requesterName,
+        delivery_date: order.deliveryDate,
+        delivery_location: order.deliveryLocation,
+        receiver_name: order.receiverName,
+        receiver_phone: order.receiverPhone,
+        category_id: order.categoryId,
+        process_name: order.processName,
+        note: order.note,
+        status,
+      };
+      await openOrder(savedRow);
+    } catch (error) {
+      if (!handleSchemaError(error)) notify('error', `발주서 저장 실패: ${error.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteDraft = async () => {
+    if (!order.id || order.status !== 'draft') return;
+    if (!window.confirm(`${order.orderNo || '현재 발주서'}를 삭제할까요?`)) return;
+    const { error } = await supabase.from('material_supply_orders').delete().eq('id', order.id).eq('status', 'draft');
+    if (error) {
+      notify('error', `발주서 삭제 실패: ${error.message}`);
+      return;
+    }
+    notify('success', '작성중 발주서를 삭제했습니다.');
+    createNewOrder();
+    loadOrders();
+  };
+
+  const openNewMaster = () => {
+    setMasterForm({
+      ...EMPTY_MASTER,
+      categoryId: masterCategoryId || categories[0]?.id || '',
+    });
+    setMasterDialogOpen(true);
+  };
+
+  const openEditMaster = (row) => {
+    setMasterForm({
+      id: row.id,
+      categoryId: row.category_id || '',
+      processName: row.process_name || '',
+      standardName: row.standard_name || '',
+      specification: row.specification || '',
+      unit: row.unit || '',
+      manufacturer: row.manufacturer || '',
+      aliasesText: Array.isArray(row.aliases) ? row.aliases.join(', ') : '',
+      executionQuantity: row.execution_quantity ?? '',
+      note: row.project_note || row.note || '',
+      isActive: row.is_active !== false,
+    });
+    setMasterDialogOpen(true);
+  };
+
+  const saveMaster = async () => {
+    const standardName = normalizeText(masterForm.standardName);
+    if (!standardName) {
+      notify('warning', '표준 품명을 입력해주세요.');
+      return;
+    }
+    if (!masterForm.categoryId) {
+      notify('warning', '자재분류를 선택해주세요.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const aliases = masterForm.aliasesText
+        .split(',')
+        .map(normalizeText)
+        .filter(Boolean);
+      const payload = {
+        category_id: masterForm.categoryId,
+        process_name: normalizeText(masterForm.processName) || null,
+        standard_name: standardName,
+        specification: normalizeText(masterForm.specification) || null,
+        unit: normalizeText(masterForm.unit) || null,
+        manufacturer: normalizeText(masterForm.manufacturer) || null,
+        aliases,
+        search_text: buildSearchText(masterForm),
+        note: normalizeText(masterForm.note) || null,
+        is_active: masterForm.isActive !== false,
+        updated_by: currentUserId || null,
+        updated_at: new Date().toISOString(),
+      };
+
+      let materialId = masterForm.id;
+      if (materialId) {
+        const { error } = await supabase.from('material_master_items').update(payload).eq('id', materialId);
+        if (error) throw error;
+      } else {
+        const { data, error } = await supabase
+          .from('material_master_items')
+          .insert({ ...payload, created_by: currentUserId || null })
+          .select('id')
+          .single();
+        if (error) throw error;
+        materialId = data.id;
+      }
+
+      const { error: projectError } = await supabase
+        .from('material_project_materials')
+        .upsert(
+          {
+            project_name: projectName,
+            material_id: materialId,
+            execution_quantity: numberValue(masterForm.executionQuantity),
+            note: normalizeText(masterForm.note) || null,
+            updated_by: currentUserId || null,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'project_name,material_id' },
         );
+      if (projectError) throw projectError;
 
-        if (
-          result.errors.length >
-          0
-        ) {
-          setMessage({
-            severity: 'error',
-            text:
-              '양식 오류가 발견되었습니다. 아래 오류 내용을 확인해주세요.',
-          });
-        } else {
-          setMessage({
-            severity:
-              'success',
-            text:
-              `${result.orders.length}건의 발주서와 ${result.totalItemCount}개 발주 품목을 확인했습니다.`,
-          });
-        }
-      } catch (error) {
-        console.error(
-          '자재발주서 분석 실패:',
-          error,
-        );
+      notify('success', masterForm.id ? '자재 마스터를 수정했습니다.' : '자재 마스터를 등록했습니다.');
+      setMasterDialogOpen(false);
+      await loadMasterRows();
+    } catch (error) {
+      notify('error', `자재 마스터 저장 실패: ${error.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
 
-        setMessage({
-          severity: 'error',
-          text:
-            error?.message ||
-            '엑셀 파일을 분석하지 못했습니다.',
-        });
-      } finally {
-        setAnalyzing(false);
+  const addCategory = async () => {
+    const name = normalizeText(newCategoryName);
+    if (!name) return;
+    const nextSort = categories.reduce((max, row) => Math.max(max, Number(row.sort_order || 0)), 0) + 10;
+    const { error } = await supabase.from('material_supply_categories').insert({
+      name,
+      sort_order: nextSort,
+      is_active: true,
+      created_by: currentUserId || null,
+      updated_by: currentUserId || null,
+    });
+    if (error) {
+      notify('error', error.code === '23505' ? '이미 등록된 자재분류입니다.' : `분류 추가 실패: ${error.message}`);
+      return;
+    }
+    setNewCategoryName('');
+    notify('success', `자재분류 "${name}"을 추가했습니다.`);
+    loadCategories();
+  };
 
-        if (
-          fileInputRef.current
-        ) {
-          fileInputRef.current.value =
-            '';
-        }
-      }
-    };
+  const orderSummary = useMemo(() => {
+    const execution = orderItems.reduce((sum, row) => sum + numberValue(row.executionQuantity), 0);
+    const current = orderItems.reduce((sum, row) => sum + numberValue(row.currentQuantity), 0);
+    const cumulative = orderItems.reduce((sum, row) => sum + numberValue(row.cumulativeQuantity), 0);
+    return { execution, current, cumulative };
+  }, [orderItems]);
 
-  const handleFileChange =
-    (event) => {
-      const file =
-        event.target.files?.[0];
-
-      analyzeFile(file);
-    };
-
-  const handleSave =
-    async () => {
-      if (
-        !analysis ||
-        analysis.errors.length >
-          0 ||
-        analysis.orders.length ===
-          0
-      ) {
-        return;
-      }
-
-      setSaving(true);
-      setMessage(null);
-
-      try {
-        const {
-          data: authData,
-        } =
-          await supabase.auth.getUser();
-
-        const userEmail =
-          authData?.user?.email ||
-          '';
-
-        let savedOrderCount =
-          0;
-
-        let duplicateOrderCount =
-          0;
-
-        let savedItemCount =
-          0;
-
-        for (
-          const order of
-          analysis.orders
-        ) {
-          const {
-            data: existing,
-            error:
-              existingError,
-          } = await supabase
-            .from(
-              'material_orders',
-            )
-            .select('id')
-            .eq(
-              'project_name',
-              projectName,
-            )
-            .eq(
-              'source_file_hash',
-              analysis.fileHash,
-            )
-            .eq(
-              'source_sheet_name',
-              order.sheetName,
-            )
-            .eq(
-              'source_block_no',
-              order.blockNo,
-            )
-            .maybeSingle();
-
-          if (existingError) {
-            throw existingError;
-          }
-
-          if (existing?.id) {
-            duplicateOrderCount +=
-              1;
-
-            continue;
-          }
-
-          const orderCode =
-            [
-              (
-                order.orderDate ||
-                getKoreaTodayKey()
-              ).replace(
-                /-/g,
-                '',
-              ),
-              analysis.fileHash.slice(
-                0,
-                8,
-              ),
-              order.blockNo,
-            ].join('-');
-
-          const {
-            data:
-              insertedOrder,
-            error:
-              orderInsertError,
-          } = await supabase
-            .from(
-              'material_orders',
-            )
-            .insert({
-              project_name:
-                projectName,
-              order_code:
-                orderCode,
-              order_date:
-                order.orderDate,
-              delivery_date:
-                order.deliveryDate ||
-                null,
-              author_name:
-                order.authorName ||
-                null,
-              delivery_location:
-                order.deliveryLocation ||
-                null,
-              receiver_name:
-                order.receiverName ||
-                null,
-              receiver_phone:
-                order.receiverPhone ||
-                null,
-              source_file_name:
-                analysis.fileName,
-              source_file_hash:
-                analysis.fileHash,
-              source_sheet_name:
-                order.sheetName,
-              source_block_no:
-                order.blockNo,
-              template_version:
-                analysis.templateVersion,
-              status: 'saved',
-              raw_metadata: {
-                excelProjectName:
-                  order.excelProjectName,
-                ignoredRowCount:
-                  order.ignoredRowCount,
-              },
-              created_by:
-                userEmail ||
-                null,
-            })
-            .select('id')
-            .single();
-
-          if (orderInsertError) {
-            throw orderInsertError;
-          }
-
-          const itemPayload =
-            order.items.map(
-              (item) => ({
-                order_id:
-                  insertedOrder.id,
-                line_no:
-                  item.lineNo,
-                source_row:
-                  item.sourceRow,
-                category:
-                  item.category ||
-                  null,
-                item_name:
-                  item.itemName,
-                specification:
-                  item.specification ||
-                  null,
-                unit:
-                  item.unit ||
-                  null,
-                execution_quantity:
-                  item.executionQuantity,
-                previous_order_quantity:
-                  item.previousOrderQuantity,
-                current_order_quantity:
-                  item.currentOrderQuantity,
-                cumulative_order_quantity:
-                  item.cumulativeOrderQuantity,
-                execution_ratio:
-                  item.executionRatio,
-                note:
-                  item.note ||
-                  null,
-                raw_row:
-                  item.rawRow,
-              }),
-            );
-
-          try {
-            for (
-              const chunk of
-              splitIntoChunks(
-                itemPayload,
-                ITEM_INSERT_CHUNK_SIZE,
-              )
-            ) {
-              const {
-                error:
-                  itemInsertError,
-              } = await supabase
-                .from(
-                  'material_order_items',
-                )
-                .insert(
-                  chunk,
-                );
-
-              if (
-                itemInsertError
-              ) {
-                throw itemInsertError;
-              }
-            }
-          } catch (itemError) {
-            await supabase
-              .from(
-                'material_orders',
-              )
-              .delete()
-              .eq(
-                'id',
-                insertedOrder.id,
-              );
-
-            throw itemError;
-          }
-
-          savedOrderCount +=
-            1;
-
-          savedItemCount +=
-            itemPayload.length;
-        }
-
-        const duplicateText =
-          duplicateOrderCount >
-          0
-            ? ` · 중복 ${duplicateOrderCount}건 제외`
-            : '';
-
-        setMessage({
-          severity:
-            'success',
-          text:
-            `${savedOrderCount}건의 발주서와 ${savedItemCount}개 품목을 저장했습니다.${duplicateText}`,
-        });
-
-        await loadRecentOrders();
-      } catch (error) {
-        console.error(
-          '자재발주 저장 실패:',
-          error,
-        );
-
-        setMessage({
-          severity: 'error',
-          text:
-            error?.code ===
-              '42P01'
-              ? '자재발주 테이블이 없습니다. 제공된 SQL을 먼저 실행해주세요.'
-              : error?.message ||
-                '자재발주 데이터를 저장하지 못했습니다.',
-        });
-      } finally {
-        setSaving(false);
-      }
-    };
+  const visibleOrders = useMemo(
+    () => orders.filter((row) => (mainTab === 'history' ? row.status !== 'draft' : true)),
+    [mainTab, orders],
+  );
 
   return (
-    <Box
-      sx={{
-        height: '100%',
-        minHeight: 0,
-        display: 'flex',
-        flexDirection:
-          'column',
-        gap: 1,
-      }}
-    >
-      <Paper
-        variant="outlined"
-        sx={{
-          p: 1.3,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent:
-            'space-between',
-          gap: 1,
-          borderColor:
-            '#cbd5e1',
-          boxShadow: 'none',
-        }}
-      >
-        <Box>
-          <Typography
-            sx={{
-              color: '#1e293b',
-              fontSize: '1rem',
-              fontWeight: 900,
-            }}
-          >
-            자재발주작성
-          </Typography>
-
-          <Typography
-            sx={{
-              mt: 0.2,
-              color: '#64748b',
-              fontSize:
-                '0.7rem',
-            }}
-          >
-            양식 다운로드 → 담당자 작성 → 엑셀 업로드 → 검토 후 저장
+    <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 0.8, p: 1 }}>
+      <Paper variant="outlined" sx={{ px: 1.25, py: 0.8, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+        <Box sx={{ minWidth: 210 }}>
+          <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#0f172a' }}>자재발주작성</Typography>
+          <Typography sx={{ mt: 0.1, fontSize: '0.64rem', color: '#64748b', fontWeight: 700 }}>
+            {projectName} · 표준 자재명칭 / 실행물량 / 누계발주율 통합관리
           </Typography>
         </Box>
 
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 0.7,
-          }}
+        <Stack direction="row" spacing={0.5} sx={{ ml: 1 }}>
+          <Button
+            size="small"
+            variant={supplyTab === 'private' ? 'contained' : 'outlined'}
+            onClick={() => setSupplyTab('private')}
+            sx={{ fontWeight: 800 }}
+          >
+            사급자재
+          </Button>
+          <Button size="small" variant="outlined" disabled sx={{ fontWeight: 800 }}>
+            지급자재 · 2차 개발
+          </Button>
+        </Stack>
+
+        <Tabs
+          value={mainTab}
+          onChange={(_, value) => setMainTab(value)}
+          sx={{ ml: 'auto', minHeight: 34, '& .MuiTab-root': { minHeight: 34, py: 0.4, fontSize: '0.72rem', fontWeight: 850 } }}
         >
-          <Button
-            variant="outlined"
-            onClick={() =>
-              setGuideOpen(true)
-            }
-            sx={{
-              fontWeight: 800,
+          <Tab value="order" icon={<AddShoppingCartRoundedIcon fontSize="small" />} iconPosition="start" label="발주서 작성" />
+          <Tab value="master" icon={<Inventory2RoundedIcon fontSize="small" />} iconPosition="start" label="자재 마스터" />
+          <Tab value="history" icon={<HistoryRoundedIcon fontSize="small" />} iconPosition="start" label="발주이력" />
+        </Tabs>
+
+        <Tooltip title="새로고침" arrow>
+          <IconButton
+            size="small"
+            onClick={() => {
+              loadCategories();
+              loadOrders();
+              if (mainTab === 'master') loadMasterRows();
             }}
           >
-            작성 안내
-          </Button>
-
-          <Button
-            variant="contained"
-            color="success"
-            startIcon={
-              downloading
-                ? (
-                  <CircularProgress
-                    size={16}
-                    color="inherit"
-                  />
-                )
-                : (
-                  <DownloadIcon />
-                )
-            }
-            onClick={
-              handleDownloadTemplate
-            }
-            disabled={
-              downloading ||
-              !projectName
-            }
-            sx={{
-              fontWeight: 900,
-            }}
-          >
-            발주서 양식 다운로드
-          </Button>
-
-          <input
-            ref={fileInputRef}
-            type="file"
-            hidden
-            accept=".xlsx,.xlsm"
-            onChange={
-              handleFileChange
-            }
-          />
-
-          <Button
-            variant="contained"
-            startIcon={
-              analyzing
-                ? (
-                  <CircularProgress
-                    size={16}
-                    color="inherit"
-                  />
-                )
-                : (
-                  <UploadFileIcon />
-                )
-            }
-            onClick={() =>
-              fileInputRef.current?.click()
-            }
-            disabled={
-              analyzing ||
-              saving ||
-              !projectName
-            }
-            sx={{
-              fontWeight: 900,
-            }}
-          >
-            작성 발주서 업로드
-          </Button>
-        </Box>
+            <RefreshRoundedIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
       </Paper>
 
-      {(
-        analyzing ||
-        saving
-      ) && (
-        <LinearProgress />
-      )}
-
-      {message && (
-        <Alert
-          severity={
-            message.severity
-          }
-          onClose={() =>
-            setMessage(null)
-          }
-        >
-          {message.text}
+      {schemaMissing && (
+        <Alert severity="warning" sx={{ py: 0.25 }}>
+          자재발주 1차 DB SQL이 적용되지 않았습니다. 패키지의 <b>supabase_v52.48.5.44.120_material_order_phase1.sql</b>을 Supabase SQL Editor에서 먼저 실행해주세요.
         </Alert>
       )}
 
-      {analysis && (
-        <Paper
-          variant="outlined"
-          sx={{
-            p: 1.2,
-            borderColor:
-              analysis.errors
-                .length > 0
-                ? '#fca5a5'
-                : '#cbd5e1',
-            boxShadow: 'none',
-          }}
-        >
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems:
-                'center',
-              justifyContent:
-                'space-between',
-              gap: 1,
-            }}
-          >
-            <Box>
-              <Typography
-                sx={{
-                  color:
-                    '#1e293b',
-                  fontSize:
-                    '0.82rem',
-                  fontWeight: 900,
-                }}
-              >
-                업로드 파일 검토
-              </Typography>
-
-              <Typography
-                sx={{
-                  mt: 0.15,
-                  color:
-                    '#64748b',
-                  fontSize:
-                    '0.66rem',
-                }}
-              >
-                {analysis.fileName}
-                {' · '}
-                양식 버전{' '}
-                {
-                  analysis.templateVersion
-                }
-              </Typography>
-            </Box>
-
-            <Box
-              sx={{
-                display: 'flex',
-                gap: 0.5,
-              }}
-            >
-              <Chip
-                size="small"
-                label={`발주서 ${analysis.orders.length}건`}
-              />
-
-              <Chip
-                size="small"
-                color="primary"
-                label={`품목 ${analysis.totalItemCount}개`}
-              />
-
-              <Chip
-                size="small"
-                color="success"
-                label={`금회수량 ${formatNumber(analysis.totalCurrentQuantity)}`}
-              />
-            </Box>
-          </Box>
-
-          {analysis.errors.map(
-            (error, index) => (
-              <Alert
-                key={`error-${index}`}
-                severity="error"
-                sx={{ mt: 0.7 }}
-              >
-                {error}
-              </Alert>
-            ),
-          )}
-
-          {analysis.warnings.map(
-            (
-              warning,
-              index,
-            ) => (
-              <Alert
-                key={`warning-${index}`}
-                severity="warning"
-                sx={{ mt: 0.7 }}
-              >
-                {warning}
-              </Alert>
-            ),
-          )}
-
-          <TableContainer
-            sx={{
-              mt: 1,
-              maxHeight: 350,
-              border:
-                '1px solid #e2e8f0',
-            }}
-          >
-            <Table
-              stickyHeader
+      {supplyTab !== 'private' ? (
+        <Paper variant="outlined" sx={{ flex: 1, display: 'grid', placeItems: 'center' }}>
+          <Typography sx={{ color: '#94a3b8', fontWeight: 800 }}>지급자재 신청은 타입별 소요량 + 골구도 회차 연동 방식으로 2차 개발 예정입니다.</Typography>
+        </Paper>
+      ) : mainTab === 'master' ? (
+        <Paper variant="outlined" sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <Stack direction="row" spacing={0.7} alignItems="center" sx={{ p: 0.8, borderBottom: '1px solid #e2e8f0' }}>
+            <TextField
               size="small"
-            >
+              value={masterSearch}
+              onChange={(event) => setMasterSearch(event.target.value)}
+              onKeyDown={(event) => event.key === 'Enter' && loadMasterRows()}
+              placeholder="표준품명 · 규격 · 별칭 검색"
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start"><SearchRoundedIcon fontSize="small" /></InputAdornment>
+                ),
+              }}
+              sx={{ width: 320 }}
+            />
+            <TextField select size="small" label="자재분류" value={masterCategoryId} onChange={(event) => setMasterCategoryId(event.target.value)} sx={{ width: 170 }}>
+              <MenuItem value="">전체 분류</MenuItem>
+              {categories.map((row) => <MenuItem key={row.id} value={row.id}>{row.name}</MenuItem>)}
+            </TextField>
+            <Button variant="outlined" onClick={loadMasterRows} startIcon={<SearchRoundedIcon />} disabled={masterLoading}>조회</Button>
+            <Button variant="outlined" onClick={() => setCategoryDialogOpen(true)} startIcon={<CategoryRoundedIcon />}>분류 관리</Button>
+            <Button variant="contained" onClick={openNewMaster} startIcon={<AddRoundedIcon />} sx={{ ml: 'auto !important' }}>자재 등록</Button>
+          </Stack>
+
+          <TableContainer sx={{ flex: 1, minHeight: 0 }}>
+            <Table stickyHeader size="small">
               <TableHead>
                 <TableRow>
-                  {[
-                    '발주서',
-                    '작성일',
-                    '납품일',
-                    '분류',
-                    '품명',
-                    '규격',
-                    '단위',
-                    '실행물량',
-                    '전회발주',
-                    '금회발주',
-                    '예상누계',
-                    '비고',
-                  ].map(
-                    (header) => (
-                      <TableCell
-                        key={header}
-                        align={
-                          [
-                            '실행물량',
-                            '전회발주',
-                            '금회발주',
-                            '예상누계',
-                          ].includes(
-                            header,
-                          )
-                            ? 'right'
-                            : 'left'
-                        }
-                        sx={{
-                          fontWeight: 900,
-                          bgcolor:
-                            '#f8fafc',
-                          whiteSpace:
-                            'nowrap',
-                        }}
-                      >
-                        {header}
-                      </TableCell>
-                    ),
-                  )}
+                  {['분류', '공정', '표준 품명', '표준 규격', '단위', '제조사', '실행물량', '별칭', '수정'].map((label) => (
+                    <TableCell key={label} align={['실행물량', '수정'].includes(label) ? 'center' : 'left'} sx={{ fontWeight: 900, bgcolor: '#f8fafc', whiteSpace: 'nowrap' }}>{label}</TableCell>
+                  ))}
                 </TableRow>
               </TableHead>
-
               <TableBody>
-                {previewItems
-                  .slice(0, 300)
-                  .map(
-                    (
-                      item,
-                      index,
-                    ) => (
-                      <TableRow
-                        key={`${item.sheetName}-${item.blockNo}-${item.sourceRow}-${index}`}
-                        hover
-                      >
-                        <TableCell>
-                          {item.blockNo}
-                        </TableCell>
-
-                        <TableCell>
-                          {formatDate(
-                            item.orderDate,
-                          )}
-                        </TableCell>
-
-                        <TableCell>
-                          {formatDate(
-                            item.deliveryDate,
-                          )}
-                        </TableCell>
-
-                        <TableCell>
-                          {item.category ||
-                            '-'}
-                        </TableCell>
-
-                        <TableCell
-                          sx={{
-                            fontWeight: 800,
-                            minWidth: 150,
-                          }}
-                        >
-                          {item.itemName}
-                        </TableCell>
-
-                        <TableCell>
-                          {item.specification ||
-                            '-'}
-                        </TableCell>
-
-                        <TableCell>
-                          {item.unit ||
-                            '-'}
-                        </TableCell>
-
-                        <TableCell align="right">
-                          {item.executionQuantity ===
-                          null
-                            ? '-'
-                            : formatNumber(
-                                item.executionQuantity,
-                              )}
-                        </TableCell>
-
-                        <TableCell align="right">
-                          {item.previousOrderQuantity ===
-                          null
-                            ? '-'
-                            : formatNumber(
-                                item.previousOrderQuantity,
-                              )}
-                        </TableCell>
-
-                        <TableCell
-                          align="right"
-                          sx={{
-                            color:
-                              '#1d4ed8',
-                            fontWeight: 900,
-                          }}
-                        >
-                          {formatNumber(
-                            item.currentOrderQuantity,
-                          )}
-                        </TableCell>
-
-                        <TableCell align="right">
-                          {formatNumber(
-                            item.cumulativeOrderQuantity,
-                          )}
-                        </TableCell>
-
-                        <TableCell>
-                          {item.note ||
-                            ''}
-                        </TableCell>
-                      </TableRow>
-                    ),
-                  )}
+                {masterLoading ? (
+                  <TableRow><TableCell colSpan={9} align="center" sx={{ py: 6 }}><CircularProgress size={24} /></TableCell></TableRow>
+                ) : masterRows.length === 0 ? (
+                  <TableRow><TableCell colSpan={9} align="center" sx={{ py: 8, color: '#94a3b8' }}>등록된 자재가 없거나 검색 결과가 없습니다.</TableCell></TableRow>
+                ) : masterRows.map((row) => (
+                  <TableRow key={row.id} hover>
+                    <TableCell>{categoryNameById(categories, row.category_id)}</TableCell>
+                    <TableCell>{row.process_name || '-'}</TableCell>
+                    <TableCell sx={{ fontWeight: 850 }}>{row.standard_name}</TableCell>
+                    <TableCell>{row.specification || '-'}</TableCell>
+                    <TableCell>{row.unit || '-'}</TableCell>
+                    <TableCell>{row.manufacturer || '-'}</TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 850 }}>{formatNumber(row.execution_quantity)}</TableCell>
+                    <TableCell sx={{ maxWidth: 260 }}>
+                      <Stack direction="row" spacing={0.35} useFlexGap flexWrap="wrap">
+                        {(row.aliases || []).slice(0, 4).map((alias) => <Chip key={alias} label={alias} size="small" variant="outlined" />)}
+                        {(row.aliases || []).length > 4 && <Chip label={`+${row.aliases.length - 4}`} size="small" />}
+                      </Stack>
+                    </TableCell>
+                    <TableCell align="center"><IconButton size="small" onClick={() => openEditMaster(row)}><EditRoundedIcon fontSize="small" /></IconButton></TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           </TableContainer>
-
-          {previewItems.length >
-            300 && (
-            <Typography
-              sx={{
-                mt: 0.5,
-                color: '#64748b',
-                fontSize:
-                  '0.66rem',
-              }}
-            >
-              미리보기는 앞의 300개 품목까지만 표시됩니다. 전체 품목은 모두 저장됩니다.
-            </Typography>
-          )}
-
-          <Box
-            sx={{
-              mt: 1,
-              display: 'flex',
-              justifyContent:
-                'flex-end',
-            }}
-          >
-            <Button
-              variant="contained"
-              color="primary"
-              startIcon={
-                saving
-                  ? (
-                    <CircularProgress
-                      size={16}
-                      color="inherit"
-                    />
-                  )
-                  : (
-                    <SaveIcon />
-                  )
-              }
-              disabled={
-                saving ||
-                analysis.errors
-                  .length > 0 ||
-                analysis.orders
-                  .length === 0
-              }
-              onClick={
-                handleSave
-              }
-              sx={{
-                fontWeight: 900,
-              }}
-            >
-              검토한 발주서 저장
-            </Button>
-          </Box>
         </Paper>
+      ) : (
+        <Box sx={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: '300px minmax(0, 1fr)', gap: 0.8 }}>
+          <Paper variant="outlined" sx={{ minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <Stack direction="row" alignItems="center" sx={{ px: 0.9, py: 0.7, borderBottom: '1px solid #e2e8f0' }}>
+              <Typography sx={{ fontSize: '0.78rem', fontWeight: 900 }}>발주서 목록</Typography>
+              <Chip label={`${visibleOrders.length}건`} size="small" sx={{ ml: 0.5 }} />
+              <Button size="small" startIcon={<AddRoundedIcon />} onClick={createNewOrder} sx={{ ml: 'auto' }}>새 발주서</Button>
+            </Stack>
+            <Box sx={{ flex: 1, overflowY: 'auto' }}>
+              {visibleOrders.length === 0 ? (
+                <Box sx={{ height: '100%', minHeight: 220, display: 'grid', placeItems: 'center', color: '#94a3b8', fontSize: '0.72rem' }}>발주서가 없습니다.</Box>
+              ) : visibleOrders.map((row) => {
+                const selected = row.id === order.id;
+                return (
+                  <Box
+                    key={row.id}
+                    onClick={() => openOrder(row)}
+                    sx={{ px: 1, py: 0.8, cursor: 'pointer', borderBottom: '1px solid #edf2f7', bgcolor: selected ? '#eff6ff' : '#fff', '&:hover': { bgcolor: selected ? '#eff6ff' : '#f8fafc' } }}
+                  >
+                    <Stack direction="row" alignItems="center" spacing={0.6}>
+                      <Typography sx={{ fontSize: '0.75rem', fontWeight: 900, color: '#0f172a' }}>{row.order_no}</Typography>
+                      <Chip
+                        label={ORDER_STATUS_LABELS[row.status] || row.status}
+                        size="small"
+                        color={row.status === 'confirmed' ? 'success' : row.status === 'draft' ? 'warning' : 'default'}
+                        variant="outlined"
+                        sx={{ ml: 'auto' }}
+                      />
+                    </Stack>
+                    <Typography sx={{ mt: 0.25, fontSize: '0.66rem', color: '#475569', fontWeight: 750 }}>{row.order_date} · {row.process_name || categoryNameById(categories, row.category_id)}</Typography>
+                    <Typography noWrap sx={{ mt: 0.1, fontSize: '0.62rem', color: '#94a3b8' }}>요청자 {row.requester_name || '-'} · 납품 {row.delivery_date || '-'}</Typography>
+                  </Box>
+                );
+              })}
+            </Box>
+          </Paper>
+
+          <Paper variant="outlined" sx={{ minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <Stack direction="row" alignItems="center" spacing={0.7} sx={{ px: 1, py: 0.7, borderBottom: '1px solid #e2e8f0' }}>
+              <Typography sx={{ fontSize: '0.82rem', fontWeight: 900 }}>사급자재 발주서</Typography>
+              {order.orderNo && <Chip label={order.orderNo} size="small" variant="outlined" />}
+              {order.status !== 'draft' && <Chip label={ORDER_STATUS_LABELS[order.status]} size="small" color={order.status === 'confirmed' ? 'success' : 'default'} />}
+              <Stack direction="row" spacing={0.5} sx={{ ml: 'auto' }}>
+                {!isLocked && order.id && <Button size="small" color="error" variant="outlined" onClick={deleteDraft} startIcon={<DeleteOutlineRoundedIcon />}>삭제</Button>}
+                {!isLocked && <Button size="small" variant="outlined" onClick={() => saveOrder('draft')} disabled={saving} startIcon={<SaveRoundedIcon />}>저장</Button>}
+                {!isLocked && <Button size="small" variant="contained" color="success" onClick={() => saveOrder('confirmed')} disabled={saving} startIcon={<CheckCircleRoundedIcon />}>발주완료</Button>}
+              </Stack>
+            </Stack>
+
+            <Box sx={{ p: 0.9, borderBottom: '1px solid #e2e8f0' }}>
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: 0.7 }}>
+                <TextField size="small" label="발주일" type="date" InputLabelProps={{ shrink: true }} value={order.orderDate} onChange={(e) => setOrder((current) => ({ ...current, orderDate: e.target.value }))} disabled={isLocked} />
+                <TextField size="small" label="요청자" value={order.requesterName} onChange={(e) => setOrder((current) => ({ ...current, requesterName: e.target.value }))} disabled={isLocked} />
+                <TextField select size="small" label="자재분류" value={order.categoryId} onChange={(e) => setOrder((current) => ({ ...current, categoryId: e.target.value }))} disabled={isLocked}>
+                  <MenuItem value="">전체/혼합</MenuItem>
+                  {categories.map((row) => <MenuItem key={row.id} value={row.id}>{row.name}</MenuItem>)}
+                </TextField>
+                <Autocomplete freeSolo size="small" options={PROCESS_OPTIONS} value={order.processName || ''} onInputChange={(_, value) => setOrder((current) => ({ ...current, processName: value }))} disabled={isLocked} renderInput={(params) => <TextField {...params} label="공정" />} />
+                <TextField size="small" label="납품희망일" type="date" InputLabelProps={{ shrink: true }} value={order.deliveryDate} onChange={(e) => setOrder((current) => ({ ...current, deliveryDate: e.target.value }))} disabled={isLocked} />
+                <TextField size="small" label="납품장소" value={order.deliveryLocation} onChange={(e) => setOrder((current) => ({ ...current, deliveryLocation: e.target.value }))} disabled={isLocked} />
+                <TextField size="small" label="수령자" value={order.receiverName} onChange={(e) => setOrder((current) => ({ ...current, receiverName: e.target.value }))} disabled={isLocked} />
+                <TextField size="small" label="연락처" value={order.receiverPhone} onChange={(e) => setOrder((current) => ({ ...current, receiverPhone: e.target.value }))} disabled={isLocked} />
+                <TextField size="small" label="비고" value={order.note} onChange={(e) => setOrder((current) => ({ ...current, note: e.target.value }))} disabled={isLocked} sx={{ gridColumn: 'span 4' }} />
+              </Box>
+            </Box>
+
+            <Stack direction="row" alignItems="center" spacing={1} sx={{ px: 0.9, py: 0.6, borderBottom: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
+              <Typography sx={{ fontSize: '0.72rem', fontWeight: 900 }}>발주 품목 {orderItems.length}개</Typography>
+              <Typography sx={{ fontSize: '0.65rem', color: '#64748b' }}>실행물량 합계 {formatNumber(orderSummary.execution)}</Typography>
+              <Typography sx={{ fontSize: '0.65rem', color: '#2563eb', fontWeight: 850 }}>금회 {formatNumber(orderSummary.current)}</Typography>
+              <Typography sx={{ fontSize: '0.65rem', color: '#0f766e', fontWeight: 850 }}>누계 {formatNumber(orderSummary.cumulative)}</Typography>
+              {!isLocked && <Button size="small" variant="contained" onClick={() => setMaterialPickerOpen(true)} startIcon={<AddRoundedIcon />} sx={{ ml: 'auto !important' }}>자재 추가</Button>}
+            </Stack>
+
+            <TableContainer sx={{ flex: 1, minHeight: 0 }}>
+              <Table stickyHeader size="small">
+                <TableHead>
+                  <TableRow>
+                    {['No', '품명', '규격', '단위', '실행물량', '전회발주량', '금회발주량', '누계발주량', '발주율', '비고', ''].map((label) => (
+                      <TableCell key={label} align={['No', '단위', '실행물량', '전회발주량', '금회발주량', '누계발주량', '발주율', ''].includes(label) ? 'center' : 'left'} sx={{ bgcolor: '#f8fafc', fontWeight: 900, whiteSpace: 'nowrap' }}>{label}</TableCell>
+                    ))}
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {loading ? (
+                    <TableRow><TableCell colSpan={11} align="center" sx={{ py: 7 }}><CircularProgress size={24} /></TableCell></TableRow>
+                  ) : orderItems.length === 0 ? (
+                    <TableRow><TableCell colSpan={11} align="center" sx={{ py: 9, color: '#94a3b8' }}>자재 추가를 눌러 표준 자재 마스터에서 발주품목을 선택해주세요.</TableCell></TableRow>
+                  ) : orderItems.map((row, index) => {
+                    const over = row.executionRatio > 100;
+                    return (
+                      <TableRow key={`${row.materialId}-${index}`} hover>
+                        <TableCell align="center">{index + 1}</TableCell>
+                        <TableCell sx={{ fontWeight: 850 }}>{row.standardName}</TableCell>
+                        <TableCell>{row.specification || '-'}</TableCell>
+                        <TableCell align="center">{row.unit || '-'}</TableCell>
+                        <TableCell align="right">{formatNumber(row.executionQuantity)}</TableCell>
+                        <TableCell align="right">{formatNumber(row.previousQuantity)}</TableCell>
+                        <TableCell sx={{ width: 120 }}>
+                          <TextField
+                            size="small"
+                            type="number"
+                            value={row.currentQuantity}
+                            onChange={(event) => updateOrderItem(index, 'currentQuantity', event.target.value)}
+                            disabled={isLocked}
+                            inputProps={{ min: 0, step: 'any', style: { textAlign: 'right' } }}
+                          />
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 850 }}>{formatNumber(row.cumulativeQuantity)}</TableCell>
+                        <TableCell align="center">
+                          <Chip label={`${row.executionRatio.toFixed(1)}%`} size="small" color={over ? 'error' : row.executionRatio >= 90 ? 'warning' : 'default'} variant={over ? 'filled' : 'outlined'} />
+                        </TableCell>
+                        <TableCell sx={{ minWidth: 170 }}>
+                          <TextField size="small" fullWidth value={row.note} onChange={(event) => updateOrderItem(index, 'note', event.target.value)} disabled={isLocked} />
+                        </TableCell>
+                        <TableCell align="center">
+                          {!isLocked && <IconButton size="small" color="error" onClick={() => setOrderItems((current) => current.filter((_, rowIndex) => rowIndex !== index))}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton>}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </Paper>
+        </Box>
       )}
 
-      <Paper
-        variant="outlined"
-        sx={{
-          flexGrow: 1,
-          minHeight: 0,
-          display: 'flex',
-          flexDirection:
-            'column',
-          overflow: 'hidden',
-          borderColor:
-            '#cbd5e1',
-          boxShadow: 'none',
-        }}
-      >
-        <Box
-          sx={{
-            px: 1.2,
-            py: 0.8,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent:
-              'space-between',
-          }}
-        >
-          <Typography
-            sx={{
-              color: '#334155',
-              fontSize:
-                '0.78rem',
-              fontWeight: 900,
-            }}
-          >
-            최근 저장 발주서
-          </Typography>
-
-          <Button
-            size="small"
-            startIcon={
-              <RefreshIcon />
-            }
-            onClick={
-              loadRecentOrders
-            }
-            disabled={
-              recentLoading
-            }
-          >
-            새로고침
-          </Button>
-        </Box>
-
-        <Divider />
-
-        <TableContainer
-          sx={{
-            flexGrow: 1,
-            minHeight: 0,
-          }}
-        >
-          <Table
-            stickyHeader
-            size="small"
-          >
-            <TableHead>
-              <TableRow>
-                {[
-                  '발주번호',
-                  '작성일',
-                  '납품일',
-                  '작성자',
-                  '원본 파일',
-                  '시트/발주서',
-                  '저장시각',
-                ].map(
-                  (header) => (
-                    <TableCell
-                      key={header}
-                      sx={{
-                        fontWeight: 900,
-                        bgcolor:
-                          '#f8fafc',
-                      }}
-                    >
-                      {header}
-                    </TableCell>
-                  ),
-                )}
-              </TableRow>
-            </TableHead>
-
-            <TableBody>
-              {recentOrders.map(
-                (order) => (
-                  <TableRow
-                    key={order.id}
-                    hover
-                  >
-                    <TableCell
-                      sx={{
-                        fontWeight: 800,
-                      }}
-                    >
-                      {order.order_code}
-                    </TableCell>
-
-                    <TableCell>
-                      {formatDate(
-                        order.order_date,
-                      )}
-                    </TableCell>
-
-                    <TableCell>
-                      {formatDate(
-                        order.delivery_date,
-                      )}
-                    </TableCell>
-
-                    <TableCell>
-                      {order.author_name ||
-                        '-'}
-                    </TableCell>
-
-                    <TableCell>
-                      {order.source_file_name}
-                    </TableCell>
-
-                    <TableCell>
-                      {order.source_sheet_name}
-                      {' / '}
-                      {order.source_block_no}
-                    </TableCell>
-
-                    <TableCell>
-                      {order.created_at
-                        ? new Date(
-                            order.created_at,
-                          ).toLocaleString(
-                            'ko-KR',
-                          )
-                        : '-'}
-                    </TableCell>
+      <Dialog open={materialPickerOpen} onClose={() => setMaterialPickerOpen(false)} fullWidth maxWidth="lg">
+        <DialogTitle sx={{ fontSize: '1rem', fontWeight: 900 }}>표준 자재 선택</DialogTitle>
+        <DialogContent dividers sx={{ p: 1.2 }}>
+          <Stack direction="row" spacing={0.7} sx={{ mb: 1 }}>
+            <TextField
+              autoFocus
+              size="small"
+              value={materialPickerSearch}
+              onChange={(event) => setMaterialPickerSearch(event.target.value)}
+              placeholder="품명 · 규격 · 별칭 검색 (예: SQ-Bar, 에스큐바, 40x30)"
+              InputProps={{ startAdornment: <InputAdornment position="start"><SearchRoundedIcon fontSize="small" /></InputAdornment> }}
+              fullWidth
+            />
+            <Button variant="outlined" onClick={loadMaterialPicker}>검색</Button>
+          </Stack>
+          <TableContainer sx={{ maxHeight: '62vh', border: '1px solid #e2e8f0' }}>
+            <Table stickyHeader size="small">
+              <TableHead><TableRow>{['분류', '공정', '품명', '규격', '단위', '실행물량', '기발주누계', '별칭', '추가'].map((label) => <TableCell key={label} sx={{ fontWeight: 900, bgcolor: '#f8fafc' }}>{label}</TableCell>)}</TableRow></TableHead>
+              <TableBody>
+                {materialPickerLoading ? (
+                  <TableRow><TableCell colSpan={9} align="center" sx={{ py: 6 }}><CircularProgress size={24} /></TableCell></TableRow>
+                ) : materialPickerRows.length === 0 ? (
+                  <TableRow><TableCell colSpan={9} align="center" sx={{ py: 6, color: '#94a3b8' }}>검색 결과가 없습니다. 자재 마스터에서 먼저 등록해주세요.</TableCell></TableRow>
+                ) : materialPickerRows.map((row) => (
+                  <TableRow key={row.id} hover>
+                    <TableCell>{categoryNameById(categories, row.category_id)}</TableCell>
+                    <TableCell>{row.process_name || '-'}</TableCell>
+                    <TableCell sx={{ fontWeight: 850 }}>{row.standard_name}</TableCell>
+                    <TableCell>{row.specification || '-'}</TableCell>
+                    <TableCell>{row.unit || '-'}</TableCell>
+                    <TableCell align="right">{formatNumber(row.executionQuantity)}</TableCell>
+                    <TableCell align="right">{formatNumber(row.previousQuantity)}</TableCell>
+                    <TableCell sx={{ maxWidth: 250 }}>{(row.aliases || []).join(', ') || '-'}</TableCell>
+                    <TableCell><Button size="small" variant="outlined" onClick={() => addMaterialToOrder(row)}>추가</Button></TableCell>
                   </TableRow>
-                ),
-              )}
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </DialogContent>
+        <DialogActions><Button onClick={() => setMaterialPickerOpen(false)}>닫기</Button></DialogActions>
+      </Dialog>
 
-              {!recentLoading &&
-                recentOrders.length ===
-                  0 && (
-                <TableRow>
-                  <TableCell
-                    colSpan={7}
-                    align="center"
-                    sx={{
-                      py: 4,
-                      color:
-                        '#94a3b8',
-                    }}
-                  >
-                    저장된 자재발주서가 없습니다.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </Paper>
-
-      <Dialog
-        open={guideOpen}
-        onClose={() =>
-          setGuideOpen(false)
-        }
-        fullWidth
-        maxWidth="sm"
-      >
-        <DialogTitle
-          sx={{
-            fontWeight: 900,
-          }}
-        >
-          자재발주서 작성 및 업로드 안내
-        </DialogTitle>
-
-        <DialogContent
-          dividers
-        >
-          <Typography
-            sx={{
-              fontSize:
-                '0.76rem',
-              lineHeight: 1.7,
-            }}
-          >
-            1. 반드시 이 화면의 ‘발주서 양식 다운로드’ 버튼으로 양식을 받습니다.
-            <br />
-            2. 각 자재 행의 자재분류를 목록에서 선택합니다.
-            <br />
-            3. 품명과 규격은 현장에서 사용하는 표현대로 자유롭게 입력합니다.
-            <br />
-            4. 제조사나 납품업체는 입력하지 않습니다.
-            <br />
-            5. 금회발주량이 0보다 큰 행만 이번 발주 품목으로 저장됩니다.
-            <br />
-            6. 열 제목 또는 발주서 구조가 바뀌면 저장 전에 오류 안내가 표시됩니다.
-            <br />
-            7. 동일 파일을 다시 업로드하면 파일 해시를 확인해 중복 저장을 막습니다.
-          </Typography>
-
-          <Alert
-            severity="info"
-            sx={{ mt: 1 }}
-          >
-            자재분류는 잡자재·경량벽체·단열합지·합판·천정·몰딩·걸레받이·안전용품 중에서 선택하고, 품명과 규격은 자유롭게 입력합니다. 이후 본사에서 동일 자재를 표준 자재로 연결합니다.
+      <Dialog open={masterDialogOpen} onClose={() => !saving && setMasterDialogOpen(false)} fullWidth maxWidth="md">
+        <DialogTitle sx={{ fontSize: '1rem', fontWeight: 900 }}>{masterForm.id ? '자재 마스터 수정' : '자재 마스터 등록'}</DialogTitle>
+        <DialogContent dividers sx={{ p: 1.5 }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 1 }}>
+            <TextField select size="small" label="자재분류" value={masterForm.categoryId} onChange={(e) => setMasterForm((current) => ({ ...current, categoryId: e.target.value }))}>
+              {categories.map((row) => <MenuItem key={row.id} value={row.id}>{row.name}</MenuItem>)}
+            </TextField>
+            <Autocomplete freeSolo size="small" options={PROCESS_OPTIONS} value={masterForm.processName} onInputChange={(_, value) => setMasterForm((current) => ({ ...current, processName: value }))} renderInput={(params) => <TextField {...params} label="공정" />} />
+            <TextField size="small" label="표준 품명" value={masterForm.standardName} onChange={(e) => setMasterForm((current) => ({ ...current, standardName: e.target.value }))} />
+            <TextField size="small" label="표준 규격" value={masterForm.specification} onChange={(e) => setMasterForm((current) => ({ ...current, specification: e.target.value }))} />
+            <TextField size="small" label="단위" value={masterForm.unit} onChange={(e) => setMasterForm((current) => ({ ...current, unit: e.target.value }))} />
+            <TextField size="small" label="제조사/브랜드" value={masterForm.manufacturer} onChange={(e) => setMasterForm((current) => ({ ...current, manufacturer: e.target.value }))} />
+            <TextField size="small" type="number" label={`${projectName} 실행물량`} value={masterForm.executionQuantity} onChange={(e) => setMasterForm((current) => ({ ...current, executionQuantity: e.target.value }))} inputProps={{ min: 0, step: 'any' }} />
+            <TextField size="small" label="검색 별칭" value={masterForm.aliasesText} onChange={(e) => setMasterForm((current) => ({ ...current, aliasesText: e.target.value }))} placeholder="쉼표로 구분: SQ바, 에스큐바, square bar" />
+            <TextField size="small" multiline minRows={2} label="비고" value={masterForm.note} onChange={(e) => setMasterForm((current) => ({ ...current, note: e.target.value }))} sx={{ gridColumn: '1 / -1' }} />
+          </Box>
+          <Alert severity="info" sx={{ mt: 1.2, py: 0.2 }}>
+            담당자가 다른 명칭으로 검색하더라도 이 표준 자재로 귀결되도록 별칭을 충분히 등록해주세요. 발주서에는 항상 <b>표준 품명/규격</b>이 사용됩니다.
           </Alert>
         </DialogContent>
-
-        <DialogActions>
-          <Button
-            onClick={() =>
-              setGuideOpen(
-                false,
-              )
-            }
-          >
-            닫기
-          </Button>
-        </DialogActions>
+        <DialogActions><Button onClick={() => setMasterDialogOpen(false)} disabled={saving}>취소</Button><Button variant="contained" onClick={saveMaster} disabled={saving} startIcon={saving ? <CircularProgress size={14} color="inherit" /> : <SaveRoundedIcon />}>저장</Button></DialogActions>
       </Dialog>
+
+      <Dialog open={categoryDialogOpen} onClose={() => setCategoryDialogOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle sx={{ fontSize: '1rem', fontWeight: 900 }}>자재분류 관리</DialogTitle>
+        <DialogContent dividers sx={{ p: 1.2 }}>
+          <Stack direction="row" spacing={0.7}>
+            <TextField size="small" fullWidth label="새 자재분류" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addCategory()} />
+            <Button variant="contained" onClick={addCategory}>추가</Button>
+          </Stack>
+          <Divider sx={{ my: 1 }} />
+          <Stack spacing={0.5}>
+            {categories.map((row) => <Paper key={row.id} variant="outlined" sx={{ px: 1, py: 0.65, fontSize: '0.75rem', fontWeight: 800 }}>{row.name}</Paper>)}
+          </Stack>
+        </DialogContent>
+        <DialogActions><Button onClick={() => setCategoryDialogOpen(false)}>닫기</Button></DialogActions>
+      </Dialog>
+
+      <Snackbar open={Boolean(toast)} autoHideDuration={3200} onClose={() => setToast(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+        {toast ? <Alert severity={toast.severity} variant="filled" onClose={() => setToast(null)}>{toast.text}</Alert> : undefined}
+      </Snackbar>
     </Box>
   );
 }
