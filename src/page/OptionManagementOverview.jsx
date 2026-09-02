@@ -1,3 +1,4 @@
+// v52.48.5.44.115 옵션비교 저장 불러오기·A4 가로 인쇄
 // v52.48.5.44.114 선택옵션 미해당 세대 회색 빗금
 // v52.48.5.44.32 옵션별 비교 선택옵션 전용 전환
 // v52.48.5.44.28 선택옵션 MenuListContext 누락 백색화면 긴급수정
@@ -30,6 +31,12 @@ import {
   CircularProgress,
   ClickAwayListener,
   Collapse,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Divider,
+  GlobalStyles,
   IconButton,
   Menu,
   MenuItem,
@@ -38,14 +45,19 @@ import {
   Snackbar,
   Stack,
   TextField,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import DownloadRoundedIcon from '@mui/icons-material/DownloadRounded';
 import AddCircleOutlineRoundedIcon from '@mui/icons-material/AddCircleOutlineRounded';
+import BookmarkAddRoundedIcon from '@mui/icons-material/BookmarkAddRounded';
+import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded';
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
+import PrintRoundedIcon from '@mui/icons-material/PrintRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import BuildingGrid from '../BuildingGrid.jsx';
@@ -155,6 +167,10 @@ export default function OptionManagementOverview({
   );
   const [comparisonMenuAnchor, setComparisonMenuAnchor] = useState(null);
   const [activeComparisonSlot, setActiveComparisonSlot] = useState(-1);
+  const [comparisonPresetDialogOpen, setComparisonPresetDialogOpen] =
+    useState(false);
+  const [comparisonPresetName, setComparisonPresetName] = useState('');
+  const [comparisonPresetSaving, setComparisonPresetSaving] = useState(false);
   const [summaryPanelWidth, setSummaryPanelWidth] = useState(
     DEFAULT_SUMMARY_PANEL_WIDTH,
   );
@@ -162,6 +178,7 @@ export default function OptionManagementOverview({
   const fileInputRef = useRef(null);
   const splitPaneRef = useRef(null);
   const resizeStartRef = useRef(null);
+  const printGridRef = useRef(null);
 
   const pageConfig = MODE_CONFIG[mode] || MODE_CONFIG.insulation;
   const isInsulation = mode === 'insulation';
@@ -283,6 +300,12 @@ export default function OptionManagementOverview({
         .filter(Boolean),
     [comparisonChoiceMap, comparisonOptionKeys],
   );
+
+  const comparisonPresets = Array.isArray(
+    selectionDocument?.comparisonPresets,
+  )
+    ? selectionDocument.comparisonPresets
+    : [];
 
   const comparisonDisplayData = useMemo(() => {
     if (!isComparison || selectedComparisonChoices.length === 0) return {};
@@ -444,6 +467,8 @@ export default function OptionManagementOverview({
     );
     setComparisonMenuAnchor(null);
     setActiveComparisonSlot(-1);
+    setComparisonPresetDialogOpen(false);
+    setComparisonPresetName('');
     setSummaryPanelWidth(DEFAULT_SUMMARY_PANEL_WIDTH);
     setMessage(null);
   }, [mode, projectName]);
@@ -679,9 +704,15 @@ export default function OptionManagementOverview({
       if (isInsulation) {
         setOptionData(result.unitValues);
       } else {
-        setSelectionDocument(
-          normalizeSelectionOptionDocument(result.selectionDocument),
+        const normalizedDocument = normalizeSelectionOptionDocument(
+          result.selectionDocument,
         );
+        setSelectionDocument((current) => ({
+          ...normalizedDocument,
+          comparisonPresets: Array.isArray(current?.comparisonPresets)
+            ? current.comparisonPresets
+            : [],
+        }));
       }
       setSelectedHighlight(null);
       setSourceFileName(file.name);
@@ -787,8 +818,241 @@ export default function OptionManagementOverview({
     }
   };
 
+  const persistComparisonPresets = useCallback(
+    async (nextPresets) => {
+      if (!projectName) {
+        setToast({
+          severity: 'warning',
+          text: '현장을 먼저 선택해주세요.',
+        });
+        return false;
+      }
+
+      setComparisonPresetSaving(true);
+      try {
+        const { data: currentRow, error: readError } = await supabase
+          .from('option_status_documents')
+          .select('unit_values, source_file_name')
+          .eq('project_name', projectName)
+          .eq('option_category', 'selection')
+          .maybeSingle();
+
+        if (readError) throw readError;
+
+        const latestDocument = normalizeSelectionOptionDocument(
+          currentRow?.unit_values || selectionDocument,
+        );
+        const nextDocument = {
+          ...latestDocument,
+          comparisonPresets: nextPresets,
+        };
+        const now = new Date().toISOString();
+        const payload = {
+          project_name: projectName,
+          option_category: 'selection',
+          unit_values: nextDocument,
+          source_file_name: currentRow?.source_file_name || null,
+          updated_at: now,
+        };
+
+        if (currentUserId) payload.updated_by = currentUserId;
+
+        const { error: saveError } = await supabase
+          .from('option_status_documents')
+          .upsert(payload, {
+            onConflict: 'project_name,option_category',
+          });
+
+        if (saveError) throw saveError;
+
+        setSelectionDocument(nextDocument);
+        return true;
+      } catch (error) {
+        console.error('옵션비교 프리셋 저장 오류:', error);
+        if (isMissingOptionTableError(error)) setSchemaMissing(true);
+        setToast({
+          severity: 'error',
+          text: `옵션비교 저장정보를 반영하지 못했습니다: ${
+            error?.message || '알 수 없는 오류'
+          }`,
+        });
+        return false;
+      } finally {
+        setComparisonPresetSaving(false);
+      }
+    },
+    [
+      currentUserId,
+      projectName,
+      selectionDocument,
+    ],
+  );
+
+  const handleSaveComparisonPreset = async () => {
+    const name = comparisonPresetName.trim();
+
+    if (!name) {
+      setToast({
+        severity: 'warning',
+        text: '저장할 비교명(공정명)을 입력해주세요.',
+      });
+      return;
+    }
+
+    const optionNames = selectedComparisonChoices.map(
+      (choice) => choice.optionName,
+    );
+
+    if (optionNames.length === 0) {
+      setToast({
+        severity: 'warning',
+        text: '먼저 비교할 옵션을 하나 이상 선택해주세요.',
+      });
+      return;
+    }
+
+    const now = new Date().toISOString();
+    const normalizedName = name.toLocaleLowerCase('ko-KR');
+    const existingPreset = comparisonPresets.find(
+      (preset) =>
+        String(preset?.name || '')
+          .trim()
+          .toLocaleLowerCase('ko-KR') === normalizedName,
+    );
+
+    const preset = {
+      id:
+        existingPreset?.id ||
+        (globalThis.crypto?.randomUUID?.() ||
+          `comparison-preset-${Date.now()}`),
+      name,
+      optionNames,
+      createdAt: existingPreset?.createdAt || now,
+      updatedAt: now,
+      updatedBy: currentUserId || '',
+    };
+
+    const nextPresets = existingPreset
+      ? comparisonPresets.map((row) =>
+          row.id === existingPreset.id ? preset : row,
+        )
+      : [preset, ...comparisonPresets].slice(0, 50);
+
+    const saved = await persistComparisonPresets(nextPresets);
+    if (!saved) return;
+
+    setComparisonPresetName('');
+    setToast({
+      severity: 'success',
+      text: existingPreset
+        ? `"${name}" 비교 구성을 업데이트했습니다.`
+        : `"${name}" 비교 구성을 저장했습니다.`,
+    });
+  };
+
+  const handleLoadComparisonPreset = (preset) => {
+    const optionNames = Array.isArray(preset?.optionNames)
+      ? preset.optionNames
+      : [];
+    const validKeys = optionNames
+      .map((optionName) => `selection:${optionName}`)
+      .filter((optionKey) => comparisonChoiceMap.has(optionKey))
+      .slice(0, COMPARISON_OPTION_SLOT_STYLES.length);
+    const nextKeys = Array(COMPARISON_OPTION_SLOT_STYLES.length).fill('');
+
+    validKeys.forEach((optionKey, index) => {
+      nextKeys[index] = optionKey;
+    });
+
+    setComparisonOptionKeys(nextKeys);
+    setComparisonPresetDialogOpen(false);
+
+    const missingCount = optionNames.length - validKeys.length;
+    setToast({
+      severity: missingCount > 0 ? 'warning' : 'success',
+      text:
+        missingCount > 0
+          ? `"${preset.name}"을 불러왔습니다. 현재 양식에 없는 옵션 ${missingCount}개는 제외했습니다.`
+          : `"${preset.name}" 비교 구성을 불러왔습니다.`,
+    });
+  };
+
+  const handleDeleteComparisonPreset = async (preset) => {
+    if (
+      !window.confirm(
+        `"${preset?.name || '비교 구성'}" 저장정보를 삭제할까요?`,
+      )
+    ) {
+      return;
+    }
+
+    const nextPresets = comparisonPresets.filter(
+      (row) => row.id !== preset.id,
+    );
+    const saved = await persistComparisonPresets(nextPresets);
+    if (!saved) return;
+
+    setToast({
+      severity: 'success',
+      text: `"${preset.name}" 비교 구성을 삭제했습니다.`,
+    });
+  };
+
+  const handlePrintComparison = () => {
+    if (!isComparison) return;
+
+    const gridElement = printGridRef.current;
+    const contentWidth = Math.max(
+      Number(gridElement?.scrollWidth) || 0,
+      Number(gridElement?.getBoundingClientRect?.().width) || 0,
+      1080,
+    );
+    const contentHeight = Math.max(
+      Number(gridElement?.scrollHeight) || 0,
+      Number(gridElement?.getBoundingClientRect?.().height) || 0,
+      520,
+    );
+    const printableWidth = 1040;
+    const printableHeight = 700;
+    const scale = Math.max(
+      0.35,
+      Math.min(
+        1,
+        printableWidth / contentWidth,
+        printableHeight / (contentHeight + 115),
+      ),
+    );
+
+    document.documentElement.style.setProperty(
+      '--option-comparison-print-scale',
+      String(scale),
+    );
+    document.body.classList.add('option-comparison-printing');
+
+    const cleanup = () => {
+      document.body.classList.remove('option-comparison-printing');
+      document.documentElement.style.removeProperty(
+        '--option-comparison-print-scale',
+      );
+    };
+
+    window.addEventListener('afterprint', cleanup, { once: true });
+    window.setTimeout(() => {
+      try {
+        window.print();
+      } catch (error) {
+        cleanup();
+        setToast({
+          severity: 'error',
+          text: '인쇄 창을 열지 못했습니다.',
+        });
+      }
+    }, 80);
+  };
+
   return (
     <Box
+      className={isComparison ? 'option-comparison-print-root' : undefined}
       sx={{
         height: '100%',
         minHeight: 0,
@@ -797,6 +1061,60 @@ export default function OptionManagementOverview({
         gap: 1,
       }}
     >
+      {isComparison && (
+        <GlobalStyles
+          styles={{
+            '@page': {
+              size: 'A4 landscape',
+              margin: '7mm',
+            },
+            '@media print': {
+              'html, body': {
+                background: '#ffffff !important',
+              },
+              'body.option-comparison-printing *': {
+                visibility: 'hidden !important',
+              },
+              'body.option-comparison-printing .option-comparison-print-root, body.option-comparison-printing .option-comparison-print-root *': {
+                visibility: 'visible !important',
+              },
+              'body.option-comparison-printing .option-comparison-print-root': {
+                position: 'absolute !important',
+                left: '0 !important',
+                top: '0 !important',
+                width: 'max-content !important',
+                height: 'auto !important',
+                minHeight: '0 !important',
+                overflow: 'visible !important',
+                background: '#ffffff !important',
+                zoom: 'var(--option-comparison-print-scale, 1)',
+              },
+              'body.option-comparison-printing .option-comparison-print-hide': {
+                display: 'none !important',
+              },
+              'body.option-comparison-printing .option-comparison-slot-clear': {
+                display: 'none !important',
+              },
+              'body.option-comparison-printing .option-comparison-building-panel': {
+                overflow: 'visible !important',
+                minWidth: '0 !important',
+                width: 'max-content !important',
+                border: 'none !important',
+                padding: '0 !important',
+                background: '#ffffff !important',
+              },
+              'body.option-comparison-printing .option-comparison-building-content': {
+                minHeight: '0 !important',
+                paddingBottom: '0 !important',
+              },
+              'body.option-comparison-printing .MuiSnackbar-root': {
+                display: 'none !important',
+              },
+            },
+          }}
+        />
+      )}
+
       <Paper
         variant="outlined"
         sx={{
@@ -922,7 +1240,70 @@ export default function OptionManagementOverview({
           ) : null}
         </Stack>
 
-        <SystemRefreshButton onClick={handleRefresh} label={`${pageConfig.title} 새로고침`} />
+        <Stack
+          className={isComparison ? 'option-comparison-print-hide' : undefined}
+          direction="row"
+          spacing={0.55}
+          alignItems="center"
+        >
+          {isComparison && (
+            <>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<FolderOpenRoundedIcon />}
+                onClick={() => setComparisonPresetDialogOpen(true)}
+                disabled={loading || comparisonPresetSaving}
+                sx={{
+                  ...HEADER_CONTROL_SX,
+                  whiteSpace: 'nowrap',
+                  borderColor: '#c4b5fd',
+                  color: '#6d28d9',
+                  '&:hover': {
+                    borderColor: '#8b5cf6',
+                    bgcolor: '#f5f3ff',
+                  },
+                }}
+              >
+                옵션 불러오기
+              </Button>
+
+              <Tooltip title="A4 가로 인쇄" arrow>
+                <span>
+                  <IconButton
+                    type="button"
+                    size="small"
+                    aria-label="A4 가로 인쇄"
+                    onClick={handlePrintComparison}
+                    disabled={loading || buildingEntries.length === 0}
+                    sx={{
+                      width: '30px !important',
+                      height: '30px !important',
+                      minWidth: 30,
+                      p: '5px !important',
+                      color: '#475569',
+                      bgcolor: '#ffffff',
+                      border: '1px solid #cbd5e1',
+                      borderRadius: '4px !important',
+                      '&:hover': {
+                        color: '#2563eb',
+                        borderColor: '#93c5fd',
+                        bgcolor: '#eff6ff',
+                      },
+                    }}
+                  >
+                    <PrintRoundedIcon fontSize="small" />
+                  </IconButton>
+                </span>
+              </Tooltip>
+            </>
+          )}
+
+          <SystemRefreshButton
+            onClick={handleRefresh}
+            label={`${pageConfig.title} 새로고침`}
+          />
+        </Stack>
       </Paper>
 
       {message && <Alert severity={message.severity}>{message.text}</Alert>}
@@ -1039,6 +1420,7 @@ export default function OptionManagementOverview({
 
                   {selectedChoice && (
                     <IconButton
+                      className="option-comparison-slot-clear"
                       aria-label={`${selectedChoice.optionName} 비교 취소`}
                       title="비교 옵션 취소"
                       size="small"
@@ -1378,6 +1760,7 @@ export default function OptionManagementOverview({
         }}
       >
         <Paper
+          className={isComparison ? 'option-comparison-building-panel' : undefined}
           variant="outlined"
           sx={{
             flex: 1,
@@ -1429,6 +1812,8 @@ export default function OptionManagementOverview({
             </Box>
           ) : (
             <Box
+              ref={printGridRef}
+              className={isComparison ? 'option-comparison-building-content' : undefined}
               sx={{
                 minWidth: 'max-content',
                 minHeight: '100%',
@@ -1683,6 +2068,218 @@ export default function OptionManagementOverview({
           </Box>
         )}
       </Box>
+
+      <Dialog
+        open={isComparison && comparisonPresetDialogOpen}
+        onClose={() => {
+          if (!comparisonPresetSaving) {
+            setComparisonPresetDialogOpen(false);
+            setComparisonPresetName('');
+          }
+        }}
+        fullWidth
+        maxWidth="sm"
+      >
+        <DialogTitle sx={{ pb: 1, fontSize: '1rem', fontWeight: 900 }}>
+          옵션 비교 저장 · 불러오기
+        </DialogTitle>
+
+        <DialogContent dividers sx={{ p: 1.5 }}>
+          <Typography
+            sx={{
+              mb: 0.8,
+              color: '#475569',
+              fontSize: '0.72rem',
+              fontWeight: 800,
+            }}
+          >
+            현재 선택한 옵션만 공정별 비교 구성으로 저장합니다.
+          </Typography>
+
+          <Stack direction="row" spacing={0.8} alignItems="stretch">
+            <TextField
+              size="small"
+              label="저장명(공정명)"
+              placeholder="예: 침실2 발코니확장"
+              value={comparisonPresetName}
+              onChange={(event) => setComparisonPresetName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  handleSaveComparisonPreset();
+                }
+              }}
+              disabled={comparisonPresetSaving}
+              sx={{ flex: 1 }}
+            />
+            <Button
+              variant="contained"
+              startIcon={
+                comparisonPresetSaving ? (
+                  <CircularProgress size={14} color="inherit" />
+                ) : (
+                  <BookmarkAddRoundedIcon />
+                )
+              }
+              onClick={handleSaveComparisonPreset}
+              disabled={
+                comparisonPresetSaving ||
+                selectedComparisonChoices.length === 0
+              }
+              sx={{ minWidth: 128, whiteSpace: 'nowrap' }}
+            >
+              현재 비교 저장
+            </Button>
+          </Stack>
+
+          <Box
+            sx={{
+              mt: 1,
+              minHeight: 34,
+              px: 1,
+              py: 0.7,
+              borderRadius: 1,
+              bgcolor: '#f8fafc',
+              border: '1px solid #e2e8f0',
+            }}
+          >
+            <Typography
+              sx={{
+                color: '#64748b',
+                fontSize: '0.62rem',
+                fontWeight: 800,
+              }}
+            >
+              현재 선택
+            </Typography>
+            <Typography
+              sx={{
+                mt: 0.15,
+                color: '#0f172a',
+                fontSize: '0.72rem',
+                fontWeight: 850,
+              }}
+            >
+              {selectedComparisonChoices.length > 0
+                ? selectedComparisonChoices
+                    .map((choice) => choice.optionName)
+                    .join(' · ')
+                : '선택된 옵션 없음'}
+            </Typography>
+          </Box>
+
+          <Divider sx={{ my: 1.4 }} />
+
+          <Typography
+            sx={{
+              mb: 0.7,
+              color: '#0f172a',
+              fontSize: '0.75rem',
+              fontWeight: 900,
+            }}
+          >
+            저장된 비교 구성 {comparisonPresets.length.toLocaleString()}개
+          </Typography>
+
+          {comparisonPresets.length === 0 ? (
+            <Box
+              sx={{
+                py: 3,
+                textAlign: 'center',
+                color: '#94a3b8',
+                fontSize: '0.72rem',
+              }}
+            >
+              저장된 옵션 비교 구성이 없습니다.
+            </Box>
+          ) : (
+            <Stack spacing={0.7}>
+              {comparisonPresets.map((preset) => (
+                <Paper
+                  key={preset.id}
+                  variant="outlined"
+                  sx={{
+                    px: 1,
+                    py: 0.8,
+                    display: 'grid',
+                    gridTemplateColumns: 'minmax(0, 1fr) auto auto',
+                    gap: 0.65,
+                    alignItems: 'center',
+                    borderColor: '#e2e8f0',
+                    boxShadow: 'none',
+                  }}
+                >
+                  <Box sx={{ minWidth: 0 }}>
+                    <Typography
+                      noWrap
+                      sx={{
+                        color: '#0f172a',
+                        fontSize: '0.76rem',
+                        fontWeight: 900,
+                      }}
+                    >
+                      {preset.name}
+                    </Typography>
+                    <Typography
+                      noWrap
+                      title={(preset.optionNames || []).join(' · ')}
+                      sx={{
+                        mt: 0.18,
+                        color: '#64748b',
+                        fontSize: '0.64rem',
+                        fontWeight: 700,
+                      }}
+                    >
+                      {(preset.optionNames || []).join(' · ')}
+                    </Typography>
+                  </Box>
+
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    onClick={() => handleLoadComparisonPreset(preset)}
+                    disabled={comparisonPresetSaving}
+                    sx={{ whiteSpace: 'nowrap' }}
+                  >
+                    불러오기
+                  </Button>
+
+                  <Tooltip title="저장 구성 삭제" arrow>
+                    <span>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleDeleteComparisonPreset(preset)}
+                        disabled={comparisonPresetSaving}
+                        sx={{
+                          color: '#64748b',
+                          '&:hover': {
+                            color: '#dc2626',
+                            bgcolor: '#fef2f2',
+                          },
+                        }}
+                      >
+                        <DeleteOutlineRoundedIcon fontSize="small" />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                </Paper>
+              ))}
+            </Stack>
+          )}
+        </DialogContent>
+
+        <DialogActions sx={{ px: 1.5, py: 1 }}>
+          <Button
+            onClick={() => {
+              setComparisonPresetDialogOpen(false);
+              setComparisonPresetName('');
+            }}
+            disabled={comparisonPresetSaving}
+          >
+            닫기
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar
         open={Boolean(toast)}

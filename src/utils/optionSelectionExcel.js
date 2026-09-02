@@ -1,3 +1,4 @@
+// v52.48.5.44.115 옵션비교 저장 프리셋 보존
 // v52.48.5.44.106 업무자료실 연동 다운로드 파일명 지정 지원
 // v52.48.5.44.20 선택옵션 30개(D:AG) 확장 및 AH 세대키 이동
 // v52.48.5.44.19 선택옵션 옵션명 검정색·셀에맞춤·열너비 12 및 전체 선택셀 가운데정렬
@@ -151,11 +152,45 @@ export const normalizeSelectionOptionDocument = (value) => {
     };
   });
 
+  const comparisonPresets = (
+    Array.isArray(value?.comparisonPresets)
+      ? value.comparisonPresets
+      : []
+  )
+    .map((preset, index) => {
+      const name = normalizeText(preset?.name);
+      const presetOptionNames = Array.isArray(preset?.optionNames)
+        ? [
+            ...new Set(
+              preset.optionNames
+                .map((optionName) => normalizeText(optionName))
+                .filter((optionName) => optionNames.includes(optionName)),
+            ),
+          ].slice(0, 6)
+        : [];
+
+      if (!name || presetOptionNames.length === 0) return null;
+
+      return {
+        id:
+          normalizeText(preset?.id) ||
+          `comparison-preset-${index + 1}`,
+        name,
+        optionNames: presetOptionNames,
+        createdAt: normalizeText(preset?.createdAt),
+        updatedAt: normalizeText(preset?.updatedAt),
+        updatedBy: normalizeText(preset?.updatedBy),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 50);
+
   return {
     version: 3,
     optionNames,
     unitInfo,
     units,
+    comparisonPresets,
   };
 };
 
