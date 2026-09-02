@@ -1,3 +1,4 @@
+// v52.48.5.44.113 기준계정 권한 비교·복사
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -150,6 +151,64 @@ const normalizeSpecialPermissions = (values) => (
       .filter(Boolean),
   )].sort()
 );
+
+const getCommonEffectivePermissionSet = (draft, templatePermissions) => {
+  const grantedSet = new Set(
+    (Array.isArray(templatePermissions) ? templatePermissions : [])
+      .filter((item) => item.template_code === draft?.permissionTemplateCode)
+      .map((item) => String(item.permission_key || '').trim())
+      .filter(Boolean),
+  );
+
+  normalizePermissionOverrides(draft?.permissionOverrides)
+    .filter((item) => item.scopeKey === PERMISSION_SCOPE_COMMON)
+    .forEach((item) => {
+      if (item.effect === 'allow') grantedSet.add(item.permissionKey);
+      else grantedSet.delete(item.permissionKey);
+    });
+
+  return grantedSet;
+};
+
+const buildCommonOverridesForPermissionCopy = ({
+  targetDraft,
+  desiredGrantedSet,
+  permissions,
+  templatePermissions,
+}) => {
+  const targetTemplateSet = new Set(
+    (Array.isArray(templatePermissions) ? templatePermissions : [])
+      .filter((item) => item.template_code === targetDraft?.permissionTemplateCode)
+      .map((item) => String(item.permission_key || '').trim())
+      .filter(Boolean),
+  );
+
+  const projectSpecificOverrides = normalizePermissionOverrides(
+    targetDraft?.permissionOverrides,
+  ).filter((item) => item.scopeKey !== PERMISSION_SCOPE_COMMON);
+
+  const commonOverrides = (Array.isArray(permissions) ? permissions : [])
+    .filter((permission) => !permission.is_sensitive)
+    .flatMap((permission) => {
+      const permissionKey = String(permission.permission_key || '').trim();
+      if (!permissionKey) return [];
+
+      const desiredGranted = desiredGrantedSet.has(permissionKey);
+      const templateGranted = targetTemplateSet.has(permissionKey);
+      if (desiredGranted === templateGranted) return [];
+
+      return [{
+        scopeKey: PERMISSION_SCOPE_COMMON,
+        permissionKey,
+        effect: desiredGranted ? 'allow' : 'deny',
+      }];
+    });
+
+  return normalizePermissionOverrides([
+    ...projectSpecificOverrides,
+    ...commonOverrides,
+  ]);
+};
 
 const inferDepartmentCode = (organizationType, role = '') => {
   if (organizationType === '외부업체') return 'external';
@@ -804,6 +863,8 @@ export default function UserManagement({ currentUserId = '' }) {
   });
   const [permissionScopeByUser, setPermissionScopeByUser] = useState({});
   const [templateChangeRequest, setTemplateChangeRequest] = useState(null);
+  const [permissionCopySourceId, setPermissionCopySourceId] = useState('');
+  const [permissionCompareOpen, setPermissionCompareOpen] = useState(false);
   const [deleteRequest, setDeleteRequest] = useState(null);
   const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
   const [projectOptions, setProjectOptions] = useState([]);
@@ -1036,6 +1097,157 @@ export default function UserManagement({ currentUserId = '' }) {
       ? permissionScopeByUser[selectedAccount.auth_user_id]
       : PERMISSION_SCOPE_COMMON
     : PERMISSION_SCOPE_COMMON;
+
+  const permissionCopyCandidates = useMemo(
+    () => accounts
+      .filter((account) => (
+        String(account.auth_user_id) !== String(selectedAccount?.auth_user_id || '') &&
+        account.role !== '최고관리자' &&
+        !['pending', 'rejected'].includes(account.account_status || 'pending')
+      ))
+      .slice()
+      .sort((first, second) => String(
+        first.manager_name || first.email || '',
+      ).localeCompare(
+        String(second.manager_name || second.email || ''),
+        'ko',
+        { numeric:true },
+      )),
+    [accounts, selectedAccount?.auth_user_id],
+  );
+
+  const permissionCopySourceAccount = useMemo(
+    () => permissionCopyCandidates.find(
+      (account) => String(account.auth_user_id) === String(permissionCopySourceId),
+    ) || null,
+    [permissionCopyCandidates, permissionCopySourceId],
+  );
+
+  const permissionCopySourceDraft = useMemo(
+    () => permissionCopySourceAccount
+      ? createDraft(
+          permissionCopySourceAccount,
+          accessSettings[permissionCopySourceAccount.auth_user_id],
+        )
+      : null,
+    [accessSettings, permissionCopySourceAccount],
+  );
+
+  const permissionCopyDifferences = useMemo(() => {
+    if (!selectedDraft || !permissionCopySourceDraft) return [];
+
+    const sourceGrantedSet = getCommonEffectivePermissionSet(
+      permissionCopySourceDraft,
+      accessCatalog.templatePermissions,
+    );
+    const targetGrantedSet = getCommonEffectivePermissionSet(
+      selectedDraft,
+      accessCatalog.templatePermissions,
+    );
+
+    const regularDifferences = (accessCatalog.permissions || [])
+      .filter((permission) => !permission.is_sensitive)
+      .filter((permission) => {
+        const permissionKey = String(permission.permission_key || '').trim();
+        return sourceGrantedSet.has(permissionKey) !== targetGrantedSet.has(permissionKey);
+      })
+      .map((permission) => ({
+        key:`regular:${permission.permission_key}`,
+        type:'일반',
+        areaLabel:permission.area_label || '',
+        menuLabel:permission.menu_label || '',
+        actionLabel:permission.action_label || permission.permission_key,
+        sourceGranted:sourceGrantedSet.has(permission.permission_key),
+        targetGranted:targetGrantedSet.has(permission.permission_key),
+      }));
+
+    const sourceSpecialSet = new Set(
+      normalizeSpecialPermissions(permissionCopySourceDraft.specialPermissions),
+    );
+    const targetSpecialSet = new Set(
+      normalizeSpecialPermissions(selectedDraft.specialPermissions),
+    );
+
+    const specialDifferences = (accessCatalog.permissions || [])
+      .filter((permission) => permission.is_sensitive)
+      .filter((permission) => (
+        sourceSpecialSet.has(permission.permission_key) !==
+        targetSpecialSet.has(permission.permission_key)
+      ))
+      .map((permission) => ({
+        key:`special:${permission.permission_key}`,
+        type:'특수',
+        areaLabel:permission.area_label || '',
+        menuLabel:permission.menu_label || '',
+        actionLabel:permission.action_label || permission.permission_key,
+        sourceGranted:sourceSpecialSet.has(permission.permission_key),
+        targetGranted:targetSpecialSet.has(permission.permission_key),
+      }));
+
+    return [...regularDifferences, ...specialDifferences];
+  }, [
+    accessCatalog.permissions,
+    accessCatalog.templatePermissions,
+    permissionCopySourceDraft,
+    selectedDraft,
+  ]);
+
+  useEffect(() => {
+    if (
+      permissionCopySourceId &&
+      !permissionCopyCandidates.some(
+        (account) => String(account.auth_user_id) === String(permissionCopySourceId),
+      )
+    ) {
+      setPermissionCopySourceId('');
+      setPermissionCompareOpen(false);
+    }
+  }, [permissionCopyCandidates, permissionCopySourceId]);
+
+  const applyCopiedPermissions = () => {
+    if (!selectedAccount || !selectedDraft || !permissionCopySourceAccount || !permissionCopySourceDraft) {
+      setErrorMessage('기준 계정을 먼저 선택해주세요.');
+      return;
+    }
+    if (selectedDraft.role === '최고관리자') {
+      setErrorMessage('최고관리자 계정에는 기준계정 권한 복사를 적용하지 않습니다.');
+      return;
+    }
+
+    const sourceGrantedSet = getCommonEffectivePermissionSet(
+      permissionCopySourceDraft,
+      accessCatalog.templatePermissions,
+    );
+
+    setDrafts((previous) => {
+      const current = previous[selectedAccount.auth_user_id] || selectedDraft;
+      return {
+        ...previous,
+        [selectedAccount.auth_user_id]: {
+          ...current,
+          permissionOverrides: buildCommonOverridesForPermissionCopy({
+            targetDraft:current,
+            desiredGrantedSet:sourceGrantedSet,
+            permissions:accessCatalog.permissions,
+            templatePermissions:accessCatalog.templatePermissions,
+          }),
+          specialPermissions: normalizeSpecialPermissions(
+            permissionCopySourceDraft.specialPermissions,
+          ),
+        },
+      };
+    });
+
+    setPermissionScopeByUser((previous) => ({
+      ...previous,
+      [selectedAccount.auth_user_id]:PERMISSION_SCOPE_COMMON,
+    }));
+    setPermissionCompareOpen(false);
+    setErrorMessage('');
+    setSuccessMessage(
+      `${permissionCopySourceAccount.manager_name || permissionCopySourceAccount.email}의 공통 권한을 ${selectedAccount.manager_name || selectedAccount.email} 계정에 적용했습니다. 아직 저장되지 않았으므로 하단의 '권한 저장'을 눌러주세요.`,
+    );
+  };
 
   const changeDraft = (userId, field, value) => {
     setDrafts((previous) => {
@@ -2086,6 +2298,112 @@ export default function UserManagement({ currentUserId = '' }) {
                     description="Dashboard는 조회·수정·차단으로 지정하고, 다른 메뉴는 필요한 동작을 공통 또는 현장별로 추가·차단합니다."
                   />
                   <Divider sx={{ my: 1.2 }} />
+                  <Box
+                    sx={{
+                      mb:1.2,
+                      p:1.1,
+                      display:'grid',
+                      gap:0.8,
+                      border:'1px solid #bfdbfe',
+                      borderRadius:'9px',
+                      bgcolor:'#f8fbff',
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        display:'flex',
+                        alignItems:{ xs:'flex-start', md:'center' },
+                        justifyContent:'space-between',
+                        flexDirection:{ xs:'column', md:'row' },
+                        gap:0.8,
+                      }}
+                    >
+                      <Box>
+                        <Typography sx={{ color:'#0f172a', fontSize:'0.72rem', fontWeight:900 }}>
+                          기준 계정 권한 복사
+                        </Typography>
+                        <Typography sx={{ mt:0.15, color:'#64748b', fontSize:'0.62rem', lineHeight:1.5 }}>
+                          TEST1 같은 기준 계정을 선택하면 현재 계정과 권한 차이를 확인하고 동일하게 맞출 수 있습니다.
+                        </Typography>
+                      </Box>
+                      {permissionCopySourceAccount && (
+                        <Chip
+                          size="small"
+                          color={permissionCopyDifferences.length > 0 ? 'warning' : 'success'}
+                          variant="outlined"
+                          label={permissionCopyDifferences.length > 0
+                            ? `권한 차이 ${permissionCopyDifferences.length}개`
+                            : '현재 동일'}
+                          sx={{ height:22, fontSize:'0.62rem', bgcolor:'#ffffff' }}
+                        />
+                      )}
+                    </Box>
+
+                    <Box
+                      sx={{
+                        display:'grid',
+                        gridTemplateColumns:{ xs:'1fr', lg:'minmax(280px, 1fr) auto auto' },
+                        gap:0.7,
+                        alignItems:'center',
+                      }}
+                    >
+                      <Autocomplete
+                        size="small"
+                        options={permissionCopyCandidates}
+                        value={permissionCopySourceAccount}
+                        onChange={(_event, value) => {
+                          setPermissionCopySourceId(value?.auth_user_id || '');
+                          setPermissionCompareOpen(false);
+                        }}
+                        isOptionEqualToValue={(option, value) => (
+                          String(option.auth_user_id) === String(value.auth_user_id)
+                        )}
+                        getOptionLabel={(option) => {
+                          const name = String(option.manager_name || option.email || '').trim();
+                          const extra = String(option.position_title || option.role || '').trim();
+                          return extra ? `${name} · ${extra}` : name;
+                        }}
+                        noOptionsText="선택 가능한 기준 계정이 없습니다."
+                        disabled={selectedIsProcessing || selectedDraft.role === '최고관리자'}
+                        renderInput={(params) => (
+                          <TextField
+                            {...params}
+                            label="기준 계정"
+                            placeholder="TEST1 등 계정 검색"
+                          />
+                        )}
+                      />
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => setPermissionCompareOpen(true)}
+                        disabled={!permissionCopySourceAccount || permissionCopyDifferences.length === 0}
+                        sx={{ whiteSpace:'nowrap' }}
+                      >
+                        권한 비교
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="contained"
+                        onClick={applyCopiedPermissions}
+                        disabled={
+                          !permissionCopySourceAccount ||
+                          permissionCopyDifferences.length === 0 ||
+                          selectedIsProcessing ||
+                          selectedDraft.role === '최고관리자'
+                        }
+                        sx={{ whiteSpace:'nowrap', bgcolor:'#0284c7', boxShadow:'none', fontWeight:900 }}
+                      >
+                        동일 권한 적용
+                      </Button>
+                    </Box>
+
+                    <Typography sx={{ color:'#64748b', fontSize:'0.6rem', lineHeight:1.55 }}>
+                      사용자 구분·직급·접근현장·권한 템플릿은 변경하지 않습니다. 기준 계정의
+                      '모든 접근현장 공통' 실제 권한과 특수권한만 맞추며, 대상 계정에 이미 설정된
+                      현장별 예외권한은 유지합니다.
+                    </Typography>
+                  </Box>
                   <DetailedPermissionEditor
                     catalog={accessCatalog}
                     draft={selectedDraft}
@@ -2232,6 +2550,110 @@ export default function UserManagement({ currentUserId = '' }) {
           )}
         </Box>
       </Box>
+
+      <Dialog
+        open={permissionCompareOpen}
+        onClose={() => setPermissionCompareOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontSize:'0.95rem', fontWeight:900 }}>
+          기준 계정 권한 비교
+        </DialogTitle>
+        <DialogContent>
+          <Alert severity="info" sx={{ mb:1.2, fontSize:'0.7rem' }}>
+            기준: {permissionCopySourceAccount?.manager_name || permissionCopySourceAccount?.email || '-'}
+            {' → '}
+            대상: {selectedAccount?.manager_name || selectedAccount?.email || '-'}
+            <br />
+            모든 접근현장 공통 권한과 특수권한의 차이만 표시합니다.
+          </Alert>
+
+          {permissionCopyDifferences.length === 0 ? (
+            <Alert severity="success" sx={{ fontSize:'0.72rem' }}>
+              두 계정의 비교 대상 권한이 동일합니다.
+            </Alert>
+          ) : (
+            <TableContainer
+              sx={{
+                maxHeight:480,
+                border:'1px solid #e2e8f0',
+                borderRadius:'8px',
+              }}
+            >
+              <Table size="small" stickyHeader>
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ width:68, fontSize:'0.64rem', fontWeight:900 }}>구분</TableCell>
+                    <TableCell sx={{ width:190, fontSize:'0.64rem', fontWeight:900 }}>메뉴</TableCell>
+                    <TableCell sx={{ fontSize:'0.64rem', fontWeight:900 }}>동작</TableCell>
+                    <TableCell align="center" sx={{ width:92, fontSize:'0.64rem', fontWeight:900 }}>기준</TableCell>
+                    <TableCell align="center" sx={{ width:92, fontSize:'0.64rem', fontWeight:900 }}>현재</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {permissionCopyDifferences.map((difference) => (
+                    <TableRow key={difference.key} hover>
+                      <TableCell sx={{ fontSize:'0.62rem' }}>
+                        <Chip
+                          size="small"
+                          label={difference.type}
+                          color={difference.type === '특수' ? 'warning' : 'default'}
+                          variant="outlined"
+                          sx={{ height:20, fontSize:'0.58rem' }}
+                        />
+                      </TableCell>
+                      <TableCell sx={{ fontSize:'0.64rem', fontWeight:800 }}>
+                        {difference.menuLabel || difference.areaLabel || '-'}
+                      </TableCell>
+                      <TableCell sx={{ fontSize:'0.64rem' }}>
+                        {difference.actionLabel}
+                      </TableCell>
+                      <TableCell align="center">
+                        <Chip
+                          size="small"
+                          label={difference.sourceGranted ? '허용' : '차단'}
+                          color={difference.sourceGranted ? 'success' : 'error'}
+                          variant="outlined"
+                          sx={{ height:20, fontSize:'0.58rem' }}
+                        />
+                      </TableCell>
+                      <TableCell align="center">
+                        <Chip
+                          size="small"
+                          label={difference.targetGranted ? '허용' : '차단'}
+                          color={difference.targetGranted ? 'success' : 'error'}
+                          variant="outlined"
+                          sx={{ height:20, fontSize:'0.58rem' }}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px:2.4, pb:2, gap:0.6 }}>
+          <Button size="small" onClick={() => setPermissionCompareOpen(false)}>
+            닫기
+          </Button>
+          <Button
+            size="small"
+            variant="contained"
+            onClick={applyCopiedPermissions}
+            disabled={
+              !permissionCopySourceAccount ||
+              permissionCopyDifferences.length === 0 ||
+              selectedIsProcessing ||
+              selectedDraft?.role === '최고관리자'
+            }
+            sx={{ bgcolor:'#0284c7', boxShadow:'none', fontWeight:900 }}
+          >
+            동일 권한 적용
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Dialog
         open={Boolean(deleteRequest)}
