@@ -1,3 +1,4 @@
+// v52.48.5.44.123 기본설정 탭 밑줄 정렬
 // v52.48.5.44.122 자재발주 기본설정·주요자재 실행물량·변경이력
 // v52.48.5.44.121 납품희망일 라벨 상단 고정
 // v52.48.5.44.120 자재발주작성 1차 - 사급자재 표준화·자재마스터·발주작성
@@ -1577,9 +1578,25 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
           value={settingsTab}
           onChange={(_, value) => setSettingsTab(value)}
           sx={{
+            position: 'relative',
             px: 1.5,
             minHeight: 36,
-            borderBottom: '1px solid #e2e8f0',
+            '&::after': {
+              content: '""',
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: '1px',
+              bgcolor: '#e2e8f0',
+              pointerEvents: 'none',
+            },
+            '& .MuiTabs-indicator': {
+              bottom: 0,
+              height: '2px',
+              borderRadius: '2px 2px 0 0',
+              zIndex: 1,
+            },
             '& .MuiTab-root': {
               minHeight: 36,
               py: 0.4,
