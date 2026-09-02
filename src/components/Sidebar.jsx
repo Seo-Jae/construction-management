@@ -1,3 +1,4 @@
+// v52.48.5.44.118 좌측메뉴 목록 폭 고정
 // v52.48.5.44.89 업무자료실 대메뉴
 // v52.48.5.44.47 가이드 설정 최고관리자 전용
 // v52.48.5.44.30 세대물량관리 독립 대메뉴 분리
@@ -583,7 +584,15 @@ export default function Sidebar({
   };
 
   return (
-    <List sx={{ px: 0.75, py: 0.75 }}>
+    <List
+      sx={{
+        width: '100%',
+        minWidth: 0,
+        boxSizing: 'border-box',
+        px: 0.75,
+        py: 0.75,
+      }}
+    >
       {canAccessView('admin-dashboard') && (
         <Tooltip
           title={drawerOpen ? '' : 'Dashboard'}

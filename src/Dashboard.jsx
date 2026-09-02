@@ -1,3 +1,4 @@
+// v52.48.5.44.118 좌측메뉴 스크롤 발생시 폭 고정
 // v52.48.5.44.106 업무자료실 현장연동 시스템양식에 골구도 전달
 // v52.48.5.44.89 업무자료실 메뉴·조회·최고관리자 관리
 // v52.48.5.44.69 지출결의서 소속현장 기본 작성권한
@@ -4172,12 +4173,33 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         open={open}
         sx={{
           width: open ? drawerWidth : 72,
+          minWidth: open ? drawerWidth : 72,
+          maxWidth: open ? drawerWidth : 72,
           flexShrink: 0,
           '& .MuiDrawer-paper': {
             width: open ? drawerWidth : 72,
+            minWidth: open ? drawerWidth : 72,
+            maxWidth: open ? drawerWidth : 72,
             height: 'var(--wooklim-dashboard-viewport-height, 100vh)',
             boxSizing: 'border-box',
             overflowX: 'hidden',
+            overflowY: 'auto',
+            scrollbarGutter: 'stable',
+            scrollbarWidth: 'thin',
+            '&::-webkit-scrollbar': {
+              width: 8,
+            },
+            '&::-webkit-scrollbar-track': {
+              bgcolor: 'transparent',
+            },
+            '&::-webkit-scrollbar-thumb': {
+              bgcolor: 'rgba(148,163,184,0.42)',
+              borderRadius: 999,
+              border: '2px solid #0f172a',
+            },
+            '&::-webkit-scrollbar-thumb:hover': {
+              bgcolor: 'rgba(203,213,225,0.58)',
+            },
             transition: 'width 0.3s',
             bgcolor: '#0f172a',
             color: 'white',
