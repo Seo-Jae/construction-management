@@ -1,3 +1,4 @@
+// v52.48.5.44.117 옵션비교 인쇄 선택색상 강제표시
 // v52.48.5.44.116 옵션비교 인쇄 이중축소 제거
 // v52.48.5.44.115 옵션비교 저장 불러오기·A4 가로 인쇄
 // v52.48.5.44.114 선택옵션 미해당 세대 회색 빗금
@@ -1061,6 +1062,9 @@ export default function OptionManagementOverview({
               },
               'body.option-comparison-printing .option-comparison-print-root, body.option-comparison-printing .option-comparison-print-root *': {
                 visibility: 'visible !important',
+                WebkitPrintColorAdjust: 'exact !important',
+                printColorAdjust: 'exact !important',
+                colorAdjust: 'exact !important',
               },
               'body.option-comparison-printing .option-comparison-print-root': {
                 position: 'absolute !important',
@@ -1096,6 +1100,23 @@ export default function OptionManagementOverview({
               },
               'body.option-comparison-printing .option-comparison-building-content > *': {
                 transform: 'none !important',
+              },
+              'body.option-comparison-printing .wooklim-comparison-segment-active': {
+                WebkitPrintColorAdjust: 'exact !important',
+                printColorAdjust: 'exact !important',
+                colorAdjust: 'exact !important',
+                backgroundColor:
+                  'var(--wooklim-comparison-segment-color) !important',
+                boxShadow:
+                  'inset 0 0 0 999px var(--wooklim-comparison-segment-color) !important',
+                borderTop:
+                  '2px solid var(--wooklim-comparison-segment-color) !important',
+                borderBottom:
+                  '2px solid var(--wooklim-comparison-segment-color) !important',
+              },
+              'body.option-comparison-printing .wooklim-comparison-segment-inactive': {
+                backgroundColor: '#ffffff !important',
+                boxShadow: 'none !important',
               },
               'body.option-comparison-printing .MuiSnackbar-root': {
                 display: 'none !important',
