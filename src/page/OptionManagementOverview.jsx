@@ -1,3 +1,4 @@
+// v52.48.5.44.116 옵션비교 인쇄 이중축소 제거
 // v52.48.5.44.115 옵션비교 저장 불러오기·A4 가로 인쇄
 // v52.48.5.44.114 선택옵션 미해당 세대 회색 빗금
 // v52.48.5.44.32 옵션별 비교 선택옵션 전용 전환
@@ -1001,42 +1002,25 @@ export default function OptionManagementOverview({
   const handlePrintComparison = () => {
     if (!isComparison) return;
 
-    const gridElement = printGridRef.current;
-    const contentWidth = Math.max(
-      Number(gridElement?.scrollWidth) || 0,
-      Number(gridElement?.getBoundingClientRect?.().width) || 0,
-      1080,
-    );
-    const contentHeight = Math.max(
-      Number(gridElement?.scrollHeight) || 0,
-      Number(gridElement?.getBoundingClientRect?.().height) || 0,
-      520,
-    );
-    const printableWidth = 1040;
-    const printableHeight = 700;
-    const scale = Math.max(
-      0.35,
-      Math.min(
-        1,
-        printableWidth / contentWidth,
-        printableHeight / (contentHeight + 115),
-      ),
-    );
+    /*
+      Chrome 인쇄는 A4 가로 폭을 넘어가는 웹 콘텐츠를 인쇄 단계에서
+      자동으로 한 페이지 폭에 맞춰 축소합니다.
 
-    document.documentElement.style.setProperty(
-      '--option-comparison-print-scale',
-      String(scale),
-    );
+      v115에서는 이 브라우저 자동 축소 전에 JS로 zoom을 한 번 더 적용해
+      같은 콘텐츠가 사실상 두 번 축소되는 문제가 있었습니다.
+      그래서 골구도가 용지의 절반 정도만 차지했습니다.
+
+      v116부터는 화면 콘텐츠를 원래 크기로 인쇄 DOM에 전달하고,
+      A4 landscape의 실제 맞춤은 브라우저 인쇄 엔진에 맡깁니다.
+    */
     document.body.classList.add('option-comparison-printing');
 
     const cleanup = () => {
       document.body.classList.remove('option-comparison-printing');
-      document.documentElement.style.removeProperty(
-        '--option-comparison-print-scale',
-      );
     };
 
     window.addEventListener('afterprint', cleanup, { once: true });
+
     window.setTimeout(() => {
       try {
         window.print();
@@ -1066,7 +1050,7 @@ export default function OptionManagementOverview({
           styles={{
             '@page': {
               size: 'A4 landscape',
-              margin: '7mm',
+              margin: '5mm',
             },
             '@media print': {
               'html, body': {
@@ -1087,7 +1071,9 @@ export default function OptionManagementOverview({
                 minHeight: '0 !important',
                 overflow: 'visible !important',
                 background: '#ffffff !important',
-                zoom: 'var(--option-comparison-print-scale, 1)',
+                zoom: '1 !important',
+                transform: 'none !important',
+                transformOrigin: 'top left !important',
               },
               'body.option-comparison-printing .option-comparison-print-hide': {
                 display: 'none !important',
@@ -1106,6 +1092,10 @@ export default function OptionManagementOverview({
               'body.option-comparison-printing .option-comparison-building-content': {
                 minHeight: '0 !important',
                 paddingBottom: '0 !important',
+                transform: 'none !important',
+              },
+              'body.option-comparison-printing .option-comparison-building-content > *': {
+                transform: 'none !important',
               },
               'body.option-comparison-printing .MuiSnackbar-root': {
                 display: 'none !important',
