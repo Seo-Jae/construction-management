@@ -1,3 +1,4 @@
+// v52.48.5.44.119 Dashboard 차단계정 Main 최상단
 // v52.48.5.44.118 좌측메뉴 목록 폭 고정
 // v52.48.5.44.89 업무자료실 대메뉴
 // v52.48.5.44.47 가이드 설정 최고관리자 전용
@@ -323,6 +324,7 @@ export default function Sidebar({
   const canAccessView = (view) => (
     typeof canView !== 'function' || canView(view)
   );
+  const hasDashboardAccess = canAccessView('admin-dashboard');
   const hasDailyMenu = dailyMenus.some((item) => canAccessView(item.value));
   const hasWeeklyOverviewMenu = weeklyOverviewMenus.some((item) => canAccessView(item.value));
   const hasProgressMenu = progressMenus.some((item) => canAccessView(item.value));
@@ -593,7 +595,42 @@ export default function Sidebar({
         py: 0.75,
       }}
     >
-      {canAccessView('admin-dashboard') && (
+      {!hasDashboardAccess && canAccessView('main') && (
+        <Tooltip
+          title={drawerOpen ? '' : 'Main'}
+          placement="right"
+          arrow
+        >
+          <ListItemButton
+            selected={currentView === 'main'}
+            onClick={() => handleViewChange('main')}
+            sx={topMenuSx(currentView === 'main')}
+          >
+            <ListItemIcon
+              sx={{
+                minWidth: 34,
+                color: 'inherit',
+                justifyContent: 'center',
+              }}
+            >
+              <HomeRoundedIcon fontSize="small" />
+            </ListItemIcon>
+
+            <ListItemText
+              primary="Main"
+              primaryTypographyProps={{
+                noWrap: true,
+                fontSize: '0.8rem',
+                fontWeight:
+                  currentView === 'main' ? 700 : 500,
+              }}
+              sx={{ opacity: drawerOpen ? 1 : 0 }}
+            />
+          </ListItemButton>
+        </Tooltip>
+      )}
+
+      {hasDashboardAccess && (
         <Tooltip
           title={drawerOpen ? '' : 'Dashboard'}
           placement="right"
@@ -924,7 +961,7 @@ export default function Sidebar({
         </>
       )}
 
-      {canAccessView('main') && (
+      {hasDashboardAccess && canAccessView('main') && (
       <Tooltip
         title={drawerOpen ? '' : 'Main'}
         placement="right"
