@@ -1,3 +1,4 @@
+// v52.48.5.44.114 선택옵션 미해당 세대 회색 빗금
 // v52.48.5.44.32 옵션별 비교 선택옵션 전용 전환
 // v52.48.5.44.28 선택옵션 MenuListContext 누락 백색화면 긴급수정
 // v52.48.5.44.27 선택옵션 로컬목록 위치고정·10행 스크롤 제한
@@ -331,21 +332,23 @@ export default function OptionManagementOverview({
 
   const displayData = useMemo(() => {
     if (isSelection) {
-      return Object.entries(selectionDocument.units || {}).reduce(
-        (result, [cellKey, row]) => {
-          const selectedOptions = Array.isArray(row?.selectedOptions)
-            ? row.selectedOptions.filter(Boolean)
-            : [];
-          if (selectedOptions.length === 0) return result;
-          if (
-            selectedSelectionOption &&
-            !selectedOptions.includes(selectedSelectionOption)
-          ) {
-            return result;
-          }
-          const unitLabel =
-            String(selectionDocument.unitInfo?.[cellKey]?.unit || '').trim() ||
-            cellKey.slice(cellKey.lastIndexOf('-') + 1);
+      const selectionUnits = selectionDocument.units || {};
+      const unitInfo = selectionDocument.unitInfo || {};
+      const result = {};
+
+      getProjectCellKeys(buildingConfigs).forEach((cellKey) => {
+        const row = selectionUnits[cellKey] || {};
+        const selectedOptions = Array.isArray(row?.selectedOptions)
+          ? row.selectedOptions.filter(Boolean)
+          : [];
+        const unitLabel =
+          String(unitInfo?.[cellKey]?.unit || '').trim() ||
+          cellKey.slice(cellKey.lastIndexOf('-') + 1);
+        const isApplicable = selectedSelectionOption
+          ? selectedOptions.includes(selectedSelectionOption)
+          : selectedOptions.length > 0;
+
+        if (isApplicable) {
           result[cellKey] = {
             label: unitLabel,
             backgroundColor: '#bfdbfe',
@@ -355,10 +358,23 @@ export default function OptionManagementOverview({
               selectedSelectionOption || selectedOptions.join(', ')
             }`,
           };
-          return result;
-        },
-        {},
-      );
+          return;
+        }
+
+        result[cellKey] = {
+          label: unitLabel,
+          backgroundColor: '#f1f5f9',
+          backgroundImage:
+            'repeating-linear-gradient(135deg, rgba(148, 163, 184, 0.48) 0px, rgba(148, 163, 184, 0.48) 1px, transparent 1px, transparent 5px)',
+          borderColor: '#cbd5e1',
+          color: '#94a3b8',
+          title: `${cellKey} · ${
+            selectedSelectionOption || '선택 옵션'
+          } 해당 없음`,
+        };
+      });
+
+      return result;
     }
     if (isComparison) return comparisonDisplayData;
     if (!isInsulation) return {};

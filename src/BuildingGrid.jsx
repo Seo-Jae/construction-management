@@ -1,3 +1,4 @@
+// v52.48.5.44.114 셀 배경 빗금 표시 지원
 // v52.48.5.44.40 골구도 셀별 물량 글꼴 크기 지원
 // v52.48.5.44.27 90% 화면 골구도 셀테두리·행간격 균일화
 // v52.48.5.44.23 옵션비교 선택수 기준 세대셀 분할표시 지원
@@ -841,6 +842,16 @@ export default function BuildingGrid({
                         borderColor:
                           displayOverride?.borderColor || '#64748b',
                         color: displayOverride?.color || '#0f172a',
+                        ...(displayOverride?.backgroundImage
+                          ? {
+                              backgroundImage:
+                                displayOverride.backgroundImage,
+                              backgroundSize:
+                                displayOverride?.backgroundSize || 'auto',
+                              backgroundPosition:
+                                displayOverride?.backgroundPosition || '0 0',
+                            }
+                          : {}),
                       }
                     : {};
                   const completionDate =
