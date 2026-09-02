@@ -1,3 +1,4 @@
+// v52.48.5.44.122 자재발주 기본설정·주요자재 실행물량·변경이력
 // v52.48.5.44.121 납품희망일 라벨 상단 고정
 // v52.48.5.44.120 자재발주작성 1차 - 사급자재 표준화·자재마스터·발주작성
 import React, {
@@ -11,6 +12,7 @@ import {
   Autocomplete,
   Box,
   Button,
+  Checkbox,
   Chip,
   CircularProgress,
   Dialog,
@@ -18,6 +20,7 @@ import {
   DialogContent,
   DialogTitle,
   Divider,
+  FormControlLabel,
   IconButton,
   InputAdornment,
   MenuItem,
@@ -45,6 +48,8 @@ import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import Inventory2RoundedIcon from '@mui/icons-material/Inventory2Rounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
+import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
+import PlaylistAddRoundedIcon from '@mui/icons-material/PlaylistAddRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import { supabase } from '../supabaseClient';
@@ -93,15 +98,38 @@ const EMPTY_MASTER = {
   unit: '',
   manufacturer: '',
   aliasesText: '',
-  executionQuantity: '',
   note: '',
   isActive: true,
+  isMainMaterial: false,
+  mainSortOrder: 100,
+};
+
+const EMPTY_PROJECT_SETTINGS = {
+  requesterName: '',
+  receiverName: '',
+  receiverPhone: '',
+  deliveryLocation: '',
 };
 
 const normalizeText = (value) => String(value ?? '').trim().replace(/\s+/g, ' ');
 const numberValue = (value) => {
   const parsed = Number(String(value ?? '').replace(/,/g, ''));
   return Number.isFinite(parsed) ? parsed : 0;
+};
+const isProjectSettingsComplete = (form, materials) => {
+  const basicReady = [
+    form?.requesterName,
+    form?.receiverName,
+    form?.receiverPhone,
+    form?.deliveryLocation,
+  ].every((value) => normalizeText(value));
+
+  const included = (materials || []).filter((row) => row.included !== false);
+  return (
+    basicReady &&
+    included.length > 0 &&
+    included.every((row) => numberValue(row.executionQuantity) > 0)
+  );
 };
 const formatNumber = (value, digits = 2) => {
   const number = Number(value || 0);
@@ -171,6 +199,19 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
   const [masterForm, setMasterForm] = useState(EMPTY_MASTER);
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [materialPickerPurpose, setMaterialPickerPurpose] = useState('order');
+  const [projectSettings, setProjectSettings] = useState(null);
+  const [settingsForm, setSettingsForm] = useState({
+    ...EMPTY_PROJECT_SETTINGS,
+    requesterName: getProfileName(userProfile),
+  });
+  const [settingsMaterials, setSettingsMaterials] = useState([]);
+  const [settingsHistory, setSettingsHistory] = useState([]);
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState('basic');
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsRequired, setSettingsRequired] = useState(true);
 
   const currentUserId = getProfileId(userProfile);
   const isLocked = order.status === 'confirmed' || order.status === 'cancelled';
@@ -183,7 +224,7 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
     (error) => {
       if (error?.code === '42P01' || String(error?.message || '').includes('does not exist')) {
         setSchemaMissing(true);
-        notify('error', '자재발주 1차 DB 구조가 아직 적용되지 않았습니다. 제공된 SQL을 먼저 실행해주세요.');
+        notify('error', '자재발주 DB 구조가 아직 적용되지 않았습니다. 제공된 Supabase SQL을 먼저 실행해주세요.');
         return true;
       }
       return false;
@@ -226,70 +267,277 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
     setOrders(data || []);
   }, [handleSchemaError, notify, projectName]);
 
+
+  const loadProjectSettings = useCallback(async ({ openWhenIncomplete = true } = {}) => {
+    if (!projectName) return;
+    setSettingsLoading(true);
+
+    try {
+      const [
+        settingsResult,
+        defaultMaterialsResult,
+        projectMaterialsResult,
+        historyResult,
+      ] = await Promise.all([
+        supabase
+          .from('material_order_project_settings')
+          .select('*')
+          .eq('project_name', projectName)
+          .maybeSingle(),
+        supabase
+          .from('material_master_items')
+          .select('id, category_id, process_name, standard_name, specification, unit, manufacturer, aliases, is_main_material, main_sort_order')
+          .eq('is_active', true)
+          .eq('is_main_material', true)
+          .order('process_name', { ascending: true })
+          .order('main_sort_order', { ascending: true })
+          .order('standard_name', { ascending: true }),
+        supabase
+          .from('material_project_materials')
+          .select('material_id, execution_quantity, note, is_main_material, is_excluded, sort_order')
+          .eq('project_name', projectName)
+          .eq('is_main_material', true)
+          .order('sort_order', { ascending: true }),
+        supabase
+          .from('material_order_setting_history')
+          .select('id, basic_defaults, material_snapshot, changed_by, changed_at, change_note')
+          .eq('project_name', projectName)
+          .order('changed_at', { ascending: false })
+          .limit(50),
+      ]);
+
+      for (const result of [
+        settingsResult,
+        defaultMaterialsResult,
+        projectMaterialsResult,
+        historyResult,
+      ]) {
+        if (result.error) throw result.error;
+      }
+
+      const settingsRow = settingsResult.data || null;
+      const defaultMaterials = defaultMaterialsResult.data || [];
+      const projectRows = projectMaterialsResult.data || [];
+      const projectRowMap = new Map(
+        projectRows.map((row) => [row.material_id, row]),
+      );
+      const defaultMap = new Map(
+        defaultMaterials.map((row) => [row.id, row]),
+      );
+
+      const manualIds = projectRows
+        .map((row) => row.material_id)
+        .filter((id) => id && !defaultMap.has(id));
+
+      let manualMaterials = [];
+      if (manualIds.length > 0) {
+        const { data, error } = await supabase
+          .from('material_master_items')
+          .select('id, category_id, process_name, standard_name, specification, unit, manufacturer, aliases, is_main_material, main_sort_order')
+          .in('id', manualIds)
+          .eq('is_active', true);
+        if (error) throw error;
+        manualMaterials = data || [];
+      }
+
+      const mergedMaterials = [
+        ...defaultMaterials.map((material) => {
+          const projectRow = projectRowMap.get(material.id);
+          return {
+            materialId: material.id,
+            categoryId: material.category_id || '',
+            processName: material.process_name || '',
+            standardName: material.standard_name,
+            specification: material.specification || '',
+            unit: material.unit || '',
+            manufacturer: material.manufacturer || '',
+            aliases: material.aliases || [],
+            included: projectRow ? projectRow.is_excluded !== true : true,
+            executionQuantity: numberValue(projectRow?.execution_quantity),
+            note: projectRow?.note || '',
+            sortOrder:
+              Number(projectRow?.sort_order) ||
+              Number(material.main_sort_order) ||
+              100,
+            source: 'default',
+          };
+        }),
+        ...manualMaterials.map((material) => {
+          const projectRow = projectRowMap.get(material.id);
+          return {
+            materialId: material.id,
+            categoryId: material.category_id || '',
+            processName: material.process_name || '',
+            standardName: material.standard_name,
+            specification: material.specification || '',
+            unit: material.unit || '',
+            manufacturer: material.manufacturer || '',
+            aliases: material.aliases || [],
+            included: projectRow?.is_excluded !== true,
+            executionQuantity: numberValue(projectRow?.execution_quantity),
+            note: projectRow?.note || '',
+            sortOrder:
+              Number(projectRow?.sort_order) ||
+              Number(material.main_sort_order) ||
+              100,
+            source: 'manual',
+          };
+        }),
+      ].sort((a, b) => {
+        const processCompare = String(a.processName || '').localeCompare(
+          String(b.processName || ''),
+          'ko',
+        );
+        if (processCompare !== 0) return processCompare;
+        if (a.sortOrder !== b.sortOrder) return a.sortOrder - b.sortOrder;
+        return String(a.standardName || '').localeCompare(
+          String(b.standardName || ''),
+          'ko',
+        );
+      });
+
+      const nextForm = {
+        requesterName:
+          settingsRow?.default_requester_name ||
+          getProfileName(userProfile),
+        receiverName: settingsRow?.default_receiver_name || '',
+        receiverPhone: settingsRow?.default_receiver_phone || '',
+        deliveryLocation: settingsRow?.default_delivery_location || '',
+      };
+
+      const complete = isProjectSettingsComplete(
+        nextForm,
+        mergedMaterials,
+      );
+
+      setProjectSettings(settingsRow);
+      setSettingsForm(nextForm);
+      setSettingsMaterials(mergedMaterials);
+      setSettingsHistory(historyResult.data || []);
+      setSettingsRequired(!complete);
+
+      if (!complete && openWhenIncomplete) {
+        setSettingsTab('basic');
+        setSettingsDialogOpen(true);
+      }
+
+      setOrder((current) => {
+        if (current.id) return current;
+        return {
+          ...current,
+          requesterName:
+            current.requesterName ||
+            nextForm.requesterName ||
+            getProfileName(userProfile),
+          receiverName: current.receiverName || nextForm.receiverName,
+          receiverPhone: current.receiverPhone || nextForm.receiverPhone,
+          deliveryLocation:
+            current.deliveryLocation || nextForm.deliveryLocation,
+        };
+      });
+    } catch (error) {
+      if (!handleSchemaError(error)) {
+        notify(
+          'error',
+          `자재발주 기본설정 조회 실패: ${error.message}`,
+        );
+      }
+    } finally {
+      setSettingsLoading(false);
+    }
+  }, [
+    handleSchemaError,
+    notify,
+    projectName,
+    userProfile,
+  ]);
+
   const loadMasterRows = useCallback(async () => {
     if (!projectName) return;
     setMasterLoading(true);
     try {
       let query = supabase
         .from('material_master_items')
-        .select('id, category_id, process_name, standard_name, specification, unit, manufacturer, aliases, note, is_active, updated_at')
+        .select('id, category_id, process_name, standard_name, specification, unit, manufacturer, aliases, note, is_active, is_main_material, main_sort_order, updated_at')
         .eq('is_active', true)
+        .order('process_name', { ascending: true })
+        .order('main_sort_order', { ascending: true })
         .order('standard_name', { ascending: true })
-        .limit(300);
+        .limit(500);
 
-      if (masterCategoryId) query = query.eq('category_id', masterCategoryId);
-      const keyword = normalizeText(masterSearch);
-      if (keyword) query = query.ilike('search_text', `%${keyword}%`);
-
-      const { data: materials, error } = await query;
-      if (error) throw error;
-
-      const materialIds = (materials || []).map((row) => row.id);
-      let projectQuantities = [];
-      if (materialIds.length > 0) {
-        const { data, error: quantityError } = await supabase
-          .from('material_project_materials')
-          .select('material_id, execution_quantity, note')
-          .eq('project_name', projectName)
-          .in('material_id', materialIds);
-        if (quantityError) throw quantityError;
-        projectQuantities = data || [];
+      if (masterCategoryId) {
+        query = query.eq('category_id', masterCategoryId);
       }
 
-      const quantityMap = new Map(projectQuantities.map((row) => [row.material_id, row]));
-      setMasterRows(
-        (materials || []).map((row) => ({
-          ...row,
-          execution_quantity: quantityMap.get(row.id)?.execution_quantity ?? 0,
-          project_note: quantityMap.get(row.id)?.note || '',
-        })),
-      );
+      const keyword = normalizeText(masterSearch);
+      if (keyword) {
+        query = query.ilike('search_text', `%${keyword}%`);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      setMasterRows(data || []);
     } catch (error) {
-      if (!handleSchemaError(error)) notify('error', `자재 마스터 조회 실패: ${error.message}`);
+      if (!handleSchemaError(error)) {
+        notify('error', `자재 마스터 조회 실패: ${error.message}`);
+      }
     } finally {
       setMasterLoading(false);
     }
-  }, [handleSchemaError, masterCategoryId, masterSearch, notify, projectName]);
+  }, [
+    handleSchemaError,
+    masterCategoryId,
+    masterSearch,
+    notify,
+    projectName,
+  ]);
 
   useEffect(() => {
     setSchemaMissing(false);
     loadCategories();
     loadOrders();
-  }, [loadCategories, loadOrders, projectName]);
+    loadProjectSettings({ openWhenIncomplete: true });
+  }, [
+    loadCategories,
+    loadOrders,
+    loadProjectSettings,
+    projectName,
+  ]);
 
   useEffect(() => {
     if (mainTab === 'master') loadMasterRows();
   }, [loadMasterRows, mainTab]);
 
   const createNewOrder = useCallback(() => {
+    if (settingsRequired) {
+      setSettingsTab('basic');
+      setSettingsDialogOpen(true);
+      notify(
+        'warning',
+        '발주서 작성 전에 기본설정과 주요자재 실행물량을 먼저 완료해주세요.',
+      );
+      return;
+    }
+
     setOrder({
       ...EMPTY_ORDER,
       orderDate: getKoreaToday(),
-      requesterName: getProfileName(userProfile),
+      requesterName:
+        projectSettings?.default_requester_name ||
+        getProfileName(userProfile),
+      receiverName: projectSettings?.default_receiver_name || '',
+      receiverPhone: projectSettings?.default_receiver_phone || '',
+      deliveryLocation:
+        projectSettings?.default_delivery_location || '',
     });
     setOrderItems([]);
     setMainTab('order');
-  }, [userProfile]);
+  }, [
+    notify,
+    projectSettings,
+    settingsRequired,
+    userProfile,
+  ]);
 
   const refreshBalances = useCallback(
     async (items) => {
@@ -389,8 +637,12 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
         .order('standard_name', { ascending: true })
         .limit(200);
 
-      if (order.categoryId) query = query.eq('category_id', order.categoryId);
-      if (order.processName) query = query.eq('process_name', order.processName);
+      if (materialPickerPurpose === 'order' && order.categoryId) {
+        query = query.eq('category_id', order.categoryId);
+      }
+      if (materialPickerPurpose === 'order' && order.processName) {
+        query = query.eq('process_name', order.processName);
+      }
       const keyword = normalizeText(materialPickerSearch);
       if (keyword) query = query.ilike('search_text', `%${keyword}%`);
 
@@ -435,7 +687,14 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
     } finally {
       setMaterialPickerLoading(false);
     }
-  }, [materialPickerSearch, notify, order.categoryId, order.processName, projectName]);
+  }, [
+    materialPickerPurpose,
+    materialPickerSearch,
+    notify,
+    order.categoryId,
+    order.processName,
+    projectName,
+  ]);
 
   useEffect(() => {
     if (!materialPickerOpen) return;
@@ -470,6 +729,237 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
     ]);
   };
 
+
+  const addMaterialToSettings = (material) => {
+    if (
+      settingsMaterials.some(
+        (row) => row.materialId === material.id,
+      )
+    ) {
+      notify('warning', '이미 주요자재 설정에 포함된 자재입니다.');
+      return;
+    }
+
+    setSettingsMaterials((current) => [
+      ...current,
+      {
+        materialId: material.id,
+        categoryId: material.category_id || '',
+        processName: material.process_name || '',
+        standardName: material.standard_name,
+        specification: material.specification || '',
+        unit: material.unit || '',
+        manufacturer: material.manufacturer || '',
+        aliases: material.aliases || [],
+        included: true,
+        executionQuantity: numberValue(material.executionQuantity),
+        note: '',
+        sortOrder: current.length + 100,
+        source: 'manual',
+      },
+    ]);
+    notify('success', `"${material.standard_name}"을 주요자재에 추가했습니다.`);
+  };
+
+  const addMaterialFromPicker = (material) => {
+    if (materialPickerPurpose === 'settings') {
+      addMaterialToSettings(material);
+      return;
+    }
+    addMaterialToOrder(material);
+  };
+
+  const updateSettingsMaterial = (materialId, field, value) => {
+    setSettingsMaterials((current) =>
+      current.map((row) =>
+        row.materialId === materialId
+          ? {
+              ...row,
+              [field]:
+                field === 'executionQuantity'
+                  ? value
+                  : value,
+            }
+          : row,
+      ),
+    );
+  };
+
+  const saveProjectSettings = async () => {
+    if (!projectName) return;
+
+    const nextForm = {
+      requesterName: normalizeText(settingsForm.requesterName),
+      receiverName: normalizeText(settingsForm.receiverName),
+      receiverPhone: normalizeText(settingsForm.receiverPhone),
+      deliveryLocation: normalizeText(settingsForm.deliveryLocation),
+    };
+
+    if (!nextForm.requesterName) {
+      notify('warning', '작성자(요청자)를 입력해주세요.');
+      setSettingsTab('basic');
+      return;
+    }
+    if (!nextForm.receiverName) {
+      notify('warning', '수령자를 입력해주세요.');
+      setSettingsTab('basic');
+      return;
+    }
+    if (!nextForm.receiverPhone) {
+      notify('warning', '연락처를 입력해주세요.');
+      setSettingsTab('basic');
+      return;
+    }
+    if (!nextForm.deliveryLocation) {
+      notify('warning', '납품장소를 입력해주세요.');
+      setSettingsTab('basic');
+      return;
+    }
+
+    const includedMaterials = settingsMaterials.filter(
+      (row) => row.included !== false,
+    );
+
+    if (includedMaterials.length === 0) {
+      notify(
+        'warning',
+        '주요자재를 하나 이상 포함해주세요. 사용하지 않는 자재는 제외로 설정할 수 있습니다.',
+      );
+      setSettingsTab('materials');
+      return;
+    }
+
+    const missingQuantity = includedMaterials.find(
+      (row) => numberValue(row.executionQuantity) <= 0,
+    );
+
+    if (missingQuantity) {
+      notify(
+        'warning',
+        `"${missingQuantity.standardName}"의 실행물량을 입력하거나 제외로 변경해주세요.`,
+      );
+      setSettingsTab('materials');
+      return;
+    }
+
+    setSettingsSaving(true);
+    try {
+      const now = new Date().toISOString();
+
+      const settingsPayload = {
+        project_name: projectName,
+        default_requester_name: nextForm.requesterName,
+        default_receiver_name: nextForm.receiverName,
+        default_receiver_phone: nextForm.receiverPhone,
+        default_delivery_location: nextForm.deliveryLocation,
+        is_configured: true,
+        updated_by: currentUserId || null,
+        updated_at: now,
+      };
+
+      if (!projectSettings) {
+        settingsPayload.created_by = currentUserId || null;
+        settingsPayload.created_at = now;
+      }
+
+      const { error: settingsError } = await supabase
+        .from('material_order_project_settings')
+        .upsert(settingsPayload, { onConflict: 'project_name' });
+
+      if (settingsError) throw settingsError;
+
+      const materialPayloads = settingsMaterials.map((row, index) => ({
+        project_name: projectName,
+        material_id: row.materialId,
+        execution_quantity: numberValue(row.executionQuantity),
+        note: normalizeText(row.note) || null,
+        is_main_material: true,
+        is_excluded: row.included === false,
+        sort_order: Number(row.sortOrder) || index + 1,
+        updated_by: currentUserId || null,
+        updated_at: now,
+      }));
+
+      if (materialPayloads.length > 0) {
+        const { error: materialError } = await supabase
+          .from('material_project_materials')
+          .upsert(materialPayloads, {
+            onConflict: 'project_name,material_id',
+          });
+        if (materialError) throw materialError;
+      }
+
+      const historyPayload = {
+        project_name: projectName,
+        basic_defaults: {
+          requesterName: nextForm.requesterName,
+          receiverName: nextForm.receiverName,
+          receiverPhone: nextForm.receiverPhone,
+          deliveryLocation: nextForm.deliveryLocation,
+        },
+        material_snapshot: settingsMaterials.map((row, index) => ({
+          materialId: row.materialId,
+          processName: row.processName,
+          standardName: row.standardName,
+          specification: row.specification,
+          unit: row.unit,
+          included: row.included !== false,
+          executionQuantity: numberValue(row.executionQuantity),
+          note: normalizeText(row.note),
+          source: row.source,
+          sortOrder: Number(row.sortOrder) || index + 1,
+        })),
+        changed_by:
+          getProfileName(userProfile) ||
+          nextForm.requesterName ||
+          currentUserId,
+        changed_at: now,
+        change_note: projectSettings ? '기본설정 수정' : '최초 기본설정',
+      };
+
+      const { error: historyError } = await supabase
+        .from('material_order_setting_history')
+        .insert(historyPayload);
+      if (historyError) throw historyError;
+
+      setProjectSettings({
+        ...settingsPayload,
+      });
+      setSettingsForm(nextForm);
+      setSettingsRequired(false);
+      setSettingsDialogOpen(false);
+
+      setOrder((current) => {
+        if (current.id) return current;
+        return {
+          ...current,
+          requesterName: nextForm.requesterName,
+          receiverName: nextForm.receiverName,
+          receiverPhone: nextForm.receiverPhone,
+          deliveryLocation: nextForm.deliveryLocation,
+        };
+      });
+
+      notify(
+        'success',
+        projectSettings
+          ? '자재발주 기본설정을 변경했습니다.'
+          : '자재발주 최초 기본설정을 완료했습니다.',
+      );
+
+      await loadProjectSettings({ openWhenIncomplete: false });
+    } catch (error) {
+      if (!handleSchemaError(error)) {
+        notify(
+          'error',
+          `자재발주 기본설정 저장 실패: ${error.message}`,
+        );
+      }
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
+
   const updateOrderItem = (index, field, value) => {
     setOrderItems((current) =>
       current.map((row, rowIndex) => {
@@ -490,6 +980,17 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
 
   const saveOrder = async (status = 'draft') => {
     if (!projectName || isLocked) return;
+
+    if (settingsRequired) {
+      setSettingsTab('basic');
+      setSettingsDialogOpen(true);
+      notify(
+        'warning',
+        '기본설정과 주요자재 실행물량을 먼저 완료해주세요.',
+      );
+      return;
+    }
+
     if (!order.orderDate) {
       notify('warning', '발주일을 입력해주세요.');
       return;
@@ -641,9 +1142,10 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
       unit: row.unit || '',
       manufacturer: row.manufacturer || '',
       aliasesText: Array.isArray(row.aliases) ? row.aliases.join(', ') : '',
-      executionQuantity: row.execution_quantity ?? '',
-      note: row.project_note || row.note || '',
+      note: row.note || '',
       isActive: row.is_active !== false,
+      isMainMaterial: row.is_main_material === true,
+      mainSortOrder: Number(row.main_sort_order) || 100,
     });
     setMasterDialogOpen(true);
   };
@@ -676,6 +1178,8 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
         search_text: buildSearchText(masterForm),
         note: normalizeText(masterForm.note) || null,
         is_active: masterForm.isActive !== false,
+        is_main_material: masterForm.isMainMaterial === true,
+        main_sort_order: Number(masterForm.mainSortOrder) || 100,
         updated_by: currentUserId || null,
         updated_at: new Date().toISOString(),
       };
@@ -694,24 +1198,10 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
         materialId = data.id;
       }
 
-      const { error: projectError } = await supabase
-        .from('material_project_materials')
-        .upsert(
-          {
-            project_name: projectName,
-            material_id: materialId,
-            execution_quantity: numberValue(masterForm.executionQuantity),
-            note: normalizeText(masterForm.note) || null,
-            updated_by: currentUserId || null,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'project_name,material_id' },
-        );
-      if (projectError) throw projectError;
-
       notify('success', masterForm.id ? '자재 마스터를 수정했습니다.' : '자재 마스터를 등록했습니다.');
       setMasterDialogOpen(false);
       await loadMasterRows();
+      await loadProjectSettings({ openWhenIncomplete: false });
     } catch (error) {
       notify('error', `자재 마스터 저장 실패: ${error.message}`);
     } finally {
@@ -777,7 +1267,13 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
 
         <Tabs
           value={mainTab}
-          onChange={(_, value) => setMainTab(value)}
+          onChange={(_, value) => {
+            setMainTab(value);
+            if (value === 'order' && settingsRequired) {
+              setSettingsTab('basic');
+              setSettingsDialogOpen(true);
+            }
+          }}
           sx={{ ml: 'auto', minHeight: 34, '& .MuiTab-root': { minHeight: 34, py: 0.4, fontSize: '0.72rem', fontWeight: 850 } }}
         >
           <Tab value="order" icon={<AddShoppingCartRoundedIcon fontSize="small" />} iconPosition="start" label="발주서 작성" />
@@ -785,12 +1281,37 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
           <Tab value="history" icon={<HistoryRoundedIcon fontSize="small" />} iconPosition="start" label="발주이력" />
         </Tabs>
 
+        <Button
+          size="small"
+          variant={settingsRequired ? 'contained' : 'outlined'}
+          color={settingsRequired ? 'warning' : 'primary'}
+          startIcon={<SettingsRoundedIcon fontSize="small" />}
+          onClick={() => {
+            setSettingsTab('basic');
+            loadProjectSettings({ openWhenIncomplete: false });
+            setSettingsDialogOpen(true);
+          }}
+          sx={{ fontWeight: 850, whiteSpace: 'nowrap' }}
+        >
+          기본설정
+        </Button>
+
+        {settingsRequired && (
+          <Chip
+            size="small"
+            color="warning"
+            label="설정 필요"
+            sx={{ fontWeight: 850 }}
+          />
+        )}
+
         <Tooltip title="새로고침" arrow>
           <IconButton
             size="small"
             onClick={() => {
               loadCategories();
               loadOrders();
+              loadProjectSettings({ openWhenIncomplete: false });
               if (mainTab === 'master') loadMasterRows();
             }}
           >
@@ -801,7 +1322,7 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
 
       {schemaMissing && (
         <Alert severity="warning" sx={{ py: 0.25 }}>
-          자재발주 1차 DB SQL이 적용되지 않았습니다. 패키지의 <b>supabase_v52.48.5.44.120_material_order_phase1.sql</b>을 Supabase SQL Editor에서 먼저 실행해주세요.
+          자재발주 DB 구조가 적용되지 않았습니다. v120 1차 SQL과 이번 패키지의 <b>supabase_v52.48.5.44.122_material_order_settings.sql</b>을 Supabase SQL Editor에서 순서대로 실행해주세요.
         </Alert>
       )}
 
@@ -838,8 +1359,8 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
             <Table stickyHeader size="small">
               <TableHead>
                 <TableRow>
-                  {['분류', '공정', '표준 품명', '표준 규격', '단위', '제조사', '실행물량', '별칭', '수정'].map((label) => (
-                    <TableCell key={label} align={['실행물량', '수정'].includes(label) ? 'center' : 'left'} sx={{ fontWeight: 900, bgcolor: '#f8fafc', whiteSpace: 'nowrap' }}>{label}</TableCell>
+                  {['분류', '공정', '표준 품명', '표준 규격', '단위', '제조사', '주요자재', '별칭', '수정'].map((label) => (
+                    <TableCell key={label} align={['주요자재', '수정'].includes(label) ? 'center' : 'left'} sx={{ fontWeight: 900, bgcolor: '#f8fafc', whiteSpace: 'nowrap' }}>{label}</TableCell>
                   ))}
                 </TableRow>
               </TableHead>
@@ -856,7 +1377,13 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
                     <TableCell>{row.specification || '-'}</TableCell>
                     <TableCell>{row.unit || '-'}</TableCell>
                     <TableCell>{row.manufacturer || '-'}</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 850 }}>{formatNumber(row.execution_quantity)}</TableCell>
+                    <TableCell align="center">
+                      {row.is_main_material ? (
+                        <Chip size="small" color="primary" variant="outlined" label="기본" sx={{ fontWeight: 850 }} />
+                      ) : (
+                        <Typography sx={{ fontSize: '0.68rem', color: '#cbd5e1' }}>-</Typography>
+                      )}
+                    </TableCell>
                     <TableCell sx={{ maxWidth: 260 }}>
                       <Stack direction="row" spacing={0.35} useFlexGap flexWrap="wrap">
                         {(row.aliases || []).slice(0, 4).map((alias) => <Chip key={alias} label={alias} size="small" variant="outlined" />)}
@@ -941,7 +1468,21 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
               <Typography sx={{ fontSize: '0.65rem', color: '#64748b' }}>실행물량 합계 {formatNumber(orderSummary.execution)}</Typography>
               <Typography sx={{ fontSize: '0.65rem', color: '#2563eb', fontWeight: 850 }}>금회 {formatNumber(orderSummary.current)}</Typography>
               <Typography sx={{ fontSize: '0.65rem', color: '#0f766e', fontWeight: 850 }}>누계 {formatNumber(orderSummary.cumulative)}</Typography>
-              {!isLocked && <Button size="small" variant="contained" onClick={() => setMaterialPickerOpen(true)} startIcon={<AddRoundedIcon />} sx={{ ml: 'auto !important' }}>자재 추가</Button>}
+              {!isLocked && (
+                <Button
+                  size="small"
+                  variant="contained"
+                  onClick={() => {
+                    setMaterialPickerPurpose('order');
+                    setMaterialPickerSearch('');
+                    setMaterialPickerOpen(true);
+                  }}
+                  startIcon={<AddRoundedIcon />}
+                  sx={{ ml: 'auto !important' }}
+                >
+                  자재 추가
+                </Button>
+              )}
             </Stack>
 
             <TableContainer sx={{ flex: 1, minHeight: 0 }}>
@@ -998,8 +1539,428 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
         </Box>
       )}
 
+      <Dialog
+        open={settingsDialogOpen}
+        onClose={(_, reason) => {
+          if (settingsRequired || settingsSaving) return;
+          if (reason === 'backdropClick' || reason === 'escapeKeyDown') {
+            setSettingsDialogOpen(false);
+          }
+        }}
+        disableEscapeKeyDown={settingsRequired}
+        fullWidth
+        maxWidth="lg"
+      >
+        <DialogTitle sx={{ pb: 0.8 }}>
+          <Stack direction="row" alignItems="center" spacing={0.8}>
+            <SettingsRoundedIcon color="primary" fontSize="small" />
+            <Box>
+              <Typography sx={{ fontSize: '1rem', fontWeight: 900 }}>
+                자재발주 기본설정
+              </Typography>
+              <Typography sx={{ mt: 0.05, fontSize: '0.64rem', color: '#64748b' }}>
+                {projectName} · 발주 기본값과 주요자재 실행물량을 설정합니다.
+              </Typography>
+            </Box>
+            {settingsRequired && (
+              <Chip
+                size="small"
+                color="warning"
+                label="필수 설정"
+                sx={{ ml: 'auto !important', fontWeight: 850 }}
+              />
+            )}
+          </Stack>
+        </DialogTitle>
+
+        <Tabs
+          value={settingsTab}
+          onChange={(_, value) => setSettingsTab(value)}
+          sx={{
+            px: 1.5,
+            minHeight: 36,
+            borderBottom: '1px solid #e2e8f0',
+            '& .MuiTab-root': {
+              minHeight: 36,
+              py: 0.4,
+              fontSize: '0.74rem',
+              fontWeight: 850,
+            },
+          }}
+        >
+          <Tab value="basic" label="기본정보" />
+          <Tab
+            value="materials"
+            label={`주요자재 실행물량 (${settingsMaterials.filter((row) => row.included !== false).length})`}
+          />
+          <Tab
+            value="history"
+            label={`변경이력 (${settingsHistory.length})`}
+          />
+        </Tabs>
+
+        <DialogContent dividers sx={{ p: 1.5, minHeight: 430 }}>
+          {settingsLoading ? (
+            <Box sx={{ minHeight: 360, display: 'grid', placeItems: 'center' }}>
+              <CircularProgress size={26} />
+            </Box>
+          ) : settingsTab === 'basic' ? (
+            <Box>
+              <Alert severity="info" sx={{ mb: 1.2, py: 0.25 }}>
+                아래 값은 새 발주서를 만들 때 자동으로 입력됩니다. 발주서별로 다른 경우에는 작성 화면에서 그대로 수정할 수 있습니다.
+              </Alert>
+
+              <Box
+                sx={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                  gap: 1,
+                }}
+              >
+                <TextField
+                  size="small"
+                  required
+                  label="작성자 = 요청자"
+                  value={settingsForm.requesterName}
+                  onChange={(event) =>
+                    setSettingsForm((current) => ({
+                      ...current,
+                      requesterName: event.target.value,
+                    }))
+                  }
+                  helperText="새 발주서의 요청자 기본값"
+                />
+                <TextField
+                  size="small"
+                  required
+                  label="수령자"
+                  value={settingsForm.receiverName}
+                  onChange={(event) =>
+                    setSettingsForm((current) => ({
+                      ...current,
+                      receiverName: event.target.value,
+                    }))
+                  }
+                  helperText="현장 자재 기본 수령자"
+                />
+                <TextField
+                  size="small"
+                  required
+                  label="연락처"
+                  value={settingsForm.receiverPhone}
+                  onChange={(event) =>
+                    setSettingsForm((current) => ({
+                      ...current,
+                      receiverPhone: event.target.value,
+                    }))
+                  }
+                  helperText="수령자 연락처"
+                />
+                <TextField
+                  size="small"
+                  required
+                  label="납품장소"
+                  value={settingsForm.deliveryLocation}
+                  onChange={(event) =>
+                    setSettingsForm((current) => ({
+                      ...current,
+                      deliveryLocation: event.target.value,
+                    }))
+                  }
+                  helperText="현장 기본 납품 위치"
+                />
+              </Box>
+
+              <Paper
+                variant="outlined"
+                sx={{
+                  mt: 1.5,
+                  p: 1.2,
+                  bgcolor: '#f8fafc',
+                  borderColor: '#e2e8f0',
+                }}
+              >
+                <Typography sx={{ fontSize: '0.74rem', fontWeight: 900 }}>
+                  기본값 적용 방식
+                </Typography>
+                <Typography sx={{ mt: 0.45, fontSize: '0.68rem', color: '#64748b', lineHeight: 1.7 }}>
+                  기본설정을 저장한 이후 생성하는 발주서에는 작성자(요청자), 수령자, 연락처, 납품장소가 자동 입력됩니다. 이미 저장된 발주서의 값은 변경하지 않으며, 새 발주서에서 필요할 때 직접 수정할 수 있습니다.
+                </Typography>
+              </Paper>
+            </Box>
+          ) : settingsTab === 'materials' ? (
+            <Box>
+              <Stack direction="row" alignItems="center" spacing={0.8} sx={{ mb: 1 }}>
+                <Box>
+                  <Typography sx={{ fontSize: '0.78rem', fontWeight: 900 }}>
+                    공정 주요자재 실행물량
+                  </Typography>
+                  <Typography sx={{ mt: 0.15, fontSize: '0.64rem', color: '#64748b' }}>
+                    시스템 기본 주요자재를 기준으로 시작합니다. 현장에 필요 없는 자재는 제외하고, 부족한 자재는 직접 추가할 수 있습니다.
+                  </Typography>
+                </Box>
+
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={<PlaylistAddRoundedIcon />}
+                  onClick={() => {
+                    setMaterialPickerPurpose('settings');
+                    setMaterialPickerSearch('');
+                    setMaterialPickerOpen(true);
+                  }}
+                  sx={{ ml: 'auto !important', whiteSpace: 'nowrap' }}
+                >
+                  주요자재 추가
+                </Button>
+              </Stack>
+
+              {settingsMaterials.length === 0 ? (
+                <Paper
+                  variant="outlined"
+                  sx={{
+                    minHeight: 260,
+                    display: 'grid',
+                    placeItems: 'center',
+                    p: 2,
+                    bgcolor: '#f8fafc',
+                  }}
+                >
+                  <Box sx={{ textAlign: 'center' }}>
+                    <Typography sx={{ fontSize: '0.78rem', fontWeight: 900, color: '#475569' }}>
+                      설정된 주요자재가 없습니다.
+                    </Typography>
+                    <Typography sx={{ mt: 0.4, fontSize: '0.66rem', color: '#94a3b8' }}>
+                      자재 마스터에서 기본 주요자재를 지정하거나, 위의 주요자재 추가 버튼으로 현장에 필요한 자재를 선택해주세요.
+                    </Typography>
+                  </Box>
+                </Paper>
+              ) : (
+                <TableContainer
+                  sx={{
+                    maxHeight: '52vh',
+                    border: '1px solid #e2e8f0',
+                    borderRadius: 1,
+                  }}
+                >
+                  <Table stickyHeader size="small">
+                    <TableHead>
+                      <TableRow>
+                        {['사용', '공정', '품명', '규격', '단위', '실행물량', '구분', '비고'].map((label) => (
+                          <TableCell
+                            key={label}
+                            align={['사용', '단위', '실행물량', '구분'].includes(label) ? 'center' : 'left'}
+                            sx={{
+                              bgcolor: '#f8fafc',
+                              fontWeight: 900,
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {label}
+                          </TableCell>
+                        ))}
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {settingsMaterials.map((row) => {
+                        const excluded = row.included === false;
+                        return (
+                          <TableRow
+                            key={row.materialId}
+                            hover
+                            sx={{
+                              bgcolor: excluded ? '#f8fafc' : '#fff',
+                              opacity: excluded ? 0.58 : 1,
+                            }}
+                          >
+                            <TableCell align="center">
+                              <Checkbox
+                                size="small"
+                                checked={!excluded}
+                                onChange={(event) =>
+                                  updateSettingsMaterial(
+                                    row.materialId,
+                                    'included',
+                                    event.target.checked,
+                                  )
+                                }
+                              />
+                            </TableCell>
+                            <TableCell>{row.processName || '-'}</TableCell>
+                            <TableCell sx={{ fontWeight: 850 }}>{row.standardName}</TableCell>
+                            <TableCell>{row.specification || '-'}</TableCell>
+                            <TableCell align="center">{row.unit || '-'}</TableCell>
+                            <TableCell sx={{ width: 150 }}>
+                              <TextField
+                                size="small"
+                                type="number"
+                                value={row.executionQuantity}
+                                disabled={excluded}
+                                onChange={(event) =>
+                                  updateSettingsMaterial(
+                                    row.materialId,
+                                    'executionQuantity',
+                                    event.target.value,
+                                  )
+                                }
+                                inputProps={{
+                                  min: 0,
+                                  step: 'any',
+                                  style: { textAlign: 'right' },
+                                }}
+                                error={!excluded && numberValue(row.executionQuantity) <= 0}
+                              />
+                            </TableCell>
+                            <TableCell align="center">
+                              <Chip
+                                size="small"
+                                variant="outlined"
+                                color={row.source === 'default' ? 'primary' : 'default'}
+                                label={row.source === 'default' ? '기본' : '현장추가'}
+                                sx={{ fontWeight: 800 }}
+                              />
+                            </TableCell>
+                            <TableCell sx={{ minWidth: 180 }}>
+                              <TextField
+                                size="small"
+                                fullWidth
+                                value={row.note || ''}
+                                disabled={excluded}
+                                onChange={(event) =>
+                                  updateSettingsMaterial(
+                                    row.materialId,
+                                    'note',
+                                    event.target.value,
+                                  )
+                                }
+                                placeholder={excluded ? '제외됨' : '선택'}
+                              />
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+
+              <Alert severity="warning" sx={{ mt: 1, py: 0.2 }}>
+                사용으로 선택한 주요자재는 실행물량이 0보다 커야 저장할 수 있습니다. 당장 실행물량을 확정할 수 없는 자재는 체크를 해제하여 제외한 뒤 나중에 다시 포함할 수 있습니다.
+              </Alert>
+            </Box>
+          ) : (
+            <Box>
+              <Typography sx={{ mb: 1, fontSize: '0.75rem', fontWeight: 900 }}>
+                기본설정 변경이력
+              </Typography>
+
+              {settingsHistory.length === 0 ? (
+                <Paper
+                  variant="outlined"
+                  sx={{
+                    py: 5,
+                    textAlign: 'center',
+                    color: '#94a3b8',
+                    fontSize: '0.72rem',
+                  }}
+                >
+                  아직 저장된 변경이력이 없습니다.
+                </Paper>
+              ) : (
+                <Stack spacing={0.8}>
+                  {settingsHistory.map((history, index) => {
+                    const basic = history.basic_defaults || {};
+                    const materials = Array.isArray(history.material_snapshot)
+                      ? history.material_snapshot
+                      : [];
+                    const includedCount = materials.filter(
+                      (row) => row?.included !== false,
+                    ).length;
+
+                    return (
+                      <Paper
+                        key={history.id || `${history.changed_at}-${index}`}
+                        variant="outlined"
+                        sx={{ p: 1, borderColor: '#e2e8f0' }}
+                      >
+                        <Stack direction="row" alignItems="center" spacing={0.6}>
+                          <Typography sx={{ fontSize: '0.72rem', fontWeight: 900 }}>
+                            {history.change_note || '기본설정 변경'}
+                          </Typography>
+                          <Chip
+                            size="small"
+                            variant="outlined"
+                            label={`주요자재 ${includedCount}개`}
+                          />
+                          <Typography sx={{ ml: 'auto !important', fontSize: '0.62rem', color: '#94a3b8' }}>
+                            {history.changed_at
+                              ? new Date(history.changed_at).toLocaleString('ko-KR')
+                              : '-'}
+                          </Typography>
+                        </Stack>
+
+                        <Typography sx={{ mt: 0.55, fontSize: '0.66rem', color: '#475569' }}>
+                          요청자 {basic.requesterName || '-'} · 수령자 {basic.receiverName || '-'} · 연락처 {basic.receiverPhone || '-'} · 납품장소 {basic.deliveryLocation || '-'}
+                        </Typography>
+
+                        <Typography sx={{ mt: 0.25, fontSize: '0.62rem', color: '#94a3b8' }}>
+                          변경자 {history.changed_by || '-'}
+                        </Typography>
+                      </Paper>
+                    );
+                  })}
+                </Stack>
+              )}
+            </Box>
+          )}
+        </DialogContent>
+
+        <DialogActions sx={{ px: 1.5, py: 1 }}>
+          {settingsRequired && (
+            <Button
+              color="inherit"
+              onClick={() => {
+                setSettingsDialogOpen(false);
+                setMainTab('master');
+                loadMasterRows();
+              }}
+            >
+              자재 마스터로 이동
+            </Button>
+          )}
+
+          {!settingsRequired && (
+            <Button
+              onClick={() => setSettingsDialogOpen(false)}
+              disabled={settingsSaving}
+            >
+              닫기
+            </Button>
+          )}
+
+          <Button
+            variant="contained"
+            onClick={saveProjectSettings}
+            disabled={settingsLoading || settingsSaving}
+            startIcon={
+              settingsSaving ? (
+                <CircularProgress size={14} color="inherit" />
+              ) : (
+                <SaveRoundedIcon />
+              )
+            }
+          >
+            기본설정 저장
+          </Button>
+        </DialogActions>
+      </Dialog>
+
       <Dialog open={materialPickerOpen} onClose={() => setMaterialPickerOpen(false)} fullWidth maxWidth="lg">
-        <DialogTitle sx={{ fontSize: '1rem', fontWeight: 900 }}>표준 자재 선택</DialogTitle>
+        <DialogTitle sx={{ fontSize: '1rem', fontWeight: 900 }}>
+          {materialPickerPurpose === 'settings'
+            ? '주요자재 추가'
+            : '표준 자재 선택'}
+        </DialogTitle>
         <DialogContent dividers sx={{ p: 1.2 }}>
           <Stack direction="row" spacing={0.7} sx={{ mb: 1 }}>
             <TextField
@@ -1031,7 +1992,26 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
                     <TableCell align="right">{formatNumber(row.executionQuantity)}</TableCell>
                     <TableCell align="right">{formatNumber(row.previousQuantity)}</TableCell>
                     <TableCell sx={{ maxWidth: 250 }}>{(row.aliases || []).join(', ') || '-'}</TableCell>
-                    <TableCell><Button size="small" variant="outlined" onClick={() => addMaterialToOrder(row)}>추가</Button></TableCell>
+                    <TableCell>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => addMaterialFromPicker(row)}
+                        disabled={
+                          materialPickerPurpose === 'settings' &&
+                          settingsMaterials.some(
+                            (item) => item.materialId === row.id,
+                          )
+                        }
+                      >
+                        {materialPickerPurpose === 'settings' &&
+                        settingsMaterials.some(
+                          (item) => item.materialId === row.id,
+                        )
+                          ? '추가됨'
+                          : '추가'}
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -1053,12 +2033,46 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
             <TextField size="small" label="표준 규격" value={masterForm.specification} onChange={(e) => setMasterForm((current) => ({ ...current, specification: e.target.value }))} />
             <TextField size="small" label="단위" value={masterForm.unit} onChange={(e) => setMasterForm((current) => ({ ...current, unit: e.target.value }))} />
             <TextField size="small" label="제조사/브랜드" value={masterForm.manufacturer} onChange={(e) => setMasterForm((current) => ({ ...current, manufacturer: e.target.value }))} />
-            <TextField size="small" type="number" label={`${projectName} 실행물량`} value={masterForm.executionQuantity} onChange={(e) => setMasterForm((current) => ({ ...current, executionQuantity: e.target.value }))} inputProps={{ min: 0, step: 'any' }} />
             <TextField size="small" label="검색 별칭" value={masterForm.aliasesText} onChange={(e) => setMasterForm((current) => ({ ...current, aliasesText: e.target.value }))} placeholder="쉼표로 구분: SQ바, 에스큐바, square bar" />
+            <FormControlLabel
+              control={
+                <Checkbox
+                  checked={masterForm.isMainMaterial === true}
+                  onChange={(event) =>
+                    setMasterForm((current) => ({
+                      ...current,
+                      isMainMaterial: event.target.checked,
+                    }))
+                  }
+                />
+              }
+              label="공정 주요자재 기본항목"
+              sx={{
+                m: 0,
+                '& .MuiFormControlLabel-label': {
+                  fontSize: '0.76rem',
+                  fontWeight: 850,
+                },
+              }}
+            />
+            <TextField
+              size="small"
+              type="number"
+              label="주요자재 기본순서"
+              value={masterForm.mainSortOrder}
+              onChange={(event) =>
+                setMasterForm((current) => ({
+                  ...current,
+                  mainSortOrder: event.target.value,
+                }))
+              }
+              disabled={!masterForm.isMainMaterial}
+              inputProps={{ min: 1, step: 1 }}
+            />
             <TextField size="small" multiline minRows={2} label="비고" value={masterForm.note} onChange={(e) => setMasterForm((current) => ({ ...current, note: e.target.value }))} sx={{ gridColumn: '1 / -1' }} />
           </Box>
           <Alert severity="info" sx={{ mt: 1.2, py: 0.2 }}>
-            담당자가 다른 명칭으로 검색하더라도 이 표준 자재로 귀결되도록 별칭을 충분히 등록해주세요. 발주서에는 항상 <b>표준 품명/규격</b>이 사용됩니다.
+            실행물량은 자재 마스터에서 관리하지 않습니다. <b>공정 주요자재 기본항목</b>으로 지정한 자재는 현장별 <b>기본설정</b>에서 실행물량을 입력합니다. 발주서에는 항상 표준 품명/규격이 사용됩니다.
           </Alert>
         </DialogContent>
         <DialogActions><Button onClick={() => setMasterDialogOpen(false)} disabled={saving}>취소</Button><Button variant="contained" onClick={saveMaster} disabled={saving} startIcon={saving ? <CircularProgress size={14} color="inherit" /> : <SaveRoundedIcon />}>저장</Button></DialogActions>
