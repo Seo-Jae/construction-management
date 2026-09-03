@@ -1,3 +1,4 @@
+// v52.48.5.44.132 발주 품목 행도구 위치 조정·빈 행 추가 오류 수정
 // v52.48.5.44.131 엑셀형 발주 품목 직접입력·자재마스터 힌트·키보드 이동
 // v52.48.5.44.129 기본설정 닫기 복원·주기적 입력폼 재조회 방지
 // v52.48.5.44.128 자재마스터 연속등록 보호·기본설정 표시순서 안내
@@ -1802,27 +1803,6 @@ export default function MaterialOrderUpload({
     loadCategories();
   };
 
-  const orderSummary = useMemo(() => {
-    let execution = 0;
-    let current = 0;
-    let cumulative = 0;
-    const countedMaterialIds = new Set();
-
-    orderItems.forEach((row) => {
-      current += numberValue(row.currentQuantity);
-
-      if (row.materialId) {
-        if (countedMaterialIds.has(row.materialId)) return;
-        countedMaterialIds.add(row.materialId);
-      }
-
-      execution += numberValue(row.executionQuantity);
-      cumulative += numberValue(row.cumulativeQuantity);
-    });
-
-    return { execution, current, cumulative };
-  }, [orderItems]);
-
   const visibleOrders = useMemo(
     () => orders.filter((row) => (mainTab === 'history' ? row.status !== 'draft' : true)),
     [mainTab, orders],
@@ -2094,21 +2074,15 @@ export default function MaterialOrderUpload({
               </Box>
             </Box>
 
-            <Stack direction="row" alignItems="center" spacing={1} sx={{ px: 0.9, py: 0.6, borderBottom: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
+            <Stack direction="row" alignItems="center" spacing={0.35} sx={{ px: 0.9, py: 0.6, borderBottom: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
               <Typography sx={{ fontSize: '0.72rem', fontWeight: 900 }}>발주 품목 {orderItems.length}개</Typography>
-              <Typography sx={{ fontSize: '0.65rem', color: '#64748b' }}>실행물량 합계 {formatNumber(orderSummary.execution)}</Typography>
-              <Typography sx={{ fontSize: '0.65rem', color: '#2563eb', fontWeight: 850 }}>금회 {formatNumber(orderSummary.current)}</Typography>
-              <Typography sx={{ fontSize: '0.65rem', color: '#0f766e', fontWeight: 850 }}>누계 {formatNumber(orderSummary.cumulative)}</Typography>
               {!isLocked && (
                 <Stack
                   direction="row"
                   spacing={0.25}
                   alignItems="center"
-                  sx={{ ml: 'auto !important' }}
+                  sx={{ ml: '6px !important' }}
                 >
-                  <Typography sx={{ mr: 0.5, fontSize: '0.61rem', color: '#64748b', fontWeight: 750 }}>
-                    Enter ↓ · Tab → · 방향키 이동
-                  </Typography>
                   <Tooltip title="빈 행 추가" arrow>
                     <IconButton size="small" color="primary" onClick={addBlankOrderItem}>
                       <AddRoundedIcon fontSize="small" />
@@ -2229,6 +2203,8 @@ export default function MaterialOrderUpload({
                             openOnFocus
                             size="small"
                             options={orderMaterialOptions}
+                            loading={orderMaterialOptionsLoading}
+                            loadingText="자재마스터를 불러오는 중입니다."
                             filterOptions={filterOrderMaterialOptions}
                             getOptionLabel={(option) =>
                               typeof option === 'string' ? option : option.standard_name || ''
@@ -2272,15 +2248,6 @@ export default function MaterialOrderUpload({
                                 inputRef={(node) => setOrderItemInputRef(itemKey, 'standardName', node)}
                                 onKeyDown={(event) => handleOrderGridKeyDown(event, index, 'standardName')}
                                 placeholder="품명 입력"
-                                InputProps={{
-                                  ...params.InputProps,
-                                  endAdornment: (
-                                    <>
-                                      {orderMaterialOptionsLoading ? <CircularProgress size={13} /> : null}
-                                      {params.InputProps.endAdornment}
-                                    </>
-                                  ),
-                                }}
                               />
                             )}
                           />
