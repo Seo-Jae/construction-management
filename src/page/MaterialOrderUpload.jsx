@@ -1,3 +1,4 @@
+// v52.48.5.44.135 발주 품목 체크박스 정렬·기본 주요자재 우선목록
 // v52.48.5.44.134 자재마스터 명시적 삭제·표시순서 변경
 // v52.48.5.44.133 자재마스터 Excel 다운로드·갱신 업로드
 // v52.48.5.44.132 발주 품목 행도구 위치 조정·빈 행 추가 오류 수정
@@ -301,7 +302,19 @@ const buildOrderMaterialSearchText = (material) =>
 
 const filterOrderMaterialOptions = (options, state) => {
   const keyword = normalizeText(state.inputValue).toLocaleLowerCase('ko-KR');
-  if (!keyword) return options.slice(0, 8);
+  if (!keyword) {
+    return options
+      .filter((option) => option.is_main_material === true)
+      .sort(
+        (first, second) =>
+          (Number(first.main_sort_order) || 100) -
+            (Number(second.main_sort_order) || 100) ||
+          normalizeText(first.standard_name).localeCompare(
+            normalizeText(second.standard_name),
+            'ko-KR',
+          ),
+      );
+  }
 
   const keywords = keyword.split(' ').filter(Boolean);
   return options
@@ -315,8 +328,7 @@ const filterOrderMaterialOptions = (options, state) => {
       const score = (name) =>
         name === keyword ? 0 : name.startsWith(keyword) ? 1 : name.includes(keyword) ? 2 : 3;
       return score(firstName) - score(secondName) || firstName.localeCompare(secondName, 'ko-KR');
-    })
-    .slice(0, 8);
+    });
 };
 
 const categoryNameById = (categories, id) =>
@@ -1197,7 +1209,7 @@ export default function MaterialOrderUpload({
       let query = supabase
         .from('material_master_items')
         .select(
-          'id, category_id, process_name, standard_name, specification, unit, manufacturer, aliases, search_text',
+          'id, category_id, process_name, standard_name, specification, unit, manufacturer, aliases, search_text, is_main_material, main_sort_order',
         )
         .eq('is_active', true)
         .order('standard_name', { ascending: true })
@@ -2578,20 +2590,29 @@ export default function MaterialOrderUpload({
               <Table stickyHeader size="small" sx={{ minWidth: 1320, tableLayout: 'fixed' }}>
                 <TableHead>
                   <TableRow>
-                    <TableCell align="center" sx={{ width: 76, bgcolor: '#f8fafc', fontWeight: 900, whiteSpace: 'nowrap' }}>
-                      <Stack direction="row" spacing={0.15} alignItems="center" justifyContent="center">
-                        {!isLocked && (
-                          <Checkbox
-                            size="small"
-                            checked={allOrderItemsSelected}
-                            indeterminate={selectedOrderItemCount > 0 && !allOrderItemsSelected}
-                            onChange={(event) => toggleAllOrderItems(event.target.checked)}
-                            inputProps={{ 'aria-label': '발주 품목 전체 선택' }}
-                            sx={{ p: 0.25 }}
-                          />
-                        )}
-                        <span>No</span>
-                      </Stack>
+                    <TableCell align="center" sx={{ width: 76, px: 0.35, bgcolor: '#f8fafc', fontWeight: 900, whiteSpace: 'nowrap' }}>
+                      <Box
+                        sx={{
+                          width: '100%',
+                          display: 'grid',
+                          gridTemplateColumns: '30px minmax(0, 1fr)',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <Box sx={{ display: 'grid', placeItems: 'center' }}>
+                          {!isLocked && (
+                            <Checkbox
+                              size="small"
+                              checked={allOrderItemsSelected}
+                              indeterminate={selectedOrderItemCount > 0 && !allOrderItemsSelected}
+                              onChange={(event) => toggleAllOrderItems(event.target.checked)}
+                              inputProps={{ 'aria-label': '발주 품목 전체 선택' }}
+                              sx={{ p: 0.25 }}
+                            />
+                          )}
+                        </Box>
+                        <Box component="span" sx={{ textAlign: 'center' }}>No</Box>
+                      </Box>
                     </TableCell>
                     {[
                       ['품명', 220, 'left'],
@@ -2630,20 +2651,29 @@ export default function MaterialOrderUpload({
                     return (
                       <TableRow key={itemKey} hover selected={selected}>
                         <TableCell align="center" sx={{ px: 0.35 }}>
-                          <Stack direction="row" spacing={0.15} alignItems="center" justifyContent="center">
-                            {!isLocked && (
-                              <Checkbox
-                                size="small"
-                                checked={selected}
-                                onChange={() => toggleOrderItemSelection(itemKey)}
-                                inputProps={{ 'aria-label': `${index + 1}번 발주 품목 선택` }}
-                                sx={{ p: 0.25 }}
-                              />
-                            )}
-                            <Typography component="span" sx={{ fontSize: '0.7rem', fontWeight: 750 }}>
+                          <Box
+                            sx={{
+                              width: '100%',
+                              display: 'grid',
+                              gridTemplateColumns: '30px minmax(0, 1fr)',
+                              alignItems: 'center',
+                            }}
+                          >
+                            <Box sx={{ display: 'grid', placeItems: 'center' }}>
+                              {!isLocked && (
+                                <Checkbox
+                                  size="small"
+                                  checked={selected}
+                                  onChange={() => toggleOrderItemSelection(itemKey)}
+                                  inputProps={{ 'aria-label': `${index + 1}번 발주 품목 선택` }}
+                                  sx={{ p: 0.25 }}
+                                />
+                              )}
+                            </Box>
+                            <Typography component="span" sx={{ textAlign: 'center', fontSize: '0.7rem', fontWeight: 750 }}>
                               {index + 1}
                             </Typography>
-                          </Stack>
+                          </Box>
                         </TableCell>
                         <TableCell sx={{ p: 0.35 }}>
                           <Autocomplete
@@ -2654,6 +2684,20 @@ export default function MaterialOrderUpload({
                             loading={orderMaterialOptionsLoading}
                             loadingText="자재마스터를 불러오는 중입니다."
                             filterOptions={filterOrderMaterialOptions}
+                            slotProps={{
+                              listbox: {
+                                sx: {
+                                  p: 0,
+                                  maxHeight: 276,
+                                  overflowY: 'auto',
+                                  '& .MuiAutocomplete-option': {
+                                    minHeight: '46px !important',
+                                    height: '46px !important',
+                                    boxSizing: 'border-box',
+                                  },
+                                },
+                              },
+                            }}
                             getOptionLabel={(option) =>
                               typeof option === 'string' ? option : option.standard_name || ''
                             }
