@@ -1,3 +1,4 @@
+// v52.48.5.44.134 자재마스터 명시적 삭제·표시순서 변경
 // v52.48.5.44.133 자재마스터 Excel 다운로드·갱신 업로드
 // v52.48.5.44.132 발주 품목 행도구 위치 조정·빈 행 추가 오류 수정
 // v52.48.5.44.131 엑셀형 발주 품목 직접입력·자재마스터 힌트·키보드 이동
@@ -336,6 +337,10 @@ export default function MaterialOrderUpload({
   const [loading, setLoading] = useState(false);
   const [masterLoading, setMasterLoading] = useState(false);
   const [masterExcelBusy, setMasterExcelBusy] = useState(false);
+  const [masterActionBusy, setMasterActionBusy] = useState(false);
+  const [selectedMasterIds, setSelectedMasterIds] = useState(
+    () => new Set(),
+  );
   const [saving, setSaving] = useState(false);
   const [schemaMissing, setSchemaMissing] = useState(false);
   const [toast, setToast] = useState(null);
@@ -623,30 +628,43 @@ export default function MaterialOrderUpload({
     if (!projectName) return;
     setMasterLoading(true);
     try {
-      let query = supabase
-        .from('material_master_items')
-        .select('id, category_id, process_name, standard_name, specification, unit, manufacturer, aliases, note, is_active, is_main_material, main_sort_order, updated_at')
-        .eq('is_active', true)
-        .order('process_name', { ascending: true })
-        .order('main_sort_order', { ascending: true })
-        .order('standard_name', { ascending: true })
-        .limit(500);
-
-      if (masterCategoryId) {
-        query = query.eq('category_id', masterCategoryId);
-      }
-
       const keyword = normalizeText(masterSearch);
-      if (keyword) {
-        query = query.ilike('search_text', `%${keyword}%`);
+      const pageSize = 500;
+      const rows = [];
+
+      for (let start = 0; ; start += pageSize) {
+        let query = supabase
+          .from('material_master_items')
+          .select('id, category_id, process_name, standard_name, specification, unit, manufacturer, aliases, note, is_active, is_main_material, main_sort_order, display_order, updated_at')
+          .eq('is_active', true)
+          .order('display_order', { ascending: true })
+          .order('standard_name', { ascending: true })
+          .range(start, start + pageSize - 1);
+
+        if (masterCategoryId) {
+          query = query.eq('category_id', masterCategoryId);
+        }
+        if (keyword) {
+          query = query.ilike('search_text', `%${keyword}%`);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+        const page = data || [];
+        rows.push(...page);
+        if (page.length < pageSize) break;
       }
 
-      const { data, error } = await query;
-      if (error) throw error;
-      setMasterRows(data || []);
+      setMasterRows(rows);
+      setSelectedMasterIds(new Set());
     } catch (error) {
       if (!handleSchemaError(error)) {
-        notify('error', `자재 마스터 조회 실패: ${error.message}`);
+        notify(
+          'error',
+          error.code === '42703'
+            ? 'v134 Supabase SQL을 먼저 실행해주세요.'
+            : `자재 마스터 조회 실패: ${error.message}`,
+        );
       }
     } finally {
       setMasterLoading(false);
@@ -666,9 +684,8 @@ export default function MaterialOrderUpload({
     for (let start = 0; ; start += pageSize) {
       const { data, error } = await supabase
         .from('material_master_items')
-        .select('id, category_id, process_name, standard_name, specification, unit, manufacturer, aliases, note, is_active, is_main_material, main_sort_order, updated_at')
-        .order('process_name', { ascending: true })
-        .order('main_sort_order', { ascending: true })
+        .select('id, category_id, process_name, standard_name, specification, unit, manufacturer, aliases, note, is_active, is_main_material, main_sort_order, display_order, updated_at')
+        .order('display_order', { ascending: true })
         .order('standard_name', { ascending: true })
         .range(start, start + pageSize - 1);
 
@@ -796,6 +813,164 @@ export default function MaterialOrderUpload({
       }
     } finally {
       setMasterExcelBusy(false);
+    }
+  };
+
+  const toggleMasterSelection = (materialId) => {
+    setSelectedMasterIds((current) => {
+      const next = new Set(current);
+      if (next.has(materialId)) next.delete(materialId);
+      else next.add(materialId);
+      return next;
+    });
+  };
+
+  const toggleAllMasterSelection = () => {
+    setSelectedMasterIds((current) => {
+      const allSelected =
+        masterRows.length > 0 &&
+        masterRows.every((row) => current.has(row.id));
+      return allSelected
+        ? new Set()
+        : new Set(masterRows.map((row) => row.id));
+    });
+  };
+
+  const moveSelectedMasterRows = async (direction) => {
+    if (!canManageMaster) {
+      notify('warning', '자재 마스터 관리 권한이 없습니다.');
+      return;
+    }
+    if (selectedMasterIds.size === 0) {
+      notify('warning', '순서를 변경할 자재를 선택해주세요.');
+      return;
+    }
+    if (masterCategoryId || normalizeText(masterSearch)) {
+      notify(
+        'warning',
+        '전체 자재 순서를 정확히 저장하려면 검색어와 자재분류를 초기화한 뒤 순서를 변경해주세요.',
+      );
+      return;
+    }
+
+    const nextRows = [...masterRows];
+    if (direction === 'up') {
+      for (let index = 1; index < nextRows.length; index += 1) {
+        if (
+          selectedMasterIds.has(nextRows[index].id) &&
+          !selectedMasterIds.has(nextRows[index - 1].id)
+        ) {
+          [nextRows[index - 1], nextRows[index]] = [
+            nextRows[index],
+            nextRows[index - 1],
+          ];
+        }
+      }
+    } else {
+      for (let index = nextRows.length - 2; index >= 0; index -= 1) {
+        if (
+          selectedMasterIds.has(nextRows[index].id) &&
+          !selectedMasterIds.has(nextRows[index + 1].id)
+        ) {
+          [nextRows[index], nextRows[index + 1]] = [
+            nextRows[index + 1],
+            nextRows[index],
+          ];
+        }
+      }
+    }
+
+    const unchanged = nextRows.every(
+      (row, index) => row.id === masterRows[index]?.id,
+    );
+    if (unchanged) return;
+
+    setMasterActionBusy(true);
+    try {
+      const { error } = await supabase.rpc(
+        'save_material_master_order_v52_48_5_44_134',
+        {
+          p_ordered_ids: nextRows.map((row) => row.id),
+          p_updated_by: currentUserId || null,
+        },
+      );
+      if (error) {
+        if (
+          error.code === 'PGRST202' ||
+          String(error.message || '').includes(
+            'save_material_master_order_v52_48_5_44_134',
+          )
+        ) {
+          throw new Error('v134 Supabase SQL을 먼저 실행해주세요.');
+        }
+        throw error;
+      }
+
+      setMasterRows(
+        nextRows.map((row, index) => ({
+          ...row,
+          display_order: (index + 1) * 10,
+        })),
+      );
+      notify('success', '자재마스터 표시순서를 저장했습니다.');
+    } catch (error) {
+      notify('error', `자재마스터 순서 저장 실패: ${error.message}`);
+    } finally {
+      setMasterActionBusy(false);
+    }
+  };
+
+  const deleteSelectedMasterRows = async () => {
+    if (!canManageMaster) {
+      notify('warning', '자재 마스터 관리 권한이 없습니다.');
+      return;
+    }
+    if (selectedMasterIds.size === 0) {
+      notify('warning', '삭제할 자재를 선택해주세요.');
+      return;
+    }
+
+    const selectedCount = selectedMasterIds.size;
+    const confirmed = window.confirm(
+      `선택한 자재 ${selectedCount.toLocaleString()}건을 삭제할까요?\n\n`
+      + '발주서나 현장 기본설정에 사용된 자재는 과거 기록을 보호하기 위해 사용중지 처리되며, 자재마스터 목록과 새 발주 선택지에서는 제외됩니다.',
+    );
+    if (!confirmed) return;
+
+    setMasterActionBusy(true);
+    try {
+      const { data, error } = await supabase.rpc(
+        'delete_material_master_items_v52_48_5_44_134',
+        {
+          p_ids: Array.from(selectedMasterIds),
+          p_updated_by: currentUserId || null,
+        },
+      );
+      if (error) {
+        if (
+          error.code === 'PGRST202' ||
+          String(error.message || '').includes(
+            'delete_material_master_items_v52_48_5_44_134',
+          )
+        ) {
+          throw new Error('v134 Supabase SQL을 먼저 실행해주세요.');
+        }
+        throw error;
+      }
+
+      const deleted = Number(data?.deleted || 0);
+      const deactivated = Number(data?.deactivated || 0);
+      setSelectedMasterIds(new Set());
+      notify(
+        'success',
+        `자재마스터 ${selectedCount.toLocaleString()}건을 정리했습니다. 완전 삭제 ${deleted.toLocaleString()}건 · 사용중지 ${deactivated.toLocaleString()}건`,
+      );
+      await loadMasterRows();
+      await loadProjectSettings({ openWhenIncomplete: false });
+    } catch (error) {
+      notify('error', `자재마스터 삭제 실패: ${error.message}`);
+    } finally {
+      setMasterActionBusy(false);
     }
   };
 
@@ -2103,12 +2278,63 @@ export default function MaterialOrderUpload({
             )}
             {canManageMaster && (
               <>
+                <Stack
+                  direction="row"
+                  spacing={0.25}
+                  alignItems="center"
+                  sx={{ ml: 'auto !important' }}
+                >
+                  {selectedMasterIds.size > 0 && (
+                    <Chip
+                      size="small"
+                      color="primary"
+                      variant="outlined"
+                      label={`${selectedMasterIds.size.toLocaleString()}개 선택`}
+                      sx={{ mr: 0.35, fontWeight: 850 }}
+                    />
+                  )}
+                  <Tooltip title="선택 자재 삭제">
+                    <span>
+                      <IconButton
+                        size="small"
+                        color="error"
+                        onClick={deleteSelectedMasterRows}
+                        disabled={masterActionBusy || selectedMasterIds.size === 0}
+                      >
+                        <DeleteOutlineRoundedIcon fontSize="small" />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                  <Divider orientation="vertical" flexItem sx={{ mx: 0.3 }} />
+                  <Tooltip title="선택 자재 위로 이동">
+                    <span>
+                      <IconButton
+                        size="small"
+                        onClick={() => moveSelectedMasterRows('up')}
+                        disabled={masterActionBusy || selectedMasterIds.size === 0}
+                      >
+                        <ArrowUpwardRoundedIcon fontSize="small" />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                  <Tooltip title="선택 자재 아래로 이동">
+                    <span>
+                      <IconButton
+                        size="small"
+                        onClick={() => moveSelectedMasterRows('down')}
+                        disabled={masterActionBusy || selectedMasterIds.size === 0}
+                      >
+                        <ArrowDownwardRoundedIcon fontSize="small" />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                </Stack>
                 <Button
                   variant="outlined"
                   onClick={downloadMaterialMasterExcel}
                   startIcon={<FileDownloadRoundedIcon />}
-                  disabled={masterExcelBusy}
-                  sx={{ ml: 'auto !important', whiteSpace: 'nowrap' }}
+                  disabled={masterExcelBusy || masterActionBusy}
+                  sx={{ whiteSpace: 'nowrap' }}
                 >
                   Excel 다운로드
                 </Button>
@@ -2123,7 +2349,7 @@ export default function MaterialOrderUpload({
                   variant="outlined"
                   onClick={() => masterExcelInputRef.current?.click()}
                   startIcon={masterExcelBusy ? <CircularProgress size={14} /> : <FileUploadRoundedIcon />}
-                  disabled={masterExcelBusy}
+                  disabled={masterExcelBusy || masterActionBusy}
                   sx={{ whiteSpace: 'nowrap' }}
                 >
                   Excel 업로드
@@ -2132,7 +2358,7 @@ export default function MaterialOrderUpload({
                   variant="contained"
                   onClick={openNewMaster}
                   startIcon={<AddRoundedIcon />}
-                  disabled={masterExcelBusy}
+                  disabled={masterExcelBusy || masterActionBusy}
                   sx={{ whiteSpace: 'nowrap' }}
                 >
                   자재 등록
@@ -2148,6 +2374,32 @@ export default function MaterialOrderUpload({
             <Table stickyHeader size="small">
               <TableHead>
                 <TableRow>
+                  <TableCell
+                    padding="checkbox"
+                    align="center"
+                    sx={{ width: 44, bgcolor: '#f8fafc' }}
+                  >
+                    <Checkbox
+                      size="small"
+                      checked={
+                        masterRows.length > 0 &&
+                        masterRows.every((row) => selectedMasterIds.has(row.id))
+                      }
+                      indeterminate={
+                        masterRows.some((row) => selectedMasterIds.has(row.id)) &&
+                        !masterRows.every((row) => selectedMasterIds.has(row.id))
+                      }
+                      onChange={toggleAllMasterSelection}
+                      disabled={masterRows.length === 0 || masterActionBusy}
+                      inputProps={{ 'aria-label': '전체 자재 선택' }}
+                    />
+                  </TableCell>
+                  <TableCell
+                    align="center"
+                    sx={{ width: 58, fontWeight: 900, bgcolor: '#f8fafc', whiteSpace: 'nowrap' }}
+                  >
+                    순서
+                  </TableCell>
                   {['분류', '공정', '표준 품명', '표준 규격', '단위', '제조사', '주요자재', '별칭', '수정'].map((label) => (
                     <TableCell key={label} align={['주요자재', '수정'].includes(label) ? 'center' : 'left'} sx={{ fontWeight: 900, bgcolor: '#f8fafc', whiteSpace: 'nowrap' }}>{label}</TableCell>
                   ))}
@@ -2155,11 +2407,23 @@ export default function MaterialOrderUpload({
               </TableHead>
               <TableBody>
                 {masterLoading ? (
-                  <TableRow><TableCell colSpan={9} align="center" sx={{ py: 6 }}><CircularProgress size={24} /></TableCell></TableRow>
+                  <TableRow><TableCell colSpan={11} align="center" sx={{ py: 6 }}><CircularProgress size={24} /></TableCell></TableRow>
                 ) : masterRows.length === 0 ? (
-                  <TableRow><TableCell colSpan={9} align="center" sx={{ py: 8, color: '#94a3b8' }}>등록된 자재가 없거나 검색 결과가 없습니다.</TableCell></TableRow>
-                ) : masterRows.map((row) => (
-                  <TableRow key={row.id} hover>
+                  <TableRow><TableCell colSpan={11} align="center" sx={{ py: 8, color: '#94a3b8' }}>등록된 자재가 없거나 검색 결과가 없습니다.</TableCell></TableRow>
+                ) : masterRows.map((row, index) => (
+                  <TableRow key={row.id} hover selected={selectedMasterIds.has(row.id)}>
+                    <TableCell padding="checkbox" align="center">
+                      <Checkbox
+                        size="small"
+                        checked={selectedMasterIds.has(row.id)}
+                        onChange={() => toggleMasterSelection(row.id)}
+                        disabled={masterActionBusy}
+                        inputProps={{ 'aria-label': `${row.standard_name} 선택` }}
+                      />
+                    </TableCell>
+                    <TableCell align="center" sx={{ color: '#64748b', fontWeight: 750 }}>
+                      {(index + 1).toLocaleString()}
+                    </TableCell>
                     <TableCell>{categoryNameById(categories, row.category_id)}</TableCell>
                     <TableCell>{row.process_name || '-'}</TableCell>
                     <TableCell sx={{ fontWeight: 850 }}>{row.standard_name}</TableCell>
