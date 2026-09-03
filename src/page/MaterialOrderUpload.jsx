@@ -1,3 +1,4 @@
+// v52.48.5.44.133 자재마스터 Excel 다운로드·갱신 업로드
 // v52.48.5.44.132 발주 품목 행도구 위치 조정·빈 행 추가 오류 수정
 // v52.48.5.44.131 엑셀형 발주 품목 직접입력·자재마스터 힌트·키보드 이동
 // v52.48.5.44.129 기본설정 닫기 복원·주기적 입력폼 재조회 방지
@@ -57,6 +58,8 @@ import CategoryRoundedIcon from '@mui/icons-material/CategoryRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
+import FileDownloadRoundedIcon from '@mui/icons-material/FileDownloadRounded';
+import FileUploadRoundedIcon from '@mui/icons-material/FileUploadRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import Inventory2RoundedIcon from '@mui/icons-material/Inventory2Rounded';
 import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded';
@@ -67,6 +70,10 @@ import PlaylistAddRoundedIcon from '@mui/icons-material/PlaylistAddRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import { supabase } from '../supabaseClient';
+import {
+  parseMaterialMasterWorkbookFile,
+  saveMaterialMasterWorkbook,
+} from '../utils/materialMasterExcel.js';
 
 const PROCESS_OPTIONS = [
   '경량벽체',
@@ -328,6 +335,7 @@ export default function MaterialOrderUpload({
   const [masterCategoryId, setMasterCategoryId] = useState('');
   const [loading, setLoading] = useState(false);
   const [masterLoading, setMasterLoading] = useState(false);
+  const [masterExcelBusy, setMasterExcelBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [schemaMissing, setSchemaMissing] = useState(false);
   const [toast, setToast] = useState(null);
@@ -344,6 +352,7 @@ export default function MaterialOrderUpload({
   const [orderMaterialOptionsLoading, setOrderMaterialOptionsLoading] = useState(false);
   const [openMaterialHintKey, setOpenMaterialHintKey] = useState('');
   const orderItemInputRefs = useRef(new Map());
+  const masterExcelInputRef = useRef(null);
   const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
   const [materialPickerSearch, setMaterialPickerSearch] = useState('');
   const [materialPickerRows, setMaterialPickerRows] = useState([]);
@@ -649,6 +658,146 @@ export default function MaterialOrderUpload({
     notify,
     projectName,
   ]);
+
+  const loadAllMasterRowsForExcel = useCallback(async () => {
+    const pageSize = 500;
+    const rows = [];
+
+    for (let start = 0; ; start += pageSize) {
+      const { data, error } = await supabase
+        .from('material_master_items')
+        .select('id, category_id, process_name, standard_name, specification, unit, manufacturer, aliases, note, is_active, is_main_material, main_sort_order, updated_at')
+        .order('process_name', { ascending: true })
+        .order('main_sort_order', { ascending: true })
+        .order('standard_name', { ascending: true })
+        .range(start, start + pageSize - 1);
+
+      if (error) throw error;
+      const page = data || [];
+      rows.push(...page);
+      if (page.length < pageSize) break;
+    }
+
+    return rows;
+  }, []);
+
+  const downloadMaterialMasterExcel = async () => {
+    if (!canManageMaster) {
+      notify('warning', '자재 마스터 관리 권한이 없습니다.');
+      return;
+    }
+    if (categories.length === 0) {
+      notify('warning', '자재분류를 먼저 등록해주세요.');
+      return;
+    }
+
+    setMasterExcelBusy(true);
+    try {
+      const materials = await loadAllMasterRowsForExcel();
+      await saveMaterialMasterWorkbook({ materials, categories });
+      notify(
+        'success',
+        materials.length > 0
+          ? `자재마스터 ${materials.length.toLocaleString()}건을 Excel로 내려받았습니다.`
+          : '빈 자재마스터 Excel 양식을 내려받았습니다.',
+      );
+    } catch (error) {
+      if (!handleSchemaError(error)) {
+        notify('error', `자재마스터 Excel 다운로드 실패: ${error.message}`);
+      }
+    } finally {
+      setMasterExcelBusy(false);
+    }
+  };
+
+  const uploadMaterialMasterExcel = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (!canManageMaster) {
+      notify('warning', '자재 마스터 관리 권한이 없습니다.');
+      return;
+    }
+
+    setMasterExcelBusy(true);
+    try {
+      const parsed = await parseMaterialMasterWorkbookFile({ file, categories });
+      const existingIds = parsed.rows.map((row) => row.id).filter(Boolean);
+      const knownIds = new Set();
+
+      for (let start = 0; start < existingIds.length; start += 200) {
+        const ids = existingIds.slice(start, start + 200);
+        const { data, error } = await supabase
+          .from('material_master_items')
+          .select('id')
+          .in('id', ids);
+        if (error) throw error;
+        (data || []).forEach((row) => knownIds.add(row.id));
+      }
+
+      const unknownRow = parsed.rows.find((row) => row.id && !knownIds.has(row.id));
+      if (unknownRow) {
+        throw new Error(
+          `${unknownRow.rowNumber}행 관리ID는 현재 자재마스터에 없습니다. 신규 자재라면 관리ID를 지워주세요.`,
+        );
+      }
+
+      const confirmed = window.confirm(
+        `자재마스터 ${parsed.rows.length.toLocaleString()}건을 반영할까요?\n\n`
+        + `기존 자료 수정: ${parsed.updateCount.toLocaleString()}건\n`
+        + `신규 자료 등록: ${parsed.insertCount.toLocaleString()}건\n`
+        + `사용중지 설정: ${parsed.inactiveCount.toLocaleString()}건\n\n`
+        + 'Excel에 없는 기존 자재는 삭제되지 않습니다.',
+      );
+      if (!confirmed) return;
+
+      const importRows = parsed.rows.map((row) => ({
+        id: row.id || null,
+        category_id: row.categoryId,
+        process_name: normalizeText(row.processName) || null,
+        standard_name: normalizeText(row.standardName),
+        specification: normalizeText(row.specification) || null,
+        unit: normalizeText(row.unit) || null,
+        manufacturer: normalizeText(row.manufacturer) || null,
+        aliases: row.aliases,
+        note: normalizeText(row.note) || null,
+        is_active: row.isActive,
+        is_main_material: row.isMainMaterial,
+        main_sort_order: row.mainSortOrder,
+      }));
+      const { data: importResult, error: importError } = await supabase.rpc(
+        'import_material_master_excel_v52_48_5_44_133',
+        {
+          p_rows: importRows,
+          p_updated_by: currentUserId || null,
+        },
+      );
+      if (importError) {
+        if (
+          importError.code === 'PGRST202' ||
+          String(importError.message || '').includes(
+            'import_material_master_excel_v52_48_5_44_133',
+          )
+        ) {
+          throw new Error('v133 Supabase SQL을 먼저 실행해주세요.');
+        }
+        throw importError;
+      }
+
+      notify(
+        'success',
+        `자재마스터를 갱신했습니다. 수정 ${Number(importResult?.updated ?? parsed.updateCount).toLocaleString()}건 · 신규 ${Number(importResult?.inserted ?? parsed.insertCount).toLocaleString()}건`,
+      );
+      await loadMasterRows();
+      await loadProjectSettings({ openWhenIncomplete: false });
+    } catch (error) {
+      if (!handleSchemaError(error)) {
+        notify('error', `자재마스터 Excel 업로드 실패: ${error.message}`);
+      }
+    } finally {
+      setMasterExcelBusy(false);
+    }
+  };
 
   useEffect(() => {
     setSchemaMissing(false);
@@ -1953,7 +2102,42 @@ export default function MaterialOrderUpload({
               <Button variant="outlined" onClick={() => setCategoryDialogOpen(true)} startIcon={<CategoryRoundedIcon />}>분류 관리</Button>
             )}
             {canManageMaster && (
-              <Button variant="contained" onClick={openNewMaster} startIcon={<AddRoundedIcon />} sx={{ ml: 'auto !important' }}>자재 등록</Button>
+              <>
+                <Button
+                  variant="outlined"
+                  onClick={downloadMaterialMasterExcel}
+                  startIcon={<FileDownloadRoundedIcon />}
+                  disabled={masterExcelBusy}
+                  sx={{ ml: 'auto !important', whiteSpace: 'nowrap' }}
+                >
+                  Excel 다운로드
+                </Button>
+                <input
+                  ref={masterExcelInputRef}
+                  type="file"
+                  accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  hidden
+                  onChange={uploadMaterialMasterExcel}
+                />
+                <Button
+                  variant="outlined"
+                  onClick={() => masterExcelInputRef.current?.click()}
+                  startIcon={masterExcelBusy ? <CircularProgress size={14} /> : <FileUploadRoundedIcon />}
+                  disabled={masterExcelBusy}
+                  sx={{ whiteSpace: 'nowrap' }}
+                >
+                  Excel 업로드
+                </Button>
+                <Button
+                  variant="contained"
+                  onClick={openNewMaster}
+                  startIcon={<AddRoundedIcon />}
+                  disabled={masterExcelBusy}
+                  sx={{ whiteSpace: 'nowrap' }}
+                >
+                  자재 등록
+                </Button>
+              </>
             )}
             {!canManageMaster && (
               <Chip label="조회 전용" size="small" variant="outlined" sx={{ ml: 'auto !important', fontWeight: 800 }} />
