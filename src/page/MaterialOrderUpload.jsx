@@ -1,3 +1,4 @@
+// v52.48.5.44.136 자재 품명 검색결과 숫자 자연정렬
 // v52.48.5.44.135 발주 품목 체크박스 정렬·기본 주요자재 우선목록
 // v52.48.5.44.134 자재마스터 명시적 삭제·표시순서 변경
 // v52.48.5.44.133 자재마스터 Excel 다운로드·갱신 업로드
@@ -300,6 +301,11 @@ const buildOrderMaterialSearchText = (material) =>
     .join(' ')
     .toLocaleLowerCase('ko-KR');
 
+const materialNameCollator = new Intl.Collator('ko-KR', {
+  numeric: true,
+  sensitivity: 'base',
+});
+
 const filterOrderMaterialOptions = (options, state) => {
   const keyword = normalizeText(state.inputValue).toLocaleLowerCase('ko-KR');
   if (!keyword) {
@@ -309,9 +315,9 @@ const filterOrderMaterialOptions = (options, state) => {
         (first, second) =>
           (Number(first.main_sort_order) || 100) -
             (Number(second.main_sort_order) || 100) ||
-          normalizeText(first.standard_name).localeCompare(
+          materialNameCollator.compare(
+            normalizeText(first.standard_name),
             normalizeText(second.standard_name),
-            'ko-KR',
           ),
       );
   }
@@ -327,7 +333,10 @@ const filterOrderMaterialOptions = (options, state) => {
       const secondName = normalizeText(second.standard_name).toLocaleLowerCase('ko-KR');
       const score = (name) =>
         name === keyword ? 0 : name.startsWith(keyword) ? 1 : name.includes(keyword) ? 2 : 3;
-      return score(firstName) - score(secondName) || firstName.localeCompare(secondName, 'ko-KR');
+      return (
+        score(firstName) - score(secondName) ||
+        materialNameCollator.compare(firstName, secondName)
+      );
     });
 };
 
