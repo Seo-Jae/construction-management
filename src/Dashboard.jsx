@@ -4596,6 +4596,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               <MaterialOrderUpload
                 projectName={activeProjectName}
                 userProfile={activeUserProfile}
+                canManageMaster={Boolean(
+                  isSuperAdmin ||
+                    hasPermission(
+                      'material.input.manage',
+                      activeProjectName,
+                    ) === true
+                )}
               />
             )}
 

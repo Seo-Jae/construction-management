@@ -1,3 +1,4 @@
+// v52.48.5.44.131 엑셀형 발주 품목 직접입력·자재마스터 힌트·키보드 이동
 // v52.48.5.44.129 기본설정 닫기 복원·주기적 입력폼 재조회 방지
 // v52.48.5.44.128 자재마스터 연속등록 보호·기본설정 표시순서 안내
 // v52.48.5.44.127 자재발주 테스트 초기화 (발주서·기본설정)
@@ -12,6 +13,7 @@ import React, {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import {
@@ -48,12 +50,15 @@ import {
 } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import AddShoppingCartRoundedIcon from '@mui/icons-material/AddShoppingCartRounded';
+import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded';
+import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import CategoryRoundedIcon from '@mui/icons-material/CategoryRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
 import Inventory2RoundedIcon from '@mui/icons-material/Inventory2Rounded';
+import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import RestartAltRoundedIcon from '@mui/icons-material/RestartAltRounded';
 import SettingsRoundedIcon from '@mui/icons-material/SettingsRounded';
@@ -119,10 +124,82 @@ const EMPTY_PROJECT_SETTINGS = {
   deliveryLocation: '',
 };
 
+const ORDER_GRID_FIELDS = [
+  'standardName',
+  'specification',
+  'unit',
+  'currentQuantity',
+  'note',
+];
+
+const createOrderItemKey = () =>
+  `order-item-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+const createBlankOrderItem = (clientKey = createOrderItemKey()) => ({
+  id: '',
+  clientKey,
+  materialId: '',
+  masterStandardName: '',
+  categoryId: '',
+  processName: '',
+  standardName: '',
+  specification: '',
+  unit: '',
+  executionQuantity: 0,
+  previousQuantity: 0,
+  currentQuantity: '',
+  cumulativeQuantity: 0,
+  executionRatio: 0,
+  note: '',
+});
+
 const normalizeText = (value) => String(value ?? '').trim().replace(/\s+/g, ' ');
 const numberValue = (value) => {
   const parsed = Number(String(value ?? '').replace(/,/g, ''));
   return Number.isFinite(parsed) ? parsed : 0;
+};
+const recalculateOrderItemBalances = (items) => {
+  const linkedGroups = new Map();
+
+  (items || []).forEach((row) => {
+    if (!row.materialId) return;
+    const current = linkedGroups.get(row.materialId) || {
+      execution: 0,
+      previous: 0,
+      current: 0,
+    };
+    current.execution = Math.max(
+      current.execution,
+      numberValue(row.executionQuantity),
+    );
+    current.previous = Math.max(
+      current.previous,
+      numberValue(row.previousQuantity),
+    );
+    current.current += numberValue(row.currentQuantity);
+    linkedGroups.set(row.materialId, current);
+  });
+
+  return (items || []).map((row) => {
+    if (!row.materialId) {
+      return {
+        ...row,
+        cumulativeQuantity: numberValue(row.currentQuantity),
+        executionRatio: 0,
+      };
+    }
+
+    const group = linkedGroups.get(row.materialId);
+    const cumulative = group.previous + group.current;
+    return {
+      ...row,
+      executionQuantity: group.execution,
+      previousQuantity: group.previous,
+      cumulativeQuantity: cumulative,
+      executionRatio:
+        group.execution > 0 ? (cumulative / group.execution) * 100 : 0,
+    };
+  });
 };
 const isProjectSettingsComplete = (form, materials) => {
   const basicReady = [
@@ -199,10 +276,48 @@ const buildSearchText = (master) =>
     .filter(Boolean)
     .join(' ');
 
+const buildOrderMaterialSearchText = (material) =>
+  [
+    material?.standard_name,
+    material?.specification,
+    material?.unit,
+    material?.manufacturer,
+    material?.process_name,
+    ...(Array.isArray(material?.aliases) ? material.aliases : []),
+  ]
+    .map(normalizeText)
+    .filter(Boolean)
+    .join(' ')
+    .toLocaleLowerCase('ko-KR');
+
+const filterOrderMaterialOptions = (options, state) => {
+  const keyword = normalizeText(state.inputValue).toLocaleLowerCase('ko-KR');
+  if (!keyword) return options.slice(0, 8);
+
+  const keywords = keyword.split(' ').filter(Boolean);
+  return options
+    .filter((option) => {
+      const searchText = option.orderSearchText || buildOrderMaterialSearchText(option);
+      return keywords.every((word) => searchText.includes(word));
+    })
+    .sort((first, second) => {
+      const firstName = normalizeText(first.standard_name).toLocaleLowerCase('ko-KR');
+      const secondName = normalizeText(second.standard_name).toLocaleLowerCase('ko-KR');
+      const score = (name) =>
+        name === keyword ? 0 : name.startsWith(keyword) ? 1 : name.includes(keyword) ? 2 : 3;
+      return score(firstName) - score(secondName) || firstName.localeCompare(secondName, 'ko-KR');
+    })
+    .slice(0, 8);
+};
+
 const categoryNameById = (categories, id) =>
   categories.find((row) => row.id === id)?.name || '-';
 
-export default function MaterialOrderUpload({ projectName, userProfile }) {
+export default function MaterialOrderUpload({
+  projectName,
+  userProfile,
+  canManageMaster = false,
+}) {
   const [mainTab, setMainTab] = useState('order');
   const [supplyTab, setSupplyTab] = useState('private');
   const [categories, setCategories] = useState([]);
@@ -221,6 +336,13 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
     requesterName: getProfileName(userProfile),
   });
   const [orderItems, setOrderItems] = useState([]);
+  const [selectedOrderItemKeys, setSelectedOrderItemKeys] = useState(
+    () => new Set(),
+  );
+  const [orderMaterialOptions, setOrderMaterialOptions] = useState([]);
+  const [orderMaterialOptionsLoading, setOrderMaterialOptionsLoading] = useState(false);
+  const [openMaterialHintKey, setOpenMaterialHintKey] = useState('');
+  const orderItemInputRefs = useRef(new Map());
   const [materialPickerOpen, setMaterialPickerOpen] = useState(false);
   const [materialPickerSearch, setMaterialPickerSearch] = useState('');
   const [materialPickerRows, setMaterialPickerRows] = useState([]);
@@ -569,6 +691,7 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
         projectSettings?.default_delivery_location || '',
     });
     setOrderItems([]);
+    setSelectedOrderItemKeys(new Set());
     setMainTab('order');
   }, [
     notify,
@@ -594,7 +717,7 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
         (data || []).map((row) => [row.material_id, numberValue(row.cumulative_order_quantity)]),
       );
 
-      return items.map((row) => {
+      return recalculateOrderItemBalances(items.map((row) => {
         const previous = cumulativeMap.get(row.materialId) || 0;
         const current = numberValue(row.currentQuantity);
         const cumulative = previous + current;
@@ -605,7 +728,7 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
           cumulativeQuantity: cumulative,
           executionRatio: execution > 0 ? (cumulative / execution) * 100 : 0,
         };
-      });
+      }));
     },
     [projectName],
   );
@@ -623,7 +746,9 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
 
         let mapped = (items || []).map((item) => ({
           id: item.id,
+          clientKey: item.id || createOrderItemKey(),
           materialId: item.material_id,
+          masterStandardName: item.material_id ? item.standard_name : '',
           categoryId: item.category_id || '',
           processName: item.process_name || '',
           standardName: item.standard_name,
@@ -638,6 +763,7 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
         }));
 
         if (row.status === 'draft') mapped = await refreshBalances(mapped);
+        else mapped = recalculateOrderItemBalances(mapped);
 
         setOrder({
           id: row.id,
@@ -654,6 +780,7 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
           status: row.status || 'draft',
         });
         setOrderItems(mapped);
+        setSelectedOrderItemKeys(new Set());
         setMainTab('order');
       } catch (error) {
         notify('error', `발주서 불러오기 실패: ${error.message}`);
@@ -734,6 +861,99 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
     projectName,
   ]);
 
+  const loadOrderMaterialOptions = useCallback(async () => {
+    if (!projectName) {
+      setOrderMaterialOptions([]);
+      return;
+    }
+
+    setOrderMaterialOptionsLoading(true);
+    try {
+      let query = supabase
+        .from('material_master_items')
+        .select(
+          'id, category_id, process_name, standard_name, specification, unit, manufacturer, aliases, search_text',
+        )
+        .eq('is_active', true)
+        .order('standard_name', { ascending: true })
+        .limit(500);
+
+      if (order.categoryId) {
+        query = query.eq('category_id', order.categoryId);
+      }
+      if (order.processName) {
+        query = query.eq('process_name', order.processName);
+      }
+
+      const { data: materials, error } = await query;
+      if (error) throw error;
+
+      const ids = (materials || []).map((row) => row.id);
+      let quantities = [];
+      let cumulative = [];
+
+      if (ids.length > 0) {
+        const [quantityResult, cumulativeResult] = await Promise.all([
+          supabase
+            .from('material_project_materials')
+            .select('material_id, execution_quantity')
+            .eq('project_name', projectName)
+            .in('material_id', ids),
+          supabase
+            .from('material_supply_cumulative')
+            .select('material_id, cumulative_order_quantity')
+            .eq('project_name', projectName)
+            .in('material_id', ids),
+        ]);
+        if (quantityResult.error) throw quantityResult.error;
+        if (cumulativeResult.error) throw cumulativeResult.error;
+        quantities = quantityResult.data || [];
+        cumulative = cumulativeResult.data || [];
+      }
+
+      const quantityMap = new Map(
+        quantities.map((row) => [
+          row.material_id,
+          numberValue(row.execution_quantity),
+        ]),
+      );
+      const cumulativeMap = new Map(
+        cumulative.map((row) => [
+          row.material_id,
+          numberValue(row.cumulative_order_quantity),
+        ]),
+      );
+
+      setOrderMaterialOptions(
+        (materials || []).map((row) => ({
+          ...row,
+          executionQuantity: quantityMap.get(row.id) || 0,
+          previousQuantity: cumulativeMap.get(row.id) || 0,
+          orderSearchText: buildOrderMaterialSearchText(row),
+        })),
+      );
+    } catch (error) {
+      if (!handleSchemaError(error)) {
+        notify('error', `자재 힌트 불러오기 실패: ${error.message}`);
+      }
+      setOrderMaterialOptions([]);
+    } finally {
+      setOrderMaterialOptionsLoading(false);
+    }
+  }, [
+    handleSchemaError,
+    notify,
+    order.categoryId,
+    order.processName,
+    projectName,
+  ]);
+
+  useEffect(() => {
+    if (mainTab !== 'order') return undefined;
+    const timer = window.setTimeout(loadOrderMaterialOptions, 180);
+    return () => window.clearTimeout(timer);
+  }, [loadOrderMaterialOptions, mainTab]);
+
   useEffect(() => {
     if (!materialPickerOpen) return;
     const timer = window.setTimeout(loadMaterialPicker, 180);
@@ -741,17 +961,16 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
   }, [loadMaterialPicker, materialPickerOpen]);
 
   const addMaterialToOrder = (material) => {
-    if (orderItems.some((row) => row.materialId === material.id)) {
-      notify('warning', '이미 발주서에 추가된 자재입니다.');
-      return;
-    }
     const previous = numberValue(material.previousQuantity);
     const execution = numberValue(material.executionQuantity);
-    setOrderItems((current) => [
-      ...current,
-      {
+    setOrderItems((current) =>
+      recalculateOrderItemBalances([
+        ...current,
+        {
         id: '',
+        clientKey: createOrderItemKey(),
         materialId: material.id,
+        masterStandardName: material.standard_name,
         categoryId: material.category_id || '',
         processName: material.process_name || '',
         standardName: material.standard_name,
@@ -762,9 +981,10 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
         currentQuantity: 0,
         cumulativeQuantity: previous,
         executionRatio: execution > 0 ? (previous / execution) * 100 : 0,
-        note: '',
-      },
-    ]);
+          note: '',
+        },
+      ]),
+    );
   };
 
 
@@ -1000,9 +1220,21 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
 
   const updateOrderItem = (index, field, value) => {
     setOrderItems((current) =>
-      current.map((row, rowIndex) => {
+      recalculateOrderItemBalances(current.map((row, rowIndex) => {
         if (rowIndex !== index) return row;
         const nextRow = { ...row, [field]: value };
+        if (
+          field === 'standardName' &&
+          nextRow.materialId &&
+          normalizeText(value) !== normalizeText(nextRow.masterStandardName)
+        ) {
+          nextRow.materialId = '';
+          nextRow.masterStandardName = '';
+          nextRow.executionQuantity = 0;
+          nextRow.previousQuantity = 0;
+          nextRow.cumulativeQuantity = numberValue(nextRow.currentQuantity);
+          nextRow.executionRatio = 0;
+        }
         if (field === 'currentQuantity') {
           const currentQuantity = numberValue(value);
           const previous = numberValue(nextRow.previousQuantity);
@@ -1012,12 +1244,225 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
           nextRow.executionRatio = execution > 0 ? (nextRow.cumulativeQuantity / execution) * 100 : 0;
         }
         return nextRow;
-      }),
+      })),
     );
+  };
+
+  const getOrderItemKey = (row, index) =>
+    row.clientKey || row.id || `${row.materialId || 'free'}-${index}`;
+
+  const setOrderItemInputRef = (itemKey, field, node) => {
+    const inputKey = `${itemKey}:${field}`;
+    if (node) {
+      orderItemInputRefs.current.set(inputKey, node);
+    } else {
+      orderItemInputRefs.current.delete(inputKey);
+    }
+  };
+
+  const focusOrderItemCell = (rowIndex, fieldIndex) => {
+    if (rowIndex < 0 || rowIndex >= orderItems.length) return;
+    if (fieldIndex < 0 || fieldIndex >= ORDER_GRID_FIELDS.length) return;
+
+    const row = orderItems[rowIndex];
+    const itemKey = getOrderItemKey(row, rowIndex);
+    const field = ORDER_GRID_FIELDS[fieldIndex];
+    const input = orderItemInputRefs.current.get(`${itemKey}:${field}`);
+    input?.focus();
+    if (typeof input?.select === 'function') input.select();
+  };
+
+  const addBlankOrderItem = () => {
+    const nextItem = createBlankOrderItem();
+    setOrderItems((current) => [...current, nextItem]);
+    setSelectedOrderItemKeys(new Set([nextItem.clientKey]));
+
+    window.requestAnimationFrame(() => {
+      const input = orderItemInputRefs.current.get(
+        `${nextItem.clientKey}:standardName`,
+      );
+      input?.focus();
+    });
+  };
+
+  const deleteSelectedOrderItems = () => {
+    if (selectedOrderItemKeys.size === 0) {
+      notify('warning', '삭제할 발주 품목 행을 선택해주세요.');
+      return;
+    }
+
+    setOrderItems((current) =>
+      current.filter(
+        (row, index) =>
+          !selectedOrderItemKeys.has(getOrderItemKey(row, index)),
+      ),
+    );
+    setSelectedOrderItemKeys(new Set());
+  };
+
+  const moveSelectedOrderItems = (direction) => {
+    if (selectedOrderItemKeys.size === 0) {
+      notify('warning', '이동할 발주 품목 행을 선택해주세요.');
+      return;
+    }
+
+    setOrderItems((current) => {
+      const next = [...current];
+      const isSelected = (row, index) =>
+        selectedOrderItemKeys.has(getOrderItemKey(row, index));
+
+      if (direction < 0) {
+        for (let index = 1; index < next.length; index += 1) {
+          if (isSelected(next[index], index) && !isSelected(next[index - 1], index - 1)) {
+            [next[index - 1], next[index]] = [next[index], next[index - 1]];
+          }
+        }
+      } else {
+        for (let index = next.length - 2; index >= 0; index -= 1) {
+          if (isSelected(next[index], index) && !isSelected(next[index + 1], index + 1)) {
+            [next[index], next[index + 1]] = [next[index + 1], next[index]];
+          }
+        }
+      }
+
+      return next;
+    });
+  };
+
+  const toggleOrderItemSelection = (itemKey) => {
+    setSelectedOrderItemKeys((current) => {
+      const next = new Set(current);
+      if (next.has(itemKey)) next.delete(itemKey);
+      else next.add(itemKey);
+      return next;
+    });
+  };
+
+  const toggleAllOrderItems = (checked) => {
+    setSelectedOrderItemKeys(
+      checked
+        ? new Set(orderItems.map((row, index) => getOrderItemKey(row, index)))
+        : new Set(),
+    );
+  };
+
+  const applyMaterialHint = (index, material) => {
+    if (!material || typeof material !== 'object') return;
+
+    setOrderItems((current) =>
+      recalculateOrderItemBalances(current.map((row, rowIndex) => {
+        if (rowIndex !== index) return row;
+
+        const execution = numberValue(material.executionQuantity);
+        const previous = numberValue(material.previousQuantity);
+        const currentQuantity = numberValue(row.currentQuantity);
+        const cumulative = previous + currentQuantity;
+
+        return {
+          ...row,
+          materialId: material.id,
+          masterStandardName: material.standard_name || '',
+          categoryId: material.category_id || '',
+          processName: material.process_name || '',
+          standardName: material.standard_name || '',
+          specification: material.specification || '',
+          unit: material.unit || '',
+          executionQuantity: execution,
+          previousQuantity: previous,
+          cumulativeQuantity: cumulative,
+          executionRatio: execution > 0 ? (cumulative / execution) * 100 : 0,
+        };
+      })),
+    );
+  };
+
+  const handleOrderGridKeyDown = (event, rowIndex, field) => {
+    const fieldIndex = ORDER_GRID_FIELDS.indexOf(field);
+    if (fieldIndex < 0 || event.key === 'Tab') return;
+
+    const row = orderItems[rowIndex];
+    const itemKey = getOrderItemKey(row, rowIndex);
+    const hintIsOpen = field === 'standardName' && openMaterialHintKey === itemKey;
+    const hintOptionsAvailable =
+      hintIsOpen &&
+      filterOrderMaterialOptions(orderMaterialOptions, {
+        inputValue: row.standardName,
+      }).length > 0;
+
+    if (
+      hintIsOpen &&
+      (
+        ['ArrowUp', 'ArrowDown'].includes(event.key) ||
+        (event.key === 'Enter' && hintOptionsAvailable)
+      )
+    ) {
+      return;
+    }
+
+    let nextRowIndex = rowIndex;
+    let nextFieldIndex = fieldIndex;
+
+    if (event.key === 'Enter' || event.key === 'ArrowDown') {
+      nextRowIndex += 1;
+    } else if (event.key === 'ArrowUp') {
+      nextRowIndex -= 1;
+    } else if (event.key === 'ArrowLeft') {
+      const input = event.target;
+      if (
+        typeof input.selectionStart === 'number' &&
+        (input.selectionStart > 0 || input.selectionEnd > 0)
+      ) {
+        return;
+      }
+      nextFieldIndex -= 1;
+      if (nextFieldIndex < 0) {
+        nextRowIndex -= 1;
+        nextFieldIndex = ORDER_GRID_FIELDS.length - 1;
+      }
+    } else if (event.key === 'ArrowRight') {
+      const input = event.target;
+      const inputLength = String(input.value || '').length;
+      if (
+        typeof input.selectionEnd === 'number' &&
+        input.selectionEnd < inputLength
+      ) {
+        return;
+      }
+      nextFieldIndex += 1;
+      if (nextFieldIndex >= ORDER_GRID_FIELDS.length) {
+        nextRowIndex += 1;
+        nextFieldIndex = 0;
+      }
+    } else {
+      return;
+    }
+
+    if (
+      nextRowIndex < 0 ||
+      nextRowIndex >= orderItems.length ||
+      nextFieldIndex < 0 ||
+      nextFieldIndex >= ORDER_GRID_FIELDS.length
+    ) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    focusOrderItemCell(nextRowIndex, nextFieldIndex);
   };
 
   const saveOrder = async (status = 'draft') => {
     if (!projectName || isLocked) return;
+
+    const savableItems = orderItems.filter((row) =>
+      [
+        row.standardName,
+        row.specification,
+        row.unit,
+        row.currentQuantity,
+        row.note,
+      ].some((value) => normalizeText(value)),
+    );
 
     if (settingsRequired) {
       setSettingsTab('basic');
@@ -1033,13 +1478,43 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
       notify('warning', '발주일을 입력해주세요.');
       return;
     }
-    if (orderItems.length === 0) {
+    if (savableItems.length === 0) {
       notify('warning', '발주 자재를 하나 이상 추가해주세요.');
       return;
     }
-    if (status === 'confirmed' && orderItems.every((row) => numberValue(row.currentQuantity) <= 0)) {
+
+    const missingNameIndex = savableItems.findIndex(
+      (row) => !normalizeText(row.standardName),
+    );
+    if (missingNameIndex >= 0) {
+      notify('warning', '품명이 비어 있는 발주 품목 행을 확인해주세요.');
+      return;
+    }
+
+    if (status === 'confirmed' && savableItems.every((row) => numberValue(row.currentQuantity) <= 0)) {
       notify('warning', '금회발주량을 입력해주세요.');
       return;
+    }
+
+    const linkedMaterialIds = savableItems
+      .map((row) => row.materialId)
+      .filter(Boolean);
+    const requiresFreeRowSchema =
+      savableItems.some((row) => !row.materialId) ||
+      new Set(linkedMaterialIds).size !== linkedMaterialIds.length;
+
+    if (requiresFreeRowSchema) {
+      const { data: freeRowReady, error: freeRowReadyError } = await supabase.rpc(
+        'material_order_free_rows_ready_v52_48_5_44_131',
+      );
+
+      if (freeRowReadyError || freeRowReady !== true) {
+        notify(
+          'error',
+          '직접입력 또는 같은 자재의 다중 행을 저장하려면 v131 Supabase SQL을 먼저 실행해주세요.',
+        );
+        return;
+      }
     }
 
     setSaving(true);
@@ -1096,26 +1571,21 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
         if (deleteError) throw deleteError;
       }
 
-      const refreshedItems = status === 'confirmed' ? await refreshBalances(orderItems) : orderItems;
+      const refreshedItems = status === 'confirmed' ? await refreshBalances(savableItems) : savableItems;
       const itemPayloads = refreshedItems.map((row, index) => ({
         order_id: orderId,
-        material_id: row.materialId,
+        material_id: row.materialId || null,
         sort_order: index + 1,
         category_id: row.categoryId || null,
         process_name: row.processName || null,
-        standard_name: row.standardName,
-        specification: row.specification || null,
-        unit: row.unit || null,
+        standard_name: normalizeText(row.standardName),
+        specification: normalizeText(row.specification) || null,
+        unit: normalizeText(row.unit) || null,
         execution_quantity: numberValue(row.executionQuantity),
         previous_order_quantity: numberValue(row.previousQuantity),
         current_order_quantity: numberValue(row.currentQuantity),
-        cumulative_order_quantity: numberValue(row.previousQuantity) + numberValue(row.currentQuantity),
-        execution_ratio:
-          numberValue(row.executionQuantity) > 0
-            ? ((numberValue(row.previousQuantity) + numberValue(row.currentQuantity)) /
-                numberValue(row.executionQuantity)) *
-              100
-            : 0,
+        cumulative_order_quantity: numberValue(row.cumulativeQuantity),
+        execution_ratio: numberValue(row.executionRatio),
         note: normalizeText(row.note) || null,
       }));
 
@@ -1212,6 +1682,10 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
   };
 
   const openNewMaster = () => {
+    if (!canManageMaster) {
+      notify('warning', '자재 마스터 관리 권한이 없습니다.');
+      return;
+    }
     setMasterForm({
       ...EMPTY_MASTER,
       categoryId: masterCategoryId || categories[0]?.id || '',
@@ -1220,6 +1694,10 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
   };
 
   const openEditMaster = (row) => {
+    if (!canManageMaster) {
+      notify('warning', '자재 마스터 관리 권한이 없습니다.');
+      return;
+    }
     setMasterForm({
       id: row.id,
       categoryId: row.category_id || '',
@@ -1238,6 +1716,10 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
   };
 
   const saveMaster = async () => {
+    if (!canManageMaster) {
+      notify('warning', '자재 마스터 관리 권한이 없습니다.');
+      return;
+    }
     const standardName = normalizeText(masterForm.standardName);
     if (!standardName) {
       notify('warning', '표준 품명을 입력해주세요.');
@@ -1297,6 +1779,10 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
   };
 
   const addCategory = async () => {
+    if (!canManageMaster) {
+      notify('warning', '자재분류 관리 권한이 없습니다.');
+      return;
+    }
     const name = normalizeText(newCategoryName);
     if (!name) return;
     const nextSort = categories.reduce((max, row) => Math.max(max, Number(row.sort_order || 0)), 0) + 10;
@@ -1317,9 +1803,23 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
   };
 
   const orderSummary = useMemo(() => {
-    const execution = orderItems.reduce((sum, row) => sum + numberValue(row.executionQuantity), 0);
-    const current = orderItems.reduce((sum, row) => sum + numberValue(row.currentQuantity), 0);
-    const cumulative = orderItems.reduce((sum, row) => sum + numberValue(row.cumulativeQuantity), 0);
+    let execution = 0;
+    let current = 0;
+    let cumulative = 0;
+    const countedMaterialIds = new Set();
+
+    orderItems.forEach((row) => {
+      current += numberValue(row.currentQuantity);
+
+      if (row.materialId) {
+        if (countedMaterialIds.has(row.materialId)) return;
+        countedMaterialIds.add(row.materialId);
+      }
+
+      execution += numberValue(row.executionQuantity);
+      cumulative += numberValue(row.cumulativeQuantity);
+    });
+
     return { execution, current, cumulative };
   }, [orderItems]);
 
@@ -1328,13 +1828,19 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
     [mainTab, orders],
   );
 
+  const selectedOrderItemCount = orderItems.filter((row, index) =>
+    selectedOrderItemKeys.has(getOrderItemKey(row, index)),
+  ).length;
+  const allOrderItemsSelected =
+    orderItems.length > 0 && selectedOrderItemCount === orderItems.length;
+
   return (
     <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 0.8, p: 1 }}>
       <Paper variant="outlined" sx={{ px: 1.25, py: 0.8, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
         <Box sx={{ minWidth: 210 }}>
           <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#0f172a' }}>자재발주작성</Typography>
           <Typography sx={{ mt: 0.1, fontSize: '0.64rem', color: '#64748b', fontWeight: 700 }}>
-            {projectName} · 표준 자재명칭 / 실행물량 / 누계발주율 통합관리
+            {projectName} · 자재마스터 힌트 / 현장별 규격 / 실행물량 / 누계발주율 통합관리
           </Typography>
         </Box>
 
@@ -1463,8 +1969,15 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
               {categories.map((row) => <MenuItem key={row.id} value={row.id}>{row.name}</MenuItem>)}
             </TextField>
             <Button variant="outlined" onClick={loadMasterRows} startIcon={<SearchRoundedIcon />} disabled={masterLoading}>조회</Button>
-            <Button variant="outlined" onClick={() => setCategoryDialogOpen(true)} startIcon={<CategoryRoundedIcon />}>분류 관리</Button>
-            <Button variant="contained" onClick={openNewMaster} startIcon={<AddRoundedIcon />} sx={{ ml: 'auto !important' }}>자재 등록</Button>
+            {canManageMaster && (
+              <Button variant="outlined" onClick={() => setCategoryDialogOpen(true)} startIcon={<CategoryRoundedIcon />}>분류 관리</Button>
+            )}
+            {canManageMaster && (
+              <Button variant="contained" onClick={openNewMaster} startIcon={<AddRoundedIcon />} sx={{ ml: 'auto !important' }}>자재 등록</Button>
+            )}
+            {!canManageMaster && (
+              <Chip label="조회 전용" size="small" variant="outlined" sx={{ ml: 'auto !important', fontWeight: 800 }} />
+            )}
           </Stack>
 
           <TableContainer sx={{ flex: 1, minHeight: 0 }}>
@@ -1502,7 +2015,13 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
                         {(row.aliases || []).length > 4 && <Chip label={`+${row.aliases.length - 4}`} size="small" />}
                       </Stack>
                     </TableCell>
-                    <TableCell align="center"><IconButton size="small" onClick={() => openEditMaster(row)}><EditRoundedIcon fontSize="small" /></IconButton></TableCell>
+                    <TableCell align="center">
+                      {canManageMaster ? (
+                        <IconButton size="small" onClick={() => openEditMaster(row)}><EditRoundedIcon fontSize="small" /></IconButton>
+                      ) : (
+                        <Typography sx={{ fontSize: '0.68rem', color: '#cbd5e1' }}>-</Typography>
+                      )}
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -1581,65 +2100,245 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
               <Typography sx={{ fontSize: '0.65rem', color: '#2563eb', fontWeight: 850 }}>금회 {formatNumber(orderSummary.current)}</Typography>
               <Typography sx={{ fontSize: '0.65rem', color: '#0f766e', fontWeight: 850 }}>누계 {formatNumber(orderSummary.cumulative)}</Typography>
               {!isLocked && (
-                <Button
-                  size="small"
-                  variant="contained"
-                  onClick={() => {
-                    setMaterialPickerPurpose('order');
-                    setMaterialPickerSearch('');
-                    setMaterialPickerOpen(true);
-                  }}
-                  startIcon={<AddRoundedIcon />}
+                <Stack
+                  direction="row"
+                  spacing={0.25}
+                  alignItems="center"
                   sx={{ ml: 'auto !important' }}
                 >
-                  자재 추가
-                </Button>
+                  <Typography sx={{ mr: 0.5, fontSize: '0.61rem', color: '#64748b', fontWeight: 750 }}>
+                    Enter ↓ · Tab → · 방향키 이동
+                  </Typography>
+                  <Tooltip title="빈 행 추가" arrow>
+                    <IconButton size="small" color="primary" onClick={addBlankOrderItem}>
+                      <AddRoundedIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="선택 행 삭제" arrow>
+                    <span>
+                      <IconButton
+                        size="small"
+                        color="error"
+                        onClick={deleteSelectedOrderItems}
+                        disabled={selectedOrderItemCount === 0}
+                      >
+                        <RemoveRoundedIcon fontSize="small" />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                  <Tooltip title="선택 행 위로" arrow>
+                    <span>
+                      <IconButton
+                        size="small"
+                        onClick={() => moveSelectedOrderItems(-1)}
+                        disabled={selectedOrderItemCount === 0}
+                      >
+                        <ArrowUpwardRoundedIcon fontSize="small" />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                  <Tooltip title="선택 행 아래로" arrow>
+                    <span>
+                      <IconButton
+                        size="small"
+                        onClick={() => moveSelectedOrderItems(1)}
+                        disabled={selectedOrderItemCount === 0}
+                      >
+                        <ArrowDownwardRoundedIcon fontSize="small" />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                </Stack>
               )}
             </Stack>
 
             <TableContainer sx={{ flex: 1, minHeight: 0 }}>
-              <Table stickyHeader size="small">
+              <Table stickyHeader size="small" sx={{ minWidth: 1320, tableLayout: 'fixed' }}>
                 <TableHead>
                   <TableRow>
-                    {['No', '품명', '규격', '단위', '실행물량', '전회발주량', '금회발주량', '누계발주량', '발주율', '비고', ''].map((label) => (
-                      <TableCell key={label} align={['No', '단위', '실행물량', '전회발주량', '금회발주량', '누계발주량', '발주율', ''].includes(label) ? 'center' : 'left'} sx={{ bgcolor: '#f8fafc', fontWeight: 900, whiteSpace: 'nowrap' }}>{label}</TableCell>
+                    <TableCell align="center" sx={{ width: 76, bgcolor: '#f8fafc', fontWeight: 900, whiteSpace: 'nowrap' }}>
+                      <Stack direction="row" spacing={0.15} alignItems="center" justifyContent="center">
+                        {!isLocked && (
+                          <Checkbox
+                            size="small"
+                            checked={allOrderItemsSelected}
+                            indeterminate={selectedOrderItemCount > 0 && !allOrderItemsSelected}
+                            onChange={(event) => toggleAllOrderItems(event.target.checked)}
+                            inputProps={{ 'aria-label': '발주 품목 전체 선택' }}
+                            sx={{ p: 0.25 }}
+                          />
+                        )}
+                        <span>No</span>
+                      </Stack>
+                    </TableCell>
+                    {[
+                      ['품명', 220, 'left'],
+                      ['규격', 175, 'left'],
+                      ['단위', 90, 'center'],
+                      ['실행물량', 105, 'center'],
+                      ['전회발주량', 105, 'center'],
+                      ['금회발주량', 115, 'center'],
+                      ['누계발주량', 105, 'center'],
+                      ['발주율', 88, 'center'],
+                      ['비고', 190, 'left'],
+                    ].map(([label, width, align]) => (
+                      <TableCell
+                        key={label}
+                        align={align}
+                        sx={{ width, bgcolor: '#f8fafc', fontWeight: 900, whiteSpace: 'nowrap' }}
+                      >
+                        {label}
+                      </TableCell>
                     ))}
                   </TableRow>
                 </TableHead>
                 <TableBody>
                   {loading ? (
-                    <TableRow><TableCell colSpan={11} align="center" sx={{ py: 7 }}><CircularProgress size={24} /></TableCell></TableRow>
+                    <TableRow><TableCell colSpan={10} align="center" sx={{ py: 7 }}><CircularProgress size={24} /></TableCell></TableRow>
                   ) : orderItems.length === 0 ? (
-                    <TableRow><TableCell colSpan={11} align="center" sx={{ py: 9, color: '#94a3b8' }}>자재 추가를 눌러 표준 자재 마스터에서 발주품목을 선택해주세요.</TableCell></TableRow>
+                    <TableRow>
+                      <TableCell colSpan={10} align="center" sx={{ py: 9, color: '#94a3b8' }}>
+                        상단의 + 버튼을 눌러 행을 추가한 뒤 품명을 입력해주세요. 비슷한 자재마스터 항목이 자동으로 표시됩니다.
+                      </TableCell>
+                    </TableRow>
                   ) : orderItems.map((row, index) => {
                     const over = row.executionRatio > 100;
+                    const itemKey = getOrderItemKey(row, index);
+                    const selected = selectedOrderItemKeys.has(itemKey);
                     return (
-                      <TableRow key={`${row.materialId}-${index}`} hover>
-                        <TableCell align="center">{index + 1}</TableCell>
-                        <TableCell sx={{ fontWeight: 850 }}>{row.standardName}</TableCell>
-                        <TableCell>{row.specification || '-'}</TableCell>
-                        <TableCell align="center">{row.unit || '-'}</TableCell>
-                        <TableCell align="right">{formatNumber(row.executionQuantity)}</TableCell>
-                        <TableCell align="right">{formatNumber(row.previousQuantity)}</TableCell>
-                        <TableCell sx={{ width: 120 }}>
+                      <TableRow key={itemKey} hover selected={selected}>
+                        <TableCell align="center" sx={{ px: 0.35 }}>
+                          <Stack direction="row" spacing={0.15} alignItems="center" justifyContent="center">
+                            {!isLocked && (
+                              <Checkbox
+                                size="small"
+                                checked={selected}
+                                onChange={() => toggleOrderItemSelection(itemKey)}
+                                inputProps={{ 'aria-label': `${index + 1}번 발주 품목 선택` }}
+                                sx={{ p: 0.25 }}
+                              />
+                            )}
+                            <Typography component="span" sx={{ fontSize: '0.7rem', fontWeight: 750 }}>
+                              {index + 1}
+                            </Typography>
+                          </Stack>
+                        </TableCell>
+                        <TableCell sx={{ p: 0.35 }}>
+                          <Autocomplete
+                            freeSolo
+                            openOnFocus
+                            size="small"
+                            options={orderMaterialOptions}
+                            filterOptions={filterOrderMaterialOptions}
+                            getOptionLabel={(option) =>
+                              typeof option === 'string' ? option : option.standard_name || ''
+                            }
+                            value={row.standardName || ''}
+                            onOpen={() => setOpenMaterialHintKey(itemKey)}
+                            onClose={() =>
+                              setOpenMaterialHintKey((current) => current === itemKey ? '' : current)
+                            }
+                            onInputChange={(_, value, reason) => {
+                              if (reason === 'input' || reason === 'clear') {
+                                updateOrderItem(index, 'standardName', value);
+                              }
+                            }}
+                            onChange={(_, value) => {
+                              if (value && typeof value === 'object') {
+                                applyMaterialHint(index, value);
+                              } else if (typeof value === 'string') {
+                                updateOrderItem(index, 'standardName', value);
+                              }
+                            }}
+                            disabled={isLocked}
+                            noOptionsText="일치하는 자재가 없습니다. 직접 입력할 수 있습니다."
+                            renderOption={(props, option) => {
+                              const { key, ...optionProps } = props;
+                              return (
+                                <Box component="li" key={key} {...optionProps} sx={{ display: 'block !important', py: '6px !important' }}>
+                                  <Typography sx={{ fontSize: '0.72rem', fontWeight: 900 }}>
+                                    {option.standard_name}
+                                  </Typography>
+                                  <Typography sx={{ mt: 0.1, fontSize: '0.62rem', color: '#64748b' }}>
+                                    {option.specification || '규격 없음'} · {option.unit || '단위 없음'}
+                                    {option.executionQuantity > 0 ? ` · 실행 ${formatNumber(option.executionQuantity)}` : ''}
+                                  </Typography>
+                                </Box>
+                              );
+                            }}
+                            renderInput={(params) => (
+                              <TextField
+                                {...params}
+                                inputRef={(node) => setOrderItemInputRef(itemKey, 'standardName', node)}
+                                onKeyDown={(event) => handleOrderGridKeyDown(event, index, 'standardName')}
+                                placeholder="품명 입력"
+                                InputProps={{
+                                  ...params.InputProps,
+                                  endAdornment: (
+                                    <>
+                                      {orderMaterialOptionsLoading ? <CircularProgress size={13} /> : null}
+                                      {params.InputProps.endAdornment}
+                                    </>
+                                  ),
+                                }}
+                              />
+                            )}
+                          />
+                        </TableCell>
+                        <TableCell sx={{ p: 0.35 }}>
                           <TextField
                             size="small"
-                            type="number"
+                            fullWidth
+                            value={row.specification}
+                            onChange={(event) => updateOrderItem(index, 'specification', event.target.value)}
+                            onKeyDown={(event) => handleOrderGridKeyDown(event, index, 'specification')}
+                            inputRef={(node) => setOrderItemInputRef(itemKey, 'specification', node)}
+                            placeholder="규격"
+                            disabled={isLocked}
+                          />
+                        </TableCell>
+                        <TableCell sx={{ p: 0.35 }}>
+                          <TextField
+                            size="small"
+                            fullWidth
+                            value={row.unit}
+                            onChange={(event) => updateOrderItem(index, 'unit', event.target.value)}
+                            onKeyDown={(event) => handleOrderGridKeyDown(event, index, 'unit')}
+                            inputRef={(node) => setOrderItemInputRef(itemKey, 'unit', node)}
+                            placeholder="단위"
+                            disabled={isLocked}
+                            inputProps={{ style: { textAlign: 'center' } }}
+                          />
+                        </TableCell>
+                        <TableCell align="right">{formatNumber(row.executionQuantity)}</TableCell>
+                        <TableCell align="right">{formatNumber(row.previousQuantity)}</TableCell>
+                        <TableCell sx={{ p: 0.35 }}>
+                          <TextField
+                            size="small"
+                            fullWidth
                             value={row.currentQuantity}
                             onChange={(event) => updateOrderItem(index, 'currentQuantity', event.target.value)}
+                            onKeyDown={(event) => handleOrderGridKeyDown(event, index, 'currentQuantity')}
+                            inputRef={(node) => setOrderItemInputRef(itemKey, 'currentQuantity', node)}
                             disabled={isLocked}
-                            inputProps={{ min: 0, step: 'any', style: { textAlign: 'right' } }}
+                            inputProps={{ inputMode: 'decimal', style: { textAlign: 'right' } }}
                           />
                         </TableCell>
                         <TableCell align="right" sx={{ fontWeight: 850 }}>{formatNumber(row.cumulativeQuantity)}</TableCell>
                         <TableCell align="center">
                           <Chip label={`${row.executionRatio.toFixed(1)}%`} size="small" color={over ? 'error' : row.executionRatio >= 90 ? 'warning' : 'default'} variant={over ? 'filled' : 'outlined'} />
                         </TableCell>
-                        <TableCell sx={{ minWidth: 170 }}>
-                          <TextField size="small" fullWidth value={row.note} onChange={(event) => updateOrderItem(index, 'note', event.target.value)} disabled={isLocked} />
-                        </TableCell>
-                        <TableCell align="center">
-                          {!isLocked && <IconButton size="small" color="error" onClick={() => setOrderItems((current) => current.filter((_, rowIndex) => rowIndex !== index))}><DeleteOutlineRoundedIcon fontSize="small" /></IconButton>}
+                        <TableCell sx={{ p: 0.35 }}>
+                          <TextField
+                            size="small"
+                            fullWidth
+                            value={row.note}
+                            onChange={(event) => updateOrderItem(index, 'note', event.target.value)}
+                            onKeyDown={(event) => handleOrderGridKeyDown(event, index, 'note')}
+                            inputRef={(node) => setOrderItemInputRef(itemKey, 'note', node)}
+                            placeholder="비고"
+                            disabled={isLocked}
+                          />
                         </TableCell>
                       </TableRow>
                     );
@@ -2313,7 +3012,7 @@ export default function MaterialOrderUpload({ projectName, userProfile }) {
             <TextField size="small" multiline minRows={2} label="비고" value={masterForm.note} onChange={(e) => setMasterForm((current) => ({ ...current, note: e.target.value }))} sx={{ gridColumn: '1 / -1' }} />
           </Box>
           <Alert severity="info" sx={{ mt: 1.2, py: 0.2 }}>
-            실행물량은 자재 마스터에서 관리하지 않습니다. <b>공정 주요자재 기본항목</b>으로 지정한 자재는 현장별 <b>기본설정</b>에서 실행물량을 입력합니다. 발주서에는 항상 표준 품명/규격이 사용됩니다.
+            실행물량은 자재 마스터에서 관리하지 않습니다. <b>공정 주요자재 기본항목</b>으로 지정한 자재는 현장별 <b>기본설정</b>에서 실행물량을 입력합니다. 발주서에서 이 자재를 선택하면 품명·규격·단위가 기본값으로 입력되며, 발주서 안에서 규격과 단위를 수정해도 자재마스터 원본은 변경되지 않습니다.
           </Alert>
         </DialogContent>
         <DialogActions><Button onClick={() => setMasterDialogOpen(false)} disabled={saving}>취소</Button><Button variant="contained" onClick={saveMaster} disabled={saving} startIcon={saving ? <CircularProgress size={14} color="inherit" /> : <SaveRoundedIcon />}>저장</Button></DialogActions>
