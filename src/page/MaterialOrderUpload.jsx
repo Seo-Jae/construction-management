@@ -1,3 +1,4 @@
+// v52.48.5.44.137 자재 품명 검색 시 현장 기본·주요자재 우선정렬
 // v52.48.5.44.136 자재 품명 검색결과 숫자 자연정렬
 // v52.48.5.44.135 발주 품목 체크박스 정렬·기본 주요자재 우선목록
 // v52.48.5.44.134 자재마스터 명시적 삭제·표시순서 변경
@@ -335,6 +336,12 @@ const filterOrderMaterialOptions = (options, state) => {
         name === keyword ? 0 : name.startsWith(keyword) ? 1 : name.includes(keyword) ? 2 : 3;
       return (
         score(firstName) - score(secondName) ||
+        Number(second.isProjectMaterial === true) -
+          Number(first.isProjectMaterial === true) ||
+        Number(second.is_main_material === true) -
+          Number(first.is_main_material === true) ||
+        (Number(first.main_sort_order) || 100) -
+          (Number(second.main_sort_order) || 100) ||
         materialNameCollator.compare(firstName, secondName)
       );
     });
@@ -1273,6 +1280,7 @@ export default function MaterialOrderUpload({
       setOrderMaterialOptions(
         (materials || []).map((row) => ({
           ...row,
+          isProjectMaterial: quantityMap.has(row.id),
           executionQuantity: quantityMap.get(row.id) || 0,
           previousQuantity: cumulativeMap.get(row.id) || 0,
           orderSearchText: buildOrderMaterialSearchText(row),
