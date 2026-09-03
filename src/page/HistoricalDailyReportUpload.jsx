@@ -64,6 +64,19 @@ const normalizeText = (value) =>
     .trim()
     .replace(/\s+/g, ' ');
 
+/*
+  daily_reports에는 실제 일보 내용이 없어도 마감상태를 보존하기 위한
+  빈 날짜 행이 남을 수 있습니다.
+
+  이전 출력일보 업로드의 중복 여부는 날짜 행 존재가 아니라
+  사용자가 다시 덮어쓰면 안 되는 실제 내용 존재를 기준으로 판단합니다.
+*/
+const hasDailyReportContent = (row) =>
+  (Array.isArray(row?.workers) && row.workers.length > 0) ||
+  (Array.isArray(row?.tasks) && row.tasks.length > 0) ||
+  normalizeText(row?.today_task) !== '' ||
+  normalizeText(row?.tomorrow_task) !== '';
+
 const normalizeComparableText = (value) =>
   normalizeText(value)
     .replace(/㈜|\(주\)|주식회사/gi, '')
@@ -1195,7 +1208,7 @@ export default function HistoricalDailyReportUpload({
           )
           .filter(Boolean);
 
-      const existingDateSet =
+      const existingContentDateSet =
         new Set();
 
       if (
@@ -1206,7 +1219,9 @@ export default function HistoricalDailyReportUpload({
           error,
         } = await supabase
           .from('daily_reports')
-          .select('date')
+          .select(
+            'date, workers, tasks, today_task, tomorrow_task',
+          )
           .eq(
             'project_name',
             projectName,
@@ -1220,13 +1235,15 @@ export default function HistoricalDailyReportUpload({
           throw error;
         }
 
-        (data || []).forEach(
-          (row) => {
-            existingDateSet.add(
+        (data || [])
+          .filter(
+            hasDailyReportContent,
+          )
+          .forEach((row) => {
+            existingContentDateSet.add(
               row.date,
             );
-          },
-        );
+          });
       }
 
       const analyzedResults =
@@ -1234,7 +1251,7 @@ export default function HistoricalDailyReportUpload({
           .map((result) => ({
             ...result,
             duplicate:
-              existingDateSet.has(
+              existingContentDateSet.has(
                 result.dateKey,
               ),
           }))
