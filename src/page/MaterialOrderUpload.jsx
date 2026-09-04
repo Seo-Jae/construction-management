@@ -1,3 +1,4 @@
+// v52.48.5.44.138 발주 품목 표 눈금선·수량 천 단위 쉼표
 // v52.48.5.44.137 자재 품명 검색 시 현장 기본·주요자재 우선정렬
 // v52.48.5.44.136 자재 품명 검색결과 숫자 자연정렬
 // v52.48.5.44.135 발주 품목 체크박스 정렬·기본 주요자재 우선목록
@@ -2604,7 +2605,26 @@ export default function MaterialOrderUpload({
             </Stack>
 
             <TableContainer sx={{ flex: 1, minHeight: 0 }}>
-              <Table stickyHeader size="small" sx={{ minWidth: 1320, tableLayout: 'fixed' }}>
+              <Table
+                stickyHeader
+                size="small"
+                sx={{
+                  minWidth: 1320,
+                  tableLayout: 'fixed',
+                  borderCollapse: 'separate',
+                  borderSpacing: 0,
+                  '& .MuiTableCell-root': {
+                    borderRight: '1px solid #cbd5e1',
+                    borderBottom: '1px solid #cbd5e1',
+                  },
+                  '& .MuiTableCell-root:first-of-type': {
+                    borderLeft: '1px solid #cbd5e1',
+                  },
+                  '& .MuiTableHead-root .MuiTableCell-root': {
+                    borderTop: '1px solid #cbd5e1',
+                  },
+                }}
+              >
                 <TableHead>
                   <TableRow>
                     <TableCell align="center" sx={{ width: 76, px: 0.35, bgcolor: '#f8fafc', fontWeight: 900, whiteSpace: 'nowrap' }}>
@@ -2792,7 +2812,7 @@ export default function MaterialOrderUpload({
                           <TextField
                             size="small"
                             fullWidth
-                            value={row.currentQuantity}
+                            value={formatNumber(row.currentQuantity)}
                             onChange={(event) => updateOrderItem(index, 'currentQuantity', event.target.value)}
                             onKeyDown={(event) => handleOrderGridKeyDown(event, index, 'currentQuantity')}
                             inputRef={(node) => setOrderItemInputRef(itemKey, 'currentQuantity', node)}
