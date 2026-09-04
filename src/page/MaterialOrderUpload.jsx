@@ -71,6 +71,8 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import FileDownloadRoundedIcon from '@mui/icons-material/FileDownloadRounded';
 import FileUploadRoundedIcon from '@mui/icons-material/FileUploadRounded';
+import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded';
+import FolderRoundedIcon from '@mui/icons-material/FolderRounded';
 import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import RestartAltRoundedIcon from '@mui/icons-material/RestartAltRounded';
@@ -98,6 +100,11 @@ const PROCESS_OPTIONS = [
   '가설',
   '기타',
 ];
+const PROCESS_FOLDER_CATEGORY_NAME = '각 공정자재';
+const REMOVED_CATEGORY_NAMES = new Set(['각 공정 잡자재']);
+const PROCESS_FOLDER_OPTIONS = PROCESS_OPTIONS.filter(
+  (processName) => !['안전', '가설', '기타'].includes(processName),
+);
 
 const ORDER_STATUS_LABELS = {
   draft: '작성중',
@@ -404,6 +411,20 @@ const filterOrderMaterialOptions = (options, state) => {
 const categoryNameById = (categories, id) =>
   categories.find((row) => row.id === id)?.name || '-';
 
+const buildDefaultCategoryFolders = (categories) => {
+  const processCategory = categories.find(
+    (row) => row.name === PROCESS_FOLDER_CATEGORY_NAME,
+  );
+  if (!processCategory) return [];
+  return PROCESS_FOLDER_OPTIONS.map((name, index) => ({
+    id: `default-${processCategory.id}-${name}`,
+    category_id: processCategory.id,
+    name,
+    sort_order: (index + 1) * 10,
+    is_active: true,
+  }));
+};
+
 export default function MaterialOrderUpload({
   projectName,
   userProfile,
@@ -415,6 +436,11 @@ export default function MaterialOrderUpload({
   );
   const [supplyTab, setSupplyTab] = useState('private');
   const [categories, setCategories] = useState([]);
+  const [categoryFolders, setCategoryFolders] = useState([]);
+  const [categoryFolderSchemaMissing, setCategoryFolderSchemaMissing] = useState(false);
+  const [selectedOrderFolderId, setSelectedOrderFolderId] = useState('');
+  const [selectedOrderFolderProcess, setSelectedOrderFolderProcess] = useState('');
+  const [processFoldersOpen, setProcessFoldersOpen] = useState(false);
   const [orders, setOrders] = useState([]);
   const [masterRows, setMasterRows] = useState([]);
   const [masterSearch, setMasterSearch] = useState('');
@@ -451,6 +477,9 @@ export default function MaterialOrderUpload({
   const [masterForm, setMasterForm] = useState(EMPTY_MASTER);
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [folderDialogOpen, setFolderDialogOpen] = useState(false);
+  const [folderParentCategoryId, setFolderParentCategoryId] = useState('');
+  const [newFolderName, setNewFolderName] = useState('');
   const [materialPickerPurpose, setMaterialPickerPurpose] = useState('order');
   const [projectSettings, setProjectSettings] = useState(null);
   const [settingsForm, setSettingsForm] = useState({
@@ -503,8 +532,52 @@ export default function MaterialOrderUpload({
       return;
     }
 
-    setCategories(data || []);
-  }, [handleSchemaError, notify, projectName]);
+    const nextCategories = (data || []).filter(
+      (row) => !REMOVED_CATEGORY_NAMES.has(row.name),
+    );
+    const firstCategoryId = nextCategories[0]?.id || '';
+    setCategories(nextCategories);
+
+    const { data: folderData, error: folderError } = await supabase
+      .from('material_supply_category_folders')
+      .select('id, category_id, name, sort_order, is_active')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true })
+      .order('name', { ascending: true });
+
+    if (folderError) {
+      const folderErrorMessage = String(folderError.message || '');
+      const folderTableMissing =
+        folderError.code === '42P01' ||
+        folderError.code === 'PGRST205' ||
+        folderErrorMessage.includes('does not exist') ||
+        folderErrorMessage.includes('Could not find the table') ||
+        folderErrorMessage.includes('schema cache');
+      setCategoryFolderSchemaMissing(folderTableMissing);
+      setCategoryFolders(buildDefaultCategoryFolders(nextCategories));
+      if (!folderTableMissing) {
+        notify('error', `하위 폴더 조회 실패: ${folderError.message}`);
+      }
+    } else {
+      setCategoryFolderSchemaMissing(false);
+      setCategoryFolders(folderData || []);
+    }
+
+    setSelectedOrderFolderId((current) => (
+      nextCategories.some((row) => row.id === current) ? current : firstCategoryId
+    ));
+    if (pageMode === 'order' && firstCategoryId) {
+      setOrder((current) => (
+        current.categoryId
+          ? current
+          : {
+              ...current,
+              categoryId: firstCategoryId,
+              processName: current.processName,
+            }
+      ));
+    }
+  }, [handleSchemaError, notify, pageMode, projectName]);
 
   const loadOrders = useCallback(async () => {
     if (!projectName) return;
@@ -1086,9 +1159,15 @@ export default function MaterialOrderUpload({
       return;
     }
 
+    const nextCategoryId = selectedOrderFolderId || categories[0]?.id || '';
+    const selectedFolderIsAvailable = categoryFolders.some((row) => (
+      row.category_id === nextCategoryId && row.name === selectedOrderFolderProcess
+    ));
     setOrder({
       ...EMPTY_ORDER,
       orderDate: getKoreaToday(),
+      categoryId: nextCategoryId,
+      processName: selectedFolderIsAvailable ? selectedOrderFolderProcess : '',
       requesterName:
         projectSettings?.default_requester_name ||
         getProfileName(userProfile),
@@ -1101,8 +1180,12 @@ export default function MaterialOrderUpload({
     setSelectedOrderItemKeys(new Set());
     setMainTab('order');
   }, [
+    categories,
+    categoryFolders,
     notify,
     projectSettings,
+    selectedOrderFolderId,
+    selectedOrderFolderProcess,
     settingsRequired,
     userProfile,
   ]);
@@ -1172,6 +1255,11 @@ export default function MaterialOrderUpload({
         if (row.status === 'draft') mapped = await refreshBalances(mapped);
         else mapped = recalculateOrderItemBalances(mapped);
 
+        const nextCategoryId = row.category_id || categories[0]?.id || '';
+        const nextProcessName = row.process_name || '';
+        const nextFolderNames = categoryFolders
+          .filter((folder) => folder.category_id === nextCategoryId)
+          .map((folder) => folder.name);
         setOrder({
           id: row.id,
           orderNo: row.order_no || '',
@@ -1181,11 +1269,15 @@ export default function MaterialOrderUpload({
           deliveryLocation: row.delivery_location || '',
           receiverName: row.receiver_name || '',
           receiverPhone: row.receiver_phone || '',
-          categoryId: row.category_id || '',
-          processName: row.process_name || '',
+          categoryId: nextCategoryId,
+          processName: nextProcessName,
           note: row.note || '',
           status: row.status || 'draft',
         });
+        setSelectedOrderFolderId(nextCategoryId);
+        setSelectedOrderFolderProcess((current) => (
+          nextFolderNames.includes(current) ? current : ''
+        ));
         setOrderItems(mapped);
         setSelectedOrderItemKeys(new Set());
         setMainTab('order');
@@ -1195,7 +1287,7 @@ export default function MaterialOrderUpload({
         setLoading(false);
       }
     },
-    [notify, refreshBalances],
+    [categories, categoryFolders, notify, refreshBalances],
   );
 
   const loadMaterialPicker = useCallback(async () => {
@@ -1655,7 +1747,10 @@ export default function MaterialOrderUpload({
   };
 
   const addBlankOrderItem = () => {
-    const nextItem = createBlankOrderItem();
+    const nextItem = {
+      ...createBlankOrderItem(),
+      categoryId: order.categoryId,
+    };
     setOrderItems((current) => [...current, nextItem]);
     setSelectedOrderItemKeys(new Set([nextItem.clientKey]));
 
@@ -1860,6 +1955,10 @@ export default function MaterialOrderUpload({
       notify('warning', '발주일을 입력해주세요.');
       return;
     }
+    if (!order.categoryId) {
+      notify('warning', '자재분류를 선택해주세요.');
+      return;
+    }
     if (savableItems.length === 0) {
       notify('warning', '발주 자재를 하나 이상 추가해주세요.');
       return;
@@ -1958,7 +2057,7 @@ export default function MaterialOrderUpload({
         order_id: orderId,
         material_id: row.materialId || null,
         sort_order: index + 1,
-        category_id: row.categoryId || null,
+        category_id: row.categoryId || order.categoryId || null,
         process_name: row.processName || null,
         standard_name: normalizeText(row.standardName),
         specification: normalizeText(row.specification) || null,
@@ -2175,33 +2274,160 @@ export default function MaterialOrderUpload({
   };
 
   const addCategory = async () => {
-    if (!canManageMaster) {
+    if (pageMode !== 'order' && !canManageMaster) {
       notify('warning', '자재분류 관리 권한이 없습니다.');
       return;
     }
     const name = normalizeText(newCategoryName);
     if (!name) return;
+    if (REMOVED_CATEGORY_NAMES.has(name)) {
+      notify('warning', '사용하지 않는 자재분류 이름입니다. 다른 이름을 입력해주세요.');
+      return;
+    }
     const nextSort = categories.reduce((max, row) => Math.max(max, Number(row.sort_order || 0)), 0) + 10;
-    const { error } = await supabase.from('material_supply_categories').insert({
-      name,
-      sort_order: nextSort,
-      is_active: true,
-      created_by: currentUserId || null,
-      updated_by: currentUserId || null,
-    });
+    const { data: addedCategory, error } = await supabase
+      .from('material_supply_categories')
+      .insert({
+        name,
+        sort_order: nextSort,
+        is_active: true,
+        created_by: currentUserId || null,
+        updated_by: currentUserId || null,
+      })
+      .select('id, name, sort_order, is_active')
+      .single();
     if (error) {
       notify('error', error.code === '23505' ? '이미 등록된 자재분류입니다.' : `분류 추가 실패: ${error.message}`);
       return;
     }
     setNewCategoryName('');
     notify('success', `자재분류 "${name}"을 추가했습니다.`);
-    loadCategories();
+    await loadCategories();
+    if (addedCategory?.id) {
+      setSelectedOrderFolderId(addedCategory.id);
+      setSelectedOrderFolderProcess('');
+      setProcessFoldersOpen(false);
+      if (!isLocked) {
+        setOrder((current) => ({
+          ...current,
+          categoryId: addedCategory.id,
+          processName: '',
+        }));
+      }
+    }
+  };
+
+  const openFolderDialog = (categoryId = selectedOrderFolderId) => {
+    setFolderParentCategoryId(categoryId || categories[0]?.id || '');
+    setNewFolderName('');
+    setFolderDialogOpen(true);
+  };
+
+  const addCategoryFolder = async () => {
+    if (pageMode !== 'order' && !canManageMaster) {
+      notify('warning', '하위 폴더 관리 권한이 없습니다.');
+      return;
+    }
+    if (categoryFolderSchemaMissing) {
+      notify('warning', '하위 폴더 저장용 Supabase SQL을 먼저 실행해주세요.');
+      return;
+    }
+
+    const categoryId = folderParentCategoryId || selectedOrderFolderId;
+    const name = normalizeText(newFolderName);
+    if (!categoryId) {
+      notify('warning', '상위 자재분류를 선택해주세요.');
+      return;
+    }
+    if (!name) {
+      notify('warning', '하위 폴더 이름을 입력해주세요.');
+      return;
+    }
+    if (categoryFolders.some((row) => (
+      row.category_id === categoryId &&
+      normalizeText(row.name).toLocaleLowerCase('ko-KR') === name.toLocaleLowerCase('ko-KR')
+    ))) {
+      notify('warning', '해당 분류에 같은 이름의 하위 폴더가 있습니다.');
+      return;
+    }
+
+    const nextSort = categoryFolders
+      .filter((row) => row.category_id === categoryId)
+      .reduce((max, row) => Math.max(max, Number(row.sort_order || 0)), 0) + 10;
+    const { data: addedFolder, error } = await supabase
+      .from('material_supply_category_folders')
+      .insert({
+        category_id: categoryId,
+        name,
+        sort_order: nextSort,
+        is_active: true,
+        created_by: currentUserId || null,
+        updated_by: currentUserId || null,
+      })
+      .select('id, category_id, name, sort_order, is_active')
+      .single();
+
+    if (error) {
+      notify('error', error.code === '23505' ? '이미 등록된 하위 폴더입니다.' : `하위 폴더 추가 실패: ${error.message}`);
+      return;
+    }
+
+    setCategoryFolders((current) => [...current, addedFolder].sort((a, b) => (
+      Number(a.sort_order || 0) - Number(b.sort_order || 0) ||
+      String(a.name || '').localeCompare(String(b.name || ''), 'ko-KR')
+    )));
+    setSelectedOrderFolderId(categoryId);
+    setSelectedOrderFolderProcess(name);
+    setProcessFoldersOpen(true);
+    if (!isLocked) {
+      setOrder((current) => ({
+        ...current,
+        categoryId,
+        processName: name,
+      }));
+    }
+    setNewFolderName('');
+    setFolderDialogOpen(false);
+    notify('success', `하위 폴더 "${name}"을 추가했습니다.`);
   };
 
   const visibleOrders = useMemo(
     () => orders.filter((row) => (mainTab === 'history' ? row.status !== 'draft' : true)),
     [mainTab, orders],
   );
+  const categoryFoldersByCategory = useMemo(() => {
+    const nextMap = new Map();
+    categoryFolders.forEach((folder) => {
+      const current = nextMap.get(folder.category_id) || [];
+      current.push(folder);
+      nextMap.set(folder.category_id, current);
+    });
+    return nextMap;
+  }, [categoryFolders]);
+  const folderOrders = useMemo(
+    () => {
+      return visibleOrders.filter((row) => {
+        if ((row.category_id || categories[0]?.id || '') !== selectedOrderFolderId) return false;
+        if (!selectedOrderFolderProcess) return true;
+        return row.process_name === selectedOrderFolderProcess;
+      });
+    },
+    [categories, selectedOrderFolderId, selectedOrderFolderProcess, visibleOrders],
+  );
+  const selectedOrderFolderCategory = categories.find(
+    (row) => row.id === selectedOrderFolderId,
+  );
+  const selectedCategoryFolders =
+    categoryFoldersByCategory.get(selectedOrderFolderId) || [];
+  const showProcessFolderTabs =
+    selectedCategoryFolders.length > 0 &&
+    processFoldersOpen;
+  const masterProcessOptions = [
+    ...new Set([
+      ...(categoryFoldersByCategory.get(masterForm.categoryId) || []).map((folder) => folder.name),
+      ...PROCESS_OPTIONS,
+    ]),
+  ];
 
   const selectedOrderItemCount = orderItems.filter((row, index) =>
     selectedOrderItemKeys.has(getOrderItemKey(row, index)),
@@ -2558,11 +2784,128 @@ export default function MaterialOrderUpload({
               <Typography sx={{ fontSize: '0.78rem', fontWeight: 900 }}>발주서 목록</Typography>
               <Chip label={`${visibleOrders.length}건`} size="small" sx={{ ml: 0.5 }} />
             </Stack>
+            <Box sx={{ p: 0.55, borderBottom: '1px solid #e2e8f0', bgcolor: '#f8fafc', maxHeight: 210, overflowY: 'auto' }}>
+              <Stack spacing={0.35}>
+                {categories.map((category) => {
+                  const orderCount = visibleOrders.filter((row) => (
+                    (row.category_id || categories[0]?.id || '') === category.id
+                  )).length;
+                  const categoryFolderOptions =
+                    categoryFoldersByCategory.get(category.id) || [];
+                  const hasProcessFolders = categoryFolderOptions.length > 0;
+                  const categoryFoldersOpen =
+                    hasProcessFolders &&
+                    selectedOrderFolderId === category.id &&
+                    processFoldersOpen;
+                  const selected =
+                    selectedOrderFolderId === category.id &&
+                    (!hasProcessFolders || !selectedOrderFolderProcess);
+                  return (
+                    <Box key={category.id}>
+                      <Button
+                        fullWidth
+                        size="small"
+                        variant={selected ? 'contained' : 'text'}
+                        color={selected ? 'primary' : 'inherit'}
+                        startIcon={
+                          categoryFoldersOpen
+                            ? <FolderOpenRoundedIcon fontSize="small" />
+                            : <FolderRoundedIcon fontSize="small" />
+                        }
+                        endIcon={<Chip label={`${orderCount}`} size="small" />}
+                        onClick={() => {
+                          setSelectedOrderFolderId(category.id);
+                          if (hasProcessFolders) {
+                            setProcessFoldersOpen(
+                              selectedOrderFolderId === category.id
+                                ? !processFoldersOpen
+                                : true,
+                            );
+                            setSelectedOrderFolderProcess('');
+                            if (!isLocked && !order.id) {
+                              setOrder((current) => ({ ...current, categoryId: category.id, processName: '' }));
+                            }
+                          } else {
+                            setProcessFoldersOpen(false);
+                            setSelectedOrderFolderProcess('');
+                            if (!isLocked && !order.id) {
+                              setOrder((current) => ({
+                                ...current,
+                                categoryId: category.id,
+                                processName: '',
+                              }));
+                            }
+                          }
+                        }}
+                        sx={{
+                          justifyContent: 'flex-start',
+                          minHeight: 29,
+                          px: 0.8,
+                          fontSize: '0.68rem',
+                          fontWeight: 850,
+                          '& .MuiButton-endIcon': { ml: 'auto' },
+                          '& .MuiChip-root': { height: 18, fontSize: '0.58rem' },
+                        }}
+                      >
+                        {category.name}
+                      </Button>
+                      {categoryFoldersOpen && (
+                        <Stack spacing={0.2} sx={{ mt: 0.2, ml: 2.2 }}>
+                          {categoryFolderOptions.map((folder) => {
+                            const processName = folder.name;
+                            const processSelected =
+                              selectedOrderFolderId === category.id &&
+                              selectedOrderFolderProcess === processName;
+                            const processCount = visibleOrders.filter((row) => (
+                              (row.category_id || categories[0]?.id || '') === category.id &&
+                              row.process_name === processName
+                            )).length;
+                            return (
+                              <Button
+                                key={folder.id}
+                                fullWidth
+                                size="small"
+                                variant={processSelected ? 'contained' : 'text'}
+                                color={processSelected ? 'primary' : 'inherit'}
+                                startIcon={<FolderRoundedIcon sx={{ fontSize: '0.9rem !important' }} />}
+                                endIcon={<Chip label={`${processCount}`} size="small" />}
+                                onClick={() => {
+                                  setSelectedOrderFolderId(category.id);
+                                  setSelectedOrderFolderProcess(processName);
+                                  if (!isLocked && !order.id) {
+                                    setOrder((current) => ({
+                                      ...current,
+                                      categoryId: category.id,
+                                      processName,
+                                    }));
+                                  }
+                                }}
+                                sx={{
+                                  justifyContent: 'flex-start',
+                                  minHeight: 25,
+                                  px: 0.65,
+                                  fontSize: '0.64rem',
+                                  fontWeight: 800,
+                                  '& .MuiButton-endIcon': { ml: 'auto' },
+                                  '& .MuiChip-root': { height: 17, fontSize: '0.56rem' },
+                                }}
+                              >
+                                {processName}
+                              </Button>
+                            );
+                          })}
+                        </Stack>
+                      )}
+                    </Box>
+                  );
+                })}
+              </Stack>
+            </Box>
             <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-              {visibleOrders.length === 0 ? (
-                <Box sx={{ height: '100%', minHeight: 220, display: 'grid', placeItems: 'center', color: '#94a3b8', fontSize: '0.72rem' }}>발주서가 없습니다.</Box>
+              {folderOrders.length === 0 ? (
+                <Box sx={{ height: '100%', minHeight: 160, display: 'grid', placeItems: 'center', color: '#94a3b8', fontSize: '0.72rem' }}>선택한 분류의 발주서가 없습니다.</Box>
               ) : (
-                visibleOrders.map((row) => {
+                folderOrders.map((row) => {
                   const selected = row.id === order.id;
                   return (
                     <Box
@@ -2608,8 +2951,180 @@ export default function MaterialOrderUpload({
               {order.id && <Button size="small" color="error" variant="outlined" onClick={deleteOrder} startIcon={<DeleteOutlineRoundedIcon />} sx={{ ml: 'auto' }}>삭제</Button>}
             </Stack>
 
+            <Stack
+              direction="row"
+              alignItems="center"
+              spacing={0.8}
+              sx={{
+                px: 0.9,
+                py: 0.55,
+                borderBottom: '1px solid #cbd5e1',
+                bgcolor: '#f8fafc',
+                minWidth: 0,
+              }}
+            >
+              <Typography sx={{ flexShrink: 0, fontSize: '0.69rem', fontWeight: 900, color: '#334155' }}>
+                {showProcessFolderTabs ? selectedOrderFolderCategory?.name : '자재분류'}
+              </Typography>
+              <Stack
+                role="tablist"
+                aria-label="발주서 자재분류"
+                direction="row"
+                spacing={0.45}
+                sx={{
+                  flex: 1,
+                  minWidth: 0,
+                  overflowX: 'auto',
+                  pb: 0.15,
+                  '&::-webkit-scrollbar': { height: 4 },
+                  '&::-webkit-scrollbar-thumb': { bgcolor: '#cbd5e1', borderRadius: 2 },
+                }}
+              >
+                {showProcessFolderTabs ? (
+                  selectedCategoryFolders.map((folder) => {
+                    const processName = folder.name;
+                    const selected = selectedOrderFolderProcess === processName;
+                    return (
+                      <Button
+                        key={folder.id}
+                        role="tab"
+                        aria-selected={selected}
+                        size="small"
+                        variant={selected ? 'contained' : 'outlined'}
+                        disabled={isLocked}
+                        onClick={() => {
+                          setSelectedOrderFolderId(selectedOrderFolderCategory.id);
+                          setSelectedOrderFolderProcess(processName);
+                          setOrder((current) => ({
+                            ...current,
+                            categoryId: selectedOrderFolderCategory.id,
+                            processName,
+                          }));
+                        }}
+                        sx={{
+                          minWidth: 'max-content',
+                          height: 25,
+                          px: 1,
+                          py: 0,
+                          borderRadius: 1,
+                          fontSize: '0.66rem',
+                          fontWeight: 850,
+                          whiteSpace: 'nowrap',
+                        }}
+                      >
+                        {processName}
+                      </Button>
+                    );
+                  })
+                ) : (
+                  <>
+                    {categories.map((category) => {
+                      const selected = selectedOrderFolderId === category.id;
+                      const categoryFolderOptions =
+                        categoryFoldersByCategory.get(category.id) || [];
+                      return (
+                        <Button
+                          key={category.id}
+                          role="tab"
+                          aria-selected={selected}
+                          size="small"
+                          variant={selected ? 'contained' : 'outlined'}
+                          disabled={isLocked}
+                          onClick={() => {
+                            setOrder((current) => ({
+                              ...current,
+                              categoryId: category.id,
+                              processName: '',
+                            }));
+                            setSelectedOrderFolderId(category.id);
+                            setSelectedOrderFolderProcess('');
+                            setProcessFoldersOpen(categoryFolderOptions.length > 0);
+                          }}
+                          sx={{
+                            minWidth: 'max-content',
+                            height: 25,
+                            px: 1,
+                            py: 0,
+                            borderRadius: 1,
+                            fontSize: '0.66rem',
+                            fontWeight: 850,
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {category.name}
+                        </Button>
+                      );
+                    })}
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="success"
+                      startIcon={<AddRoundedIcon />}
+                      onClick={() => setCategoryDialogOpen(true)}
+                      sx={{
+                        minWidth: 'max-content',
+                        height: 25,
+                        px: 1,
+                        py: 0,
+                        borderStyle: 'dashed',
+                        borderRadius: 1,
+                        fontSize: '0.66rem',
+                        fontWeight: 850,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      분류 추가
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="success"
+                      startIcon={<PlaylistAddRoundedIcon />}
+                      onClick={() => openFolderDialog()}
+                      disabled={!selectedOrderFolderId}
+                      sx={{
+                        minWidth: 'max-content',
+                        height: 25,
+                        px: 1,
+                        py: 0,
+                        borderStyle: 'dashed',
+                        borderRadius: 1,
+                        fontSize: '0.66rem',
+                        fontWeight: 850,
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      하위 폴더 추가
+                    </Button>
+                  </>
+                )}
+                {showProcessFolderTabs && (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    color="success"
+                    startIcon={<AddRoundedIcon />}
+                    onClick={() => openFolderDialog(selectedOrderFolderId)}
+                    sx={{
+                      minWidth: 'max-content',
+                      height: 25,
+                      px: 1,
+                      py: 0,
+                      borderStyle: 'dashed',
+                      borderRadius: 1,
+                      fontSize: '0.66rem',
+                      fontWeight: 850,
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    폴더 추가
+                  </Button>
+                )}
+              </Stack>
+            </Stack>
+
             <Box sx={{ p: 0.7, borderBottom: '1px solid #cbd5e1', bgcolor: '#eef1f4' }}>
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', columnGap: 0.7, rowGap: 0.55 }}>
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', columnGap: 0.7, rowGap: 0.55 }}>
                 <TextField size="small" label="발주일" type="date" slotProps={{ inputLabel: { shrink: true } }} value={order.orderDate} onChange={(e) => setOrder((current) => ({ ...current, orderDate: e.target.value }))} disabled={isLocked} sx={compactEntryFieldSx(order.orderDate)} />
                 <TextField size="small" label="요청자" slotProps={{ inputLabel: { shrink: true } }} value={order.requesterName} onChange={(e) => setOrder((current) => ({ ...current, requesterName: e.target.value }))} disabled={isLocked} sx={compactEntryFieldSx(order.requesterName)} />
                 <Box sx={compactSelectFieldSx(order.categoryId, isLocked)}>
@@ -2618,36 +3133,28 @@ export default function MaterialOrderUpload({
                     component="select"
                     id="material-order-category"
                     value={order.categoryId}
-                    onChange={(event) => setOrder((current) => ({ ...current, categoryId: event.target.value }))}
+                    onChange={(event) => {
+                      const nextCategoryId = event.target.value;
+                      const nextCategoryFolders =
+                        categoryFoldersByCategory.get(nextCategoryId) || [];
+                      setOrder((current) => ({
+                        ...current,
+                        categoryId: nextCategoryId,
+                        processName: '',
+                      }));
+                      setSelectedOrderFolderId(nextCategoryId);
+                      setSelectedOrderFolderProcess('');
+                      setProcessFoldersOpen(nextCategoryFolders.length > 0);
+                    }}
                     disabled={isLocked}
                   >
-                    <option value="">전체/혼합</option>
                     {categories.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
-                  </Box>
-                </Box>
-                <Box sx={compactSelectFieldSx(order.processName, isLocked)}>
-                  <Box component="label" htmlFor="material-order-process">공정</Box>
-                  <Box
-                    component="select"
-                    id="material-order-process"
-                    value={order.processName || ''}
-                    onChange={(event) => setOrder((current) => ({ ...current, processName: event.target.value }))}
-                    disabled={isLocked}
-                  >
-                    <option value="">공정 선택</option>
-                    {order.processName && !PROCESS_OPTIONS.includes(order.processName) && (
-                      <option value={order.processName}>{order.processName}</option>
-                    )}
-                    {PROCESS_OPTIONS.map((processName) => (
-                      <option key={processName} value={processName}>{processName}</option>
-                    ))}
                   </Box>
                 </Box>
                 <TextField size="small" label="납품희망일" type="date" slotProps={{ inputLabel: { shrink: true } }} value={order.deliveryDate} onChange={(e) => setOrder((current) => ({ ...current, deliveryDate: e.target.value }))} disabled={isLocked} sx={compactEntryFieldSx(order.deliveryDate)} />
                 <TextField size="small" label="납품장소" slotProps={{ inputLabel: { shrink: true } }} value={order.deliveryLocation} onChange={(e) => setOrder((current) => ({ ...current, deliveryLocation: e.target.value }))} disabled={isLocked} sx={compactEntryFieldSx(order.deliveryLocation)} />
                 <TextField size="small" label="수령자" slotProps={{ inputLabel: { shrink: true } }} value={order.receiverName} onChange={(e) => setOrder((current) => ({ ...current, receiverName: e.target.value }))} disabled={isLocked} sx={compactEntryFieldSx(order.receiverName)} />
                 <TextField size="small" label="연락처" slotProps={{ inputLabel: { shrink: true } }} value={order.receiverPhone} onChange={(e) => setOrder((current) => ({ ...current, receiverPhone: e.target.value }))} disabled={isLocked} sx={compactEntryFieldSx(order.receiverPhone)} />
-                <TextField size="small" label="비고" slotProps={{ inputLabel: { shrink: true } }} value={order.note} onChange={(e) => setOrder((current) => ({ ...current, note: e.target.value }))} disabled={isLocked} sx={{ gridColumn: 'span 4', ...compactEntryFieldSx(order.note, false) }} />
               </Box>
             </Box>
 
@@ -3586,7 +4093,7 @@ export default function MaterialOrderUpload({
             <TextField select size="small" label="자재분류" value={masterForm.categoryId} onChange={(e) => setMasterForm((current) => ({ ...current, categoryId: e.target.value }))}>
               {categories.map((row) => <MenuItem key={row.id} value={row.id}>{row.name}</MenuItem>)}
             </TextField>
-            <Autocomplete freeSolo size="small" options={PROCESS_OPTIONS} value={masterForm.processName} onInputChange={(_, value) => setMasterForm((current) => ({ ...current, processName: value }))} renderInput={(params) => <TextField {...params} label="공정" />} />
+            <Autocomplete freeSolo size="small" options={masterProcessOptions} value={masterForm.processName} onInputChange={(_, value) => setMasterForm((current) => ({ ...current, processName: value }))} renderInput={(params) => <TextField {...params} label="공정" />} />
             <TextField size="small" label="표준 품명" value={masterForm.standardName} onChange={(e) => setMasterForm((current) => ({ ...current, standardName: e.target.value }))} />
             <TextField size="small" label="표준 규격" value={masterForm.specification} onChange={(e) => setMasterForm((current) => ({ ...current, specification: e.target.value }))} />
             <TextField size="small" label="단위" value={masterForm.unit} onChange={(e) => setMasterForm((current) => ({ ...current, unit: e.target.value }))} />
@@ -3640,6 +4147,9 @@ export default function MaterialOrderUpload({
       <Dialog open={categoryDialogOpen} onClose={() => setCategoryDialogOpen(false)} fullWidth maxWidth="xs">
         <DialogTitle sx={{ fontSize: '1rem', fontWeight: 900 }}>자재분류 관리</DialogTitle>
         <DialogContent dividers sx={{ p: 1.2 }}>
+          <Alert severity="info" sx={{ mb: 1, py: 0.2 }}>
+            기본 제공 분류 외에 필요한 분류를 추가할 수 있습니다. 추가한 분류는 자재발주 담당자가 공통으로 사용합니다.
+          </Alert>
           <Stack direction="row" spacing={0.7}>
             <TextField size="small" fullWidth label="새 자재분류" value={newCategoryName} onChange={(e) => setNewCategoryName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && addCategory()} />
             <Button variant="contained" onClick={addCategory}>추가</Button>
@@ -3650,6 +4160,44 @@ export default function MaterialOrderUpload({
           </Stack>
         </DialogContent>
         <DialogActions><Button onClick={() => setCategoryDialogOpen(false)}>닫기</Button></DialogActions>
+      </Dialog>
+
+      <Dialog open={folderDialogOpen} onClose={() => setFolderDialogOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle sx={{ fontSize: '1rem', fontWeight: 900 }}>하위 폴더 추가</DialogTitle>
+        <DialogContent dividers sx={{ p: 1.2 }}>
+          {categoryFolderSchemaMissing && (
+            <Alert severity="warning" sx={{ mb: 1, py: 0.2 }}>
+              하위 폴더를 저장하려면 제공된 Supabase SQL을 먼저 실행해야 합니다.
+            </Alert>
+          )}
+          <Stack spacing={1}>
+            <TextField
+              select
+              size="small"
+              fullWidth
+              label="상위 자재분류"
+              value={folderParentCategoryId}
+              onChange={(event) => setFolderParentCategoryId(event.target.value)}
+            >
+              {categories.map((category) => (
+                <MenuItem key={category.id} value={category.id}>{category.name}</MenuItem>
+              ))}
+            </TextField>
+            <TextField
+              size="small"
+              fullWidth
+              autoFocus
+              label="새 하위 폴더 이름"
+              value={newFolderName}
+              onChange={(event) => setNewFolderName(event.target.value)}
+              onKeyDown={(event) => event.key === 'Enter' && addCategoryFolder()}
+            />
+          </Stack>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setFolderDialogOpen(false)}>취소</Button>
+          <Button variant="contained" onClick={addCategoryFolder}>추가</Button>
+        </DialogActions>
       </Dialog>
 
       <Snackbar open={Boolean(toast)} autoHideDuration={3200} onClose={() => setToast(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
