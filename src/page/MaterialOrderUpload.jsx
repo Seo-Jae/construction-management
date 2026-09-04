@@ -1,3 +1,4 @@
+// v52.48.5.44.153 발주 품명 표시순서 연동·Enter 품목행 추가
 // v52.48.5.44.152 현장 자재 ID 자동연결·직접입력 누계·발주확정
 // v52.48.5.44.151 자재발주서 Excel 다운로드·결재요청 대기 처리
 // v52.48.5.44.145 상단 발주탭 제거·새 발주서 버튼 이동
@@ -397,6 +398,9 @@ const materialNameCollator = new Intl.Collator('ko-KR', {
 });
 
 const filterOrderMaterialOptions = (options, state) => {
+  const compareDisplayOrder = (first, second) =>
+    (Number(first.display_order) || 1000) -
+    (Number(second.display_order) || 1000);
   const keyword = normalizeText(state.inputValue).toLocaleLowerCase('ko-KR');
   if (!keyword) {
     return options
@@ -405,6 +409,7 @@ const filterOrderMaterialOptions = (options, state) => {
         (first, second) =>
           (Number(first.main_sort_order) || 100) -
             (Number(second.main_sort_order) || 100) ||
+          compareDisplayOrder(first, second) ||
           materialNameCollator.compare(
             normalizeText(first.standard_name),
             normalizeText(second.standard_name),
@@ -431,6 +436,7 @@ const filterOrderMaterialOptions = (options, state) => {
           Number(first.is_main_material === true) ||
         (Number(first.main_sort_order) || 100) -
           (Number(second.main_sort_order) || 100) ||
+        compareDisplayOrder(first, second) ||
         materialNameCollator.compare(firstName, secondName)
       );
     });
@@ -1473,9 +1479,10 @@ export default function MaterialOrderUpload({
       let query = supabase
         .from('material_master_items')
         .select(
-          'id, category_id, process_name, standard_name, specification, unit, manufacturer, aliases, search_text, is_main_material, main_sort_order',
+          'id, category_id, process_name, standard_name, specification, unit, manufacturer, aliases, search_text, is_main_material, main_sort_order, display_order',
         )
         .eq('is_active', true)
+        .order('display_order', { ascending: true })
         .order('standard_name', { ascending: true })
         .limit(500);
 
@@ -1575,6 +1582,7 @@ export default function MaterialOrderUpload({
           aliases: master?.aliases || [],
           is_main_material: master?.is_main_material === true,
           main_sort_order: master?.main_sort_order || 100,
+          display_order: master?.display_order || 1000,
           isProjectMaterial: true,
           executionQuantity: quantityMap.get(row.material_id) || 0,
           previousQuantity: cumulativeMap.get(row.id) || 0,
@@ -2059,10 +2067,17 @@ export default function MaterialOrderUpload({
       return;
     }
 
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      event.stopPropagation();
+      addBlankOrderItem();
+      return;
+    }
+
     let nextRowIndex = rowIndex;
     let nextFieldIndex = fieldIndex;
 
-    if (event.key === 'Enter' || event.key === 'ArrowDown') {
+    if (event.key === 'ArrowDown') {
       nextRowIndex += 1;
     } else if (event.key === 'ArrowUp') {
       nextRowIndex -= 1;
