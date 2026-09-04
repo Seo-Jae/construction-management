@@ -1,3 +1,5 @@
+// v52.48.5.44.152 현장 자재 ID 자동연결·직접입력 누계·발주확정
+// v52.48.5.44.151 자재발주서 Excel 다운로드·결재요청 대기 처리
 // v52.48.5.44.145 상단 발주탭 제거·새 발주서 버튼 이동
 // v52.48.5.44.144 발주 기본정보 영역 회색배경·입력칸 높이 축소
 // v52.48.5.44.143 발주작성·목록 위치교체 및 입력상태 배경 구분
@@ -85,6 +87,7 @@ import {
   parseMaterialMasterWorkbookFile,
   saveMaterialMasterWorkbook,
 } from '../utils/materialMasterExcel.js';
+import { saveMaterialOrderWorkbook } from '../utils/materialOrderExcel.js';
 import ScaleAwareAutocompletePopper from '../components/ScaleAwareAutocompletePopper.jsx';
 
 const PROCESS_OPTIONS = [
@@ -108,6 +111,7 @@ const PROCESS_FOLDER_OPTIONS = PROCESS_OPTIONS.filter(
 
 const ORDER_STATUS_LABELS = {
   draft: '작성중',
+  ordered: '발주확정',
   confirmed: '결재요청',
   cancelled: '취소',
 };
@@ -163,6 +167,7 @@ const createOrderItemKey = () =>
 const createBlankOrderItem = (clientKey = createOrderItemKey()) => ({
   id: '',
   clientKey,
+  projectMaterialId: '',
   materialId: '',
   masterStandardName: '',
   categoryId: '',
@@ -179,6 +184,24 @@ const createBlankOrderItem = (clientKey = createOrderItemKey()) => ({
 });
 
 const normalizeText = (value) => String(value ?? '').trim().replace(/\s+/g, ' ');
+const normalizeMaterialIdentityPart = (value) =>
+  normalizeText(value).toLocaleLowerCase('ko-KR');
+const buildProjectMaterialIdentityKey = ({
+  category_id: categoryId,
+  categoryId: camelCategoryId,
+  process_name: processName,
+  processName: camelProcessName,
+  standard_name: standardName,
+  standardName: camelStandardName,
+  specification,
+  unit,
+}) => [
+  categoryId || camelCategoryId || '',
+  normalizeMaterialIdentityPart(processName || camelProcessName),
+  normalizeMaterialIdentityPart(standardName || camelStandardName),
+  normalizeMaterialIdentityPart(specification),
+  normalizeMaterialIdentityPart(unit),
+].join('|');
 const entryFieldSx = (value, required = true) => ({
   '& .MuiOutlinedInput-root': {
     bgcolor: !required || normalizeText(value) ? '#ffffff' : '#fff8d6',
@@ -246,8 +269,9 @@ const recalculateOrderItemBalances = (items) => {
   const linkedGroups = new Map();
 
   (items || []).forEach((row) => {
-    if (!row.materialId) return;
-    const current = linkedGroups.get(row.materialId) || {
+    const groupKey = row.projectMaterialId || (row.materialId ? `master:${row.materialId}` : '');
+    if (!groupKey) return;
+    const current = linkedGroups.get(groupKey) || {
       execution: 0,
       previous: 0,
       current: 0,
@@ -261,11 +285,12 @@ const recalculateOrderItemBalances = (items) => {
       numberValue(row.previousQuantity),
     );
     current.current += numberValue(row.currentQuantity);
-    linkedGroups.set(row.materialId, current);
+    linkedGroups.set(groupKey, current);
   });
 
   return (items || []).map((row) => {
-    if (!row.materialId) {
+    const groupKey = row.projectMaterialId || (row.materialId ? `master:${row.materialId}` : '');
+    if (!groupKey) {
       return {
         ...row,
         cumulativeQuantity: numberValue(row.currentQuantity),
@@ -273,7 +298,7 @@ const recalculateOrderItemBalances = (items) => {
       };
     }
 
-    const group = linkedGroups.get(row.materialId);
+    const group = linkedGroups.get(groupKey);
     const cumulative = group.previous + group.current;
     return {
       ...row,
@@ -451,6 +476,7 @@ export default function MaterialOrderUpload({
   const [loading, setLoading] = useState(false);
   const [masterLoading, setMasterLoading] = useState(false);
   const [masterExcelBusy, setMasterExcelBusy] = useState(false);
+  const [orderExcelBusy, setOrderExcelBusy] = useState(false);
   const [masterActionBusy, setMasterActionBusy] = useState(false);
   const [selectedMasterIds, setSelectedMasterIds] = useState(
     () => new Set(),
@@ -504,7 +530,7 @@ export default function MaterialOrderUpload({
   const currentUserId = getProfileId(userProfile);
   const currentUserName = getProfileName(userProfile);
   const isSuperAdmin = isSuperAdminProfile(userProfile);
-  const isLocked = order.status === 'confirmed' || order.status === 'cancelled';
+  const isLocked = ['ordered', 'confirmed', 'cancelled'].includes(order.status);
 
   const notify = useCallback((severity, text) => {
     setToast({ severity, text });
@@ -1164,6 +1190,9 @@ export default function MaterialOrderUpload({
     }
 
     const nextCategoryId = selectedOrderFolderId || categories[0]?.id || '';
+    const nextCategoryFolders = categoryFolders.filter(
+      (row) => row.category_id === nextCategoryId,
+    );
     const selectedFolderIsAvailable = categoryFolders.some((row) => (
       row.category_id === nextCategoryId && row.name === selectedOrderFolderProcess
     ));
@@ -1183,6 +1212,10 @@ export default function MaterialOrderUpload({
     setOrderItems([]);
     setSelectedOrderItemKeys(new Set());
     setMainTab('order');
+    if (nextCategoryFolders.length > 0 && !selectedFolderIsAvailable) {
+      setProcessFoldersOpen(true);
+      notify('warning', '이 자재분류는 하위폴더를 선택한 뒤 발주서를 작성해야 합니다.');
+    }
   }, [
     categories,
     categoryFolders,
@@ -1219,22 +1252,57 @@ export default function MaterialOrderUpload({
   const refreshBalances = useCallback(
     async (items) => {
       if (!projectName || items.length === 0) return items;
-      const ids = [...new Set(items.map((row) => row.materialId).filter(Boolean))];
-      if (ids.length === 0) return items;
+      const projectMaterialIds = [
+        ...new Set(items.map((row) => row.projectMaterialId).filter(Boolean)),
+      ];
+      const unresolvedMasterIds = [
+        ...new Set(
+          items
+            .filter((row) => !row.projectMaterialId)
+            .map((row) => row.materialId)
+            .filter(Boolean),
+        ),
+      ];
+      if (projectMaterialIds.length === 0 && unresolvedMasterIds.length === 0) return items;
 
-      const { data, error } = await supabase
-        .from('material_supply_cumulative')
-        .select('material_id, cumulative_order_quantity')
-        .eq('project_name', projectName)
-        .in('material_id', ids);
+      const [projectResult, masterResult] = await Promise.all([
+        projectMaterialIds.length > 0
+          ? supabase
+            .from('material_supply_cumulative')
+            .select('project_material_id, cumulative_order_quantity')
+            .eq('project_name', projectName)
+            .in('project_material_id', projectMaterialIds)
+          : Promise.resolve({ data: [], error: null }),
+        unresolvedMasterIds.length > 0
+          ? supabase
+            .from('material_supply_cumulative')
+            .select('material_id, cumulative_order_quantity')
+            .eq('project_name', projectName)
+            .in('material_id', unresolvedMasterIds)
+          : Promise.resolve({ data: [], error: null }),
+      ]);
 
-      if (error) throw error;
-      const cumulativeMap = new Map(
-        (data || []).map((row) => [row.material_id, numberValue(row.cumulative_order_quantity)]),
+      if (projectResult.error) throw projectResult.error;
+      if (masterResult.error) throw masterResult.error;
+      const projectCumulativeMap = new Map(
+        (projectResult.data || []).map((row) => [
+          row.project_material_id,
+          numberValue(row.cumulative_order_quantity),
+        ]),
       );
+      const masterCumulativeMap = new Map();
+      (masterResult.data || []).forEach((row) => {
+        masterCumulativeMap.set(
+          row.material_id,
+          (masterCumulativeMap.get(row.material_id) || 0) +
+            numberValue(row.cumulative_order_quantity),
+        );
+      });
 
       return recalculateOrderItemBalances(items.map((row) => {
-        const previous = cumulativeMap.get(row.materialId) || 0;
+        const previous = row.projectMaterialId
+          ? projectCumulativeMap.get(row.projectMaterialId) || 0
+          : masterCumulativeMap.get(row.materialId) || 0;
         const current = numberValue(row.currentQuantity);
         const cumulative = previous + current;
         const execution = numberValue(row.executionQuantity);
@@ -1263,6 +1331,7 @@ export default function MaterialOrderUpload({
         let mapped = (items || []).map((item) => ({
           id: item.id,
           clientKey: item.id || createOrderItemKey(),
+          projectMaterialId: item.project_material_id || '',
           materialId: item.material_id,
           masterStandardName: item.material_id ? item.standard_name : '',
           categoryId: item.category_id || '',
@@ -1363,7 +1432,14 @@ export default function MaterialOrderUpload({
       }
 
       const quantityMap = new Map(quantities.map((row) => [row.material_id, numberValue(row.execution_quantity)]));
-      const cumulativeMap = new Map(cumulative.map((row) => [row.material_id, numberValue(row.cumulative_order_quantity)]));
+      const cumulativeMap = new Map();
+      cumulative.forEach((row) => {
+        cumulativeMap.set(
+          row.material_id,
+          (cumulativeMap.get(row.material_id) || 0) +
+            numberValue(row.cumulative_order_quantity),
+        );
+      });
 
       setMaterialPickerRows(
         (materials || []).map((row) => ({
@@ -1410,25 +1486,59 @@ export default function MaterialOrderUpload({
         query = query.eq('process_name', order.processName);
       }
 
-      const { data: materials, error } = await query;
-      if (error) throw error;
+      let projectItemQuery = supabase
+        .from('material_supply_project_items')
+        .select(
+          'id, material_id, category_id, process_name, standard_name, specification, unit, identity_key, search_text',
+        )
+        .eq('project_name', projectName)
+        .eq('is_active', true)
+        .order('standard_name', { ascending: true })
+        .limit(500);
 
-      const ids = (materials || []).map((row) => row.id);
+      if (order.categoryId) {
+        projectItemQuery = projectItemQuery.eq('category_id', order.categoryId);
+      }
+      if (order.processName) {
+        projectItemQuery = projectItemQuery.eq('process_name', order.processName);
+      }
+
+      const [masterResult, projectItemResult] = await Promise.all([
+        query,
+        projectItemQuery,
+      ]);
+      if (masterResult.error) throw masterResult.error;
+
+      const materials = masterResult.data || [];
+      const projectCatalogReady = !projectItemResult.error;
+      const projectItems = projectCatalogReady ? projectItemResult.data || [] : [];
+
+      const ids = materials.map((row) => row.id);
       let quantities = [];
       let cumulative = [];
 
-      if (ids.length > 0) {
+      if (ids.length > 0 || projectItems.length > 0) {
         const [quantityResult, cumulativeResult] = await Promise.all([
-          supabase
+          ids.length > 0
+            ? supabase
             .from('material_project_materials')
             .select('material_id, execution_quantity')
             .eq('project_name', projectName)
-            .in('material_id', ids),
-          supabase
-            .from('material_supply_cumulative')
-            .select('material_id, cumulative_order_quantity')
-            .eq('project_name', projectName)
-            .in('material_id', ids),
+            .in('material_id', ids)
+            : Promise.resolve({ data: [], error: null }),
+          projectCatalogReady && projectItems.length > 0
+            ? supabase
+              .from('material_supply_cumulative')
+              .select('project_material_id, cumulative_order_quantity')
+              .eq('project_name', projectName)
+              .in('project_material_id', projectItems.map((row) => row.id))
+            : ids.length > 0
+              ? supabase
+                .from('material_supply_cumulative')
+                .select('material_id, cumulative_order_quantity')
+                .eq('project_name', projectName)
+                .in('material_id', ids)
+              : Promise.resolve({ data: [], error: null }),
         ]);
         if (quantityResult.error) throw quantityResult.error;
         if (cumulativeResult.error) throw cumulativeResult.error;
@@ -1442,21 +1552,49 @@ export default function MaterialOrderUpload({
           numberValue(row.execution_quantity),
         ]),
       );
-      const cumulativeMap = new Map(
-        cumulative.map((row) => [
-          row.material_id,
-          numberValue(row.cumulative_order_quantity),
-        ]),
+      const cumulativeMap = new Map();
+      cumulative.forEach((row) => {
+        const key = projectCatalogReady ? row.project_material_id : row.material_id;
+        cumulativeMap.set(
+          key,
+          (cumulativeMap.get(key) || 0) + numberValue(row.cumulative_order_quantity),
+        );
+      });
+      const masterMap = new Map(materials.map((row) => [row.id, row]));
+      const projectIdentityKeys = new Set(
+        projectItems.map((row) => row.identity_key || buildProjectMaterialIdentityKey(row)),
       );
-
-      setOrderMaterialOptions(
-        (materials || []).map((row) => ({
+      const projectOptions = projectItems.map((row) => {
+        const master = masterMap.get(row.material_id) || null;
+        const option = {
           ...row,
+          id: `project:${row.id}`,
+          projectMaterialId: row.id,
+          materialId: row.material_id || '',
+          manufacturer: master?.manufacturer || '',
+          aliases: master?.aliases || [],
+          is_main_material: master?.is_main_material === true,
+          main_sort_order: master?.main_sort_order || 100,
+          isProjectMaterial: true,
+          executionQuantity: quantityMap.get(row.material_id) || 0,
+          previousQuantity: cumulativeMap.get(row.id) || 0,
+        };
+        return { ...option, orderSearchText: buildOrderMaterialSearchText(option) };
+      });
+      const masterOptions = materials
+        .filter((row) => !projectIdentityKeys.has(buildProjectMaterialIdentityKey(row)))
+        .map((row) => ({
+          ...row,
+          projectMaterialId: '',
+          materialId: row.id,
           isProjectMaterial: quantityMap.has(row.id),
           executionQuantity: quantityMap.get(row.id) || 0,
-          previousQuantity: cumulativeMap.get(row.id) || 0,
+          previousQuantity: projectCatalogReady ? 0 : cumulativeMap.get(row.id) || 0,
           orderSearchText: buildOrderMaterialSearchText(row),
-        })),
+        }));
+
+      setOrderMaterialOptions(
+        [...projectOptions, ...masterOptions],
       );
     } catch (error) {
       if (!handleSchemaError(error)) {
@@ -1495,6 +1633,7 @@ export default function MaterialOrderUpload({
         {
         id: '',
         clientKey: createOrderItemKey(),
+        projectMaterialId: material.projectMaterialId || '',
         materialId: material.id,
         masterStandardName: material.standard_name,
         categoryId: material.category_id || '',
@@ -1723,6 +1862,14 @@ export default function MaterialOrderUpload({
       recalculateOrderItemBalances(current.map((row, rowIndex) => {
         if (rowIndex !== index) return row;
         const nextRow = { ...row, [field]: value };
+        if (['standardName', 'specification', 'unit'].includes(field)) {
+          nextRow.projectMaterialId = '';
+          nextRow.previousQuantity = 0;
+          nextRow.cumulativeQuantity = numberValue(nextRow.currentQuantity);
+          nextRow.executionRatio = nextRow.executionQuantity > 0
+            ? (nextRow.cumulativeQuantity / nextRow.executionQuantity) * 100
+            : 0;
+        }
         if (
           field === 'standardName' &&
           nextRow.materialId &&
@@ -1773,9 +1920,18 @@ export default function MaterialOrderUpload({
   };
 
   const addBlankOrderItem = () => {
+    const requiresFolderSelection = categoryFolders.some(
+      (row) => row.category_id === order.categoryId,
+    ) && !normalizeText(order.processName);
+    if (requiresFolderSelection) {
+      setProcessFoldersOpen(true);
+      notify('warning', '먼저 발주서를 작성할 하위폴더를 선택해주세요.');
+      return;
+    }
     const nextItem = {
       ...createBlankOrderItem(),
       categoryId: order.categoryId,
+      processName: order.processName,
     };
     setOrderItems((current) => [...current, nextItem]);
     setSelectedOrderItemKeys(new Set([nextItem.clientKey]));
@@ -1863,7 +2019,8 @@ export default function MaterialOrderUpload({
 
         return {
           ...row,
-          materialId: material.id,
+          projectMaterialId: material.projectMaterialId || '',
+          materialId: material.materialId || material.material_id || '',
           masterStandardName: material.standard_name || '',
           categoryId: material.category_id || '',
           processName: material.process_name || '',
@@ -1954,6 +2111,59 @@ export default function MaterialOrderUpload({
     focusOrderItemCell(nextRowIndex, nextFieldIndex);
   };
 
+  const downloadOrderExcel = async () => {
+    if (!projectName || orderExcelBusy) return;
+
+    const exportItems = orderItems.filter((row) =>
+      [
+        row.standardName,
+        row.specification,
+        row.unit,
+        row.currentQuantity,
+        row.note,
+      ].some((value) => normalizeText(value)),
+    );
+
+    if (!order.orderDate) {
+      notify('warning', '발주일을 입력해주세요.');
+      return;
+    }
+    if (!order.categoryId) {
+      notify('warning', '자재분류를 선택해주세요.');
+      return;
+    }
+    if (
+      categoryFolders.some((row) => row.category_id === order.categoryId) &&
+      !normalizeText(order.processName)
+    ) {
+      setProcessFoldersOpen(true);
+      notify('warning', '엑셀 다운로드 전에 발주서의 하위폴더를 선택해주세요.');
+      return;
+    }
+    if (exportItems.length === 0) {
+      notify('warning', '엑셀에 작성할 발주 품목을 하나 이상 추가해주세요.');
+      return;
+    }
+    if (exportItems.some((row) => !normalizeText(row.standardName))) {
+      notify('warning', '품명이 비어 있는 발주 품목 행을 확인해주세요.');
+      return;
+    }
+
+    setOrderExcelBusy(true);
+    try {
+      const result = await saveMaterialOrderWorkbook({
+        projectName,
+        order,
+        items: exportItems,
+      });
+      notify('success', `${result.source}에 현재 작성 내용을 넣어 다운로드했습니다.`);
+    } catch (error) {
+      notify('error', `자재발주서 Excel 다운로드 실패: ${error.message}`);
+    } finally {
+      setOrderExcelBusy(false);
+    }
+  };
+
   const saveOrder = async (status = 'draft') => {
     if (!projectName || isLocked) return;
 
@@ -1985,6 +2195,14 @@ export default function MaterialOrderUpload({
       notify('warning', '자재분류를 선택해주세요.');
       return;
     }
+    if (
+      categoryFolders.some((row) => row.category_id === order.categoryId) &&
+      !normalizeText(order.processName)
+    ) {
+      setProcessFoldersOpen(true);
+      notify('warning', '발주서를 저장할 하위폴더를 먼저 선택해주세요.');
+      return;
+    }
     if (savableItems.length === 0) {
       notify('warning', '발주 자재를 하나 이상 추가해주세요.');
       return;
@@ -1998,7 +2216,7 @@ export default function MaterialOrderUpload({
       return;
     }
 
-    if (status === 'confirmed' && savableItems.every((row) => numberValue(row.currentQuantity) <= 0)) {
+    if (['ordered', 'confirmed'].includes(status) && savableItems.every((row) => numberValue(row.currentQuantity) <= 0)) {
       notify('warning', '금회발주량을 입력해주세요.');
       return;
     }
@@ -2024,8 +2242,48 @@ export default function MaterialOrderUpload({
       }
     }
 
+    const { data: projectCatalogReadyResult, error: projectCatalogReadyError } = await supabase.rpc(
+      'material_supply_project_catalog_ready_v52_48_5_44_152',
+    );
+    const projectCatalogReady = !projectCatalogReadyError && projectCatalogReadyResult === true;
+    if (!projectCatalogReady && status === 'ordered') {
+      notify(
+        'error',
+        '발주확정과 현장 자재 누계를 사용하려면 v52.48.5.44.152 SQL을 먼저 실행해주세요.',
+      );
+      return;
+    }
+    if (
+      status === 'ordered' &&
+      !window.confirm('발주확정하면 금회발주량이 누계에 반영되고 발주서는 수정할 수 없습니다. 확정할까요?')
+    ) {
+      return;
+    }
+
     setSaving(true);
     try {
+      const resolvedItems = projectCatalogReady
+        ? await Promise.all(
+          savableItems.map(async (row) => {
+            if (row.projectMaterialId) return row;
+            const { data: projectMaterialId, error } = await supabase.rpc(
+              'resolve_material_supply_project_item',
+              {
+                p_project_name: projectName,
+                p_material_id: row.materialId || null,
+                p_category_id: row.categoryId || order.categoryId || null,
+                p_process_name: row.processName || order.processName || null,
+                p_standard_name: normalizeText(row.standardName),
+                p_specification: normalizeText(row.specification) || null,
+                p_unit: normalizeText(row.unit) || null,
+                p_updated_by: currentUserId || null,
+              },
+            );
+            if (error) throw error;
+            return { ...row, projectMaterialId };
+          }),
+        )
+        : savableItems;
       let orderId = order.id;
       let orderNo = order.orderNo;
 
@@ -2053,6 +2311,7 @@ export default function MaterialOrderUpload({
         status,
         updated_by: currentUserId || null,
         updated_at: new Date().toISOString(),
+        ...(status === 'ordered' ? { ordered_at: new Date().toISOString() } : {}),
         ...(status === 'confirmed' ? { confirmed_at: new Date().toISOString() } : {}),
       };
 
@@ -2078,13 +2337,16 @@ export default function MaterialOrderUpload({
         if (deleteError) throw deleteError;
       }
 
-      const refreshedItems = status === 'confirmed' ? await refreshBalances(savableItems) : savableItems;
+      const refreshedItems = await refreshBalances(resolvedItems);
       const itemPayloads = refreshedItems.map((row, index) => ({
         order_id: orderId,
+        ...(projectCatalogReady
+          ? { project_material_id: row.projectMaterialId }
+          : {}),
         material_id: row.materialId || null,
         sort_order: index + 1,
         category_id: row.categoryId || order.categoryId || null,
-        process_name: row.processName || null,
+        process_name: row.processName || order.processName || null,
         standard_name: normalizeText(row.standardName),
         specification: normalizeText(row.specification) || null,
         unit: normalizeText(row.unit) || null,
@@ -2101,7 +2363,10 @@ export default function MaterialOrderUpload({
         .insert(itemPayloads);
       if (itemError) throw itemError;
 
-      notify('success', status === 'confirmed' ? '발주서를 결재요청 처리했습니다.' : '발주서를 저장했습니다.');
+      notify(
+        'success',
+        status === 'ordered' ? '발주서를 확정하고 누계에 반영했습니다.' : '발주서를 저장했습니다.',
+      );
       await loadOrders();
       const savedRow = {
         ...order,
@@ -2119,6 +2384,7 @@ export default function MaterialOrderUpload({
         status,
       };
       await openOrder(savedRow);
+      await loadOrderMaterialOptions();
     } catch (error) {
       if (!handleSchemaError(error)) notify('error', `발주서 저장 실패: ${error.message}`);
     } finally {
@@ -2128,8 +2394,8 @@ export default function MaterialOrderUpload({
 
   const deleteOrder = async () => {
     if (!order.id) return;
-    const isConfirmed = order.status === 'confirmed';
-    const warning = isConfirmed
+    const isFinalized = ['ordered', 'confirmed'].includes(order.status);
+    const warning = isFinalized
       ? '\n발주 품목과 누계발주량에서도 함께 제외되며 복구할 수 없습니다.'
       : '';
     if (!window.confirm(`${order.orderNo || '현재 발주서'}를 삭제할까요?${warning}`)) return;
@@ -2148,7 +2414,7 @@ export default function MaterialOrderUpload({
       notify('error', '발주서를 삭제하지 못했습니다. 삭제 권한을 확인해주세요.');
       return;
     }
-    notify('success', isConfirmed ? '결재요청 발주서를 삭제했습니다.' : '작성중 발주서를 삭제했습니다.');
+    notify('success', isFinalized ? '확정된 발주서를 삭제하고 누계에서 제외했습니다.' : '작성중 발주서를 삭제했습니다.');
     createNewOrder();
     await loadOrders();
   };
@@ -2527,6 +2793,9 @@ export default function MaterialOrderUpload({
   const showProcessFolderTabs =
     selectedCategoryFolders.length > 0 &&
     processFoldersOpen;
+  const requiresOrderFolderSelection =
+    (categoryFoldersByCategory.get(order.categoryId) || []).length > 0 &&
+    !normalizeText(order.processName);
   const masterProcessOptions = [
     ...new Set([
       ...(categoryFoldersByCategory.get(masterForm.categoryId) || []).map((folder) => folder.name),
@@ -2579,7 +2848,7 @@ export default function MaterialOrderUpload({
         </Stack>
         )}
 
-        {pageMode === 'order' && supplyTab === 'private' && mainTab === 'order' && !isLocked && (
+        {pageMode === 'order' && supplyTab === 'private' && mainTab === 'order' && (
           <Stack
             direction="row"
             spacing={0.5}
@@ -2591,27 +2860,56 @@ export default function MaterialOrderUpload({
               zIndex: 1,
             }}
           >
+            {!isLocked && (
+              <Button
+                size="small"
+                variant="outlined"
+                onClick={() => saveOrder('draft')}
+                disabled={saving || orderExcelBusy}
+                startIcon={<SaveRoundedIcon />}
+                sx={{ fontWeight: 850, whiteSpace: 'nowrap' }}
+              >
+                저장
+              </Button>
+            )}
             <Button
               size="small"
               variant="outlined"
-              onClick={() => saveOrder('draft')}
-              disabled={saving}
-              startIcon={<SaveRoundedIcon />}
+              onClick={downloadOrderExcel}
+              disabled={saving || orderExcelBusy}
+              startIcon={orderExcelBusy ? <CircularProgress size={14} /> : <FileDownloadRoundedIcon />}
               sx={{ fontWeight: 850, whiteSpace: 'nowrap' }}
             >
-              저장
+              엑셀 다운로드
             </Button>
-            <Button
-              size="small"
-              variant="contained"
-              color="success"
-              onClick={() => saveOrder('confirmed')}
-              disabled={saving}
-              startIcon={<CheckCircleRoundedIcon />}
-              sx={{ fontWeight: 850, whiteSpace: 'nowrap' }}
-            >
-              결재요청
-            </Button>
+            {!isLocked && (
+              <Button
+                size="small"
+                variant="contained"
+                color="success"
+                onClick={() => saveOrder('ordered')}
+                disabled={saving || orderExcelBusy}
+                startIcon={<CheckCircleRoundedIcon />}
+                sx={{ fontWeight: 850, whiteSpace: 'nowrap' }}
+              >
+                발주확정
+              </Button>
+            )}
+            {!isLocked && (
+              <Tooltip title="결재라인 설정 후 사용할 수 있습니다.">
+                <span>
+                  <Button
+                    size="small"
+                    variant="contained"
+                    color="success"
+                    disabled
+                    sx={{ fontWeight: 850, whiteSpace: 'nowrap' }}
+                  >
+                    결재요청
+                  </Button>
+                </span>
+              </Tooltip>
+            )}
           </Stack>
         )}
 
@@ -3042,7 +3340,7 @@ export default function MaterialOrderUpload({
                         <Chip
                           label={ORDER_STATUS_LABELS[row.status] || row.status}
                           size="small"
-                          color={row.status === 'confirmed' ? 'success' : row.status === 'draft' ? 'warning' : 'default'}
+                          color={['ordered', 'confirmed'].includes(row.status) ? 'success' : row.status === 'draft' ? 'warning' : 'default'}
                           variant="outlined"
                           sx={{ ml: 'auto' }}
                         />
@@ -3064,7 +3362,7 @@ export default function MaterialOrderUpload({
             <Stack direction="row" alignItems="center" spacing={0.7} sx={{ px: 1, py: 0.7, borderBottom: '1px solid #cbd5e1', bgcolor: '#eef1f4' }}>
               <Typography sx={{ fontSize: '0.82rem', fontWeight: 900 }}>사급자재 발주서</Typography>
               {order.orderNo && <Chip label={order.orderNo} size="small" variant="outlined" />}
-              {order.status !== 'draft' && <Chip label={ORDER_STATUS_LABELS[order.status]} size="small" color={order.status === 'confirmed' ? 'success' : 'default'} />}
+              {order.status !== 'draft' && <Chip label={ORDER_STATUS_LABELS[order.status]} size="small" color={['ordered', 'confirmed'].includes(order.status) ? 'success' : 'default'} />}
               {order.id && <Button size="small" color="error" variant="outlined" onClick={deleteOrder} startIcon={<DeleteOutlineRoundedIcon />} sx={{ ml: 'auto' }}>삭제</Button>}
             </Stack>
 
@@ -3083,6 +3381,15 @@ export default function MaterialOrderUpload({
               <Typography sx={{ flexShrink: 0, fontSize: '0.69rem', fontWeight: 900, color: '#334155' }}>
                 {showProcessFolderTabs ? selectedOrderFolderCategory?.name : '자재분류'}
               </Typography>
+              {requiresOrderFolderSelection && !isLocked && (
+                <Chip
+                  size="small"
+                  color="warning"
+                  variant="outlined"
+                  label="하위폴더 선택 필요"
+                  sx={{ height: 21, flexShrink: 0, fontSize: '0.6rem', fontWeight: 850 }}
+                />
+              )}
               <Stack
                 role="tablist"
                 aria-label="발주서 자재분류"
@@ -3485,6 +3792,9 @@ export default function MaterialOrderUpload({
                             getOptionLabel={(option) =>
                               typeof option === 'string' ? option : option.standard_name || ''
                             }
+                            getOptionKey={(option) =>
+                              option.projectMaterialId || option.materialId || option.id
+                            }
                             value={row.standardName || ''}
                             onOpen={() => setOpenMaterialHintKey(itemKey)}
                             onClose={() =>
@@ -3511,6 +3821,11 @@ export default function MaterialOrderUpload({
                                 <Box component="li" key={key} {...optionProps} sx={{ display: 'block !important', py: '6px !important' }}>
                                   <Typography sx={{ fontSize: '0.72rem', fontWeight: 900 }}>
                                     {option.standard_name}
+                                    {option.projectMaterialId && !option.materialId ? (
+                                      <Box component="span" sx={{ ml: 0.6, color: '#2563eb', fontSize: '0.58rem' }}>
+                                        현장 입력
+                                      </Box>
+                                    ) : null}
                                   </Typography>
                                   <Typography sx={{ mt: 0.1, fontSize: '0.62rem', color: '#64748b' }}>
                                     {option.specification || '규격 없음'} · {option.unit || '단위 없음'}
@@ -4115,7 +4430,7 @@ export default function MaterialOrderUpload({
         </DialogTitle>
         <DialogContent dividers sx={{ p: 1.5 }}>
           <Alert severity="error" sx={{ mb: 1.2 }}>
-            현재 현장의 작성중·결재요청 발주서, 발주품목, 누계발주량, 발주번호 순번, 기본설정, 주요자재 실행물량과 변경이력을 모두 삭제합니다. 삭제한 자료는 복구할 수 없습니다.
+            현재 현장의 작성중·발주확정·결재요청 발주서, 발주품목, 현장 자재목록, 누계발주량, 발주번호 순번, 기본설정, 주요자재 실행물량과 변경이력을 모두 삭제합니다. 삭제한 자료는 복구할 수 없습니다.
           </Alert>
 
           <Paper variant="outlined" sx={{ p: 1.2, mb: 1.2, bgcolor: '#f8fafc' }}>
