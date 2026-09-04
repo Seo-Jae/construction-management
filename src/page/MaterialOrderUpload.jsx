@@ -483,6 +483,7 @@ export default function MaterialOrderUpload({
   const [folderDialogOpen, setFolderDialogOpen] = useState(false);
   const [folderParentCategoryId, setFolderParentCategoryId] = useState('');
   const [newFolderName, setNewFolderName] = useState('');
+  const [folderDeletingId, setFolderDeletingId] = useState('');
   const [materialPickerPurpose, setMaterialPickerPurpose] = useState('order');
   const [projectSettings, setProjectSettings] = useState(null);
   const [settingsForm, setSettingsForm] = useState({
@@ -2379,16 +2380,41 @@ export default function MaterialOrderUpload({
     const nextSort = categoryFolders
       .filter((row) => row.category_id === categoryId)
       .reduce((max, row) => Math.max(max, Number(row.sort_order || 0)), 0) + 10;
-    const { data: addedFolder, error } = await supabase
+    const { data: inactiveFolders, error: inactiveFolderError } = await supabase
       .from('material_supply_category_folders')
-      .insert({
-        category_id: categoryId,
-        name,
-        sort_order: nextSort,
-        is_active: true,
-        created_by: currentUserId || null,
-        updated_by: currentUserId || null,
-      })
+      .select('id, category_id, name, sort_order, is_active')
+      .eq('category_id', categoryId)
+      .eq('is_active', false);
+    if (inactiveFolderError) {
+      notify('error', `하위 폴더 확인 실패: ${inactiveFolderError.message}`);
+      return;
+    }
+
+    const reusableFolder = (inactiveFolders || []).find((row) => (
+      normalizeText(row.name).toLocaleLowerCase('ko-KR') === name.toLocaleLowerCase('ko-KR')
+    ));
+    const folderQuery = reusableFolder
+      ? supabase
+          .from('material_supply_category_folders')
+          .update({
+            name,
+            sort_order: nextSort,
+            is_active: true,
+            updated_by: currentUserId || null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', reusableFolder.id)
+      : supabase
+          .from('material_supply_category_folders')
+          .insert({
+            category_id: categoryId,
+            name,
+            sort_order: nextSort,
+            is_active: true,
+            created_by: currentUserId || null,
+            updated_by: currentUserId || null,
+          });
+    const { data: addedFolder, error } = await folderQuery
       .select('id, category_id, name, sort_order, is_active')
       .single();
 
@@ -2414,6 +2440,60 @@ export default function MaterialOrderUpload({
     setNewFolderName('');
     setFolderDialogOpen(false);
     notify('success', `하위 폴더 "${name}"을 추가했습니다.`);
+  };
+
+  const deleteCategoryFolder = async (folder) => {
+    if (pageMode !== 'order' && !canManageMaster) {
+      notify('warning', '하위 폴더 관리 권한이 없습니다.');
+      return;
+    }
+    if (categoryFolderSchemaMissing || String(folder.id || '').startsWith('default-')) {
+      notify('warning', '하위 폴더 저장용 Supabase SQL을 먼저 실행해주세요.');
+      return;
+    }
+
+    const linkedOrderCount = orders.filter((row) => (
+      row.category_id === folder.category_id && row.process_name === folder.name
+    )).length;
+    const selectedFolderWillClose =
+      selectedOrderFolderId === folder.category_id &&
+      selectedOrderFolderProcess === folder.name;
+    const warningLines = [
+      `하위 폴더 "${folder.name}"을 삭제할까요?`,
+      linkedOrderCount > 0
+        ? `연결된 발주서 ${linkedOrderCount}건은 삭제되지 않고 상위 분류에서 계속 확인할 수 있습니다.`
+        : '기존 발주 데이터는 삭제되지 않습니다.',
+      ...(selectedFolderWillClose ? ['현재 작성 화면은 선택한 상위 분류의 빈 발주서로 초기화됩니다.'] : []),
+    ];
+    if (!window.confirm(warningLines.join('\n'))) return;
+
+    setFolderDeletingId(folder.id);
+    try {
+      const { error } = await supabase
+        .from('material_supply_category_folders')
+        .update({
+          is_active: false,
+          updated_by: currentUserId || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', folder.id);
+      if (error) throw error;
+
+      const remainingFolders = categoryFolders.filter((row) => row.id !== folder.id);
+      setCategoryFolders(remainingFolders);
+      if (selectedFolderWillClose) {
+        setSelectedOrderFolderProcess('');
+        setProcessFoldersOpen(
+          remainingFolders.some((row) => row.category_id === folder.category_id),
+        );
+        clearOrderEditorForFolder(folder.category_id);
+      }
+      notify('success', `하위 폴더 "${folder.name}"을 삭제했습니다.`);
+    } catch (error) {
+      notify('error', `하위 폴더 삭제 실패: ${error.message}`);
+    } finally {
+      setFolderDeletingId('');
+    }
   };
 
   const visibleOrders = useMemo(
@@ -3147,7 +3227,7 @@ export default function MaterialOrderUpload({
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      하위 폴더 추가
+                      하위 폴더 관리
                     </Button>
                   </>
                 )}
@@ -3170,7 +3250,7 @@ export default function MaterialOrderUpload({
                       whiteSpace: 'nowrap',
                     }}
                   >
-                    폴더 추가
+                    폴더 관리
                   </Button>
                 )}
               </Stack>
@@ -4235,8 +4315,8 @@ export default function MaterialOrderUpload({
         <DialogActions><Button onClick={() => setCategoryDialogOpen(false)}>닫기</Button></DialogActions>
       </Dialog>
 
-      <Dialog open={folderDialogOpen} onClose={() => setFolderDialogOpen(false)} fullWidth maxWidth="xs">
-        <DialogTitle sx={{ fontSize: '1rem', fontWeight: 900 }}>하위 폴더 추가</DialogTitle>
+      <Dialog open={folderDialogOpen} onClose={() => !folderDeletingId && setFolderDialogOpen(false)} fullWidth maxWidth="xs">
+        <DialogTitle sx={{ fontSize: '1rem', fontWeight: 900 }}>하위 폴더 관리</DialogTitle>
         <DialogContent dividers sx={{ p: 1.2 }}>
           {categoryFolderSchemaMissing && (
             <Alert severity="warning" sx={{ mb: 1, py: 0.2 }}>
@@ -4251,6 +4331,7 @@ export default function MaterialOrderUpload({
               label="상위 자재분류"
               value={folderParentCategoryId}
               onChange={(event) => setFolderParentCategoryId(event.target.value)}
+              disabled={Boolean(folderDeletingId)}
             >
               {categories.map((category) => (
                 <MenuItem key={category.id} value={category.id}>{category.name}</MenuItem>
@@ -4264,12 +4345,58 @@ export default function MaterialOrderUpload({
               value={newFolderName}
               onChange={(event) => setNewFolderName(event.target.value)}
               onKeyDown={(event) => event.key === 'Enter' && addCategoryFolder()}
+              disabled={Boolean(folderDeletingId)}
             />
+          </Stack>
+          <Divider sx={{ my: 1.2 }} />
+          <Typography sx={{ mb: 0.6, fontSize: '0.72rem', fontWeight: 900, color: '#334155' }}>
+            등록된 하위 폴더
+          </Typography>
+          <Stack spacing={0.45}>
+            {categoryFolders.filter((folder) => (
+              folder.category_id === folderParentCategoryId
+            )).length === 0 ? (
+              <Typography sx={{ py: 1.2, textAlign: 'center', fontSize: '0.7rem', color: '#94a3b8' }}>
+                등록된 하위 폴더가 없습니다.
+              </Typography>
+            ) : categoryFolders.filter((folder) => (
+              folder.category_id === folderParentCategoryId
+            )).map((folder) => {
+              const linkedOrderCount = orders.filter((row) => (
+                row.category_id === folder.category_id && row.process_name === folder.name
+              )).length;
+              return (
+                <Paper key={folder.id} variant="outlined" sx={{ px: 0.8, py: 0.35 }}>
+                  <Stack direction="row" alignItems="center" spacing={0.6}>
+                    <FolderRoundedIcon sx={{ fontSize: '1rem', color: '#64748b' }} />
+                    <Typography noWrap sx={{ flex: 1, minWidth: 0, fontSize: '0.72rem', fontWeight: 800 }}>
+                      {folder.name}
+                    </Typography>
+                    <Chip label={`${linkedOrderCount}건`} size="small" sx={{ height: 19, fontSize: '0.58rem' }} />
+                    <Tooltip title="하위 폴더 삭제" arrow>
+                      <span>
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => deleteCategoryFolder(folder)}
+                          disabled={Boolean(folderDeletingId)}
+                          aria-label={`${folder.name} 하위 폴더 삭제`}
+                        >
+                          {folderDeletingId === folder.id
+                            ? <CircularProgress size={15} color="inherit" />
+                            : <DeleteOutlineRoundedIcon sx={{ fontSize: '1rem' }} />}
+                        </IconButton>
+                      </span>
+                    </Tooltip>
+                  </Stack>
+                </Paper>
+              );
+            })}
           </Stack>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setFolderDialogOpen(false)}>취소</Button>
-          <Button variant="contained" onClick={addCategoryFolder}>추가</Button>
+          <Button onClick={() => setFolderDialogOpen(false)} disabled={Boolean(folderDeletingId)}>닫기</Button>
+          <Button variant="contained" onClick={addCategoryFolder} disabled={Boolean(folderDeletingId)}>추가</Button>
         </DialogActions>
       </Dialog>
 
