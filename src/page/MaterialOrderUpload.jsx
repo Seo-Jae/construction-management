@@ -183,6 +183,9 @@ const entryFieldSx = (value, required = true) => ({
   '& .MuiOutlinedInput-root': {
     bgcolor: !required || normalizeText(value) ? '#ffffff' : '#fff8d6',
   },
+  '& .MuiInputBase-input': {
+    fontSize: '0.68rem',
+  },
 });
 const compactEntryFieldSx = (value, required = true) => ({
   '& .MuiOutlinedInput-root': {
@@ -1189,6 +1192,28 @@ export default function MaterialOrderUpload({
     settingsRequired,
     userProfile,
   ]);
+
+  const clearOrderEditorForFolder = useCallback(
+    (categoryId, processName = '') => {
+      setOrder({
+        ...EMPTY_ORDER,
+        orderDate: getKoreaToday(),
+        categoryId,
+        processName,
+        requesterName:
+          projectSettings?.default_requester_name ||
+          getProfileName(userProfile),
+        receiverName: projectSettings?.default_receiver_name || '',
+        receiverPhone: projectSettings?.default_receiver_phone || '',
+        deliveryLocation:
+          projectSettings?.default_delivery_location || '',
+      });
+      setOrderItems([]);
+      setSelectedOrderItemKeys(new Set());
+      setOpenMaterialHintKey('');
+    },
+    [projectSettings, userProfile],
+  );
 
   const refreshBalances = useCallback(
     async (items) => {
@@ -2814,6 +2839,9 @@ export default function MaterialOrderUpload({
                         }
                         endIcon={<Chip label={`${orderCount}`} size="small" />}
                         onClick={() => {
+                          const folderChanged =
+                            selectedOrderFolderId !== category.id ||
+                            selectedOrderFolderProcess !== '';
                           setSelectedOrderFolderId(category.id);
                           if (hasProcessFolders) {
                             setProcessFoldersOpen(
@@ -2822,13 +2850,17 @@ export default function MaterialOrderUpload({
                                 : true,
                             );
                             setSelectedOrderFolderProcess('');
-                            if (!isLocked && !order.id) {
+                            if (folderChanged && order.id) {
+                              clearOrderEditorForFolder(category.id);
+                            } else if (!isLocked && !order.id) {
                               setOrder((current) => ({ ...current, categoryId: category.id, processName: '' }));
                             }
                           } else {
                             setProcessFoldersOpen(false);
                             setSelectedOrderFolderProcess('');
-                            if (!isLocked && !order.id) {
+                            if (folderChanged && order.id) {
+                              clearOrderEditorForFolder(category.id);
+                            } else if (!isLocked && !order.id) {
                               setOrder((current) => ({
                                 ...current,
                                 categoryId: category.id,
@@ -2870,9 +2902,14 @@ export default function MaterialOrderUpload({
                                 startIcon={<FolderRoundedIcon sx={{ fontSize: '0.9rem !important' }} />}
                                 endIcon={<Chip label={`${processCount}`} size="small" />}
                                 onClick={() => {
+                                  const folderChanged =
+                                    selectedOrderFolderId !== category.id ||
+                                    selectedOrderFolderProcess !== processName;
                                   setSelectedOrderFolderId(category.id);
                                   setSelectedOrderFolderProcess(processName);
-                                  if (!isLocked && !order.id) {
+                                  if (folderChanged && order.id) {
+                                    clearOrderEditorForFolder(category.id, processName);
+                                  } else if (!isLocked && !order.id) {
                                     setOrder((current) => ({
                                       ...current,
                                       categoryId: category.id,
@@ -2995,11 +3032,20 @@ export default function MaterialOrderUpload({
                         onClick={() => {
                           setSelectedOrderFolderId(selectedOrderFolderCategory.id);
                           setSelectedOrderFolderProcess(processName);
-                          setOrder((current) => ({
-                            ...current,
-                            categoryId: selectedOrderFolderCategory.id,
-                            processName,
-                          }));
+                          const folderChanged =
+                            selectedOrderFolderProcess !== processName;
+                          if (folderChanged && order.id) {
+                            clearOrderEditorForFolder(
+                              selectedOrderFolderCategory.id,
+                              processName,
+                            );
+                          } else {
+                            setOrder((current) => ({
+                              ...current,
+                              categoryId: selectedOrderFolderCategory.id,
+                              processName,
+                            }));
+                          }
                         }}
                         sx={{
                           minWidth: 'max-content',
@@ -3031,11 +3077,18 @@ export default function MaterialOrderUpload({
                           variant={selected ? 'contained' : 'outlined'}
                           disabled={isLocked}
                           onClick={() => {
-                            setOrder((current) => ({
-                              ...current,
-                              categoryId: category.id,
-                              processName: '',
-                            }));
+                            const folderChanged =
+                              selectedOrderFolderId !== category.id ||
+                              selectedOrderFolderProcess !== '';
+                            if (folderChanged && order.id) {
+                              clearOrderEditorForFolder(category.id);
+                            } else {
+                              setOrder((current) => ({
+                                ...current,
+                                categoryId: category.id,
+                                processName: '',
+                              }));
+                            }
                             setSelectedOrderFolderId(category.id);
                             setSelectedOrderFolderProcess('');
                             setProcessFoldersOpen(categoryFolderOptions.length > 0);
@@ -3222,12 +3275,19 @@ export default function MaterialOrderUpload({
                   '& .MuiTableCell-root': {
                     borderRight: '1px solid #cbd5e1',
                     borderBottom: '1px solid #cbd5e1',
+                    fontSize: '0.66rem',
+                    lineHeight: 1.25,
                   },
                   '& .MuiTableCell-root:first-of-type': {
                     borderLeft: '1px solid #cbd5e1',
                   },
                   '& .MuiTableHead-root .MuiTableCell-root': {
                     borderTop: '1px solid #cbd5e1',
+                    py: 0.45,
+                    fontSize: '0.64rem',
+                  },
+                  '& .MuiInputBase-input': {
+                    fontSize: '0.68rem',
                   },
                 }}
               >
@@ -3313,7 +3373,7 @@ export default function MaterialOrderUpload({
                                 />
                               )}
                             </Box>
-                            <Typography component="span" sx={{ textAlign: 'center', fontSize: '0.7rem', fontWeight: 750 }}>
+                            <Typography component="span" sx={{ textAlign: 'center', fontSize: '0.64rem', fontWeight: 750 }}>
                               {index + 1}
                             </Typography>
                           </Box>
@@ -3433,7 +3493,20 @@ export default function MaterialOrderUpload({
                         </TableCell>
                         <TableCell align="right" sx={{ bgcolor: '#ffffff', fontWeight: 850 }}>{formatNumber(row.cumulativeQuantity)}</TableCell>
                         <TableCell align="center">
-                          <Chip label={`${row.executionRatio.toFixed(1)}%`} size="small" color={over ? 'error' : row.executionRatio >= 90 ? 'warning' : 'default'} variant={over ? 'filled' : 'outlined'} />
+                          <Typography
+                            component="span"
+                            sx={{
+                              fontSize: '0.64rem',
+                              fontWeight: 850,
+                              color: over
+                                ? '#d32f2f'
+                                : row.executionRatio >= 90
+                                  ? '#b45309'
+                                  : '#475569',
+                            }}
+                          >
+                            {row.executionRatio.toFixed(1)}%
+                          </Typography>
                         </TableCell>
                         <TableCell sx={{ p: 0.35 }}>
                           <TextField
