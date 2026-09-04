@@ -101,7 +101,7 @@ const PROCESS_OPTIONS = [
 
 const ORDER_STATUS_LABELS = {
   draft: '작성중',
-  confirmed: '발주완료',
+  confirmed: '결재요청',
   cancelled: '취소',
 };
 
@@ -1976,7 +1976,7 @@ export default function MaterialOrderUpload({
         .insert(itemPayloads);
       if (itemError) throw itemError;
 
-      notify('success', status === 'confirmed' ? '발주서를 발주완료 처리했습니다.' : '발주서를 저장했습니다.');
+      notify('success', status === 'confirmed' ? '발주서를 결재요청 처리했습니다.' : '발주서를 저장했습니다.');
       await loadOrders();
       const savedRow = {
         ...order,
@@ -2023,7 +2023,7 @@ export default function MaterialOrderUpload({
       notify('error', '발주서를 삭제하지 못했습니다. 삭제 권한을 확인해주세요.');
       return;
     }
-    notify('success', isConfirmed ? '발주완료 발주서를 삭제했습니다.' : '작성중 발주서를 삭제했습니다.');
+    notify('success', isConfirmed ? '결재요청 발주서를 삭제했습니다.' : '작성중 발주서를 삭제했습니다.');
     createNewOrder();
     await loadOrders();
   };
@@ -2220,7 +2220,7 @@ export default function MaterialOrderUpload({
 
   return (
     <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 0.8, p: 1 }}>
-      <Paper variant="outlined" sx={{ px: 1.25, py: 0.8, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+      <Paper variant="outlined" sx={{ position: 'relative', px: 1.25, py: 0.8, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
         <Box sx={{ minWidth: 210 }}>
           <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#0f172a' }}>
             {pageMode === 'master' ? '자재 마스터 관리' : '자재발주작성'}
@@ -2246,6 +2246,42 @@ export default function MaterialOrderUpload({
             지급자재 · 2차 개발
           </Button>
         </Stack>
+        )}
+
+        {pageMode === 'order' && supplyTab === 'private' && mainTab === 'order' && !isLocked && (
+          <Stack
+            direction="row"
+            spacing={0.5}
+            sx={{
+              position: 'absolute',
+              left: '50%',
+              top: '50%',
+              transform: 'translate(-50%, -50%)',
+              zIndex: 1,
+            }}
+          >
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => saveOrder('draft')}
+              disabled={saving}
+              startIcon={<SaveRoundedIcon />}
+              sx={{ fontWeight: 850, whiteSpace: 'nowrap' }}
+            >
+              저장
+            </Button>
+            <Button
+              size="small"
+              variant="contained"
+              color="success"
+              onClick={() => saveOrder('confirmed')}
+              disabled={saving}
+              startIcon={<CheckCircleRoundedIcon />}
+              sx={{ fontWeight: 850, whiteSpace: 'nowrap' }}
+            >
+              결재요청
+            </Button>
+          </Stack>
         )}
 
         {pageMode === 'order' && (
@@ -2516,86 +2552,60 @@ export default function MaterialOrderUpload({
           </TableContainer>
         </Paper>
       ) : (
-        <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 0.8 }}>
-          <Paper variant="outlined" sx={{ order: 2, minHeight: 148, maxHeight: 190, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+        <Box sx={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: '300px minmax(0, 1fr)', gap: 0.8 }}>
+          <Paper variant="outlined" sx={{ minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             <Stack direction="row" alignItems="center" sx={{ px: 0.9, py: 0.7, borderBottom: '1px solid #e2e8f0' }}>
               <Typography sx={{ fontSize: '0.78rem', fontWeight: 900 }}>발주서 목록</Typography>
               <Chip label={`${visibleOrders.length}건`} size="small" sx={{ ml: 0.5 }} />
             </Stack>
-            <TableContainer sx={{ flex: 1, minHeight: 0 }}>
+            <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
               {visibleOrders.length === 0 ? (
-                <Box sx={{ height: '100%', minHeight: 90, display: 'grid', placeItems: 'center', color: '#94a3b8', fontSize: '0.72rem' }}>발주서가 없습니다.</Box>
+                <Box sx={{ height: '100%', minHeight: 220, display: 'grid', placeItems: 'center', color: '#94a3b8', fontSize: '0.72rem' }}>발주서가 없습니다.</Box>
               ) : (
-                <Table stickyHeader size="small" sx={{ minWidth: 980, tableLayout: 'fixed' }}>
-                  <TableHead>
-                    <TableRow>
-                      {[
-                        ['상태', 86],
-                        ['발주번호', 150],
-                        ['발주일', 110],
-                        ['자재분류', 130],
-                        ['공정', 120],
-                        ['요청자', 105],
-                        ['납품희망일', 120],
-                        ['납품장소', 170],
-                        ['비고', 190],
-                      ].map(([label, width]) => (
-                        <TableCell
-                          key={label}
-                          align={['상태', '발주일', '요청자', '납품희망일'].includes(label) ? 'center' : 'left'}
-                          sx={{ width, py: 0.5, bgcolor: '#e8f3f8', color: '#155e75', fontSize: '0.68rem', fontWeight: 900, borderRight: '1px solid #cbd5e1', whiteSpace: 'nowrap' }}
-                        >
-                          {label}
-                        </TableCell>
-                      ))}
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {visibleOrders.map((row) => {
-                      const selected = row.id === order.id;
-                      return (
-                        <TableRow
-                          key={row.id}
-                          hover
-                          selected={selected}
-                          onClick={() => openOrder(row)}
-                          sx={{ cursor: 'pointer', '& .MuiTableCell-root': { py: 0.45, fontSize: '0.67rem', borderRight: '1px solid #e2e8f0' } }}
-                        >
-                          <TableCell align="center">
-                            <Chip
-                              label={ORDER_STATUS_LABELS[row.status] || row.status}
-                              size="small"
-                              color={row.status === 'confirmed' ? 'success' : row.status === 'draft' ? 'warning' : 'default'}
-                              variant="outlined"
-                            />
-                          </TableCell>
-                          <TableCell sx={{ fontWeight: 900 }}>{row.order_no}</TableCell>
-                          <TableCell align="center">{row.order_date || '-'}</TableCell>
-                          <TableCell>{categoryNameById(categories, row.category_id)}</TableCell>
-                          <TableCell>{row.process_name || '-'}</TableCell>
-                          <TableCell align="center">{row.requester_name || '-'}</TableCell>
-                          <TableCell align="center">{row.delivery_date || '-'}</TableCell>
-                          <TableCell>{row.delivery_location || '-'}</TableCell>
-                          <TableCell>{row.note || '-'}</TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                visibleOrders.map((row) => {
+                  const selected = row.id === order.id;
+                  return (
+                    <Box
+                      key={row.id}
+                      onClick={() => openOrder(row)}
+                      sx={{
+                        px: 1,
+                        py: 0.8,
+                        cursor: 'pointer',
+                        borderBottom: '1px solid #edf2f7',
+                        bgcolor: selected ? '#eff6ff' : '#fff',
+                        '&:hover': { bgcolor: selected ? '#eff6ff' : '#f8fafc' },
+                      }}
+                    >
+                      <Stack direction="row" alignItems="center" spacing={0.6}>
+                        <Typography sx={{ fontSize: '0.75rem', fontWeight: 900, color: '#0f172a' }}>{row.order_no}</Typography>
+                        <Chip
+                          label={ORDER_STATUS_LABELS[row.status] || row.status}
+                          size="small"
+                          color={row.status === 'confirmed' ? 'success' : row.status === 'draft' ? 'warning' : 'default'}
+                          variant="outlined"
+                          sx={{ ml: 'auto' }}
+                        />
+                      </Stack>
+                      <Typography sx={{ mt: 0.25, fontSize: '0.66rem', color: '#475569', fontWeight: 750 }}>
+                        {row.order_date} · {row.process_name || categoryNameById(categories, row.category_id)}
+                      </Typography>
+                      <Typography noWrap sx={{ mt: 0.1, fontSize: '0.62rem', color: '#94a3b8' }}>
+                        요청자 {row.requester_name || '-'} · 납품 {row.delivery_date || '-'}
+                      </Typography>
+                    </Box>
+                  );
+                })
               )}
-            </TableContainer>
+            </Box>
           </Paper>
 
-          <Paper variant="outlined" sx={{ order: 1, flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <Paper variant="outlined" sx={{ minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             <Stack direction="row" alignItems="center" spacing={0.7} sx={{ px: 1, py: 0.7, borderBottom: '1px solid #cbd5e1', bgcolor: '#eef1f4' }}>
               <Typography sx={{ fontSize: '0.82rem', fontWeight: 900 }}>사급자재 발주서</Typography>
               {order.orderNo && <Chip label={order.orderNo} size="small" variant="outlined" />}
               {order.status !== 'draft' && <Chip label={ORDER_STATUS_LABELS[order.status]} size="small" color={order.status === 'confirmed' ? 'success' : 'default'} />}
-              <Stack direction="row" spacing={0.5} sx={{ ml: 'auto' }}>
-                {order.id && <Button size="small" color="error" variant="outlined" onClick={deleteOrder} startIcon={<DeleteOutlineRoundedIcon />}>삭제</Button>}
-                {!isLocked && <Button size="small" variant="outlined" onClick={() => saveOrder('draft')} disabled={saving} startIcon={<SaveRoundedIcon />}>저장</Button>}
-                {!isLocked && <Button size="small" variant="contained" color="success" onClick={() => saveOrder('confirmed')} disabled={saving} startIcon={<CheckCircleRoundedIcon />}>발주완료</Button>}
-              </Stack>
+              {order.id && <Button size="small" color="error" variant="outlined" onClick={deleteOrder} startIcon={<DeleteOutlineRoundedIcon />} sx={{ ml: 'auto' }}>삭제</Button>}
             </Stack>
 
             <Box sx={{ p: 0.7, borderBottom: '1px solid #cbd5e1', bgcolor: '#eef1f4' }}>
@@ -3445,7 +3455,7 @@ export default function MaterialOrderUpload({
         </DialogTitle>
         <DialogContent dividers sx={{ p: 1.5 }}>
           <Alert severity="error" sx={{ mb: 1.2 }}>
-            현재 현장의 작성중·발주완료 발주서, 발주품목, 누계발주량, 발주번호 순번, 기본설정, 주요자재 실행물량과 변경이력을 모두 삭제합니다. 삭제한 자료는 복구할 수 없습니다.
+            현재 현장의 작성중·결재요청 발주서, 발주품목, 누계발주량, 발주번호 순번, 기본설정, 주요자재 실행물량과 변경이력을 모두 삭제합니다. 삭제한 자료는 복구할 수 없습니다.
           </Alert>
 
           <Paper variant="outlined" sx={{ p: 1.2, mb: 1.2, bgcolor: '#f8fafc' }}>
