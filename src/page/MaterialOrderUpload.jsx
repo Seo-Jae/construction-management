@@ -83,6 +83,7 @@ import {
   parseMaterialMasterWorkbookFile,
   saveMaterialMasterWorkbook,
 } from '../utils/materialMasterExcel.js';
+import ScaleAwareAutocompletePopper from '../components/ScaleAwareAutocompletePopper.jsx';
 
 const PROCESS_OPTIONS = [
   '경량벽체',
@@ -2804,7 +2805,7 @@ export default function MaterialOrderUpload({
                           <Autocomplete
                             freeSolo
                             openOnFocus
-                            disablePortal
+                            slots={{ popper: ScaleAwareAutocompletePopper }}
                             size="small"
                             options={orderMaterialOptions}
                             loading={orderMaterialOptionsLoading}

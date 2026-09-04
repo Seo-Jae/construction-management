@@ -73,6 +73,7 @@ import ApprovalInbox from './page/ApprovalInbox.jsx';
 import WeeklyOverview from './page/WeeklyOverview.jsx';
 import WeeklyOverviewArchive from './page/WeeklyOverviewArchive.jsx';
 import MaterialOrderUpload from './page/MaterialOrderUpload.jsx';
+import ScaleAwareAutocompletePopper from './components/ScaleAwareAutocompletePopper.jsx';
 import MaterialInputStatus from './page/MaterialInputStatus.jsx';
 import UnitPriceAnalysis from './page/UnitPriceAnalysis.jsx';
 import LaborContractManagement from './page/LaborContractManagement.jsx';
@@ -3992,6 +3993,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               }}
             >
               <Autocomplete
+                slots={{ popper: ScaleAwareAutocompletePopper }}
                 size="small"
                 options={
                   currentView === 'daily-cumulative-workers' &&
