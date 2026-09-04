@@ -1,3 +1,10 @@
+// v52.48.5.44.145 상단 발주탭 제거·새 발주서 버튼 이동
+// v52.48.5.44.144 발주 기본정보 영역 회색배경·입력칸 높이 축소
+// v52.48.5.44.143 발주작성·목록 위치교체 및 입력상태 배경 구분
+// v52.48.5.44.142 공정 선택상자 크기·목록 동작 통일
+// v52.48.5.44.141 발주 기본정보 라벨·선택목록 위치 통일
+// v52.48.5.44.140 발주 기본설정 단순화·배율별 품목목록 위치 보정
+// v52.48.5.44.139 발주서 장부형 배치·자재마스터 관리영역 분리
 // v52.48.5.44.138 발주 품목 표 눈금선·수량 천 단위 쉼표
 // v52.48.5.44.137 자재 품명 검색 시 현장 기본·주요자재 우선정렬
 // v52.48.5.44.136 자재 품명 검색결과 숫자 자연정렬
@@ -56,7 +63,6 @@ import {
   Typography,
 } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
-import AddShoppingCartRoundedIcon from '@mui/icons-material/AddShoppingCartRounded';
 import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import CategoryRoundedIcon from '@mui/icons-material/CategoryRounded';
@@ -65,8 +71,6 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import FileDownloadRoundedIcon from '@mui/icons-material/FileDownloadRounded';
 import FileUploadRoundedIcon from '@mui/icons-material/FileUploadRounded';
-import HistoryRoundedIcon from '@mui/icons-material/HistoryRounded';
-import Inventory2RoundedIcon from '@mui/icons-material/Inventory2Rounded';
 import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded';
 import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import RestartAltRoundedIcon from '@mui/icons-material/RestartAltRounded';
@@ -167,6 +171,62 @@ const createBlankOrderItem = (clientKey = createOrderItemKey()) => ({
 });
 
 const normalizeText = (value) => String(value ?? '').trim().replace(/\s+/g, ' ');
+const entryFieldSx = (value, required = true) => ({
+  '& .MuiOutlinedInput-root': {
+    bgcolor: !required || normalizeText(value) ? '#ffffff' : '#fff8d6',
+  },
+});
+const compactEntryFieldSx = (value, required = true) => ({
+  '& .MuiOutlinedInput-root': {
+    minHeight: 28,
+    height: 28,
+    bgcolor: !required || normalizeText(value) ? '#ffffff' : '#fff8d6',
+  },
+  '& .MuiInputBase-input, & .MuiSelect-select': {
+    py: '3px !important',
+    fontSize: '0.72rem',
+  },
+  '& .MuiInputLabel-root': {
+    fontSize: '0.68rem',
+  },
+});
+const compactSelectFieldSx = (value, disabled = false) => ({
+  position: 'relative',
+  minWidth: 0,
+  height: 28,
+  border: '1px solid rgba(0, 0, 0, 0.23)',
+  borderRadius: 1,
+  bgcolor: normalizeText(value) ? '#ffffff' : '#fff8d6',
+  opacity: disabled ? 0.6 : 1,
+  '&:hover': disabled ? {} : { borderColor: 'rgba(0, 0, 0, 0.87)' },
+  '&:focus-within': disabled
+    ? {}
+    : { borderColor: '#1976d2', boxShadow: '0 0 0 1px #1976d2' },
+  '& > label': {
+    position: 'absolute',
+    zIndex: 1,
+    top: -7,
+    left: 9,
+    px: 0.35,
+    bgcolor: '#eef1f4',
+    color: 'rgba(0, 0, 0, 0.6)',
+    fontSize: '0.58rem',
+    lineHeight: 1.2,
+    pointerEvents: 'none',
+  },
+  '& > select': {
+    width: '100%',
+    height: '100%',
+    border: 0,
+    outline: 0,
+    bgcolor: 'transparent',
+    color: 'inherit',
+    px: 1.1,
+    font: 'inherit',
+    fontSize: '0.72rem',
+    cursor: disabled ? 'default' : 'pointer',
+  },
+});
 const numberValue = (value) => {
   const parsed = Number(String(value ?? '').replace(/,/g, ''));
   return Number.isFinite(parsed) ? parsed : 0;
@@ -214,21 +274,13 @@ const recalculateOrderItemBalances = (items) => {
     };
   });
 };
-const isProjectSettingsComplete = (form, materials) => {
-  const basicReady = [
+const isProjectSettingsComplete = (form) =>
+  [
     form?.requesterName,
     form?.receiverName,
     form?.receiverPhone,
     form?.deliveryLocation,
   ].every((value) => normalizeText(value));
-
-  const included = (materials || []).filter((row) => row.included !== false);
-  return (
-    basicReady &&
-    included.length > 0 &&
-    included.every((row) => numberValue(row.executionQuantity) > 0)
-  );
-};
 const formatNumber = (value, digits = 2) => {
   const number = Number(value || 0);
   return number.toLocaleString('ko-KR', {
@@ -355,8 +407,11 @@ export default function MaterialOrderUpload({
   projectName,
   userProfile,
   canManageMaster = false,
+  pageMode = 'order',
 }) {
-  const [mainTab, setMainTab] = useState('order');
+  const [mainTab, setMainTab] = useState(
+    pageMode === 'master' ? 'master' : 'order',
+  );
   const [supplyTab, setSupplyTab] = useState('private');
   const [categories, setCategories] = useState([]);
   const [orders, setOrders] = useState([]);
@@ -606,10 +661,7 @@ export default function MaterialOrderUpload({
         deliveryLocation: settingsRow?.default_delivery_location || '',
       };
 
-      const complete = isProjectSettingsComplete(
-        nextForm,
-        mergedMaterials,
-      );
+      const complete = isProjectSettingsComplete(nextForm);
 
       setProjectSettings(settingsRow);
       setSettingsForm(nextForm);
@@ -1028,7 +1080,7 @@ export default function MaterialOrderUpload({
       setSettingsDialogOpen(true);
       notify(
         'warning',
-        '발주서 작성 전에 기본설정과 주요자재 실행물량을 먼저 완료해주세요.',
+        '발주서 작성 전에 기본정보를 먼저 완료해주세요.',
       );
       return;
     }
@@ -1429,32 +1481,6 @@ export default function MaterialOrderUpload({
       return;
     }
 
-    const includedMaterials = settingsMaterials.filter(
-      (row) => row.included !== false,
-    );
-
-    if (includedMaterials.length === 0) {
-      notify(
-        'warning',
-        '주요자재를 하나 이상 포함해주세요. 사용하지 않는 자재는 제외로 설정할 수 있습니다.',
-      );
-      setSettingsTab('materials');
-      return;
-    }
-
-    const missingQuantity = includedMaterials.find(
-      (row) => numberValue(row.executionQuantity) <= 0,
-    );
-
-    if (missingQuantity) {
-      notify(
-        'warning',
-        `"${missingQuantity.standardName}"의 실행물량을 입력하거나 제외로 변경해주세요.`,
-      );
-      setSettingsTab('materials');
-      return;
-    }
-
     setSettingsSaving(true);
     try {
       const now = new Date().toISOString();
@@ -1824,7 +1850,7 @@ export default function MaterialOrderUpload({
       setSettingsDialogOpen(true);
       notify(
         'warning',
-        '기본설정과 주요자재 실행물량을 먼저 완료해주세요.',
+        '발주 기본정보를 먼저 완료해주세요.',
       );
       return;
     }
@@ -1974,17 +2000,31 @@ export default function MaterialOrderUpload({
     }
   };
 
-  const deleteDraft = async () => {
-    if (!order.id || order.status !== 'draft') return;
-    if (!window.confirm(`${order.orderNo || '현재 발주서'}를 삭제할까요?`)) return;
-    const { error } = await supabase.from('material_supply_orders').delete().eq('id', order.id).eq('status', 'draft');
+  const deleteOrder = async () => {
+    if (!order.id) return;
+    const isConfirmed = order.status === 'confirmed';
+    const warning = isConfirmed
+      ? '\n발주 품목과 누계발주량에서도 함께 제외되며 복구할 수 없습니다.'
+      : '';
+    if (!window.confirm(`${order.orderNo || '현재 발주서'}를 삭제할까요?${warning}`)) return;
+    const { data: deletedOrder, error } = await supabase
+      .from('material_supply_orders')
+      .delete()
+      .eq('id', order.id)
+      .eq('project_name', projectName)
+      .select('id')
+      .maybeSingle();
     if (error) {
       notify('error', `발주서 삭제 실패: ${error.message}`);
       return;
     }
-    notify('success', '작성중 발주서를 삭제했습니다.');
+    if (!deletedOrder) {
+      notify('error', '발주서를 삭제하지 못했습니다. 삭제 권한을 확인해주세요.');
+      return;
+    }
+    notify('success', isConfirmed ? '발주완료 발주서를 삭제했습니다.' : '작성중 발주서를 삭제했습니다.');
     createNewOrder();
-    loadOrders();
+    await loadOrders();
   };
 
   const resetMaterialOrderTestData = async () => {
@@ -2167,17 +2207,31 @@ export default function MaterialOrderUpload({
   ).length;
   const allOrderItemsSelected =
     orderItems.length > 0 && selectedOrderItemCount === orderItems.length;
+  const orderQuantityTotals = orderItems.reduce(
+    (totals, row) => ({
+      execution: totals.execution + numberValue(row.executionQuantity),
+      previous: totals.previous + numberValue(row.previousQuantity),
+      current: totals.current + numberValue(row.currentQuantity),
+      cumulative: totals.cumulative + numberValue(row.cumulativeQuantity),
+    }),
+    { execution: 0, previous: 0, current: 0, cumulative: 0 },
+  );
 
   return (
     <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 0.8, p: 1 }}>
       <Paper variant="outlined" sx={{ px: 1.25, py: 0.8, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
         <Box sx={{ minWidth: 210 }}>
-          <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#0f172a' }}>자재발주작성</Typography>
-          <Typography sx={{ mt: 0.1, fontSize: '0.64rem', color: '#64748b', fontWeight: 700 }}>
-            {projectName} · 자재마스터 힌트 / 현장별 규격 / 실행물량 / 누계발주율 통합관리
+          <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#0f172a' }}>
+            {pageMode === 'master' ? '자재 마스터 관리' : '자재발주작성'}
           </Typography>
+          {pageMode === 'master' && (
+            <Typography sx={{ mt: 0.1, fontSize: '0.64rem', color: '#64748b', fontWeight: 700 }}>
+              전 현장에서 공통으로 사용하는 품명·규격·단위·검색 별칭을 관리합니다.
+            </Typography>
+          )}
         </Box>
 
+        {pageMode === 'order' && (
         <Stack direction="row" spacing={0.5} sx={{ ml: 1 }}>
           <Button
             size="small"
@@ -2191,48 +2245,21 @@ export default function MaterialOrderUpload({
             지급자재 · 2차 개발
           </Button>
         </Stack>
+        )}
 
-        <Tabs
-          value={mainTab}
-          onChange={(_, value) => {
-            setMainTab(value);
-            if (value === 'order' && settingsRequired) {
-              setSettingsTab('basic');
-              setSettingsDialogOpen(true);
-            }
-          }}
-          sx={{
-            ml: 'auto',
-            minHeight: 34,
-            '& .MuiTabs-indicator': {
-              display: 'none',
-            },
-            '& .MuiTab-root': {
-              minHeight: 34,
-              py: 0.4,
-              position: 'relative',
-              overflow: 'visible',
-              fontSize: '0.72rem',
-              fontWeight: 850,
-            },
-            '& .MuiTab-root.Mui-selected::after': {
-              content: '""',
-              position: 'absolute',
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: '2px',
-              bgcolor: '#2563eb',
-              borderRadius: '2px 2px 0 0',
-              pointerEvents: 'none',
-            },
-          }}
-        >
-          <Tab value="order" icon={<AddShoppingCartRoundedIcon fontSize="small" />} iconPosition="start" label="발주서 작성" />
-          <Tab value="master" icon={<Inventory2RoundedIcon fontSize="small" />} iconPosition="start" label="자재 마스터" />
-          <Tab value="history" icon={<HistoryRoundedIcon fontSize="small" />} iconPosition="start" label="발주이력" />
-        </Tabs>
+        {pageMode === 'order' && (
+          <Button
+            size="small"
+            variant="outlined"
+            startIcon={<AddRoundedIcon fontSize="small" />}
+            onClick={createNewOrder}
+            sx={{ ml: 'auto', fontWeight: 850, whiteSpace: 'nowrap' }}
+          >
+            새 발주서
+          </Button>
+        )}
 
+        {pageMode === 'order' && (
         <Button
           size="small"
           variant={settingsRequired ? 'contained' : 'outlined'}
@@ -2247,8 +2274,9 @@ export default function MaterialOrderUpload({
         >
           기본설정
         </Button>
+        )}
 
-        {settingsRequired && (
+        {pageMode === 'order' && settingsRequired && (
           <Chip
             size="small"
             color="warning"
@@ -2487,68 +2515,128 @@ export default function MaterialOrderUpload({
           </TableContainer>
         </Paper>
       ) : (
-        <Box sx={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: '300px minmax(0, 1fr)', gap: 0.8 }}>
-          <Paper variant="outlined" sx={{ minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+        <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 0.8 }}>
+          <Paper variant="outlined" sx={{ order: 2, minHeight: 148, maxHeight: 190, display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
             <Stack direction="row" alignItems="center" sx={{ px: 0.9, py: 0.7, borderBottom: '1px solid #e2e8f0' }}>
               <Typography sx={{ fontSize: '0.78rem', fontWeight: 900 }}>발주서 목록</Typography>
               <Chip label={`${visibleOrders.length}건`} size="small" sx={{ ml: 0.5 }} />
-              <Button size="small" startIcon={<AddRoundedIcon />} onClick={createNewOrder} sx={{ ml: 'auto' }}>새 발주서</Button>
             </Stack>
-            <Box sx={{ flex: 1, overflowY: 'auto' }}>
+            <TableContainer sx={{ flex: 1, minHeight: 0 }}>
               {visibleOrders.length === 0 ? (
-                <Box sx={{ height: '100%', minHeight: 220, display: 'grid', placeItems: 'center', color: '#94a3b8', fontSize: '0.72rem' }}>발주서가 없습니다.</Box>
-              ) : visibleOrders.map((row) => {
-                const selected = row.id === order.id;
-                return (
-                  <Box
-                    key={row.id}
-                    onClick={() => openOrder(row)}
-                    sx={{ px: 1, py: 0.8, cursor: 'pointer', borderBottom: '1px solid #edf2f7', bgcolor: selected ? '#eff6ff' : '#fff', '&:hover': { bgcolor: selected ? '#eff6ff' : '#f8fafc' } }}
-                  >
-                    <Stack direction="row" alignItems="center" spacing={0.6}>
-                      <Typography sx={{ fontSize: '0.75rem', fontWeight: 900, color: '#0f172a' }}>{row.order_no}</Typography>
-                      <Chip
-                        label={ORDER_STATUS_LABELS[row.status] || row.status}
-                        size="small"
-                        color={row.status === 'confirmed' ? 'success' : row.status === 'draft' ? 'warning' : 'default'}
-                        variant="outlined"
-                        sx={{ ml: 'auto' }}
-                      />
-                    </Stack>
-                    <Typography sx={{ mt: 0.25, fontSize: '0.66rem', color: '#475569', fontWeight: 750 }}>{row.order_date} · {row.process_name || categoryNameById(categories, row.category_id)}</Typography>
-                    <Typography noWrap sx={{ mt: 0.1, fontSize: '0.62rem', color: '#94a3b8' }}>요청자 {row.requester_name || '-'} · 납품 {row.delivery_date || '-'}</Typography>
-                  </Box>
-                );
-              })}
-            </Box>
+                <Box sx={{ height: '100%', minHeight: 90, display: 'grid', placeItems: 'center', color: '#94a3b8', fontSize: '0.72rem' }}>발주서가 없습니다.</Box>
+              ) : (
+                <Table stickyHeader size="small" sx={{ minWidth: 980, tableLayout: 'fixed' }}>
+                  <TableHead>
+                    <TableRow>
+                      {[
+                        ['상태', 86],
+                        ['발주번호', 150],
+                        ['발주일', 110],
+                        ['자재분류', 130],
+                        ['공정', 120],
+                        ['요청자', 105],
+                        ['납품희망일', 120],
+                        ['납품장소', 170],
+                        ['비고', 190],
+                      ].map(([label, width]) => (
+                        <TableCell
+                          key={label}
+                          align={['상태', '발주일', '요청자', '납품희망일'].includes(label) ? 'center' : 'left'}
+                          sx={{ width, py: 0.5, bgcolor: '#e8f3f8', color: '#155e75', fontSize: '0.68rem', fontWeight: 900, borderRight: '1px solid #cbd5e1', whiteSpace: 'nowrap' }}
+                        >
+                          {label}
+                        </TableCell>
+                      ))}
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {visibleOrders.map((row) => {
+                      const selected = row.id === order.id;
+                      return (
+                        <TableRow
+                          key={row.id}
+                          hover
+                          selected={selected}
+                          onClick={() => openOrder(row)}
+                          sx={{ cursor: 'pointer', '& .MuiTableCell-root': { py: 0.45, fontSize: '0.67rem', borderRight: '1px solid #e2e8f0' } }}
+                        >
+                          <TableCell align="center">
+                            <Chip
+                              label={ORDER_STATUS_LABELS[row.status] || row.status}
+                              size="small"
+                              color={row.status === 'confirmed' ? 'success' : row.status === 'draft' ? 'warning' : 'default'}
+                              variant="outlined"
+                            />
+                          </TableCell>
+                          <TableCell sx={{ fontWeight: 900 }}>{row.order_no}</TableCell>
+                          <TableCell align="center">{row.order_date || '-'}</TableCell>
+                          <TableCell>{categoryNameById(categories, row.category_id)}</TableCell>
+                          <TableCell>{row.process_name || '-'}</TableCell>
+                          <TableCell align="center">{row.requester_name || '-'}</TableCell>
+                          <TableCell align="center">{row.delivery_date || '-'}</TableCell>
+                          <TableCell>{row.delivery_location || '-'}</TableCell>
+                          <TableCell>{row.note || '-'}</TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </TableContainer>
           </Paper>
 
-          <Paper variant="outlined" sx={{ minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <Stack direction="row" alignItems="center" spacing={0.7} sx={{ px: 1, py: 0.7, borderBottom: '1px solid #e2e8f0' }}>
+          <Paper variant="outlined" sx={{ order: 1, flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <Stack direction="row" alignItems="center" spacing={0.7} sx={{ px: 1, py: 0.7, borderBottom: '1px solid #cbd5e1', bgcolor: '#eef1f4' }}>
               <Typography sx={{ fontSize: '0.82rem', fontWeight: 900 }}>사급자재 발주서</Typography>
               {order.orderNo && <Chip label={order.orderNo} size="small" variant="outlined" />}
               {order.status !== 'draft' && <Chip label={ORDER_STATUS_LABELS[order.status]} size="small" color={order.status === 'confirmed' ? 'success' : 'default'} />}
               <Stack direction="row" spacing={0.5} sx={{ ml: 'auto' }}>
-                {!isLocked && order.id && <Button size="small" color="error" variant="outlined" onClick={deleteDraft} startIcon={<DeleteOutlineRoundedIcon />}>삭제</Button>}
+                {order.id && <Button size="small" color="error" variant="outlined" onClick={deleteOrder} startIcon={<DeleteOutlineRoundedIcon />}>삭제</Button>}
                 {!isLocked && <Button size="small" variant="outlined" onClick={() => saveOrder('draft')} disabled={saving} startIcon={<SaveRoundedIcon />}>저장</Button>}
                 {!isLocked && <Button size="small" variant="contained" color="success" onClick={() => saveOrder('confirmed')} disabled={saving} startIcon={<CheckCircleRoundedIcon />}>발주완료</Button>}
               </Stack>
             </Stack>
 
-            <Box sx={{ p: 0.9, borderBottom: '1px solid #e2e8f0' }}>
-              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', gap: 0.7 }}>
-                <TextField size="small" label="발주일" type="date" InputLabelProps={{ shrink: true }} slotProps={{ inputLabel: { shrink: true } }} value={order.orderDate} onChange={(e) => setOrder((current) => ({ ...current, orderDate: e.target.value }))} disabled={isLocked} />
-                <TextField size="small" label="요청자" value={order.requesterName} onChange={(e) => setOrder((current) => ({ ...current, requesterName: e.target.value }))} disabled={isLocked} />
-                <TextField select size="small" label="자재분류" value={order.categoryId} onChange={(e) => setOrder((current) => ({ ...current, categoryId: e.target.value }))} disabled={isLocked}>
-                  <MenuItem value="">전체/혼합</MenuItem>
-                  {categories.map((row) => <MenuItem key={row.id} value={row.id}>{row.name}</MenuItem>)}
-                </TextField>
-                <Autocomplete freeSolo size="small" options={PROCESS_OPTIONS} value={order.processName || ''} onInputChange={(_, value) => setOrder((current) => ({ ...current, processName: value }))} disabled={isLocked} renderInput={(params) => <TextField {...params} label="공정" />} />
-                <TextField size="small" label="납품희망일" type="date" InputLabelProps={{ shrink: true }} slotProps={{ inputLabel: { shrink: true } }} value={order.deliveryDate} onChange={(e) => setOrder((current) => ({ ...current, deliveryDate: e.target.value }))} disabled={isLocked} />
-                <TextField size="small" label="납품장소" value={order.deliveryLocation} onChange={(e) => setOrder((current) => ({ ...current, deliveryLocation: e.target.value }))} disabled={isLocked} />
-                <TextField size="small" label="수령자" value={order.receiverName} onChange={(e) => setOrder((current) => ({ ...current, receiverName: e.target.value }))} disabled={isLocked} />
-                <TextField size="small" label="연락처" value={order.receiverPhone} onChange={(e) => setOrder((current) => ({ ...current, receiverPhone: e.target.value }))} disabled={isLocked} />
-                <TextField size="small" label="비고" value={order.note} onChange={(e) => setOrder((current) => ({ ...current, note: e.target.value }))} disabled={isLocked} sx={{ gridColumn: 'span 4' }} />
+            <Box sx={{ p: 0.7, borderBottom: '1px solid #cbd5e1', bgcolor: '#eef1f4' }}>
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(6, minmax(0, 1fr))', columnGap: 0.7, rowGap: 0.55 }}>
+                <TextField size="small" label="발주일" type="date" slotProps={{ inputLabel: { shrink: true } }} value={order.orderDate} onChange={(e) => setOrder((current) => ({ ...current, orderDate: e.target.value }))} disabled={isLocked} sx={compactEntryFieldSx(order.orderDate)} />
+                <TextField size="small" label="요청자" slotProps={{ inputLabel: { shrink: true } }} value={order.requesterName} onChange={(e) => setOrder((current) => ({ ...current, requesterName: e.target.value }))} disabled={isLocked} sx={compactEntryFieldSx(order.requesterName)} />
+                <Box sx={compactSelectFieldSx(order.categoryId, isLocked)}>
+                  <Box component="label" htmlFor="material-order-category">자재분류</Box>
+                  <Box
+                    component="select"
+                    id="material-order-category"
+                    value={order.categoryId}
+                    onChange={(event) => setOrder((current) => ({ ...current, categoryId: event.target.value }))}
+                    disabled={isLocked}
+                  >
+                    <option value="">전체/혼합</option>
+                    {categories.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
+                  </Box>
+                </Box>
+                <Box sx={compactSelectFieldSx(order.processName, isLocked)}>
+                  <Box component="label" htmlFor="material-order-process">공정</Box>
+                  <Box
+                    component="select"
+                    id="material-order-process"
+                    value={order.processName || ''}
+                    onChange={(event) => setOrder((current) => ({ ...current, processName: event.target.value }))}
+                    disabled={isLocked}
+                  >
+                    <option value="">공정 선택</option>
+                    {order.processName && !PROCESS_OPTIONS.includes(order.processName) && (
+                      <option value={order.processName}>{order.processName}</option>
+                    )}
+                    {PROCESS_OPTIONS.map((processName) => (
+                      <option key={processName} value={processName}>{processName}</option>
+                    ))}
+                  </Box>
+                </Box>
+                <TextField size="small" label="납품희망일" type="date" slotProps={{ inputLabel: { shrink: true } }} value={order.deliveryDate} onChange={(e) => setOrder((current) => ({ ...current, deliveryDate: e.target.value }))} disabled={isLocked} sx={compactEntryFieldSx(order.deliveryDate)} />
+                <TextField size="small" label="납품장소" slotProps={{ inputLabel: { shrink: true } }} value={order.deliveryLocation} onChange={(e) => setOrder((current) => ({ ...current, deliveryLocation: e.target.value }))} disabled={isLocked} sx={compactEntryFieldSx(order.deliveryLocation)} />
+                <TextField size="small" label="수령자" slotProps={{ inputLabel: { shrink: true } }} value={order.receiverName} onChange={(e) => setOrder((current) => ({ ...current, receiverName: e.target.value }))} disabled={isLocked} sx={compactEntryFieldSx(order.receiverName)} />
+                <TextField size="small" label="연락처" slotProps={{ inputLabel: { shrink: true } }} value={order.receiverPhone} onChange={(e) => setOrder((current) => ({ ...current, receiverPhone: e.target.value }))} disabled={isLocked} sx={compactEntryFieldSx(order.receiverPhone)} />
+                <TextField size="small" label="비고" slotProps={{ inputLabel: { shrink: true } }} value={order.note} onChange={(e) => setOrder((current) => ({ ...current, note: e.target.value }))} disabled={isLocked} sx={{ gridColumn: 'span 4', ...compactEntryFieldSx(order.note, false) }} />
               </Box>
             </Box>
 
@@ -2716,6 +2804,7 @@ export default function MaterialOrderUpload({
                           <Autocomplete
                             freeSolo
                             openOnFocus
+                            disablePortal
                             size="small"
                             options={orderMaterialOptions}
                             loading={orderMaterialOptionsLoading}
@@ -2757,6 +2846,7 @@ export default function MaterialOrderUpload({
                             }}
                             disabled={isLocked}
                             noOptionsText="일치하는 자재가 없습니다. 직접 입력할 수 있습니다."
+                            sx={entryFieldSx(row.standardName)}
                             renderOption={(props, option) => {
                               const { key, ...optionProps } = props;
                               return (
@@ -2791,6 +2881,7 @@ export default function MaterialOrderUpload({
                             inputRef={(node) => setOrderItemInputRef(itemKey, 'specification', node)}
                             placeholder="규격"
                             disabled={isLocked}
+                            sx={entryFieldSx(row.specification)}
                           />
                         </TableCell>
                         <TableCell sx={{ p: 0.35 }}>
@@ -2804,10 +2895,11 @@ export default function MaterialOrderUpload({
                             placeholder="단위"
                             disabled={isLocked}
                             inputProps={{ style: { textAlign: 'center' } }}
+                            sx={entryFieldSx(row.unit)}
                           />
                         </TableCell>
-                        <TableCell align="right">{formatNumber(row.executionQuantity)}</TableCell>
-                        <TableCell align="right">{formatNumber(row.previousQuantity)}</TableCell>
+                        <TableCell align="right" sx={{ bgcolor: '#ffffff' }}>{formatNumber(row.executionQuantity)}</TableCell>
+                        <TableCell align="right" sx={{ bgcolor: '#ffffff' }}>{formatNumber(row.previousQuantity)}</TableCell>
                         <TableCell sx={{ p: 0.35 }}>
                           <TextField
                             size="small"
@@ -2818,9 +2910,10 @@ export default function MaterialOrderUpload({
                             inputRef={(node) => setOrderItemInputRef(itemKey, 'currentQuantity', node)}
                             disabled={isLocked}
                             inputProps={{ inputMode: 'decimal', style: { textAlign: 'right' } }}
+                            sx={entryFieldSx(numberValue(row.currentQuantity) > 0 ? row.currentQuantity : '')}
                           />
                         </TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 850 }}>{formatNumber(row.cumulativeQuantity)}</TableCell>
+                        <TableCell align="right" sx={{ bgcolor: '#ffffff', fontWeight: 850 }}>{formatNumber(row.cumulativeQuantity)}</TableCell>
                         <TableCell align="center">
                           <Chip label={`${row.executionRatio.toFixed(1)}%`} size="small" color={over ? 'error' : row.executionRatio >= 90 ? 'warning' : 'default'} variant={over ? 'filled' : 'outlined'} />
                         </TableCell>
@@ -2834,11 +2927,34 @@ export default function MaterialOrderUpload({
                             inputRef={(node) => setOrderItemInputRef(itemKey, 'note', node)}
                             placeholder="비고"
                             disabled={isLocked}
+                            sx={entryFieldSx(row.note, false)}
                           />
                         </TableCell>
                       </TableRow>
                     );
                   })}
+                  {orderItems.length > 0 && (
+                    <TableRow
+                      sx={{
+                        position: 'sticky',
+                        bottom: 0,
+                        zIndex: 1,
+                        '& .MuiTableCell-root': {
+                          bgcolor: '#dff1f5',
+                          color: '#164e63',
+                          fontWeight: 900,
+                        },
+                      }}
+                    >
+                      <TableCell align="center">합계</TableCell>
+                      <TableCell colSpan={3} />
+                      <TableCell align="right">{formatNumber(orderQuantityTotals.execution)}</TableCell>
+                      <TableCell align="right">{formatNumber(orderQuantityTotals.previous)}</TableCell>
+                      <TableCell align="right">{formatNumber(orderQuantityTotals.current)}</TableCell>
+                      <TableCell align="right">{formatNumber(orderQuantityTotals.cumulative)}</TableCell>
+                      <TableCell colSpan={2} />
+                    </TableRow>
+                  )}
                 </TableBody>
               </Table>
             </TableContainer>
@@ -2866,7 +2982,7 @@ export default function MaterialOrderUpload({
                 자재발주 기본설정
               </Typography>
               <Typography sx={{ mt: 0.05, fontSize: '0.64rem', color: '#64748b' }}>
-                {projectName} · 발주 기본값과 주요자재 실행물량을 설정합니다.
+                {projectName} · 발주서에 반복 입력되는 기본정보를 설정합니다.
               </Typography>
             </Box>
             {settingsRequired && (
@@ -2929,10 +3045,6 @@ export default function MaterialOrderUpload({
           }}
         >
           <Tab value="basic" label="기본정보" />
-          <Tab
-            value="materials"
-            label={`주요자재 실행물량 (${settingsMaterials.filter((row) => row.included !== false).length})`}
-          />
           <Tab
             value="history"
             label={`변경이력 (${settingsHistory.length})`}

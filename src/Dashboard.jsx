@@ -1,3 +1,4 @@
+// v52.48.5.44.139 자재관리 상단 관리영역·자재마스터 분리
 // v52.48.5.44.118 좌측메뉴 스크롤 발생시 폭 고정
 // v52.48.5.44.106 업무자료실 현장연동 시스템양식에 골구도 전달
 // v52.48.5.44.89 업무자료실 메뉴·조회·최고관리자 관리
@@ -99,6 +100,7 @@ const PROGRESS_WRITE_CHUNK_SIZE = 500;
 const ALL_PROJECTS_OPTION = '전체현장';
 const MANAGEMENT_AREA_CONSTRUCTION = 'construction';
 const MANAGEMENT_AREA_SAFETY = 'safety';
+const MANAGEMENT_AREA_MATERIAL = 'material';
 const DEFAULT_DASHBOARD_SCALE = 0.9;
 const DASHBOARD_SCALE_OPTIONS = [0.9, 1];
 const DASHBOARD_SCALE_STORAGE_KEY = 'constructionManagementDashboard:uiScale';
@@ -386,6 +388,7 @@ const viewTitles = {
   'option-comparison': '옵션별 비교',
   'household-quantity-management': '세대물량관리',
   'material-order': '자재발주작성',
+  'material-master': '자재 마스터 관리',
   'material-input-status': '자재투입현황',
   'material-unit-price': '일위대가작성',
   'drawing-quantity': '타입별 도면분석',
@@ -431,6 +434,7 @@ const VIEW_PERMISSION_KEYS = {
   'household-quantity-management': 'construction.progress.view',
   'drawing-quantity': 'construction.drawing.view',
   'material-order': 'material.order.view',
+  'material-master': 'material.input.view',
   'material-input-status': 'material.input.view',
   'material-unit-price': 'material.input.view',
   'payment-claim': 'claim.statement.view',
@@ -1196,9 +1200,9 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       return MANAGEMENT_AREA_CONSTRUCTION;
     }
 
-    return readDashboardSessionValue('managementArea') ===
-      MANAGEMENT_AREA_SAFETY
-      ? MANAGEMENT_AREA_SAFETY
+    const storedArea = readDashboardSessionValue('managementArea');
+    return [MANAGEMENT_AREA_SAFETY, MANAGEMENT_AREA_MATERIAL].includes(storedArea)
+      ? storedArea
       : MANAGEMENT_AREA_CONSTRUCTION;
   });
 
@@ -1999,6 +2003,14 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
   const handleSelectManagementArea = (area) => {
     setManagementArea(area);
+
+    if (area === MANAGEMENT_AREA_MATERIAL) {
+      setCurrentView('material-master');
+    } else if (currentView === 'material-master') {
+      setCurrentView(
+        canAccessView('admin-dashboard') ? 'admin-dashboard' : 'main',
+      );
+    }
 
     if (currentView === 'messenger') {
       setCurrentView(
@@ -3727,12 +3739,16 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       ? '메신저'
       : managementArea === MANAGEMENT_AREA_SAFETY
         ? '안전 관리'
-        : constructionHeaderTitle;
+        : managementArea === MANAGEMENT_AREA_MATERIAL
+          ? '자재 마스터 관리'
+          : constructionHeaderTitle;
 
   const managementAreaLabel =
     managementArea === MANAGEMENT_AREA_SAFETY
       ? '안전 관리'
-      : '공사 관리';
+      : managementArea === MANAGEMENT_AREA_MATERIAL
+        ? '자재 관리'
+        : '공사 관리';
 
   return (
     <Box
@@ -3917,6 +3933,15 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               sx={{ fontSize: '0.82rem', fontWeight: 700 }}
             >
               안전 관리
+            </MenuItem>
+            <MenuItem
+              selected={managementArea === MANAGEMENT_AREA_MATERIAL}
+              onClick={() =>
+                handleSelectManagementArea(MANAGEMENT_AREA_MATERIAL)
+              }
+              sx={{ fontSize: '0.82rem', fontWeight: 700 }}
+            >
+              자재 관리
             </MenuItem>
           </Menu>
 
@@ -4222,6 +4247,31 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               )
             }
           />
+        ) : managementArea === MANAGEMENT_AREA_MATERIAL ? (
+          <Box sx={{ mx: 0.75, mt: 0.75 }}>
+            <Button
+              fullWidth
+              variant="contained"
+              onClick={() => setCurrentView('material-master')}
+              sx={{
+                minHeight: 42,
+                px: open ? 1.5 : 0.5,
+                justifyContent: open ? 'flex-start' : 'center',
+                bgcolor: '#0f766e',
+                fontSize: open ? '0.8rem' : '0.72rem',
+                fontWeight: 900,
+                whiteSpace: 'nowrap',
+                '&:hover': { bgcolor: '#115e59' },
+              }}
+            >
+              {open ? '자재 마스터' : '자재'}
+            </Button>
+            {open && (
+              <Typography sx={{ mt: 1, px: 0.75, color: '#94a3b8', fontSize: '0.67rem', lineHeight: 1.5 }}>
+                전 현장에서 공통으로 사용하는 자재 기준정보를 관리합니다.
+              </Typography>
+            )}
+          </Box>
         ) : (
           <Box
             sx={{
@@ -4298,6 +4348,20 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           {currentView === 'messenger' ? (
             <Messenger
               currentUserId={user?.id || userProfile?.auth_user_id || ''}
+            />
+          ) : managementArea === MANAGEMENT_AREA_MATERIAL ? (
+            <MaterialOrderUpload
+              key="material-master"
+              pageMode="master"
+              projectName={activeProjectName}
+              userProfile={activeUserProfile}
+              canManageMaster={Boolean(
+                isSuperAdmin ||
+                  hasPermission(
+                    'material.input.manage',
+                    activeProjectName,
+                  ) === true
+              )}
             />
           ) : managementArea === MANAGEMENT_AREA_SAFETY ? (
             <Paper
@@ -4594,6 +4658,8 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             'material-order' &&
             activeProjectName && (
               <MaterialOrderUpload
+                key="material-order"
+                pageMode="order"
                 projectName={activeProjectName}
                 userProfile={activeUserProfile}
                 canManageMaster={Boolean(
