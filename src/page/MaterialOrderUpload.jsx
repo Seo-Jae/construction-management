@@ -225,6 +225,29 @@ const compactEntryFieldSx = (value, required = true) => ({
     fontSize: '0.68rem',
   },
 });
+const compactDateFieldSx = (value) => {
+  const date = value ? new Date(`${value}T00:00:00`) : null;
+  const displayValue = date && !Number.isNaN(date.getTime())
+    ? `${value}(${['일', '월', '화', '수', '목', '금', '토'][date.getDay()]})`
+    : '';
+
+  return {
+    ...compactEntryFieldSx(value),
+    // 편집 중에는 기본 날짜 입력을 유지하고, 평상시에는 요일을 함께 표시합니다.
+    '& .MuiOutlinedInput-root:not(.Mui-focused)': displayValue ? {
+      '& input': { color: 'transparent', WebkitTextFillColor: 'transparent' },
+      '&::before': {
+        content: JSON.stringify(displayValue),
+        position: 'absolute',
+        left: 14,
+        pointerEvents: 'none',
+        fontSize: '0.72rem',
+        color: 'text.primary',
+      },
+      '&.Mui-disabled::before': { color: 'text.disabled' },
+    } : {},
+  };
+};
 const compactSelectFieldSx = (value, disabled = false) => ({
   position: 'relative',
   minWidth: 0,
@@ -3580,7 +3603,7 @@ export default function MaterialOrderUpload({
 
             <Box sx={{ p: 0.7, borderBottom: '1px solid #cbd5e1', bgcolor: '#eef1f4' }}>
               <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', columnGap: 0.7, rowGap: 0.55 }}>
-                <TextField size="small" label="발주일" type="date" slotProps={{ inputLabel: { shrink: true } }} value={order.orderDate} onChange={(e) => setOrder((current) => ({ ...current, orderDate: e.target.value }))} disabled={isLocked} sx={compactEntryFieldSx(order.orderDate)} />
+                <TextField size="small" label="발주일" type="date" slotProps={{ inputLabel: { shrink: true } }} value={order.orderDate} onChange={(e) => setOrder((current) => ({ ...current, orderDate: e.target.value }))} disabled={isLocked} sx={compactDateFieldSx(order.orderDate)} />
                 <TextField size="small" label="요청자" slotProps={{ inputLabel: { shrink: true } }} value={order.requesterName} onChange={(e) => setOrder((current) => ({ ...current, requesterName: e.target.value }))} disabled={isLocked} sx={compactEntryFieldSx(order.requesterName)} />
                 <Box sx={compactSelectFieldSx(order.categoryId, isLocked)}>
                   <Box component="label" htmlFor="material-order-category">자재분류</Box>
@@ -3606,7 +3629,7 @@ export default function MaterialOrderUpload({
                     {categories.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
                   </Box>
                 </Box>
-                <TextField size="small" label="납품희망일" type="date" slotProps={{ inputLabel: { shrink: true } }} value={order.deliveryDate} onChange={(e) => setOrder((current) => ({ ...current, deliveryDate: e.target.value }))} disabled={isLocked} sx={compactEntryFieldSx(order.deliveryDate)} />
+                <TextField size="small" label="납품희망일" type="date" slotProps={{ inputLabel: { shrink: true } }} value={order.deliveryDate} onChange={(e) => setOrder((current) => ({ ...current, deliveryDate: e.target.value }))} disabled={isLocked} sx={compactDateFieldSx(order.deliveryDate)} />
                 <TextField size="small" label="납품장소" slotProps={{ inputLabel: { shrink: true } }} value={order.deliveryLocation} onChange={(e) => setOrder((current) => ({ ...current, deliveryLocation: e.target.value }))} disabled={isLocked} sx={compactEntryFieldSx(order.deliveryLocation)} />
                 <TextField size="small" label="수령자" slotProps={{ inputLabel: { shrink: true } }} value={order.receiverName} onChange={(e) => setOrder((current) => ({ ...current, receiverName: e.target.value }))} disabled={isLocked} sx={compactEntryFieldSx(order.receiverName)} />
                 <TextField size="small" label="연락처" slotProps={{ inputLabel: { shrink: true } }} value={order.receiverPhone} onChange={(e) => setOrder((current) => ({ ...current, receiverPhone: e.target.value }))} disabled={isLocked} sx={compactEntryFieldSx(order.receiverPhone)} />
