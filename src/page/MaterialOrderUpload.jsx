@@ -676,15 +676,18 @@ export default function MaterialOrderUpload({
     }
 
     setOrders(data || []);
+    setSpecification2Options({});
   }, [handleSchemaError, notify, projectName]);
 
   const loadSpecification2Options = useCallback(async (materialId) => {
     if (!projectName || !materialId) return;
     if (Object.prototype.hasOwnProperty.call(specification2Options, materialId)) return;
 
-    const savedOrders = orders.filter((row) =>
-      ['ordered', 'confirmed'].includes(row.status),
-    );
+    const savedOrders = orders.filter((row) => (
+      ['ordered', 'confirmed'].includes(row.status) &&
+      (!order.categoryId || row.category_id === order.categoryId) &&
+      (!order.processName || row.process_name === order.processName)
+    ));
     const savedOrderIds = savedOrders.map((row) => row.id).filter(Boolean);
     if (savedOrderIds.length === 0) {
       return;
@@ -719,7 +722,7 @@ export default function MaterialOrderUpload({
     const values = [...latestByValue.values()]
       .sort((first, second) => second.orderDate.localeCompare(first.orderDate));
     setSpecification2Options((current) => ({ ...current, [materialId]: values }));
-  }, [orders, projectName, specification2Options]);
+  }, [order.categoryId, order.processName, orders, projectName, specification2Options]);
 
 
   const loadProjectSettings = useCallback(async ({ openWhenIncomplete = true } = {}) => {
