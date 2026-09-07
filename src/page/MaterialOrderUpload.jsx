@@ -683,14 +683,17 @@ export default function MaterialOrderUpload({
     if (!projectName || !materialId) return;
     if (Object.prototype.hasOwnProperty.call(specification2Options, materialId)) return;
 
-    const savedOrderIds = orders.map((row) => row.id).filter(Boolean);
+    const savedOrders = orders.filter((row) =>
+      ['ordered', 'confirmed'].includes(row.status),
+    );
+    const savedOrderIds = savedOrders.map((row) => row.id).filter(Boolean);
     if (savedOrderIds.length === 0) {
       return;
     }
 
     const { data, error } = await supabase
       .from('material_supply_order_items')
-      .select('specification_2')
+      .select('specification_2, order_id')
       .in('order_id', savedOrderIds)
       .eq('material_id', materialId)
       .not('specification_2', 'is', null);
@@ -700,11 +703,22 @@ export default function MaterialOrderUpload({
       return;
     }
 
-    const values = [...new Set(
-      (data || [])
-        .map((row) => formatSpecification2(row.specification_2))
-        .filter(Boolean),
-    )];
+    const orderDateById = new Map(savedOrders.map((row) => [
+      row.id,
+      row.order_date || '',
+    ]));
+    const latestByValue = new Map();
+    (data || []).forEach((row) => {
+      const value = formatSpecification2(row.specification_2);
+      if (!value) return;
+      const orderDate = orderDateById.get(row.order_id) || '';
+      const previous = latestByValue.get(value);
+      if (!previous || orderDate > previous.orderDate) {
+        latestByValue.set(value, { value, orderDate });
+      }
+    });
+    const values = [...latestByValue.values()]
+      .sort((first, second) => second.orderDate.localeCompare(first.orderDate));
     setSpecification2Options((current) => ({ ...current, [materialId]: values }));
   }, [orders, projectName, specification2Options]);
 
@@ -3975,6 +3989,9 @@ export default function MaterialOrderUpload({
                             size="small"
                             options={specification2Suggestions}
                             value={formatSpecification2(row.specification2)}
+                            getOptionLabel={(option) => (
+                              typeof option === 'string' ? option : option.value || ''
+                            )}
                             disabled={isLocked}
                             slotProps={{
                               listbox: {
@@ -3999,16 +4016,25 @@ export default function MaterialOrderUpload({
                               }
                             }}
                             onChange={(_, value) => {
-                              updateOrderItem(index, 'specification2', typeof value === 'string' ? value : '');
+                              updateOrderItem(
+                                index,
+                                'specification2',
+                                typeof value === 'string' ? value : value?.value || '',
+                              );
                             }}
                             sx={entryFieldSx(row.specification2)}
                             renderOption={(props, option) => {
                               const { key, ...optionProps } = props;
                               return (
                                 <Box component="li" key={key} {...optionProps}>
-                                  <Typography sx={{ fontSize: '0.68rem', fontWeight: 800 }}>
-                                    {option}
-                                  </Typography>
+                                  <Stack direction="row" alignItems="baseline" spacing={0.8}>
+                                    <Typography sx={{ fontSize: '0.68rem', fontWeight: 800 }}>
+                                      {option.value}
+                                    </Typography>
+                                    <Typography sx={{ fontSize: '0.56rem', color: '#94a3b8' }}>
+                                      {option.orderDate ? option.orderDate.replace(/-/g, '.') : ''}
+                                    </Typography>
+                                  </Stack>
                                 </Box>
                               );
                             }}
