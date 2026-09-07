@@ -118,13 +118,11 @@ const ORDER_STATUS_LABELS = {
 };
 const formatOrderDisplayNo = (row) => {
   const orderNo = normalizeText(row?.orderNo || row?.order_no);
-  const status = row?.status || 'draft';
-  const statusLabel = status === 'draft'
-    ? '작성중'
-    : status === 'cancelled'
-      ? '취소'
-      : '발주완료';
-  return orderNo ? `(${statusLabel})${orderNo}` : `(${statusLabel}) 신규 발주서`;
+  return orderNo || '신규 발주서';
+};
+const getOrderMonthKey = (orderDate) => {
+  const match = String(orderDate || '').match(/^(\d{4})-(\d{2})-/);
+  return match ? `${match[1].slice(2)}${match[2]}` : '';
 };
 
 const EMPTY_ORDER = {
@@ -519,6 +517,7 @@ export default function MaterialOrderUpload({
   const [categoryFolderSchemaMissing, setCategoryFolderSchemaMissing] = useState(false);
   const [selectedOrderFolderId, setSelectedOrderFolderId] = useState('');
   const [selectedOrderFolderProcess, setSelectedOrderFolderProcess] = useState('');
+  const [selectedOrderMonth, setSelectedOrderMonth] = useState('');
   const [processFoldersOpen, setProcessFoldersOpen] = useState(false);
   const [orders, setOrders] = useState([]);
   const [masterRows, setMasterRows] = useState([]);
@@ -2904,7 +2903,7 @@ export default function MaterialOrderUpload({
         const firstHasNumber = Number.isFinite(firstNumber);
         const secondHasNumber = Number.isFinite(secondNumber);
         if (firstHasNumber && secondHasNumber && firstNumber !== secondNumber) {
-          return firstNumber - secondNumber;
+          return String(first.order_date || '').localeCompare(String(second.order_date || '')) || firstNumber - secondNumber;
         }
         if (firstHasNumber !== secondHasNumber) return firstHasNumber ? -1 : 1;
         return String(first.created_at || '').localeCompare(String(second.created_at || ''));
@@ -2929,6 +2928,16 @@ export default function MaterialOrderUpload({
       });
     },
     [categories, selectedOrderFolderId, selectedOrderFolderProcess, visibleOrders],
+  );
+  const orderMonths = useMemo(
+    () => [...new Set(folderOrders.map((row) => getOrderMonthKey(row.order_date)).filter(Boolean))],
+    [folderOrders],
+  );
+  const monthOrders = useMemo(
+    () => selectedOrderMonth
+      ? folderOrders.filter((row) => getOrderMonthKey(row.order_date) === selectedOrderMonth)
+      : folderOrders,
+    [folderOrders, selectedOrderMonth],
   );
   const selectedOrderFolderCategory = categories.find(
     (row) => row.id === selectedOrderFolderId,
@@ -3461,11 +3470,39 @@ export default function MaterialOrderUpload({
                 })}
               </Stack>
             </Box>
+            {orderMonths.length > 0 && (
+              <Box sx={{ px: 0.55, py: 0.45, borderBottom: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
+                <Stack spacing={0.2}>
+                  {orderMonths.map((month) => (
+                    <Button
+                      key={month}
+                      fullWidth
+                      size="small"
+                      variant={selectedOrderMonth === month ? 'contained' : 'text'}
+                      color={selectedOrderMonth === month ? 'primary' : 'inherit'}
+                      startIcon={<FolderRoundedIcon fontSize="small" />}
+                      onClick={() => setSelectedOrderMonth((current) => current === month ? '' : month)}
+                      sx={{
+                        justifyContent: 'flex-start',
+                        minHeight: 26,
+                        px: 0.8,
+                        fontSize: '0.66rem',
+                        fontWeight: 850,
+                        '& .MuiButton-endIcon': { ml: 'auto' },
+                      }}
+                    >
+                      {month}
+                      <Chip label={`${folderOrders.filter((row) => getOrderMonthKey(row.order_date) === month).length}`} size="small" sx={{ ml: 'auto', height: 18, fontSize: '0.58rem' }} />
+                    </Button>
+                  ))}
+                </Stack>
+              </Box>
+            )}
             <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-              {folderOrders.length === 0 ? (
+              {monthOrders.length === 0 ? (
                 <Box sx={{ height: '100%', minHeight: 160, display: 'grid', placeItems: 'center', color: '#94a3b8', fontSize: '0.72rem' }}>선택한 분류의 발주서가 없습니다.</Box>
               ) : (
-                folderOrders.map((row) => {
+                monthOrders.map((row) => {
                   const selected = row.id === order.id;
                   return (
                     <Box
@@ -3482,13 +3519,6 @@ export default function MaterialOrderUpload({
                     >
                       <Stack direction="row" alignItems="center" spacing={0.6}>
                         <Typography sx={{ fontSize: '0.75rem', fontWeight: 900, color: '#0f172a' }}>{formatOrderDisplayNo(row)}</Typography>
-                        <Chip
-                          label={ORDER_STATUS_LABELS[row.status] || row.status}
-                          size="small"
-                          color={['ordered', 'confirmed'].includes(row.status) ? 'success' : row.status === 'draft' ? 'warning' : 'default'}
-                          variant="outlined"
-                          sx={{ ml: 'auto' }}
-                        />
                       </Stack>
                       <Typography sx={{ mt: 0.25, fontSize: '0.66rem', color: '#475569', fontWeight: 750 }}>
                         {row.order_date} · {row.process_name || categoryNameById(categories, row.category_id)}
