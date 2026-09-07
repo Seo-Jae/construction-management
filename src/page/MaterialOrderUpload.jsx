@@ -3848,7 +3848,6 @@ export default function MaterialOrderUpload({
                     const specification2Suggestions = row.materialId
                       ? specification2Options[row.materialId] || []
                       : [];
-                    const specification2ListId = `${itemKey}-specification2-options`;
                     return (
                       <TableRow key={itemKey} hover selected={selected}>
                         <TableCell align="center" sx={{ px: 0.35 }}>
@@ -3969,55 +3968,33 @@ export default function MaterialOrderUpload({
                           />
                         </TableCell>
                         <TableCell sx={{ p: 0.35 }}>
-                          <Box sx={{ position: 'relative' }}>
-                            <TextField
-                              size="small"
-                              fullWidth
-                              value={formatSpecification2(row.specification2)}
-                              onChange={(event) => updateOrderItem(index, 'specification2', event.target.value)}
-                              onFocus={() => loadSpecification2Options(row.materialId)}
-                              onKeyDown={(event) => handleOrderGridKeyDown(event, index, 'specification2')}
-                              inputRef={(node) => setOrderItemInputRef(itemKey, 'specification2', node)}
-                              placeholder="상세길이"
-                              disabled={isLocked}
-                              inputProps={{ list: specification2ListId }}
-                              sx={entryFieldSx(row.specification2)}
-                            />
-                            <datalist id={specification2ListId}>
-                              {specification2Suggestions.map((value) => (
-                                <option key={value} value={value} />
-                              ))}
-                            </datalist>
-                            {specification2Suggestions.length > 0 && !isLocked && (
-                              <Stack
-                                direction="row"
-                                spacing={0.35}
-                                useFlexGap
-                                flexWrap="wrap"
-                                sx={{ mt: 0.3 }}
-                              >
-                                {specification2Suggestions.map((value) => (
-                                  <Button
-                                    key={value}
-                                    size="small"
-                                    variant="outlined"
-                                    onClick={() => updateOrderItem(index, 'specification2', value)}
-                                    sx={{
-                                      minWidth: 0,
-                                      minHeight: 20,
-                                      px: 0.7,
-                                      py: 0,
-                                      fontSize: '0.6rem',
-                                      lineHeight: 1.2,
-                                      whiteSpace: 'nowrap',
-                                    }}
-                                  >
-                                    {value}
-                                  </Button>
-                                ))}
-                              </Stack>
+                          <Autocomplete
+                            freeSolo
+                            openOnFocus
+                            size="small"
+                            options={specification2Suggestions}
+                            value={formatSpecification2(row.specification2)}
+                            disabled={isLocked}
+                            noOptionsText="이전에 사용한 규격(2)이 없습니다. 직접 입력할 수 있습니다."
+                            onOpen={() => loadSpecification2Options(row.materialId)}
+                            onInputChange={(_, value, reason) => {
+                              if (reason === 'input' || reason === 'clear') {
+                                updateOrderItem(index, 'specification2', value);
+                              }
+                            }}
+                            onChange={(_, value) => {
+                              updateOrderItem(index, 'specification2', typeof value === 'string' ? value : '');
+                            }}
+                            sx={entryFieldSx(row.specification2)}
+                            renderInput={(params) => (
+                              <TextField
+                                {...params}
+                                inputRef={(node) => setOrderItemInputRef(itemKey, 'specification2', node)}
+                                onKeyDown={(event) => handleOrderGridKeyDown(event, index, 'specification2')}
+                                placeholder="상세길이"
+                              />
                             )}
-                          </Box>
+                          />
                         </TableCell>
                         <TableCell sx={{ p: 0.35 }}>
                           <TextField
