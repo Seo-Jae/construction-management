@@ -1,3 +1,4 @@
+// v52.48.5.44.163 기본설정 팝업 공지사항 스타일 전면 적용
 // v52.48.5.44.162 기본설정 팝업 공지사항형 타이포그래피 개선
 // v52.48.5.44.161 기본정보·변경이력 각각 팝업 높이 520px 명시 고정
 // v52.48.5.44.160 기본정보·변경이력 각각 팝업 폭 544px 명시 고정
@@ -4225,24 +4226,6 @@ export default function MaterialOrderUpload({
 
       <Dialog
         open={settingsDialogOpen}
-        sx={{
-          '& .MuiDialog-paper': {
-            width: settingsTab === 'history' ? '544px !important' : '544px !important',
-            minWidth: settingsTab === 'history' ? '544px !important' : '544px !important',
-            maxWidth: settingsTab === 'history' ? '544px !important' : '544px !important',
-            height: settingsTab === 'history' ? '520px !important' : '520px !important',
-            minHeight: settingsTab === 'history' ? '520px !important' : '520px !important',
-            maxHeight: settingsTab === 'history' ? '520px !important' : '520px !important',
-            '@media (max-width: 600px)': {
-              width: 'calc(100vw - 32px) !important',
-              minWidth: 'calc(100vw - 32px) !important',
-              maxWidth: 'calc(100vw - 32px) !important',
-              height: 'calc(100vh - 32px) !important',
-              minHeight: 'calc(100vh - 32px) !important',
-              maxHeight: 'calc(100vh - 32px) !important',
-            },
-          },
-        }}
         onClose={(_, reason) => {
           if (settingsRequired || settingsSaving) return;
           if (reason === 'backdropClick' || reason === 'escapeKeyDown') {
@@ -4250,54 +4233,45 @@ export default function MaterialOrderUpload({
           }
         }}
         disableEscapeKeyDown={settingsRequired}
-        maxWidth={false}
+        fullWidth
+        maxWidth="lg"
         PaperProps={{
           sx: {
-            width: settingsTab === 'history' ? '544px !important' : '544px !important',
-            minWidth: settingsTab === 'history' ? '544px !important' : '544px !important',
-            maxWidth: settingsTab === 'history' ? '544px !important' : '544px !important',
-            height: settingsTab === 'history' ? '520px !important' : '520px !important',
-            minHeight: settingsTab === 'history' ? '520px !important' : '520px !important',
-            maxHeight: settingsTab === 'history' ? '520px !important' : '520px !important',
-            flexShrink: 0,
-            boxSizing: 'border-box',
+            height: { xs: '92vh', md: '82vh' },
+            maxHeight: { xs: '92vh', md: '820px' },
             display: 'flex',
             flexDirection: 'column',
-            '@media (max-width: 600px)': {
-              width: 'calc(100vw - 32px) !important',
-              minWidth: 'calc(100vw - 32px) !important',
-              maxWidth: 'calc(100vw - 32px) !important',
-            },
+            overflow: 'hidden',
           },
         }}
       >
         <DialogTitle
           sx={{
-            px: 1.5,
-            pt: 1.35,
-            pb: 1.05,
+            px: 2.25,
+            py: 1.5,
+            borderBottom: '1px solid #e2e8f0',
             color: '#0f172a',
           }}
         >
-          <Stack direction="row" alignItems="center" spacing={0.8}>
+          <Stack direction="row" alignItems="center" spacing={0.9}>
             <SettingsRoundedIcon color="primary" fontSize="small" />
             <Box>
               <Typography
                 sx={{
                   color: '#0f172a',
-                  fontSize: '1.05rem',
+                  fontSize: '1.15rem',
                   fontWeight: 900,
-                  letterSpacing: '-0.015em',
+                  letterSpacing: '-0.02em',
                 }}
               >
                 자재발주 기본설정
               </Typography>
               <Typography
                 sx={{
-                  mt: 0.2,
+                  mt: 0.25,
                   color: '#64748b',
-                  fontSize: '0.7rem',
-                  lineHeight: 1.5,
+                  fontSize: '0.76rem',
+                  lineHeight: 1.55,
                 }}
               >
                 {projectName} · 발주서에 반복 입력되는 기본정보를 설정합니다.
@@ -4319,8 +4293,8 @@ export default function MaterialOrderUpload({
           onChange={(_, value) => setSettingsTab(value)}
           sx={{
             position: 'relative',
-            px: 1.5,
-            minHeight: 36,
+            px: 2.25,
+            minHeight: 44,
             '&::after': {
               content: '""',
               position: 'absolute',
@@ -4341,14 +4315,14 @@ export default function MaterialOrderUpload({
               display: 'none',
             },
             '& .MuiTab-root': {
-              minHeight: 36,
-              py: 0.4,
+              minHeight: 44,
+              py: 0.65,
               position: 'relative',
               overflow: 'visible',
               color: '#64748b',
-              fontSize: '0.78rem',
+              fontSize: '0.86rem',
               fontWeight: 900,
-              letterSpacing: '-0.01em',
+              letterSpacing: '-0.015em',
             },
             '& .MuiTab-root.Mui-selected': {
               color: '#2563eb',
@@ -4377,7 +4351,7 @@ export default function MaterialOrderUpload({
         <DialogContent
           dividers
           sx={{
-            p: 1.5,
+            p: { xs: 2, md: 3 },
             flex: '1 1 auto',
             minHeight: 0,
             overflowY: 'auto',
@@ -4393,7 +4367,7 @@ export default function MaterialOrderUpload({
             <Box
               sx={{
                 width: '100%',
-                maxWidth: 520,
+                maxWidth: 820,
                 mx: 'auto',
                 boxSizing: 'border-box',
                 '& .MuiOutlinedInput-root': {
@@ -4401,22 +4375,22 @@ export default function MaterialOrderUpload({
                 },
                 '& .MuiInputBase-input': {
                   color: '#1e293b',
-                  fontSize: '0.84rem',
-                  lineHeight: 1.5,
+                  fontSize: '0.96rem',
+                  lineHeight: 1.55,
                 },
                 '& .MuiInputLabel-root': {
                   color: '#475569',
-                  fontSize: '0.74rem',
-                  fontWeight: 700,
+                  fontSize: '0.82rem',
+                  fontWeight: 800,
                 },
                 '& .MuiInputLabel-root.Mui-focused': {
                   color: '#2563eb',
                 },
                 '& .MuiFormHelperText-root': {
-                  mt: 0.35,
+                  mt: 0.4,
                   color: '#94a3b8',
-                  fontSize: '0.68rem',
-                  lineHeight: 1.5,
+                  fontSize: '0.74rem',
+                  lineHeight: 1.6,
                 },
               }}
             >
@@ -4424,7 +4398,7 @@ export default function MaterialOrderUpload({
                 sx={{
                   display: 'grid',
                   gridTemplateColumns: 'minmax(0, 1fr)',
-                  gap: 1,
+                  gap: 1.35,
                 }}
               >
                 <TextField
@@ -4484,17 +4458,17 @@ export default function MaterialOrderUpload({
               <Paper
                 variant="outlined"
                 sx={{
-                  mt: 1.35,
-                  p: 1.25,
+                  mt: 2,
+                  p: 2,
                   bgcolor: '#f8fafc',
                   borderColor: '#e2e8f0',
-                  borderRadius: 1.2,
+                  borderRadius: 1.5,
                 }}
               >
                 <Typography
                   sx={{
                     color: '#0f172a',
-                    fontSize: '0.8rem',
+                    fontSize: '0.92rem',
                     fontWeight: 900,
                   }}
                 >
@@ -4502,10 +4476,10 @@ export default function MaterialOrderUpload({
                 </Typography>
                 <Typography
                   sx={{
-                    mt: 0.5,
+                    mt: 0.65,
                     color: '#64748b',
-                    fontSize: '0.73rem',
-                    lineHeight: 1.75,
+                    fontSize: '0.84rem',
+                    lineHeight: 1.85,
                   }}
                 >
                   기본설정을 저장한 이후 생성하는 발주서에는 작성자(요청자), 수령자, 연락처, 납품장소가 자동 입력됩니다. 이미 저장된 발주서의 값은 변경하지 않으며, 새 발주서에서 필요할 때 직접 수정할 수 있습니다.
@@ -4675,9 +4649,9 @@ export default function MaterialOrderUpload({
           ) : (
             <Box
               sx={{
-                width: '520px',
-                minWidth: '520px',
-                maxWidth: '520px',
+                width: '100%',
+                minWidth: 0,
+                maxWidth: 820,
                 mx: 'auto',
                 boxSizing: 'border-box',
                 '@media (max-width: 600px)': {
@@ -4689,11 +4663,11 @@ export default function MaterialOrderUpload({
             >
               <Typography
                 sx={{
-                  mb: 1,
+                  mb: 1.25,
                   color: '#0f172a',
-                  fontSize: '0.82rem',
+                  fontSize: '1rem',
                   fontWeight: 900,
-                  letterSpacing: '-0.01em',
+                  letterSpacing: '-0.015em',
                 }}
               >
                 기본설정 변경이력
@@ -4727,9 +4701,9 @@ export default function MaterialOrderUpload({
                         key={history.id || `${history.changed_at}-${index}`}
                         variant="outlined"
                         sx={{
-                          p: 1.15,
+                          p: 1.6,
                           borderColor: '#e2e8f0',
-                          borderRadius: 1.2,
+                          borderRadius: 1.5,
                           bgcolor: '#ffffff',
                         }}
                       >
@@ -4737,7 +4711,7 @@ export default function MaterialOrderUpload({
                           <Typography
                             sx={{
                               color: '#1e293b',
-                              fontSize: '0.78rem',
+                              fontSize: '0.9rem',
                               fontWeight: 900,
                             }}
                           >
@@ -4752,7 +4726,7 @@ export default function MaterialOrderUpload({
                             sx={{
                               ml: 'auto !important',
                               color: '#94a3b8',
-                              fontSize: '0.66rem',
+                              fontSize: '0.74rem',
                             }}
                           >
                             {history.changed_at
@@ -4763,10 +4737,10 @@ export default function MaterialOrderUpload({
 
                         <Typography
                           sx={{
-                            mt: 0.65,
+                            mt: 0.75,
                             color: '#475569',
-                            fontSize: '0.72rem',
-                            lineHeight: 1.65,
+                            fontSize: '0.82rem',
+                            lineHeight: 1.75,
                           }}
                         >
                           요청자 {basic.requesterName || '-'} · 수령자 {basic.receiverName || '-'} · 연락처 {basic.receiverPhone || '-'} · 납품장소 {basic.deliveryLocation || '-'}
@@ -4774,9 +4748,9 @@ export default function MaterialOrderUpload({
 
                         <Typography
                           sx={{
-                            mt: 0.35,
+                            mt: 0.45,
                             color: '#94a3b8',
-                            fontSize: '0.66rem',
+                            fontSize: '0.74rem',
                           }}
                         >
                           변경자 {history.changed_by || '-'}
@@ -4790,7 +4764,14 @@ export default function MaterialOrderUpload({
           )}
         </DialogContent>
 
-        <DialogActions sx={{ px: 1.5, py: 1 }}>
+        <DialogActions
+          sx={{
+            px: 2.25,
+            py: 1.25,
+            borderTop: '1px solid #e2e8f0',
+            bgcolor: '#ffffff',
+          }}
+        >
           {isSuperAdmin && (
             <Button
               color="error"
