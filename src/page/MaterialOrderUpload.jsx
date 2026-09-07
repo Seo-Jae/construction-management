@@ -1,3 +1,4 @@
+// v52.48.5.44.162 기본설정 팝업 공지사항형 타이포그래피 개선
 // v52.48.5.44.161 기본정보·변경이력 각각 팝업 높이 520px 명시 고정
 // v52.48.5.44.160 기본정보·변경이력 각각 팝업 폭 544px 명시 고정
 // v52.48.5.44.159 기본정보 기준 팝업 폭·높이 완전 고정
@@ -4270,14 +4271,35 @@ export default function MaterialOrderUpload({
           },
         }}
       >
-        <DialogTitle sx={{ pb: 0.8 }}>
+        <DialogTitle
+          sx={{
+            px: 1.5,
+            pt: 1.35,
+            pb: 1.05,
+            color: '#0f172a',
+          }}
+        >
           <Stack direction="row" alignItems="center" spacing={0.8}>
             <SettingsRoundedIcon color="primary" fontSize="small" />
             <Box>
-              <Typography sx={{ fontSize: '1rem', fontWeight: 900 }}>
+              <Typography
+                sx={{
+                  color: '#0f172a',
+                  fontSize: '1.05rem',
+                  fontWeight: 900,
+                  letterSpacing: '-0.015em',
+                }}
+              >
                 자재발주 기본설정
               </Typography>
-              <Typography sx={{ mt: 0.05, fontSize: '0.64rem', color: '#64748b' }}>
+              <Typography
+                sx={{
+                  mt: 0.2,
+                  color: '#64748b',
+                  fontSize: '0.7rem',
+                  lineHeight: 1.5,
+                }}
+              >
                 {projectName} · 발주서에 반복 입력되는 기본정보를 설정합니다.
               </Typography>
             </Box>
@@ -4323,8 +4345,13 @@ export default function MaterialOrderUpload({
               py: 0.4,
               position: 'relative',
               overflow: 'visible',
-              fontSize: '0.74rem',
-              fontWeight: 850,
+              color: '#64748b',
+              fontSize: '0.78rem',
+              fontWeight: 900,
+              letterSpacing: '-0.01em',
+            },
+            '& .MuiTab-root.Mui-selected': {
+              color: '#2563eb',
             },
             '& .MuiTab-root.Mui-selected::after': {
               content: '""',
@@ -4369,6 +4396,28 @@ export default function MaterialOrderUpload({
                 maxWidth: 520,
                 mx: 'auto',
                 boxSizing: 'border-box',
+                '& .MuiOutlinedInput-root': {
+                  bgcolor: '#ffffff',
+                },
+                '& .MuiInputBase-input': {
+                  color: '#1e293b',
+                  fontSize: '0.84rem',
+                  lineHeight: 1.5,
+                },
+                '& .MuiInputLabel-root': {
+                  color: '#475569',
+                  fontSize: '0.74rem',
+                  fontWeight: 700,
+                },
+                '& .MuiInputLabel-root.Mui-focused': {
+                  color: '#2563eb',
+                },
+                '& .MuiFormHelperText-root': {
+                  mt: 0.35,
+                  color: '#94a3b8',
+                  fontSize: '0.68rem',
+                  lineHeight: 1.5,
+                },
               }}
             >
               <Box
@@ -4435,16 +4484,30 @@ export default function MaterialOrderUpload({
               <Paper
                 variant="outlined"
                 sx={{
-                  mt: 1.5,
-                  p: 1.2,
+                  mt: 1.35,
+                  p: 1.25,
                   bgcolor: '#f8fafc',
                   borderColor: '#e2e8f0',
+                  borderRadius: 1.2,
                 }}
               >
-                <Typography sx={{ fontSize: '0.74rem', fontWeight: 900 }}>
+                <Typography
+                  sx={{
+                    color: '#0f172a',
+                    fontSize: '0.8rem',
+                    fontWeight: 900,
+                  }}
+                >
                   기본값 적용 방식
                 </Typography>
-                <Typography sx={{ mt: 0.45, fontSize: '0.68rem', color: '#64748b', lineHeight: 1.7 }}>
+                <Typography
+                  sx={{
+                    mt: 0.5,
+                    color: '#64748b',
+                    fontSize: '0.73rem',
+                    lineHeight: 1.75,
+                  }}
+                >
                   기본설정을 저장한 이후 생성하는 발주서에는 작성자(요청자), 수령자, 연락처, 납품장소가 자동 입력됩니다. 이미 저장된 발주서의 값은 변경하지 않으며, 새 발주서에서 필요할 때 직접 수정할 수 있습니다.
                 </Typography>
               </Paper>
@@ -4624,7 +4687,15 @@ export default function MaterialOrderUpload({
                 },
               }}
             >
-              <Typography sx={{ mb: 1, fontSize: '0.75rem', fontWeight: 900 }}>
+              <Typography
+                sx={{
+                  mb: 1,
+                  color: '#0f172a',
+                  fontSize: '0.82rem',
+                  fontWeight: 900,
+                  letterSpacing: '-0.01em',
+                }}
+              >
                 기본설정 변경이력
               </Typography>
 
@@ -4655,10 +4726,21 @@ export default function MaterialOrderUpload({
                       <Paper
                         key={history.id || `${history.changed_at}-${index}`}
                         variant="outlined"
-                        sx={{ p: 1, borderColor: '#e2e8f0' }}
+                        sx={{
+                          p: 1.15,
+                          borderColor: '#e2e8f0',
+                          borderRadius: 1.2,
+                          bgcolor: '#ffffff',
+                        }}
                       >
                         <Stack direction="row" alignItems="center" spacing={0.6}>
-                          <Typography sx={{ fontSize: '0.72rem', fontWeight: 900 }}>
+                          <Typography
+                            sx={{
+                              color: '#1e293b',
+                              fontSize: '0.78rem',
+                              fontWeight: 900,
+                            }}
+                          >
                             {history.change_note || '기본설정 변경'}
                           </Typography>
                           <Chip
@@ -4666,18 +4748,37 @@ export default function MaterialOrderUpload({
                             variant="outlined"
                             label={`주요자재 ${includedCount}개`}
                           />
-                          <Typography sx={{ ml: 'auto !important', fontSize: '0.62rem', color: '#94a3b8' }}>
+                          <Typography
+                            sx={{
+                              ml: 'auto !important',
+                              color: '#94a3b8',
+                              fontSize: '0.66rem',
+                            }}
+                          >
                             {history.changed_at
                               ? new Date(history.changed_at).toLocaleString('ko-KR')
                               : '-'}
                           </Typography>
                         </Stack>
 
-                        <Typography sx={{ mt: 0.55, fontSize: '0.66rem', color: '#475569' }}>
+                        <Typography
+                          sx={{
+                            mt: 0.65,
+                            color: '#475569',
+                            fontSize: '0.72rem',
+                            lineHeight: 1.65,
+                          }}
+                        >
                           요청자 {basic.requesterName || '-'} · 수령자 {basic.receiverName || '-'} · 연락처 {basic.receiverPhone || '-'} · 납품장소 {basic.deliveryLocation || '-'}
                         </Typography>
 
-                        <Typography sx={{ mt: 0.25, fontSize: '0.62rem', color: '#94a3b8' }}>
+                        <Typography
+                          sx={{
+                            mt: 0.35,
+                            color: '#94a3b8',
+                            fontSize: '0.66rem',
+                          }}
+                        >
                           변경자 {history.changed_by || '-'}
                         </Typography>
                       </Paper>
