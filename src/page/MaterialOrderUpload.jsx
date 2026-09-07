@@ -683,19 +683,15 @@ export default function MaterialOrderUpload({
     if (!projectName || !materialId) return;
     if (Object.prototype.hasOwnProperty.call(specification2Options, materialId)) return;
 
-    const confirmedOrderIds = orders
-      .filter((row) => ['ordered', 'confirmed'].includes(row.status))
-      .map((row) => row.id)
-      .filter(Boolean);
-    if (confirmedOrderIds.length === 0) {
-      setSpecification2Options((current) => ({ ...current, [materialId]: [] }));
+    const savedOrderIds = orders.map((row) => row.id).filter(Boolean);
+    if (savedOrderIds.length === 0) {
       return;
     }
 
     const { data, error } = await supabase
       .from('material_supply_order_items')
       .select('specification_2')
-      .in('order_id', confirmedOrderIds)
+      .in('order_id', savedOrderIds)
       .eq('material_id', materialId)
       .not('specification_2', 'is', null);
 
@@ -1731,7 +1727,7 @@ export default function MaterialOrderUpload({
         processName: material.process_name || '',
         standardName: material.standard_name,
         specification: material.specification || '',
-        specification2: material.specification_2 || '',
+        specification2: '',
         unit: material.unit || '',
         executionQuantity: execution,
         previousQuantity: previous,
@@ -2121,7 +2117,7 @@ export default function MaterialOrderUpload({
           processName: material.process_name || '',
           standardName: material.standard_name || '',
           specification: material.specification || '',
-          specification2: material.specification_2 || '',
+          specification2: '',
           unit: material.unit || '',
           executionQuantity: execution,
           previousQuantity: previous,
