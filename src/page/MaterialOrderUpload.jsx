@@ -3339,7 +3339,7 @@ export default function MaterialOrderUpload({
         <Box sx={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: '300px minmax(0, 1fr)', gap: 0.8 }}>
           <Paper variant="outlined" sx={{ minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             <Stack direction="row" alignItems="center" sx={{ px: 0.9, py: 0.7, borderBottom: '1px solid #cbd5e1', bgcolor: '#eef4fb' }}>
-              <Typography sx={{ fontSize: '0.78rem', fontWeight: 900 }}>발주서 목록</Typography>
+              <Typography sx={{ fontSize: '0.78rem', fontWeight: 900 }}>자재분류</Typography>
               <Chip label={`${visibleOrders.length}건`} size="small" sx={{ ml: 0.5 }} />
             </Stack>
             <Box sx={{ p: 0.55, borderBottom: '1px solid #e2e8f0', bgcolor: '#f8fafc', maxHeight: 210, overflowY: 'auto' }}>
@@ -3473,7 +3473,7 @@ export default function MaterialOrderUpload({
             </Box>
             {orderMonths.length > 0 && (
               <Box sx={{ borderBottom: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
-                <Typography sx={{ px: 0.9, pt: 0.55, pb: 0.25, fontSize: '0.66rem', fontWeight: 900, color: '#365314', bgcolor: '#eef7e8' }}>
+                <Typography sx={{ px: 0.9, pt: 0.55, pb: 0.55, fontSize: '0.66rem', fontWeight: 900, color: '#365314', bgcolor: '#eef7e8' }}>
                   발주서 목록
                 </Typography>
                 <Stack spacing={0.2}>
