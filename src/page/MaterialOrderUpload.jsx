@@ -1,3 +1,4 @@
+// v52.48.5.44.166 기본설정 팝업 높이 강제고정·작성자 수령자 명칭변경
 // v52.48.5.44.165 기본설정 안내 줄바꿈·팝업 높이 고정
 // v52.48.5.44.164 기본정보 라벨 공지사항 본문 스타일 적용
 // v52.48.5.44.163 기본설정 팝업 공지사항 스타일 전면 적용
@@ -4237,14 +4238,41 @@ export default function MaterialOrderUpload({
         disableEscapeKeyDown={settingsRequired}
         fullWidth
         maxWidth="lg"
-        PaperProps={{
-          sx: {
-            height: { xs: 'calc(100vh - 32px)', md: '820px' },
-            minHeight: { xs: 'calc(100vh - 32px)', md: '820px' },
-            maxHeight: { xs: 'calc(100vh - 32px)', md: '820px' },
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden',
+        sx={{
+          '& .MuiDialog-paper': {
+            height: {
+              xs: 'calc(100vh - 32px) !important',
+              md: '820px !important',
+            },
+            minHeight: {
+              xs: 'calc(100vh - 32px) !important',
+              md: '820px !important',
+            },
+            maxHeight: {
+              xs: 'calc(100vh - 32px) !important',
+              md: '820px !important',
+            },
+          },
+        }}
+        slotProps={{
+          paper: {
+            sx: {
+              height: {
+                xs: 'calc(100vh - 32px) !important',
+                md: '820px !important',
+              },
+              minHeight: {
+                xs: 'calc(100vh - 32px) !important',
+                md: '820px !important',
+              },
+              maxHeight: {
+                xs: 'calc(100vh - 32px) !important',
+                md: '820px !important',
+              },
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+            },
           },
         }}
       >
@@ -4358,6 +4386,8 @@ export default function MaterialOrderUpload({
             flex: '1 1 auto',
             minHeight: 0,
             overflowY: 'auto',
+            overflowX: 'hidden',
+            overscrollBehavior: 'contain',
             boxSizing: 'border-box',
             borderTop: 'none',
           }}
@@ -4418,7 +4448,7 @@ export default function MaterialOrderUpload({
                       fontFamily: 'inherit',
                     }}
                   >
-                    작성자 = 요청자
+                    작성자(성명·직책)
                     <Box component="span" sx={{ ml: 0.35, color: '#d32f2f' }}>*</Box>
                   </Typography>
                   <TextField
@@ -4451,7 +4481,7 @@ export default function MaterialOrderUpload({
                       fontFamily: 'inherit',
                     }}
                   >
-                    수령자
+                    수령자(성명·직책)
                     <Box component="span" sx={{ ml: 0.35, color: '#d32f2f' }}>*</Box>
                   </Typography>
                   <TextField
