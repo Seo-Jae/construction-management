@@ -3546,7 +3546,7 @@ export default function MaterialOrderUpload({
             <Stack direction="row" alignItems="center" spacing={0.7} sx={{ px: 1, py: 0.7, borderBottom: '1px solid #cbd5e1', bgcolor: '#eef1f4' }}>
               <Typography sx={{ fontSize: '0.82rem', fontWeight: 900 }}>사급자재 발주서</Typography>
               {order.orderNo && <Chip label={formatOrderDisplayNo(order)} size="small" variant="outlined" />}
-              {order.status !== 'draft' && <Chip label={ORDER_STATUS_LABELS[order.status]} size="small" color={['ordered', 'confirmed'].includes(order.status) ? 'success' : 'default'} />}
+              <Chip label={ORDER_STATUS_LABELS[order.status] || '작성중'} size="small" color={['ordered', 'confirmed'].includes(order.status) ? 'success' : 'warning'} />
               {order.id && <Button size="small" color="error" variant="outlined" onClick={deleteOrder} startIcon={<DeleteOutlineRoundedIcon />} sx={{ ml: 'auto' }}>삭제</Button>}
             </Stack>
 
