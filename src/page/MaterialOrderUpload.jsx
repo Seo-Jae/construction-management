@@ -546,6 +546,7 @@ export default function MaterialOrderUpload({
   );
   const [orderMaterialOptions, setOrderMaterialOptions] = useState([]);
   const [orderMaterialOptionsLoading, setOrderMaterialOptionsLoading] = useState(false);
+  const [specification2Options, setSpecification2Options] = useState({});
   const [openMaterialHintKey, setOpenMaterialHintKey] = useState('');
   const orderItemInputRefs = useRef(new Map());
   const masterExcelInputRef = useRef(null);
@@ -677,6 +678,39 @@ export default function MaterialOrderUpload({
 
     setOrders(data || []);
   }, [handleSchemaError, notify, projectName]);
+
+  const loadSpecification2Options = useCallback(async (materialId) => {
+    if (!projectName || !materialId) return;
+    if (Object.prototype.hasOwnProperty.call(specification2Options, materialId)) return;
+
+    const confirmedOrderIds = orders
+      .filter((row) => ['ordered', 'confirmed'].includes(row.status))
+      .map((row) => row.id)
+      .filter(Boolean);
+    if (confirmedOrderIds.length === 0) {
+      setSpecification2Options((current) => ({ ...current, [materialId]: [] }));
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('material_supply_order_items')
+      .select('specification_2')
+      .in('order_id', confirmedOrderIds)
+      .eq('material_id', materialId)
+      .not('specification_2', 'is', null);
+
+    if (error) {
+      setSpecification2Options((current) => ({ ...current, [materialId]: [] }));
+      return;
+    }
+
+    const values = [...new Set(
+      (data || [])
+        .map((row) => formatSpecification2(row.specification_2))
+        .filter(Boolean),
+    )];
+    setSpecification2Options((current) => ({ ...current, [materialId]: values }));
+  }, [orders, projectName, specification2Options]);
 
 
   const loadProjectSettings = useCallback(async ({ openWhenIncomplete = true } = {}) => {
@@ -1682,6 +1716,7 @@ export default function MaterialOrderUpload({
   const addMaterialToOrder = (material) => {
     const previous = numberValue(material.previousQuantity);
     const execution = numberValue(material.executionQuantity);
+    loadSpecification2Options(material.materialId || material.id);
     setOrderItems((current) =>
       recalculateOrderItemBalances([
         ...current,
@@ -2065,6 +2100,7 @@ export default function MaterialOrderUpload({
 
   const applyMaterialHint = (index, material) => {
     if (!material || typeof material !== 'object') return;
+    loadSpecification2Options(material.materialId || material.material_id);
 
     setOrderItems((current) =>
       recalculateOrderItemBalances(current.map((row, rowIndex) => {
@@ -3813,6 +3849,10 @@ export default function MaterialOrderUpload({
                     const over = row.executionRatio > 100;
                     const itemKey = getOrderItemKey(row, index);
                     const selected = selectedOrderItemKeys.has(itemKey);
+                    const specification2Suggestions = row.materialId
+                      ? specification2Options[row.materialId] || []
+                      : [];
+                    const specification2ListId = `${itemKey}-specification2-options`;
                     return (
                       <TableRow key={itemKey} hover selected={selected}>
                         <TableCell align="center" sx={{ px: 0.35 }}>
@@ -3933,17 +3973,55 @@ export default function MaterialOrderUpload({
                           />
                         </TableCell>
                         <TableCell sx={{ p: 0.35 }}>
-                          <TextField
-                            size="small"
-                            fullWidth
-                            value={formatSpecification2(row.specification2)}
-                            onChange={(event) => updateOrderItem(index, 'specification2', event.target.value)}
-                            onKeyDown={(event) => handleOrderGridKeyDown(event, index, 'specification2')}
-                            inputRef={(node) => setOrderItemInputRef(itemKey, 'specification2', node)}
-                            placeholder="상세길이"
-                            disabled={isLocked}
-                            sx={entryFieldSx(row.specification2)}
-                          />
+                          <Box sx={{ position: 'relative' }}>
+                            <TextField
+                              size="small"
+                              fullWidth
+                              value={formatSpecification2(row.specification2)}
+                              onChange={(event) => updateOrderItem(index, 'specification2', event.target.value)}
+                              onFocus={() => loadSpecification2Options(row.materialId)}
+                              onKeyDown={(event) => handleOrderGridKeyDown(event, index, 'specification2')}
+                              inputRef={(node) => setOrderItemInputRef(itemKey, 'specification2', node)}
+                              placeholder="상세길이"
+                              disabled={isLocked}
+                              inputProps={{ list: specification2ListId }}
+                              sx={entryFieldSx(row.specification2)}
+                            />
+                            <datalist id={specification2ListId}>
+                              {specification2Suggestions.map((value) => (
+                                <option key={value} value={value} />
+                              ))}
+                            </datalist>
+                            {specification2Suggestions.length > 0 && !isLocked && (
+                              <Stack
+                                direction="row"
+                                spacing={0.35}
+                                useFlexGap
+                                flexWrap="wrap"
+                                sx={{ mt: 0.3 }}
+                              >
+                                {specification2Suggestions.map((value) => (
+                                  <Button
+                                    key={value}
+                                    size="small"
+                                    variant="outlined"
+                                    onClick={() => updateOrderItem(index, 'specification2', value)}
+                                    sx={{
+                                      minWidth: 0,
+                                      minHeight: 20,
+                                      px: 0.7,
+                                      py: 0,
+                                      fontSize: '0.6rem',
+                                      lineHeight: 1.2,
+                                      whiteSpace: 'nowrap',
+                                    }}
+                                  >
+                                    {value}
+                                  </Button>
+                                ))}
+                              </Stack>
+                            )}
+                          </Box>
                         </TableCell>
                         <TableCell sx={{ p: 0.35 }}>
                           <TextField
