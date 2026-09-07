@@ -517,7 +517,7 @@ export default function MaterialOrderUpload({
   const [categoryFolderSchemaMissing, setCategoryFolderSchemaMissing] = useState(false);
   const [selectedOrderFolderId, setSelectedOrderFolderId] = useState('');
   const [selectedOrderFolderProcess, setSelectedOrderFolderProcess] = useState('');
-  const [selectedOrderMonth, setSelectedOrderMonth] = useState('');
+  const [collapsedOrderMonths, setCollapsedOrderMonths] = useState(() => new Set());
   const [processFoldersOpen, setProcessFoldersOpen] = useState(false);
   const [orders, setOrders] = useState([]);
   const [masterRows, setMasterRows] = useState([]);
@@ -2934,10 +2934,8 @@ export default function MaterialOrderUpload({
     [folderOrders],
   );
   const monthOrders = useMemo(
-    () => selectedOrderMonth
-      ? folderOrders.filter((row) => getOrderMonthKey(row.order_date) === selectedOrderMonth)
-      : folderOrders,
-    [folderOrders, selectedOrderMonth],
+    () => folderOrders.filter((row) => !collapsedOrderMonths.has(getOrderMonthKey(row.order_date))),
+    [collapsedOrderMonths, folderOrders],
   );
   const selectedOrderFolderCategory = categories.find(
     (row) => row.id === selectedOrderFolderId,
@@ -3471,27 +3469,38 @@ export default function MaterialOrderUpload({
               </Stack>
             </Box>
             {orderMonths.length > 0 && (
-              <Box sx={{ px: 0.55, py: 0.45, borderBottom: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
+              <Box sx={{ borderBottom: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
+                <Typography sx={{ px: 0.9, pt: 0.55, pb: 0.25, fontSize: '0.66rem', fontWeight: 900, color: '#475569' }}>
+                  발주서 목록
+                </Typography>
                 <Stack spacing={0.2}>
                   {orderMonths.map((month) => (
                     <Button
                       key={month}
                       fullWidth
                       size="small"
-                      variant={selectedOrderMonth === month ? 'contained' : 'text'}
-                      color={selectedOrderMonth === month ? 'primary' : 'inherit'}
-                      startIcon={<FolderRoundedIcon fontSize="small" />}
-                      onClick={() => setSelectedOrderMonth((current) => current === month ? '' : month)}
+                      variant="text"
+                      color="inherit"
+                      startIcon={collapsedOrderMonths.has(month)
+                        ? <FolderRoundedIcon fontSize="small" />
+                        : <FolderOpenRoundedIcon fontSize="small" />}
+                      onClick={() => setCollapsedOrderMonths((current) => {
+                        const next = new Set(current);
+                        if (next.has(month)) next.delete(month);
+                        else next.add(month);
+                        return next;
+                      })}
                       sx={{
                         justifyContent: 'flex-start',
                         minHeight: 26,
                         px: 0.8,
                         fontSize: '0.66rem',
                         fontWeight: 850,
+                        color: '#334155',
                         '& .MuiButton-endIcon': { ml: 'auto' },
                       }}
                     >
-                      {month}
+                      {month.slice(0, 2)}년 {month.slice(2)}월 - 발주서
                       <Chip label={`${folderOrders.filter((row) => getOrderMonthKey(row.order_date) === month).length}`} size="small" sx={{ ml: 'auto', height: 18, fontSize: '0.58rem' }} />
                     </Button>
                   ))}
