@@ -242,6 +242,19 @@ export const saveMaterialOrderWorkbook = async ({
   worksheet.getCell('E2').value = normalizeText(order.receiverName);
   worksheet.getCell('E3').value = toExcelDate(order.deliveryDate);
   worksheet.getCell('E3').numFmt = 'yyyy.mm.dd';
+  worksheet.getCell('A6').value = '품명';
+  worksheet.getCell('B6').value = '규격';
+  worksheet.getCell('I6').value = '비고';
+  ['A6', 'B6', 'I6'].forEach((address) => {
+    const cell = worksheet.getCell(address);
+    cell.alignment = {
+      ...cell.alignment,
+      horizontal: 'center',
+      vertical: 'middle',
+      textRotation: 0,
+      wrapText: false,
+    };
+  });
   worksheet.getCell('B4').alignment = {
     ...worksheet.getCell('B4').alignment,
     horizontal: 'center',
@@ -273,7 +286,7 @@ export const saveMaterialOrderWorkbook = async ({
       .map(normalizeText)
       .filter(Boolean)
       .join(' ');
-    ['A', 'B'].forEach((column) => {
+    ['A', 'B', 'I'].forEach((column) => {
       const cell = worksheet.getCell(`${column}${rowNumber}`);
       cell.alignment = {
         ...cell.alignment,
