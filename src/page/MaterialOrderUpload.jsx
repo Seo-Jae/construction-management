@@ -4224,7 +4224,7 @@ export default function MaterialOrderUpload({
         }}
         disableEscapeKeyDown={settingsRequired}
         fullWidth
-        maxWidth="lg"
+        maxWidth="md"
       >
         <DialogTitle sx={{ pb: 0.8 }}>
           <Stack direction="row" alignItems="center" spacing={0.8}>
@@ -4324,7 +4324,7 @@ export default function MaterialOrderUpload({
               <Box
                 sx={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                  gridTemplateColumns: 'minmax(0, 1fr)',
                   gap: 1,
                 }}
               >
