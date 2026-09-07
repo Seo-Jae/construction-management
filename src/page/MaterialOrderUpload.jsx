@@ -1734,7 +1734,7 @@ export default function MaterialOrderUpload({
         id: '',
         clientKey: createOrderItemKey(),
         projectMaterialId: material.projectMaterialId || '',
-        materialId: material.id,
+        materialId: material.materialId || material.material_id || material.id,
         masterStandardName: material.standard_name,
         masterSpecification: material.specification || '',
         categoryId: material.category_id || '',
@@ -2883,7 +2883,19 @@ export default function MaterialOrderUpload({
   };
 
   const visibleOrders = useMemo(
-    () => orders.filter((row) => (mainTab === 'history' ? row.status !== 'draft' : true)),
+    () => orders
+      .filter((row) => (mainTab === 'history' ? row.status !== 'draft' : true))
+      .sort((first, second) => {
+        const firstNumber = Number.parseInt(String(first.order_no || '').split('-').pop(), 10);
+        const secondNumber = Number.parseInt(String(second.order_no || '').split('-').pop(), 10);
+        const firstHasNumber = Number.isFinite(firstNumber);
+        const secondHasNumber = Number.isFinite(secondNumber);
+        if (firstHasNumber && secondHasNumber && firstNumber !== secondNumber) {
+          return firstNumber - secondNumber;
+        }
+        if (firstHasNumber !== secondHasNumber) return firstHasNumber ? -1 : 1;
+        return String(first.created_at || '').localeCompare(String(second.created_at || ''));
+      }),
     [mainTab, orders],
   );
   const categoryFoldersByCategory = useMemo(() => {
