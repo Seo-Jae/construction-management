@@ -1,3 +1,4 @@
+// v52.48.5.44.154 자재발주 기본설정 팝업 폭 축소
 // v52.48.5.44.153 발주 품명 표시순서 연동·Enter 품목행 추가
 // v52.48.5.44.152 현장 자재 ID 자동연결·직접입력 누계·발주확정
 // v52.48.5.44.151 자재발주서 Excel 다운로드·결재요청 대기 처리
@@ -4223,8 +4224,13 @@ export default function MaterialOrderUpload({
           }
         }}
         disableEscapeKeyDown={settingsRequired}
-        fullWidth
-        maxWidth="md"
+        maxWidth={false}
+        PaperProps={{
+          sx: {
+            width: 560,
+            maxWidth: 'calc(100% - 32px)',
+          },
+        }}
       >
         <DialogTitle sx={{ pb: 0.8 }}>
           <Stack direction="row" alignItems="center" spacing={0.8}>
