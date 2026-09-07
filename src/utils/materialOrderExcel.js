@@ -245,7 +245,11 @@ export const saveMaterialOrderWorkbook = async ({
   worksheet.getCell('A6').value = '품명';
   worksheet.getCell('B6').value = '규격';
   worksheet.getCell('I6').value = '비고';
-  ['A6', 'B6', 'I6'].forEach((address) => {
+  worksheet.getCell('F1').value = '담당';
+  worksheet.getCell('G1').value = '차장';
+  worksheet.getCell('H1').value = '실장';
+  worksheet.getCell('I1').value = '이사';
+  ['A6', 'B6', 'I6', 'F1', 'G1', 'H1', 'I1'].forEach((address) => {
     const cell = worksheet.getCell(address);
     cell.alignment = {
       horizontal: 'center',
