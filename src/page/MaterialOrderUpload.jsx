@@ -1,3 +1,5 @@
+// v52.48.5.44.170-repair 우측 발주서 Paper sx JSX 문법 수정
+// v52.48.5.44.170 좌측패널 자재분류·발주서목록 1대1 분할
 // v52.48.5.44.169 발주서 목록 하단 분리
 // v52.48.5.44.168 선택 하위폴더 강조색 적용
 // v52.48.5.44.167 하위폴더 경고띠 제거·현재폴더 표시 위치변경
@@ -3358,7 +3360,6 @@ export default function MaterialOrderUpload({
             minHeight: 0,
             display: 'grid',
             gridTemplateColumns: '300px minmax(0, 1fr)',
-            gridTemplateRows: 'minmax(0, 1fr) 190px',
             gap: 0.8,
           }}
         >
@@ -3367,7 +3368,16 @@ export default function MaterialOrderUpload({
               <Typography sx={{ fontSize: '0.78rem', fontWeight: 900 }}>자재분류</Typography>
               <Chip label={`${visibleOrders.length}건`} size="small" sx={{ ml: 0.5 }} />
             </Stack>
-            <Box sx={{ flex: 1, minHeight: 0, p: 0.55, bgcolor: '#f8fafc', overflowY: 'auto' }}>
+            <Box
+              sx={{
+                flex: '1 1 50%',
+                minHeight: 0,
+                p: 0.55,
+                borderBottom: '1px solid #cbd5e1',
+                bgcolor: '#f8fafc',
+                overflowY: 'auto',
+              }}
+            >
               <Stack spacing={0.35}>
                 {categories.map((category) => {
                   const orderCount = visibleOrders.filter((row) => (
@@ -3495,6 +3505,158 @@ export default function MaterialOrderUpload({
                   );
                 })}
               </Stack>
+            </Box>
+            <Box
+              sx={{
+                flex: '1 1 50%',
+                minHeight: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                bgcolor: '#ffffff',
+                overflow: 'hidden',
+              }}
+            >
+              <Stack
+                direction="row"
+                alignItems="center"
+                spacing={0.45}
+                sx={{
+                  px: 0.9,
+                  py: 0.55,
+                  borderBottom: '1px solid #d9e8ce',
+                  bgcolor: '#eef7e8',
+                  color: '#365314',
+                  flexShrink: 0,
+                }}
+              >
+                <ArticleRoundedIcon sx={{ fontSize: '0.9rem' }} />
+                <Typography sx={{ fontSize: '0.68rem', fontWeight: 900 }}>
+                  발주서 목록
+                </Typography>
+                <Chip
+                  label={`${folderOrders.length}건`}
+                  size="small"
+                  sx={{ ml: 0.25, height: 18, fontSize: '0.57rem', fontWeight: 850 }}
+                />
+              </Stack>
+
+              {orderMonths.length > 0 && (
+                <Box
+                  sx={{
+                    maxHeight: '42%',
+                    overflowY: 'auto',
+                    borderBottom: '1px solid #e2e8f0',
+                    bgcolor: '#f8fafc',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Stack spacing={0.15} sx={{ py: 0.2 }}>
+                    {orderMonths.map((month) => {
+                      const monthCollapsed = collapsedOrderMonths.has(month);
+                      return (
+                        <Button
+                          key={month}
+                          fullWidth
+                          size="small"
+                          variant="text"
+                          color="inherit"
+                          startIcon={<CalendarMonthRoundedIcon fontSize="small" />}
+                          onClick={() => setCollapsedOrderMonths((current) => {
+                            const next = new Set(current);
+                            if (next.has(month)) next.delete(month);
+                            else next.add(month);
+                            return next;
+                          })}
+                          sx={{
+                            justifyContent: 'flex-start',
+                            minHeight: 25,
+                            px: 0.8,
+                            fontSize: '0.64rem',
+                            fontWeight: monthCollapsed ? 750 : 900,
+                            color: monthCollapsed ? '#64748b' : '#334155',
+                            bgcolor: monthCollapsed ? 'transparent' : '#eef7e8',
+                            '&:hover': {
+                              bgcolor: monthCollapsed ? '#f1f5f9' : '#e3f2da',
+                            },
+                          }}
+                        >
+                          {month.slice(0, 2)}년 {month.slice(2)}월 - 발주서
+                          <Chip
+                            label={`${folderOrders.filter((row) => getOrderMonthKey(row.order_date) === month).length}`}
+                            size="small"
+                            sx={{
+                              ml: 'auto',
+                              height: 17,
+                              fontSize: '0.56rem',
+                              bgcolor: '#ffffff',
+                            }}
+                          />
+                        </Button>
+                      );
+                    })}
+                  </Stack>
+                </Box>
+              )}
+
+              <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+                {monthOrders.length === 0 ? (
+                  <Box
+                    sx={{
+                      height: '100%',
+                      minHeight: 80,
+                      display: 'grid',
+                      placeItems: 'center',
+                      px: 1,
+                      textAlign: 'center',
+                      color: '#94a3b8',
+                      fontSize: '0.7rem',
+                    }}
+                  >
+                    선택한 분류의 발주서가 없습니다.
+                  </Box>
+                ) : (
+                  monthOrders.map((row) => {
+                    const selected = row.id === order.id;
+                    return (
+                      <Box
+                        key={row.id}
+                        onClick={() => openOrder(row)}
+                        sx={{
+                          px: 1,
+                          py: 0.72,
+                          cursor: 'pointer',
+                          borderBottom: '1px solid #edf2f7',
+                          bgcolor: selected ? '#eff6ff' : '#ffffff',
+                          '&:hover': {
+                            bgcolor: selected ? '#eff6ff' : '#f8fafc',
+                          },
+                        }}
+                      >
+                        <Stack direction="row" alignItems="center" spacing={0.55}>
+                          <DescriptionRoundedIcon sx={{ fontSize: '0.88rem', color: '#64748b' }} />
+                          <Typography
+                            noWrap
+                            sx={{
+                              minWidth: 0,
+                              fontSize: '0.72rem',
+                              fontWeight: 900,
+                              color: '#0f172a',
+                            }}
+                          >
+                            {formatOrderDisplayNo(row)}
+                          </Typography>
+                        </Stack>
+                        <Typography sx={{ mt: 0.18, fontSize: '0.63rem', color: '#475569', fontWeight: 750 }}>
+                          {row.order_date} · {row.process_name || categoryNameById(categories, row.category_id)}
+                        </Typography>
+                        <Typography noWrap sx={{ mt: 0.08, fontSize: '0.6rem', color: '#94a3b8' }}>
+                          요청자 {row.requester_name || '-'} · 납품 {row.delivery_date || '-'}
+                        </Typography>
+                      </Box>
+                    );
+                  })
+                )}
+              </Box>
             </Box>
           </Paper>
 
@@ -4175,173 +4337,6 @@ export default function MaterialOrderUpload({
             </TableContainer>
           </Paper>
 
-          <Paper
-            variant="outlined"
-            sx={{
-              gridColumn: '1 / -1',
-              minHeight: 0,
-              display: 'flex',
-              flexDirection: 'column',
-              overflow: 'hidden',
-            }}
-          >
-            <Stack
-              direction="row"
-              alignItems="center"
-              spacing={0.55}
-              sx={{
-                px: 0.9,
-                py: 0.55,
-                borderBottom: '1px solid #d9e8ce',
-                bgcolor: '#eef7e8',
-                color: '#365314',
-              }}
-            >
-              <ArticleRoundedIcon sx={{ fontSize: '0.92rem' }} />
-              <Typography sx={{ fontSize: '0.72rem', fontWeight: 900 }}>
-                발주서 목록
-              </Typography>
-              <Chip
-                label={`${folderOrders.length}건`}
-                size="small"
-                sx={{ height: 19, fontSize: '0.59rem', fontWeight: 850 }}
-              />
-            </Stack>
-
-            {orderMonths.length > 0 && (
-              <Stack
-                direction="row"
-                spacing={0.35}
-                sx={{
-                  px: 0.7,
-                  py: 0.45,
-                  borderBottom: '1px solid #e2e8f0',
-                  bgcolor: '#f8fafc',
-                  overflowX: 'auto',
-                  flexShrink: 0,
-                  '&::-webkit-scrollbar': { height: 4 },
-                  '&::-webkit-scrollbar-thumb': { bgcolor: '#cbd5e1', borderRadius: 2 },
-                }}
-              >
-                {orderMonths.map((month) => {
-                  const monthCollapsed = collapsedOrderMonths.has(month);
-                  return (
-                    <Button
-                      key={month}
-                      size="small"
-                      variant={monthCollapsed ? 'outlined' : 'contained'}
-                      color={monthCollapsed ? 'inherit' : 'success'}
-                      startIcon={<CalendarMonthRoundedIcon fontSize="small" />}
-                      onClick={() => setCollapsedOrderMonths((current) => {
-                        const next = new Set(current);
-                        if (next.has(month)) next.delete(month);
-                        else next.add(month);
-                        return next;
-                      })}
-                      sx={{
-                        minWidth: 'max-content',
-                        height: 25,
-                        px: 0.8,
-                        fontSize: '0.64rem',
-                        fontWeight: 850,
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {month.slice(0, 2)}년 {month.slice(2)}월
-                      <Chip
-                        label={`${folderOrders.filter((row) => getOrderMonthKey(row.order_date) === month).length}`}
-                        size="small"
-                        sx={{
-                          ml: 0.6,
-                          height: 17,
-                          fontSize: '0.56rem',
-                          bgcolor: monthCollapsed ? '#ffffff' : 'rgba(255,255,255,0.22)',
-                        }}
-                      />
-                    </Button>
-                  );
-                })}
-              </Stack>
-            )}
-
-            <Box
-              sx={{
-                flex: 1,
-                minHeight: 0,
-                p: 0.55,
-                overflowY: 'auto',
-                bgcolor: '#ffffff',
-              }}
-            >
-              {monthOrders.length === 0 ? (
-                <Box
-                  sx={{
-                    height: '100%',
-                    minHeight: 70,
-                    display: 'grid',
-                    placeItems: 'center',
-                    color: '#94a3b8',
-                    fontSize: '0.72rem',
-                  }}
-                >
-                  선택한 분류의 발주서가 없습니다.
-                </Box>
-              ) : (
-                <Box
-                  sx={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fill, minmax(235px, 1fr))',
-                    gap: 0.5,
-                    alignContent: 'start',
-                  }}
-                >
-                  {monthOrders.map((row) => {
-                    const selected = row.id === order.id;
-                    return (
-                      <Box
-                        key={row.id}
-                        onClick={() => openOrder(row)}
-                        sx={{
-                          minWidth: 0,
-                          px: 0.9,
-                          py: 0.65,
-                          cursor: 'pointer',
-                          border: selected ? '1px solid #93c5fd' : '1px solid #e2e8f0',
-                          borderRadius: 1,
-                          bgcolor: selected ? '#eff6ff' : '#ffffff',
-                          '&:hover': {
-                            bgcolor: selected ? '#eff6ff' : '#f8fafc',
-                            borderColor: selected ? '#60a5fa' : '#cbd5e1',
-                          },
-                        }}
-                      >
-                        <Stack direction="row" alignItems="center" spacing={0.55}>
-                          <DescriptionRoundedIcon sx={{ fontSize: '0.9rem', color: '#64748b' }} />
-                          <Typography
-                            noWrap
-                            sx={{
-                              minWidth: 0,
-                              fontSize: '0.72rem',
-                              fontWeight: 900,
-                              color: '#0f172a',
-                            }}
-                          >
-                            {formatOrderDisplayNo(row)}
-                          </Typography>
-                        </Stack>
-                        <Typography sx={{ mt: 0.2, fontSize: '0.63rem', color: '#475569', fontWeight: 750 }}>
-                          {row.order_date} · {row.process_name || categoryNameById(categories, row.category_id)}
-                        </Typography>
-                        <Typography noWrap sx={{ mt: 0.08, fontSize: '0.6rem', color: '#94a3b8' }}>
-                          요청자 {row.requester_name || '-'} · 납품 {row.delivery_date || '-'}
-                        </Typography>
-                      </Box>
-                    );
-                  })}
-                </Box>
-              )}
-            </Box>
-          </Paper>
         </Box>
       )}
 
