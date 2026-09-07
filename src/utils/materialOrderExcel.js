@@ -248,11 +248,12 @@ export const saveMaterialOrderWorkbook = async ({
   ['A6', 'B6', 'I6'].forEach((address) => {
     const cell = worksheet.getCell(address);
     cell.alignment = {
-      ...cell.alignment,
       horizontal: 'center',
       vertical: 'middle',
       textRotation: 0,
       wrapText: false,
+      indent: 0,
+      shrinkToFit: true,
     };
   });
   worksheet.getCell('B4').alignment = {
@@ -289,11 +290,11 @@ export const saveMaterialOrderWorkbook = async ({
     ['A', 'B', 'I'].forEach((column) => {
       const cell = worksheet.getCell(`${column}${rowNumber}`);
       cell.alignment = {
-        ...cell.alignment,
         horizontal: 'left',
         vertical: 'middle',
         textRotation: 0,
         wrapText: true,
+        indent: 0,
       };
     });
     worksheet.getCell(`C${rowNumber}`).value = normalizeText(item.unit);
