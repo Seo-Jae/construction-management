@@ -1,3 +1,4 @@
+// v52.48.5.44.157 기본정보·변경이력 팝업 폭 완전 고정
 // v52.48.5.44.156 기본정보 실제 높이 기준 변경이력 팝업 크기 동기화
 // v52.48.5.44.155 기본설정·변경이력 팝업 크기 통일
 // v52.48.5.44.154 자재발주 기본설정 팝업 폭 축소
@@ -4237,11 +4238,15 @@ export default function MaterialOrderUpload({
           }
         }}
         disableEscapeKeyDown={settingsRequired}
+        fullWidth
         maxWidth={false}
         PaperProps={{
           sx: {
-            width: 560,
-            maxWidth: 'calc(100% - 32px)',
+            width: 'calc(100% - 32px)',
+            minWidth: 0,
+            maxWidth: '560px !important',
+            mx: '16px',
+            boxSizing: 'border-box',
           },
         }}
       >
@@ -4343,7 +4348,12 @@ export default function MaterialOrderUpload({
           ) : settingsTab === 'basic' ? (
             <Box
               ref={measureSettingsBasicContent}
-              sx={{ maxWidth: 520, mx: 'auto' }}
+              sx={{
+                width: '100%',
+                maxWidth: 520,
+                mx: 'auto',
+                boxSizing: 'border-box',
+              }}
             >
               <Box
                 sx={{
@@ -4584,7 +4594,14 @@ export default function MaterialOrderUpload({
               </Alert>
             </Box>
           ) : (
-            <Box sx={{ maxWidth: 520, mx: 'auto' }}>
+            <Box
+              sx={{
+                width: '100%',
+                maxWidth: 520,
+                mx: 'auto',
+                boxSizing: 'border-box',
+              }}
+            >
               <Typography sx={{ mb: 1, fontSize: '0.75rem', fontWeight: 900 }}>
                 기본설정 변경이력
               </Typography>
