@@ -350,6 +350,15 @@ const formatNumber = (value, digits = 2) => {
     maximumFractionDigits: digits,
   });
 };
+const formatSpecification2 = (value) => {
+  const text = normalizeText(value);
+  if (!text) return '';
+  const numericText = text.replace(/,/g, '');
+  if (!/^-?\d+(\.\d+)?$/.test(numericText)) return text;
+  return Number(numericText).toLocaleString('ko-KR', {
+    maximumFractionDigits: 3,
+  });
+};
 const getKoreaToday = () =>
   new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Asia/Seoul',
@@ -3913,7 +3922,7 @@ export default function MaterialOrderUpload({
                           <TextField
                             size="small"
                             fullWidth
-                            value={row.specification2}
+                            value={formatSpecification2(row.specification2)}
                             onChange={(event) => updateOrderItem(index, 'specification2', event.target.value)}
                             onKeyDown={(event) => handleOrderGridKeyDown(event, index, 'specification2')}
                             inputRef={(node) => setOrderItemInputRef(itemKey, 'specification2', node)}

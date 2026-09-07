@@ -9,6 +9,15 @@ const EXCEL_MIME_TYPE =
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
 const normalizeText = (value) => String(value ?? '').trim().replace(/\s+/g, ' ');
+const formatSpecification2 = (value) => {
+  const text = normalizeText(value);
+  if (!text) return '';
+  const numericText = text.replace(/,/g, '');
+  if (!/^-?\d+(\.\d+)?$/.test(numericText)) return text;
+  return Number(numericText).toLocaleString('ko-KR', {
+    maximumFractionDigits: 3,
+  });
+};
 const normalizeTemplateName = (value) => normalizeText(value)
   .toLocaleLowerCase('ko-KR')
   .replace(/\.(xlsx|xlsm)$/i, '')
@@ -233,6 +242,18 @@ export const saveMaterialOrderWorkbook = async ({
   worksheet.getCell('E2').value = normalizeText(order.receiverName);
   worksheet.getCell('E3').value = toExcelDate(order.deliveryDate);
   worksheet.getCell('E3').numFmt = 'yyyy.mm.dd';
+  worksheet.getCell('B4').alignment = {
+    ...worksheet.getCell('B4').alignment,
+    horizontal: 'center',
+    vertical: 'middle',
+    textRotation: 0,
+  };
+  worksheet.getCell('E2').alignment = {
+    ...worksheet.getCell('E2').alignment,
+    horizontal: 'center',
+    vertical: 'middle',
+    textRotation: 0,
+  };
 
   for (let rowNumber = ITEM_START_ROW; rowNumber <= lastItemRow; rowNumber += 1) {
     const item = items[rowNumber - ITEM_START_ROW];
@@ -248,10 +269,20 @@ export const saveMaterialOrderWorkbook = async ({
     const cumulativeQuantity = previousQuantity + currentQuantity;
 
     worksheet.getCell(`A${rowNumber}`).value = normalizeText(item.standardName);
-    worksheet.getCell(`B${rowNumber}`).value = [item.specification, item.specification2]
+    worksheet.getCell(`B${rowNumber}`).value = [item.specification, formatSpecification2(item.specification2)]
       .map(normalizeText)
       .filter(Boolean)
       .join(' ');
+    ['A', 'B'].forEach((column) => {
+      const cell = worksheet.getCell(`${column}${rowNumber}`);
+      cell.alignment = {
+        ...cell.alignment,
+        horizontal: 'left',
+        vertical: 'middle',
+        textRotation: 0,
+        wrapText: true,
+      };
+    });
     worksheet.getCell(`C${rowNumber}`).value = normalizeText(item.unit);
     worksheet.getCell(`D${rowNumber}`).value = executionQuantity;
     worksheet.getCell(`E${rowNumber}`).value = previousQuantity;
