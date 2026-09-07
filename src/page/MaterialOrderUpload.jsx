@@ -1,3 +1,4 @@
+// v52.48.5.44.164 기본정보 라벨 공지사항 본문 스타일 적용
 // v52.48.5.44.163 기본설정 팝업 공지사항 스타일 전면 적용
 // v52.48.5.44.162 기본설정 팝업 공지사항형 타이포그래피 개선
 // v52.48.5.44.161 기본정보·변경이력 각각 팝업 높이 520px 명시 고정
@@ -4401,58 +4402,137 @@ export default function MaterialOrderUpload({
                   gap: 1.35,
                 }}
               >
-                <TextField
-                  size="small"
-                  required
-                  label="작성자 = 요청자"
-                  value={settingsForm.requesterName}
-                  onChange={(event) =>
-                    setSettingsForm((current) => ({
-                      ...current,
-                      requesterName: event.target.value,
-                    }))
-                  }
-                  helperText="새 발주서의 요청자 기본값"
-                />
-                <TextField
-                  size="small"
-                  required
-                  label="수령자"
-                  value={settingsForm.receiverName}
-                  onChange={(event) =>
-                    setSettingsForm((current) => ({
-                      ...current,
-                      receiverName: event.target.value,
-                    }))
-                  }
-                  helperText="현장 자재 기본 수령자"
-                />
-                <TextField
-                  size="small"
-                  required
-                  label="연락처"
-                  value={settingsForm.receiverPhone}
-                  onChange={(event) =>
-                    setSettingsForm((current) => ({
-                      ...current,
-                      receiverPhone: event.target.value,
-                    }))
-                  }
-                  helperText="수령자 연락처"
-                />
-                <TextField
-                  size="small"
-                  required
-                  label="납품장소"
-                  value={settingsForm.deliveryLocation}
-                  onChange={(event) =>
-                    setSettingsForm((current) => ({
-                      ...current,
-                      deliveryLocation: event.target.value,
-                    }))
-                  }
-                  helperText="현장 기본 납품 위치"
-                />
+                <Box>
+                  <Typography
+                    component="label"
+                    htmlFor="material-order-requester-name"
+                    sx={{
+                      mb: 0.35,
+                      display: 'block',
+                      color: '#334155',
+                      fontSize: '0.88rem',
+                      lineHeight: 1.85,
+                      fontWeight: 400,
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    작성자 = 요청자
+                    <Box component="span" sx={{ ml: 0.35, color: '#d32f2f' }}>*</Box>
+                  </Typography>
+                  <TextField
+                    id="material-order-requester-name"
+                    fullWidth
+                    size="small"
+                    required
+                    value={settingsForm.requesterName}
+                    onChange={(event) =>
+                      setSettingsForm((current) => ({
+                        ...current,
+                        requesterName: event.target.value,
+                      }))
+                    }
+                    helperText="새 발주서의 요청자 기본값"
+                  />
+                </Box>
+
+                <Box>
+                  <Typography
+                    component="label"
+                    htmlFor="material-order-receiver-name"
+                    sx={{
+                      mb: 0.35,
+                      display: 'block',
+                      color: '#334155',
+                      fontSize: '0.88rem',
+                      lineHeight: 1.85,
+                      fontWeight: 400,
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    수령자
+                    <Box component="span" sx={{ ml: 0.35, color: '#d32f2f' }}>*</Box>
+                  </Typography>
+                  <TextField
+                    id="material-order-receiver-name"
+                    fullWidth
+                    size="small"
+                    required
+                    value={settingsForm.receiverName}
+                    onChange={(event) =>
+                      setSettingsForm((current) => ({
+                        ...current,
+                        receiverName: event.target.value,
+                      }))
+                    }
+                    helperText="현장 자재 기본 수령자"
+                  />
+                </Box>
+
+                <Box>
+                  <Typography
+                    component="label"
+                    htmlFor="material-order-receiver-phone"
+                    sx={{
+                      mb: 0.35,
+                      display: 'block',
+                      color: '#334155',
+                      fontSize: '0.88rem',
+                      lineHeight: 1.85,
+                      fontWeight: 400,
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    연락처
+                    <Box component="span" sx={{ ml: 0.35, color: '#d32f2f' }}>*</Box>
+                  </Typography>
+                  <TextField
+                    id="material-order-receiver-phone"
+                    fullWidth
+                    size="small"
+                    required
+                    value={settingsForm.receiverPhone}
+                    onChange={(event) =>
+                      setSettingsForm((current) => ({
+                        ...current,
+                        receiverPhone: event.target.value,
+                      }))
+                    }
+                    helperText="수령자 연락처"
+                  />
+                </Box>
+
+                <Box>
+                  <Typography
+                    component="label"
+                    htmlFor="material-order-delivery-location"
+                    sx={{
+                      mb: 0.35,
+                      display: 'block',
+                      color: '#334155',
+                      fontSize: '0.88rem',
+                      lineHeight: 1.85,
+                      fontWeight: 400,
+                      fontFamily: 'inherit',
+                    }}
+                  >
+                    납품장소
+                    <Box component="span" sx={{ ml: 0.35, color: '#d32f2f' }}>*</Box>
+                  </Typography>
+                  <TextField
+                    id="material-order-delivery-location"
+                    fullWidth
+                    size="small"
+                    required
+                    value={settingsForm.deliveryLocation}
+                    onChange={(event) =>
+                      setSettingsForm((current) => ({
+                        ...current,
+                        deliveryLocation: event.target.value,
+                      }))
+                    }
+                    helperText="현장 기본 납품 위치"
+                  />
+                </Box>
               </Box>
 
               <Paper
