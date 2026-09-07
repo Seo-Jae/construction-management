@@ -1,3 +1,4 @@
+// v52.48.5.44.155 기본설정·변경이력 팝업 크기 통일
 // v52.48.5.44.154 자재발주 기본설정 팝업 폭 축소
 // v52.48.5.44.153 발주 품명 표시순서 연동·Enter 품목행 추가
 // v52.48.5.44.152 현장 자재 ID 자동연결·직접입력 누계·발주확정
@@ -4313,7 +4314,11 @@ export default function MaterialOrderUpload({
           dividers
           sx={{
             p: 1.5,
+            height: 430,
             minHeight: 430,
+            maxHeight: 430,
+            overflowY: 'auto',
+            boxSizing: 'border-box',
             borderTop: 'none',
           }}
         >
@@ -4562,7 +4567,7 @@ export default function MaterialOrderUpload({
               </Alert>
             </Box>
           ) : (
-            <Box>
+            <Box sx={{ maxWidth: 520, mx: 'auto' }}>
               <Typography sx={{ mb: 1, fontSize: '0.75rem', fontWeight: 900 }}>
                 기본설정 변경이력
               </Typography>
