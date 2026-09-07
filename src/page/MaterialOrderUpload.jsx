@@ -1,3 +1,4 @@
+// v52.48.5.44.158 기본설정 팝업 폭 544px 고정·탭간 동일 유지
 // v52.48.5.44.157 기본정보·변경이력 팝업 폭 완전 고정
 // v52.48.5.44.156 기본정보 실제 높이 기준 변경이력 팝업 크기 동기화
 // v52.48.5.44.155 기본설정·변경이력 팝업 크기 통일
@@ -4238,14 +4239,14 @@ export default function MaterialOrderUpload({
           }
         }}
         disableEscapeKeyDown={settingsRequired}
-        fullWidth
         maxWidth={false}
         PaperProps={{
+          style: {
+            width: '544px',
+            maxWidth: 'calc(100vw - 32px)',
+          },
           sx: {
-            width: 'calc(100% - 32px)',
             minWidth: 0,
-            maxWidth: '560px !important',
-            mx: '16px',
             boxSizing: 'border-box',
           },
         }}
