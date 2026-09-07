@@ -1,3 +1,4 @@
+// v52.48.5.44.172 품명 자재마스터 고정·규격2 현장이력 분리
 // v52.48.5.44.171 발주서 공정·품목 폴더 일치 보호
 // v52.48.5.44.170-repair 우측 발주서 Paper sx JSX 문법 수정
 // v52.48.5.44.170 좌측패널 자재분류·발주서목록 1대1 분할
@@ -566,6 +567,7 @@ export default function MaterialOrderUpload({
     () => new Set(),
   );
   const [orderMaterialOptions, setOrderMaterialOptions] = useState([]);
+  const [orderProjectMaterialOptions, setOrderProjectMaterialOptions] = useState([]);
   const [orderMaterialOptionsLoading, setOrderMaterialOptionsLoading] = useState(false);
   const [specification2Options, setSpecification2Options] = useState({});
   const [openMaterialHintKey, setOpenMaterialHintKey] = useState('');
@@ -1586,6 +1588,7 @@ export default function MaterialOrderUpload({
   const loadOrderMaterialOptions = useCallback(async () => {
     if (!projectName) {
       setOrderMaterialOptions([]);
+      setOrderProjectMaterialOptions([]);
       return;
     }
 
@@ -1683,47 +1686,50 @@ export default function MaterialOrderUpload({
         );
       });
       const masterMap = new Map(materials.map((row) => [row.id, row]));
-      const projectIdentityKeys = new Set(
-        projectItems.map((row) => row.identity_key || buildProjectMaterialIdentityKey(row)),
-      );
-      const projectOptions = projectItems.map((row) => {
-        const master = masterMap.get(row.material_id) || null;
-        const option = {
-          ...row,
-          id: `project:${row.id}`,
-          projectMaterialId: row.id,
-          materialId: row.material_id || '',
-          manufacturer: master?.manufacturer || '',
-          aliases: master?.aliases || [],
-          is_main_material: master?.is_main_material === true,
-          main_sort_order: master?.main_sort_order || 100,
-          display_order: master?.display_order || 1000,
-          isProjectMaterial: true,
-          executionQuantity: quantityMap.get(row.material_id) || 0,
-          previousQuantity: cumulativeMap.get(row.id) || 0,
-        };
-        return { ...option, orderSearchText: buildOrderMaterialSearchText(option) };
-      });
-      const masterOptions = materials
-        .filter((row) => !projectIdentityKeys.has(buildProjectMaterialIdentityKey(row)))
-        .map((row) => ({
-          ...row,
-          projectMaterialId: '',
-          materialId: row.id,
-          isProjectMaterial: quantityMap.has(row.id),
-          executionQuantity: quantityMap.get(row.id) || 0,
-          previousQuantity: projectCatalogReady ? 0 : cumulativeMap.get(row.id) || 0,
-          orderSearchText: buildOrderMaterialSearchText(row),
-        }));
+      const projectOptions = projectItems
+        .filter((row) => row.material_id && masterMap.has(row.material_id))
+        .map((row) => {
+          const master = masterMap.get(row.material_id);
+          const option = {
+            ...row,
+            id: `project:${row.id}`,
+            projectMaterialId: row.id,
+            materialId: row.material_id,
+            manufacturer: master?.manufacturer || '',
+            aliases: master?.aliases || [],
+            is_main_material: master?.is_main_material === true,
+            main_sort_order: master?.main_sort_order || 100,
+            display_order: master?.display_order || 1000,
+            isProjectMaterial: true,
+            executionQuantity: quantityMap.get(row.material_id) || 0,
+            previousQuantity: cumulativeMap.get(row.id) || 0,
+          };
+          return {
+            ...option,
+            orderSearchText: buildOrderMaterialSearchText(option),
+          };
+        });
 
-      setOrderMaterialOptions(
-        [...projectOptions, ...masterOptions],
-      );
+      const masterOptions = materials.map((row) => ({
+        ...row,
+        projectMaterialId: '',
+        materialId: row.id,
+        isProjectMaterial: quantityMap.has(row.id),
+        executionQuantity: quantityMap.get(row.id) || 0,
+        previousQuantity: 0,
+        orderSearchText: buildOrderMaterialSearchText(row),
+      }));
+
+      // 품명 선택지는 자재마스터만 사용한다.
+      // 현장 자재(projectOptions)는 규격(2)별 누계/전회발주량 연결에만 사용한다.
+      setOrderMaterialOptions(masterOptions);
+      setOrderProjectMaterialOptions(projectOptions);
     } catch (error) {
       if (!handleSchemaError(error)) {
         notify('error', `자재 힌트 불러오기 실패: ${error.message}`);
       }
       setOrderMaterialOptions([]);
+      setOrderProjectMaterialOptions([]);
     } finally {
       setOrderMaterialOptionsLoading(false);
     }
@@ -1989,7 +1995,7 @@ export default function MaterialOrderUpload({
         const nextRow = { ...row, [field]: value };
         if (field === 'specification2') {
           const normalizedSpecification2 = normalizeText(value).replace(/,/g, '');
-          const matchingProjectMaterial = orderMaterialOptions.find((option) => (
+          const matchingProjectMaterial = orderProjectMaterialOptions.find((option) => (
             option.materialId === row.materialId &&
             option.projectMaterialId &&
             normalizeText(option.specification_2).replace(/,/g, '') === normalizedSpecification2
@@ -2179,6 +2185,32 @@ export default function MaterialOrderUpload({
     );
   };
 
+  const clearOrderMaterialSelection = (index) => {
+    setOrderItems((current) =>
+      recalculateOrderItemBalances(current.map((row, rowIndex) => {
+        if (rowIndex !== index) return row;
+        const currentQuantity = numberValue(row.currentQuantity);
+        return {
+          ...row,
+          projectMaterialId: '',
+          materialId: '',
+          masterStandardName: '',
+          masterSpecification: '',
+          categoryId: order.categoryId,
+          processName: order.processName,
+          standardName: '',
+          specification: '',
+          specification2: '',
+          unit: '',
+          executionQuantity: 0,
+          previousQuantity: 0,
+          cumulativeQuantity: currentQuantity,
+          executionRatio: 0,
+        };
+      })),
+    );
+  };
+
   const handleOrderGridKeyDown = (event, rowIndex, field) => {
     const fieldIndex = ORDER_GRID_FIELDS.indexOf(field);
     if (fieldIndex < 0 || event.key === 'Tab') return;
@@ -2299,6 +2331,10 @@ export default function MaterialOrderUpload({
       notify('warning', '품명이 비어 있는 발주 품목 행을 확인해주세요.');
       return;
     }
+    if (exportItems.some((row) => !row.materialId)) {
+      notify('warning', '품명은 자재마스터에 등록된 항목에서 선택해주세요.');
+      return;
+    }
 
     setOrderExcelBusy(true);
     try {
@@ -2364,6 +2400,12 @@ export default function MaterialOrderUpload({
     );
     if (missingNameIndex >= 0) {
       notify('warning', '품명이 비어 있는 발주 품목 행을 확인해주세요.');
+      return;
+    }
+
+    const unlinkedMaterial = savableItems.find((row) => !row.materialId);
+    if (unlinkedMaterial) {
+      notify('warning', '품명은 자재마스터에 등록된 항목에서 선택해주세요.');
       return;
     }
 
@@ -4092,7 +4134,7 @@ export default function MaterialOrderUpload({
                   ) : orderItems.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={11} align="center" sx={{ py: 9, color: '#94a3b8' }}>
-                        상단의 + 버튼을 눌러 행을 추가한 뒤 품명을 입력해주세요. 비슷한 자재마스터 항목이 자동으로 표시됩니다.
+                        상단의 + 버튼을 눌러 행을 추가한 뒤 자재마스터에서 품명을 선택해주세요. 규격(2)는 현장 발주 이력에서 안내됩니다.
                       </TableCell>
                     </TableRow>
                   ) : orderItems.map((row, index) => {
@@ -4131,7 +4173,6 @@ export default function MaterialOrderUpload({
                         </TableCell>
                         <TableCell sx={{ p: 0.35 }}>
                           <Autocomplete
-                            freeSolo
                             openOnFocus
                             slots={{ popper: ScaleAwareAutocompletePopper }}
                             size="small"
@@ -4153,31 +4194,33 @@ export default function MaterialOrderUpload({
                                 },
                               },
                             }}
-                            getOptionLabel={(option) =>
-                              typeof option === 'string' ? option : option.standard_name || ''
+                            getOptionLabel={(option) => option?.standard_name || ''}
+                            getOptionKey={(option) => option.materialId || option.id}
+                            isOptionEqualToValue={(option, value) =>
+                              (option.materialId || option.id) ===
+                              (value?.materialId || value?.id)
                             }
-                            getOptionKey={(option) =>
-                              option.projectMaterialId || option.materialId || option.id
+                            value={
+                              row.materialId
+                                ? orderMaterialOptions.find(
+                                    (option) =>
+                                      (option.materialId || option.id) === row.materialId,
+                                  ) || null
+                                : null
                             }
-                            value={row.standardName || ''}
                             onOpen={() => setOpenMaterialHintKey(itemKey)}
                             onClose={() =>
                               setOpenMaterialHintKey((current) => current === itemKey ? '' : current)
                             }
-                            onInputChange={(_, value, reason) => {
-                              if (reason === 'input' || reason === 'clear') {
-                                updateOrderItem(index, 'standardName', value);
-                              }
-                            }}
                             onChange={(_, value) => {
-                              if (value && typeof value === 'object') {
+                              if (value) {
                                 applyMaterialHint(index, value);
-                              } else if (typeof value === 'string') {
-                                updateOrderItem(index, 'standardName', value);
+                              } else {
+                                clearOrderMaterialSelection(index);
                               }
                             }}
                             disabled={isLocked}
-                            noOptionsText="일치하는 자재가 없습니다. 직접 입력할 수 있습니다."
+                            noOptionsText="자재마스터에 등록된 일치 자재가 없습니다."
                             sx={entryFieldSx(row.standardName)}
                             renderOption={(props, option) => {
                               const { key, ...optionProps } = props;
@@ -4203,7 +4246,7 @@ export default function MaterialOrderUpload({
                                 {...params}
                                 inputRef={(node) => setOrderItemInputRef(itemKey, 'standardName', node)}
                                 onKeyDown={(event) => handleOrderGridKeyDown(event, index, 'standardName')}
-                                placeholder="품명 입력"
+                                placeholder="품명 검색"
                               />
                             )}
                           />
@@ -4297,7 +4340,7 @@ export default function MaterialOrderUpload({
                             onKeyDown={(event) => handleOrderGridKeyDown(event, index, 'unit')}
                             inputRef={(node) => setOrderItemInputRef(itemKey, 'unit', node)}
                             placeholder="단위"
-                            disabled={isLocked}
+                            disabled={isLocked || Boolean(row.materialId)}
                             inputProps={{ style: { textAlign: 'center' } }}
                             sx={entryFieldSx(row.unit)}
                           />
