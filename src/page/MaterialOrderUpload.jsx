@@ -1,3 +1,4 @@
+// v52.48.5.44.159 기본정보 기준 팝업 폭·높이 완전 고정
 // v52.48.5.44.158 기본설정 팝업 폭 544px 고정·탭간 동일 유지
 // v52.48.5.44.157 기본정보·변경이력 팝업 폭 완전 고정
 // v52.48.5.44.156 기본정보 실제 높이 기준 변경이력 팝업 크기 동기화
@@ -581,17 +582,6 @@ export default function MaterialOrderUpload({
   const [settingsTab, setSettingsTab] = useState('basic');
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
-  const [settingsBasicContentHeight, setSettingsBasicContentHeight] = useState(0);
-
-  const measureSettingsBasicContent = useCallback((node) => {
-    if (!node) return;
-    const measuredHeight = Math.ceil(node.scrollHeight || node.getBoundingClientRect().height || 0);
-    if (measuredHeight > 0) {
-      setSettingsBasicContentHeight((current) =>
-        current === measuredHeight ? current : measuredHeight,
-      );
-    }
-  }, []);
   const [settingsRequired, setSettingsRequired] = useState(true);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [resetConfirmText, setResetConfirmText] = useState('');
@@ -4241,13 +4231,21 @@ export default function MaterialOrderUpload({
         disableEscapeKeyDown={settingsRequired}
         maxWidth={false}
         PaperProps={{
-          style: {
-            width: '544px',
-            maxWidth: 'calc(100vw - 32px)',
-          },
           sx: {
-            minWidth: 0,
+            width: '544px !important',
+            minWidth: '544px !important',
+            maxWidth: '544px !important',
+            height: 520,
+            maxHeight: 'calc(100vh - 32px)',
+            flexShrink: 0,
             boxSizing: 'border-box',
+            display: 'flex',
+            flexDirection: 'column',
+            '@media (max-width: 600px)': {
+              width: 'calc(100vw - 32px) !important',
+              minWidth: 'calc(100vw - 32px) !important',
+              maxWidth: 'calc(100vw - 32px) !important',
+            },
           },
         }}
       >
@@ -4332,11 +4330,8 @@ export default function MaterialOrderUpload({
           dividers
           sx={{
             p: 1.5,
-            height: settingsBasicContentHeight
-              ? settingsBasicContentHeight + 24
-              : 'auto',
+            flex: '1 1 auto',
             minHeight: 0,
-            maxHeight: 'calc(100vh - 220px)',
             overflowY: 'auto',
             boxSizing: 'border-box',
             borderTop: 'none',
@@ -4348,7 +4343,6 @@ export default function MaterialOrderUpload({
             </Box>
           ) : settingsTab === 'basic' ? (
             <Box
-              ref={measureSettingsBasicContent}
               sx={{
                 width: '100%',
                 maxWidth: 520,
