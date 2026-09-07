@@ -70,7 +70,10 @@ import ArrowDownwardRoundedIcon from '@mui/icons-material/ArrowDownwardRounded';
 import ArrowUpwardRoundedIcon from '@mui/icons-material/ArrowUpwardRounded';
 import CategoryRoundedIcon from '@mui/icons-material/CategoryRounded';
 import CheckCircleRoundedIcon from '@mui/icons-material/CheckCircleRounded';
+import ArticleRoundedIcon from '@mui/icons-material/ArticleRounded';
+import CalendarMonthRoundedIcon from '@mui/icons-material/CalendarMonthRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
+import DescriptionRoundedIcon from '@mui/icons-material/DescriptionRounded';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import FileDownloadRoundedIcon from '@mui/icons-material/FileDownloadRounded';
 import FileUploadRoundedIcon from '@mui/icons-material/FileUploadRounded';
@@ -3473,9 +3476,12 @@ export default function MaterialOrderUpload({
             </Box>
             {orderMonths.length > 0 && (
               <Box sx={{ borderBottom: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
-                <Typography sx={{ px: 0.9, pt: 0.55, pb: 0.55, fontSize: '0.66rem', fontWeight: 900, color: '#365314', bgcolor: '#eef7e8' }}>
-                  발주서 목록
-                </Typography>
+                <Stack direction="row" alignItems="center" spacing={0.45} sx={{ px: 0.9, pt: 0.55, pb: 0.55, bgcolor: '#eef7e8', color: '#365314' }}>
+                  <ArticleRoundedIcon sx={{ fontSize: '0.9rem' }} />
+                  <Typography sx={{ fontSize: '0.66rem', fontWeight: 900 }}>
+                    발주서 목록
+                  </Typography>
+                </Stack>
                 <Stack spacing={0.2}>
                   {orderMonths.map((month) => (
                     <Button
@@ -3484,9 +3490,7 @@ export default function MaterialOrderUpload({
                       size="small"
                       variant="text"
                       color="inherit"
-                      startIcon={collapsedOrderMonths.has(month)
-                        ? <FolderRoundedIcon fontSize="small" />
-                        : <FolderOpenRoundedIcon fontSize="small" />}
+                      startIcon={<CalendarMonthRoundedIcon fontSize="small" />}
                       onClick={() => setCollapsedOrderMonths((current) => {
                         const next = new Set(current);
                         if (next.has(month)) next.delete(month);
@@ -3530,6 +3534,7 @@ export default function MaterialOrderUpload({
                       }}
                     >
                       <Stack direction="row" alignItems="center" spacing={0.6}>
+                        <DescriptionRoundedIcon sx={{ fontSize: '0.9rem', color: '#64748b' }} />
                         <Typography sx={{ fontSize: '0.75rem', fontWeight: 900, color: '#0f172a' }}>{formatOrderDisplayNo(row)}</Typography>
                       </Stack>
                       <Typography sx={{ mt: 0.25, fontSize: '0.66rem', color: '#475569', fontWeight: 750 }}>
