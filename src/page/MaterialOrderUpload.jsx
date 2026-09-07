@@ -3971,10 +3971,26 @@ export default function MaterialOrderUpload({
                           <Autocomplete
                             freeSolo
                             openOnFocus
+                            slots={{ popper: ScaleAwareAutocompletePopper }}
                             size="small"
                             options={specification2Suggestions}
                             value={formatSpecification2(row.specification2)}
                             disabled={isLocked}
+                            slotProps={{
+                              listbox: {
+                                sx: {
+                                  p: 0,
+                                  maxHeight: 276,
+                                  overflowY: 'auto',
+                                  '& .MuiAutocomplete-option': {
+                                    minHeight: '36px !important',
+                                    height: '36px !important',
+                                    boxSizing: 'border-box',
+                                    fontSize: '0.68rem',
+                                  },
+                                },
+                              },
+                            }}
                             noOptionsText="이전에 사용한 규격(2)이 없습니다. 직접 입력할 수 있습니다."
                             onOpen={() => loadSpecification2Options(row.materialId)}
                             onInputChange={(_, value, reason) => {
@@ -3986,6 +4002,16 @@ export default function MaterialOrderUpload({
                               updateOrderItem(index, 'specification2', typeof value === 'string' ? value : '');
                             }}
                             sx={entryFieldSx(row.specification2)}
+                            renderOption={(props, option) => {
+                              const { key, ...optionProps } = props;
+                              return (
+                                <Box component="li" key={key} {...optionProps}>
+                                  <Typography sx={{ fontSize: '0.68rem', fontWeight: 800 }}>
+                                    {option}
+                                  </Typography>
+                                </Box>
+                              );
+                            }}
                             renderInput={(params) => (
                               <TextField
                                 {...params}
