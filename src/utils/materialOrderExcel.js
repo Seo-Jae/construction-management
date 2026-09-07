@@ -18,6 +18,22 @@ const formatSpecification2 = (value) => {
     maximumFractionDigits: 3,
   });
 };
+const buildSpecificationCellValue = (specification, specification2) => {
+  const firstSpecification = normalizeText(specification);
+  const secondSpecification = formatSpecification2(specification2);
+  if (!secondSpecification) return firstSpecification;
+  const secondFont = {
+    bold: true,
+    color: { argb: 'FFFF0000' },
+  };
+  if (!firstSpecification) {
+    return [{ text: secondSpecification, font: secondFont }];
+  }
+  return [
+    { text: firstSpecification },
+    { text: ` / ${secondSpecification}`, font: secondFont },
+  ];
+};
 const normalizeTemplateName = (value) => normalizeText(value)
   .toLocaleLowerCase('ko-KR')
   .replace(/\.(xlsx|xlsm)$/i, '')
@@ -287,10 +303,10 @@ export const saveMaterialOrderWorkbook = async ({
     const cumulativeQuantity = previousQuantity + currentQuantity;
 
     worksheet.getCell(`A${rowNumber}`).value = normalizeText(item.standardName);
-    worksheet.getCell(`B${rowNumber}`).value = [item.specification, formatSpecification2(item.specification2)]
-      .map(normalizeText)
-      .filter(Boolean)
-      .join(' ');
+    worksheet.getCell(`B${rowNumber}`).value = buildSpecificationCellValue(
+      item.specification,
+      item.specification2,
+    );
     ['A', 'B', 'I'].forEach((column) => {
       const cell = worksheet.getCell(`${column}${rowNumber}`);
       cell.alignment = {
