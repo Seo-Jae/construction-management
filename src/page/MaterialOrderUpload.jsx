@@ -1,3 +1,4 @@
+// v52.48.5.44.171 발주서 공정·품목 폴더 일치 보호
 // v52.48.5.44.170-repair 우측 발주서 Paper sx JSX 문법 수정
 // v52.48.5.44.170 좌측패널 자재분류·발주서목록 1대1 분할
 // v52.48.5.44.169 발주서 목록 하단 분리
@@ -1490,9 +1491,9 @@ export default function MaterialOrderUpload({
           status: row.status || 'draft',
         });
         setSelectedOrderFolderId(nextCategoryId);
-        setSelectedOrderFolderProcess((current) => (
-          nextFolderNames.includes(current) ? current : ''
-        ));
+        setSelectedOrderFolderProcess(
+          nextFolderNames.includes(nextProcessName) ? nextProcessName : '',
+        );
         setOrderItems(mapped);
         setSelectedOrderItemKeys(new Set());
         setMainTab('order');
@@ -2363,6 +2364,26 @@ export default function MaterialOrderUpload({
     );
     if (missingNameIndex >= 0) {
       notify('warning', '품명이 비어 있는 발주 품목 행을 확인해주세요.');
+      return;
+    }
+
+    const orderUsesProcessFolders = categoryFolders.some(
+      (row) => row.category_id === order.categoryId,
+    );
+    const normalizedOrderProcess = normalizeText(order.processName);
+    const mismatchedItem = savableItems.find((row) => {
+      const itemCategoryId = row.categoryId || order.categoryId;
+      const itemProcessName = normalizeText(row.processName || order.processName);
+      return (
+        itemCategoryId !== order.categoryId ||
+        (orderUsesProcessFolders && itemProcessName !== normalizedOrderProcess)
+      );
+    });
+    if (mismatchedItem) {
+      notify(
+        'warning',
+        `"${normalizeText(mismatchedItem.standardName) || '발주 품목'}"은 현재 발주서 폴더와 다른 분류/공정의 자재입니다. 현재 폴더에 맞는 품목만 발주할 수 있습니다.`,
+      );
       return;
     }
 
@@ -3408,8 +3429,10 @@ export default function MaterialOrderUpload({
                         endIcon={<Chip label={`${orderCount}`} size="small" />}
                         onClick={() => {
                           const folderChanged =
-                            selectedOrderFolderId !== category.id ||
-                            selectedOrderFolderProcess !== '';
+                            order.categoryId !== category.id ||
+                            normalizeText(order.processName) !== '';
+                          const shouldResetEditor =
+                            folderChanged && (Boolean(order.id) || orderItems.length > 0);
                           setSelectedOrderFolderId(category.id);
                           if (hasProcessFolders) {
                             setProcessFoldersOpen(
@@ -3418,17 +3441,17 @@ export default function MaterialOrderUpload({
                                 : true,
                             );
                             setSelectedOrderFolderProcess('');
-                            if (folderChanged && order.id) {
+                            if (shouldResetEditor) {
                               clearOrderEditorForFolder(category.id);
-                            } else if (!isLocked && !order.id) {
+                            } else if (!isLocked) {
                               setOrder((current) => ({ ...current, categoryId: category.id, processName: '' }));
                             }
                           } else {
                             setProcessFoldersOpen(false);
                             setSelectedOrderFolderProcess('');
-                            if (folderChanged && order.id) {
+                            if (shouldResetEditor) {
                               clearOrderEditorForFolder(category.id);
-                            } else if (!isLocked && !order.id) {
+                            } else if (!isLocked) {
                               setOrder((current) => ({
                                 ...current,
                                 categoryId: category.id,
@@ -3471,13 +3494,15 @@ export default function MaterialOrderUpload({
                                 endIcon={<Chip label={`${processCount}`} size="small" />}
                                 onClick={() => {
                                   const folderChanged =
-                                    selectedOrderFolderId !== category.id ||
-                                    selectedOrderFolderProcess !== processName;
+                                    order.categoryId !== category.id ||
+                                    normalizeText(order.processName) !== normalizeText(processName);
+                                  const shouldResetEditor =
+                                    folderChanged && (Boolean(order.id) || orderItems.length > 0);
                                   setSelectedOrderFolderId(category.id);
                                   setSelectedOrderFolderProcess(processName);
-                                  if (folderChanged && order.id) {
+                                  if (shouldResetEditor) {
                                     clearOrderEditorForFolder(category.id, processName);
-                                  } else if (!isLocked && !order.id) {
+                                  } else if (!isLocked) {
                                     setOrder((current) => ({
                                       ...current,
                                       categoryId: category.id,
@@ -3727,19 +3752,23 @@ export default function MaterialOrderUpload({
                         variant="outlined"
                         disabled={isLocked}
                         onClick={() => {
-                          setSelectedOrderFolderId(selectedOrderFolderCategory.id);
-                          setSelectedOrderFolderProcess(processName);
+                          const nextCategoryId = selectedOrderFolderCategory.id;
                           const folderChanged =
-                            selectedOrderFolderProcess !== processName;
-                          if (folderChanged && order.id) {
+                            order.categoryId !== nextCategoryId ||
+                            normalizeText(order.processName) !== normalizeText(processName);
+                          const shouldResetEditor =
+                            folderChanged && (Boolean(order.id) || orderItems.length > 0);
+                          setSelectedOrderFolderId(nextCategoryId);
+                          setSelectedOrderFolderProcess(processName);
+                          if (shouldResetEditor) {
                             clearOrderEditorForFolder(
-                              selectedOrderFolderCategory.id,
+                              nextCategoryId,
                               processName,
                             );
                           } else {
                             setOrder((current) => ({
                               ...current,
-                              categoryId: selectedOrderFolderCategory.id,
+                              categoryId: nextCategoryId,
                               processName,
                             }));
                           }
@@ -3785,9 +3814,11 @@ export default function MaterialOrderUpload({
                           disabled={isLocked}
                           onClick={() => {
                             const folderChanged =
-                              selectedOrderFolderId !== category.id ||
-                              selectedOrderFolderProcess !== '';
-                            if (folderChanged && order.id) {
+                              order.categoryId !== category.id ||
+                              normalizeText(order.processName) !== '';
+                            const shouldResetEditor =
+                              folderChanged && (Boolean(order.id) || orderItems.length > 0);
+                            if (shouldResetEditor) {
                               clearOrderEditorForFolder(category.id);
                             } else {
                               setOrder((current) => ({
@@ -3897,11 +3928,20 @@ export default function MaterialOrderUpload({
                       const nextCategoryId = event.target.value;
                       const nextCategoryFolders =
                         categoryFoldersByCategory.get(nextCategoryId) || [];
-                      setOrder((current) => ({
-                        ...current,
-                        categoryId: nextCategoryId,
-                        processName: '',
-                      }));
+                      const folderChanged =
+                        order.categoryId !== nextCategoryId ||
+                        normalizeText(order.processName) !== '';
+                      const shouldResetEditor =
+                        folderChanged && (Boolean(order.id) || orderItems.length > 0);
+                      if (shouldResetEditor) {
+                        clearOrderEditorForFolder(nextCategoryId);
+                      } else {
+                        setOrder((current) => ({
+                          ...current,
+                          categoryId: nextCategoryId,
+                          processName: '',
+                        }));
+                      }
                       setSelectedOrderFolderId(nextCategoryId);
                       setSelectedOrderFolderProcess('');
                       setProcessFoldersOpen(nextCategoryFolders.length > 0);
