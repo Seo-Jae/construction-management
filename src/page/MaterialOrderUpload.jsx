@@ -157,6 +157,7 @@ const EMPTY_PROJECT_SETTINGS = {
 const ORDER_GRID_FIELDS = [
   'standardName',
   'specification',
+  'specification2',
   'unit',
   'currentQuantity',
   'note',
@@ -171,10 +172,12 @@ const createBlankOrderItem = (clientKey = createOrderItemKey()) => ({
   projectMaterialId: '',
   materialId: '',
   masterStandardName: '',
+  masterSpecification: '',
   categoryId: '',
   processName: '',
   standardName: '',
   specification: '',
+  specification2: '',
   unit: '',
   executionQuantity: 0,
   previousQuantity: 0,
@@ -1363,10 +1366,12 @@ export default function MaterialOrderUpload({
           projectMaterialId: item.project_material_id || '',
           materialId: item.material_id,
           masterStandardName: item.material_id ? item.standard_name : '',
+          masterSpecification: item.material_id ? item.specification || '' : '',
           categoryId: item.category_id || '',
           processName: item.process_name || '',
           standardName: item.standard_name,
           specification: item.specification || '',
+          specification2: item.specification_2 || '',
           unit: item.unit || '',
           executionQuantity: numberValue(item.execution_quantity),
           previousQuantity: numberValue(item.previous_order_quantity),
@@ -1519,7 +1524,7 @@ export default function MaterialOrderUpload({
       let projectItemQuery = supabase
         .from('material_supply_project_items')
         .select(
-          'id, material_id, category_id, process_name, standard_name, specification, unit, identity_key, search_text',
+          'id, material_id, category_id, process_name, standard_name, specification, specification_2, unit, identity_key, search_text',
         )
         .eq('project_name', projectName)
         .eq('is_active', true)
@@ -1667,10 +1672,12 @@ export default function MaterialOrderUpload({
         projectMaterialId: material.projectMaterialId || '',
         materialId: material.id,
         masterStandardName: material.standard_name,
+        masterSpecification: material.specification || '',
         categoryId: material.category_id || '',
         processName: material.process_name || '',
         standardName: material.standard_name,
         specification: material.specification || '',
+        specification2: material.specification_2 || '',
         unit: material.unit || '',
         executionQuantity: execution,
         previousQuantity: previous,
@@ -1893,7 +1900,8 @@ export default function MaterialOrderUpload({
       recalculateOrderItemBalances(current.map((row, rowIndex) => {
         if (rowIndex !== index) return row;
         const nextRow = { ...row, [field]: value };
-        if (['standardName', 'specification', 'unit'].includes(field)) {
+        if (field === 'specification' && row.materialId) return row;
+        if (['standardName', 'specification', 'specification2', 'unit'].includes(field)) {
           nextRow.projectMaterialId = '';
           nextRow.previousQuantity = 0;
           nextRow.cumulativeQuantity = numberValue(nextRow.currentQuantity);
@@ -2053,10 +2061,12 @@ export default function MaterialOrderUpload({
           projectMaterialId: material.projectMaterialId || '',
           materialId: material.materialId || material.material_id || '',
           masterStandardName: material.standard_name || '',
+          masterSpecification: material.specification || '',
           categoryId: material.category_id || '',
           processName: material.process_name || '',
           standardName: material.standard_name || '',
           specification: material.specification || '',
+          specification2: material.specification_2 || '',
           unit: material.unit || '',
           executionQuantity: execution,
           previousQuantity: previous,
@@ -2156,6 +2166,7 @@ export default function MaterialOrderUpload({
       [
         row.standardName,
         row.specification,
+        row.specification2,
         row.unit,
         row.currentQuantity,
         row.note,
@@ -2312,7 +2323,8 @@ export default function MaterialOrderUpload({
                 p_category_id: row.categoryId || order.categoryId || null,
                 p_process_name: row.processName || order.processName || null,
                 p_standard_name: normalizeText(row.standardName),
-                p_specification: normalizeText(row.specification) || null,
+                p_specification: normalizeText(row.masterSpecification || row.specification) || null,
+                p_specification_2: normalizeText(row.specification2) || null,
                 p_unit: normalizeText(row.unit) || null,
                 p_updated_by: currentUserId || null,
               },
@@ -2386,7 +2398,8 @@ export default function MaterialOrderUpload({
         category_id: row.categoryId || order.categoryId || null,
         process_name: row.processName || order.processName || null,
         standard_name: normalizeText(row.standardName),
-        specification: normalizeText(row.specification) || null,
+        specification: normalizeText(row.materialId ? row.masterSpecification || row.specification : row.specification) || null,
+        specification_2: normalizeText(row.specification2) || null,
         unit: normalizeText(row.unit) || null,
         execution_quantity: numberValue(row.executionQuantity),
         previous_order_quantity: numberValue(row.previousQuantity),
@@ -3745,6 +3758,7 @@ export default function MaterialOrderUpload({
                     {[
                       ['품명', 220, 'left'],
                       ['규격', 175, 'left'],
+                      ['규격(2)', 120, 'left'],
                       ['단위', 90, 'center'],
                       ['실행물량', 105, 'center'],
                       ['전회발주량', 105, 'center'],
@@ -3765,10 +3779,10 @@ export default function MaterialOrderUpload({
                 </TableHead>
                 <TableBody>
                   {loading ? (
-                    <TableRow><TableCell colSpan={10} align="center" sx={{ py: 7 }}><CircularProgress size={24} /></TableCell></TableRow>
+                    <TableRow><TableCell colSpan={11} align="center" sx={{ py: 7 }}><CircularProgress size={24} /></TableCell></TableRow>
                   ) : orderItems.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={10} align="center" sx={{ py: 9, color: '#94a3b8' }}>
+                      <TableCell colSpan={11} align="center" sx={{ py: 9, color: '#94a3b8' }}>
                         상단의 + 버튼을 눌러 행을 추가한 뒤 품명을 입력해주세요. 비슷한 자재마스터 항목이 자동으로 표시됩니다.
                       </TableCell>
                     </TableRow>
@@ -3891,8 +3905,21 @@ export default function MaterialOrderUpload({
                             onKeyDown={(event) => handleOrderGridKeyDown(event, index, 'specification')}
                             inputRef={(node) => setOrderItemInputRef(itemKey, 'specification', node)}
                             placeholder="규격"
-                            disabled={isLocked}
+                            disabled={isLocked || Boolean(row.materialId)}
                             sx={entryFieldSx(row.specification)}
+                          />
+                        </TableCell>
+                        <TableCell sx={{ p: 0.35 }}>
+                          <TextField
+                            size="small"
+                            fullWidth
+                            value={row.specification2}
+                            onChange={(event) => updateOrderItem(index, 'specification2', event.target.value)}
+                            onKeyDown={(event) => handleOrderGridKeyDown(event, index, 'specification2')}
+                            inputRef={(node) => setOrderItemInputRef(itemKey, 'specification2', node)}
+                            placeholder="상세길이"
+                            disabled={isLocked}
+                            sx={entryFieldSx(row.specification2)}
                           />
                         </TableCell>
                         <TableCell sx={{ p: 0.35 }}>
@@ -3971,7 +3998,7 @@ export default function MaterialOrderUpload({
                       }}
                     >
                       <TableCell align="center">합계</TableCell>
-                      <TableCell colSpan={3} />
+                      <TableCell colSpan={4} />
                       <TableCell align="right">{formatNumber(orderQuantityTotals.execution)}</TableCell>
                       <TableCell align="right">{formatNumber(orderQuantityTotals.previous)}</TableCell>
                       <TableCell align="right">{formatNumber(orderQuantityTotals.current)}</TableCell>

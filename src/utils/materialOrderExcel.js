@@ -248,7 +248,10 @@ export const saveMaterialOrderWorkbook = async ({
     const cumulativeQuantity = previousQuantity + currentQuantity;
 
     worksheet.getCell(`A${rowNumber}`).value = normalizeText(item.standardName);
-    worksheet.getCell(`B${rowNumber}`).value = normalizeText(item.specification);
+    worksheet.getCell(`B${rowNumber}`).value = [item.specification, item.specification2]
+      .map(normalizeText)
+      .filter(Boolean)
+      .join(' ');
     worksheet.getCell(`C${rowNumber}`).value = normalizeText(item.unit);
     worksheet.getCell(`D${rowNumber}`).value = executionQuantity;
     worksheet.getCell(`E${rowNumber}`).value = previousQuantity;
