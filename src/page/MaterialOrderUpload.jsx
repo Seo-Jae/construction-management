@@ -116,6 +116,16 @@ const ORDER_STATUS_LABELS = {
   confirmed: '결재요청',
   cancelled: '취소',
 };
+const formatOrderDisplayNo = (row) => {
+  const orderNo = normalizeText(row?.orderNo || row?.order_no);
+  const status = row?.status || 'draft';
+  const statusLabel = status === 'draft'
+    ? '작성중'
+    : status === 'cancelled'
+      ? '취소'
+      : '발주완료';
+  return orderNo ? `(${statusLabel})${orderNo}` : `(${statusLabel}) 신규 발주서`;
+};
 
 const EMPTY_ORDER = {
   id: '',
@@ -2346,9 +2356,13 @@ export default function MaterialOrderUpload({
       let orderId = order.id;
       let orderNo = order.orderNo;
 
-      if (!orderId) {
+      const needsOrderNo = status !== 'draft' && (!orderId || order.status === 'draft');
+      if (!orderId || needsOrderNo) {
+        const numberFunction = status === 'draft'
+          ? 'preview_material_supply_order_no'
+          : 'next_material_supply_order_no';
         const { data: nextNo, error: numberError } = await supabase.rpc(
-          'next_material_supply_order_no',
+          numberFunction,
           { p_project_name: projectName, p_order_date: order.orderDate },
         );
         if (numberError) throw numberError;
@@ -3396,7 +3410,7 @@ export default function MaterialOrderUpload({
                       }}
                     >
                       <Stack direction="row" alignItems="center" spacing={0.6}>
-                        <Typography sx={{ fontSize: '0.75rem', fontWeight: 900, color: '#0f172a' }}>{row.order_no}</Typography>
+                        <Typography sx={{ fontSize: '0.75rem', fontWeight: 900, color: '#0f172a' }}>{formatOrderDisplayNo(row)}</Typography>
                         <Chip
                           label={ORDER_STATUS_LABELS[row.status] || row.status}
                           size="small"
@@ -3421,7 +3435,7 @@ export default function MaterialOrderUpload({
           <Paper variant="outlined" sx={{ minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             <Stack direction="row" alignItems="center" spacing={0.7} sx={{ px: 1, py: 0.7, borderBottom: '1px solid #cbd5e1', bgcolor: '#eef1f4' }}>
               <Typography sx={{ fontSize: '0.82rem', fontWeight: 900 }}>사급자재 발주서</Typography>
-              {order.orderNo && <Chip label={order.orderNo} size="small" variant="outlined" />}
+              {order.orderNo && <Chip label={formatOrderDisplayNo(order)} size="small" variant="outlined" />}
               {order.status !== 'draft' && <Chip label={ORDER_STATUS_LABELS[order.status]} size="small" color={['ordered', 'confirmed'].includes(order.status) ? 'success' : 'default'} />}
               {order.id && <Button size="small" color="error" variant="outlined" onClick={deleteOrder} startIcon={<DeleteOutlineRoundedIcon />} sx={{ ml: 'auto' }}>삭제</Button>}
             </Stack>
