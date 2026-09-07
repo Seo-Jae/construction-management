@@ -1,3 +1,4 @@
+// v52.48.5.44.161 기본정보·변경이력 각각 팝업 높이 520px 명시 고정
 // v52.48.5.44.160 기본정보·변경이력 각각 팝업 폭 544px 명시 고정
 // v52.48.5.44.159 기본정보 기준 팝업 폭·높이 완전 고정
 // v52.48.5.44.158 기본설정 팝업 폭 544px 고정·탭간 동일 유지
@@ -4228,10 +4229,16 @@ export default function MaterialOrderUpload({
             width: settingsTab === 'history' ? '544px !important' : '544px !important',
             minWidth: settingsTab === 'history' ? '544px !important' : '544px !important',
             maxWidth: settingsTab === 'history' ? '544px !important' : '544px !important',
+            height: settingsTab === 'history' ? '520px !important' : '520px !important',
+            minHeight: settingsTab === 'history' ? '520px !important' : '520px !important',
+            maxHeight: settingsTab === 'history' ? '520px !important' : '520px !important',
             '@media (max-width: 600px)': {
               width: 'calc(100vw - 32px) !important',
               minWidth: 'calc(100vw - 32px) !important',
               maxWidth: 'calc(100vw - 32px) !important',
+              height: 'calc(100vh - 32px) !important',
+              minHeight: 'calc(100vh - 32px) !important',
+              maxHeight: 'calc(100vh - 32px) !important',
             },
           },
         }}
@@ -4248,8 +4255,9 @@ export default function MaterialOrderUpload({
             width: settingsTab === 'history' ? '544px !important' : '544px !important',
             minWidth: settingsTab === 'history' ? '544px !important' : '544px !important',
             maxWidth: settingsTab === 'history' ? '544px !important' : '544px !important',
-            height: 520,
-            maxHeight: 'calc(100vh - 32px)',
+            height: settingsTab === 'history' ? '520px !important' : '520px !important',
+            minHeight: settingsTab === 'history' ? '520px !important' : '520px !important',
+            maxHeight: settingsTab === 'history' ? '520px !important' : '520px !important',
             flexShrink: 0,
             boxSizing: 'border-box',
             display: 'flex',
