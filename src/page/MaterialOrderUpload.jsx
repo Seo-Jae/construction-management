@@ -1,3 +1,4 @@
+// v52.48.5.44.156 기본정보 실제 높이 기준 변경이력 팝업 크기 동기화
 // v52.48.5.44.155 기본설정·변경이력 팝업 크기 통일
 // v52.48.5.44.154 자재발주 기본설정 팝업 폭 축소
 // v52.48.5.44.153 발주 품명 표시순서 연동·Enter 품목행 추가
@@ -578,6 +579,17 @@ export default function MaterialOrderUpload({
   const [settingsTab, setSettingsTab] = useState('basic');
   const [settingsLoading, setSettingsLoading] = useState(false);
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsBasicContentHeight, setSettingsBasicContentHeight] = useState(0);
+
+  const measureSettingsBasicContent = useCallback((node) => {
+    if (!node) return;
+    const measuredHeight = Math.ceil(node.scrollHeight || node.getBoundingClientRect().height || 0);
+    if (measuredHeight > 0) {
+      setSettingsBasicContentHeight((current) =>
+        current === measuredHeight ? current : measuredHeight,
+      );
+    }
+  }, []);
   const [settingsRequired, setSettingsRequired] = useState(true);
   const [resetDialogOpen, setResetDialogOpen] = useState(false);
   const [resetConfirmText, setResetConfirmText] = useState('');
@@ -4314,9 +4326,11 @@ export default function MaterialOrderUpload({
           dividers
           sx={{
             p: 1.5,
-            height: 430,
-            minHeight: 430,
-            maxHeight: 430,
+            height: settingsBasicContentHeight
+              ? settingsBasicContentHeight + 24
+              : 'auto',
+            minHeight: 0,
+            maxHeight: 'calc(100vh - 220px)',
             overflowY: 'auto',
             boxSizing: 'border-box',
             borderTop: 'none',
@@ -4327,7 +4341,10 @@ export default function MaterialOrderUpload({
               <CircularProgress size={26} />
             </Box>
           ) : settingsTab === 'basic' ? (
-            <Box sx={{ maxWidth: 520, mx: 'auto' }}>
+            <Box
+              ref={measureSettingsBasicContent}
+              sx={{ maxWidth: 520, mx: 'auto' }}
+            >
               <Box
                 sx={{
                   display: 'grid',
