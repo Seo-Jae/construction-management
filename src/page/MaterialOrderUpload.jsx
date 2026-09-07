@@ -1,3 +1,4 @@
+// v52.48.5.44.167 하위폴더 경고띠 제거·현재폴더 표시 위치변경
 // v52.48.5.44.166 기본설정 팝업 높이 강제고정·작성자 수령자 명칭변경
 // v52.48.5.44.165 기본설정 안내 줄바꿈·팝업 높이 고정
 // v52.48.5.44.164 기본정보 라벨 공지사항 본문 스타일 적용
@@ -2964,9 +2965,6 @@ export default function MaterialOrderUpload({
   const showProcessFolderTabs =
     selectedCategoryFolders.length > 0 &&
     processFoldersOpen;
-  const requiresOrderFolderSelection =
-    (categoryFoldersByCategory.get(order.categoryId) || []).length > 0 &&
-    !normalizeText(order.processName);
   const masterProcessOptions = [
     ...new Set([
       ...(categoryFoldersByCategory.get(masterForm.categoryId) || []).map((folder) => folder.name),
@@ -3566,22 +3564,27 @@ export default function MaterialOrderUpload({
           <Paper variant="outlined" sx={{ minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             <Stack direction="row" alignItems="center" spacing={0.7} sx={{ px: 1, py: 0.7, borderBottom: '1px solid #cbd5e1', bgcolor: '#eef1f4' }}>
               <Typography sx={{ fontSize: '0.82rem', fontWeight: 900 }}>사급자재 발주서</Typography>
+              <Box
+                sx={{
+                  px: 0.9,
+                  py: 0.28,
+                  border: '1px solid #fdba74',
+                  borderRadius: 1,
+                  bgcolor: '#fff7ed',
+                  color: '#9a3412',
+                  fontSize: '0.67rem',
+                  fontWeight: 900,
+                  lineHeight: 1.35,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                현재 폴더 · {selectedOrderFolderCategory?.name || categoryNameById(categories, order.categoryId) || '미선택'}
+                {selectedOrderFolderProcess ? ' > ' + selectedOrderFolderProcess : ''}
+              </Box>
               {order.orderNo && <Chip label={formatOrderDisplayNo(order)} size="small" variant="outlined" />}
               {order.status !== 'draft' && <Chip label={ORDER_STATUS_LABELS[order.status] || order.status} size="small" color={['ordered', 'confirmed'].includes(order.status) ? 'success' : 'default'} />}
               {order.id && <Button size="small" color="error" variant="outlined" onClick={deleteOrder} startIcon={<DeleteOutlineRoundedIcon />} sx={{ ml: 'auto' }}>삭제</Button>}
             </Stack>
-
-            {requiresOrderFolderSelection && !isLocked && (
-              <Box sx={{ px: 1, py: 0.35, borderBottom: '1px solid #f3d08a', bgcolor: '#fff8e1' }}>
-                <Chip
-                  size="small"
-                  color="warning"
-                  variant="outlined"
-                  label="하위폴더 선택 필요"
-                  sx={{ height: 21, fontSize: '0.6rem', fontWeight: 850 }}
-                />
-              </Box>
-            )}
 
             <Stack
               direction="row"
@@ -3596,7 +3599,7 @@ export default function MaterialOrderUpload({
               }}
             >
               <Typography sx={{ flexShrink: 0, fontSize: '0.69rem', fontWeight: 900, color: '#334155' }}>
-                {showProcessFolderTabs ? selectedOrderFolderCategory?.name : '자재분류'}
+                {showProcessFolderTabs ? '하위폴더' : '자재분류'}
               </Typography>
               <Stack
                 role="tablist"
@@ -3622,7 +3625,7 @@ export default function MaterialOrderUpload({
                         role="tab"
                         aria-selected={selected}
                         size="small"
-                        variant={selected ? 'contained' : 'outlined'}
+                        variant="outlined"
                         disabled={isLocked}
                         onClick={() => {
                           setSelectedOrderFolderId(selectedOrderFolderCategory.id);
@@ -3669,7 +3672,7 @@ export default function MaterialOrderUpload({
                           role="tab"
                           aria-selected={selected}
                           size="small"
-                          variant={selected ? 'contained' : 'outlined'}
+                          variant="outlined"
                           disabled={isLocked}
                           onClick={() => {
                             const folderChanged =
