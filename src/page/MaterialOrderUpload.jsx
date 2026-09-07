@@ -4316,11 +4316,7 @@ export default function MaterialOrderUpload({
               <CircularProgress size={26} />
             </Box>
           ) : settingsTab === 'basic' ? (
-            <Box>
-              <Alert severity="info" sx={{ mb: 1.2, py: 0.25 }}>
-                아래 값은 새 발주서를 만들 때 자동으로 입력됩니다. 발주서별로 다른 경우에는 작성 화면에서 그대로 수정할 수 있습니다.
-              </Alert>
-
+            <Box sx={{ maxWidth: 520, mx: 'auto' }}>
               <Box
                 sx={{
                   display: 'grid',
