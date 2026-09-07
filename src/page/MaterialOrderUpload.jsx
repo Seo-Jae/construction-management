@@ -1,3 +1,4 @@
+// v52.48.5.44.160 기본정보·변경이력 각각 팝업 폭 544px 명시 고정
 // v52.48.5.44.159 기본정보 기준 팝업 폭·높이 완전 고정
 // v52.48.5.44.158 기본설정 팝업 폭 544px 고정·탭간 동일 유지
 // v52.48.5.44.157 기본정보·변경이력 팝업 폭 완전 고정
@@ -4222,6 +4223,18 @@ export default function MaterialOrderUpload({
 
       <Dialog
         open={settingsDialogOpen}
+        sx={{
+          '& .MuiDialog-paper': {
+            width: settingsTab === 'history' ? '544px !important' : '544px !important',
+            minWidth: settingsTab === 'history' ? '544px !important' : '544px !important',
+            maxWidth: settingsTab === 'history' ? '544px !important' : '544px !important',
+            '@media (max-width: 600px)': {
+              width: 'calc(100vw - 32px) !important',
+              minWidth: 'calc(100vw - 32px) !important',
+              maxWidth: 'calc(100vw - 32px) !important',
+            },
+          },
+        }}
         onClose={(_, reason) => {
           if (settingsRequired || settingsSaving) return;
           if (reason === 'backdropClick' || reason === 'escapeKeyDown') {
@@ -4232,9 +4245,9 @@ export default function MaterialOrderUpload({
         maxWidth={false}
         PaperProps={{
           sx: {
-            width: '544px !important',
-            minWidth: '544px !important',
-            maxWidth: '544px !important',
+            width: settingsTab === 'history' ? '544px !important' : '544px !important',
+            minWidth: settingsTab === 'history' ? '544px !important' : '544px !important',
+            maxWidth: settingsTab === 'history' ? '544px !important' : '544px !important',
             height: 520,
             maxHeight: 'calc(100vh - 32px)',
             flexShrink: 0,
@@ -4591,10 +4604,16 @@ export default function MaterialOrderUpload({
           ) : (
             <Box
               sx={{
-                width: '100%',
-                maxWidth: 520,
+                width: '520px',
+                minWidth: '520px',
+                maxWidth: '520px',
                 mx: 'auto',
                 boxSizing: 'border-box',
+                '@media (max-width: 600px)': {
+                  width: '100%',
+                  minWidth: 0,
+                  maxWidth: '100%',
+                },
               }}
             >
               <Typography sx={{ mb: 1, fontSize: '0.75rem', fontWeight: 900 }}>
