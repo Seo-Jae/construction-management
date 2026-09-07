@@ -1,3 +1,4 @@
+// v52.48.5.44.168 선택 하위폴더 강조색 적용
 // v52.48.5.44.167 하위폴더 경고띠 제거·현재폴더 표시 위치변경
 // v52.48.5.44.166 기본설정 팝업 높이 강제고정·작성자 수령자 명칭변경
 // v52.48.5.44.165 기본설정 안내 줄바꿈·팝업 높이 고정
@@ -3651,9 +3652,19 @@ export default function MaterialOrderUpload({
                           px: 1,
                           py: 0,
                           borderRadius: 1,
+                          bgcolor: selected ? '#ffedd5' : '#ffffff',
+                          borderColor: selected ? '#fb923c' : undefined,
+                          color: selected ? '#9a3412' : undefined,
+                          boxShadow: selected ? 'inset 0 0 0 1px #fdba74' : 'none',
                           fontSize: '0.66rem',
-                          fontWeight: 850,
+                          fontWeight: selected ? 900 : 850,
                           whiteSpace: 'nowrap',
+                          '&:hover': selected
+                            ? {
+                                bgcolor: '#fed7aa',
+                                borderColor: '#f97316',
+                              }
+                            : {},
                         }}
                       >
                         {processName}
