@@ -1,3 +1,4 @@
+// v52.48.5.44.165 기본설정 안내 줄바꿈·팝업 높이 고정
 // v52.48.5.44.164 기본정보 라벨 공지사항 본문 스타일 적용
 // v52.48.5.44.163 기본설정 팝업 공지사항 스타일 전면 적용
 // v52.48.5.44.162 기본설정 팝업 공지사항형 타이포그래피 개선
@@ -4238,8 +4239,9 @@ export default function MaterialOrderUpload({
         maxWidth="lg"
         PaperProps={{
           sx: {
-            height: { xs: '92vh', md: '82vh' },
-            maxHeight: { xs: '92vh', md: '820px' },
+            height: { xs: 'calc(100vh - 32px)', md: '820px' },
+            minHeight: { xs: 'calc(100vh - 32px)', md: '820px' },
+            maxHeight: { xs: 'calc(100vh - 32px)', md: '820px' },
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
@@ -4562,7 +4564,9 @@ export default function MaterialOrderUpload({
                     lineHeight: 1.85,
                   }}
                 >
-                  기본설정을 저장한 이후 생성하는 발주서에는 작성자(요청자), 수령자, 연락처, 납품장소가 자동 입력됩니다. 이미 저장된 발주서의 값은 변경하지 않으며, 새 발주서에서 필요할 때 직접 수정할 수 있습니다.
+                  기본설정을 저장한 이후 생성하는 발주서에는 작성자(요청자), 수령자, 연락처, 납품장소가 자동 입력됩니다.
+                  <br />
+                  이미 저장된 발주서의 값은 변경하지 않으며, 새 발주서에서 필요할 때 직접 수정할 수 있습니다.
                 </Typography>
               </Paper>
             </Box>
