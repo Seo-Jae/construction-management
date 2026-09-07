@@ -3554,9 +3554,21 @@ export default function MaterialOrderUpload({
             <Stack direction="row" alignItems="center" spacing={0.7} sx={{ px: 1, py: 0.7, borderBottom: '1px solid #cbd5e1', bgcolor: '#eef1f4' }}>
               <Typography sx={{ fontSize: '0.82rem', fontWeight: 900 }}>사급자재 발주서</Typography>
               {order.orderNo && <Chip label={formatOrderDisplayNo(order)} size="small" variant="outlined" />}
-              <Chip label={ORDER_STATUS_LABELS[order.status] || '작성중'} size="small" color={['ordered', 'confirmed'].includes(order.status) ? 'success' : 'warning'} />
+              {order.status !== 'draft' && <Chip label={ORDER_STATUS_LABELS[order.status] || order.status} size="small" color={['ordered', 'confirmed'].includes(order.status) ? 'success' : 'default'} />}
               {order.id && <Button size="small" color="error" variant="outlined" onClick={deleteOrder} startIcon={<DeleteOutlineRoundedIcon />} sx={{ ml: 'auto' }}>삭제</Button>}
             </Stack>
+
+            {requiresOrderFolderSelection && !isLocked && (
+              <Box sx={{ px: 1, py: 0.35, borderBottom: '1px solid #f3d08a', bgcolor: '#fff8e1' }}>
+                <Chip
+                  size="small"
+                  color="warning"
+                  variant="outlined"
+                  label="하위폴더 선택 필요"
+                  sx={{ height: 21, fontSize: '0.6rem', fontWeight: 850 }}
+                />
+              </Box>
+            )}
 
             <Stack
               direction="row"
@@ -3573,15 +3585,6 @@ export default function MaterialOrderUpload({
               <Typography sx={{ flexShrink: 0, fontSize: '0.69rem', fontWeight: 900, color: '#334155' }}>
                 {showProcessFolderTabs ? selectedOrderFolderCategory?.name : '자재분류'}
               </Typography>
-              {requiresOrderFolderSelection && !isLocked && (
-                <Chip
-                  size="small"
-                  color="warning"
-                  variant="outlined"
-                  label="하위폴더 선택 필요"
-                  sx={{ height: 21, flexShrink: 0, fontSize: '0.6rem', fontWeight: 850 }}
-                />
-              )}
               <Stack
                 role="tablist"
                 aria-label="발주서 자재분류"
