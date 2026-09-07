@@ -24,6 +24,7 @@ const buildSpecificationCellValue = (specification, specification2) => {
   if (!secondSpecification) return firstSpecification;
   const secondFont = {
     bold: true,
+    size: 9,
     color: { argb: 'FFFF0000' },
   };
   if (!firstSpecification) {
