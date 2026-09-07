@@ -27,12 +27,16 @@ const buildSpecificationCellValue = (specification, specification2) => {
     color: { argb: 'FFFF0000' },
   };
   if (!firstSpecification) {
-    return [{ text: secondSpecification, font: secondFont }];
+    return {
+      richText: [{ text: secondSpecification, font: secondFont }],
+    };
   }
-  return [
-    { text: firstSpecification },
-    { text: ` / ${secondSpecification}`, font: secondFont },
-  ];
+  return {
+    richText: [
+      { text: firstSpecification },
+      { text: ` / ${secondSpecification}`, font: secondFont },
+    ],
+  };
 };
 const normalizeTemplateName = (value) => normalizeText(value)
   .toLocaleLowerCase('ko-KR')
