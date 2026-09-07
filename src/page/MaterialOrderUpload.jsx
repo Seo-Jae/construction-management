@@ -1724,7 +1724,6 @@ export default function MaterialOrderUpload({
   }, [loadMaterialPicker, materialPickerOpen]);
 
   const addMaterialToOrder = (material) => {
-    const previous = numberValue(material.previousQuantity);
     const execution = numberValue(material.executionQuantity);
     loadSpecification2Options(material.materialId || material.id);
     setOrderItems((current) =>
@@ -1733,7 +1732,7 @@ export default function MaterialOrderUpload({
         {
         id: '',
         clientKey: createOrderItemKey(),
-        projectMaterialId: material.projectMaterialId || '',
+        projectMaterialId: '',
         materialId: material.materialId || material.material_id || material.id,
         masterStandardName: material.standard_name,
         masterSpecification: material.specification || '',
@@ -1744,10 +1743,10 @@ export default function MaterialOrderUpload({
         specification2: '',
         unit: material.unit || '',
         executionQuantity: execution,
-        previousQuantity: previous,
+        previousQuantity: 0,
         currentQuantity: 0,
-        cumulativeQuantity: previous,
-        executionRatio: execution > 0 ? (previous / execution) * 100 : 0,
+        cumulativeQuantity: 0,
+        executionRatio: 0,
           note: '',
         },
       ]),
@@ -1964,6 +1963,22 @@ export default function MaterialOrderUpload({
       recalculateOrderItemBalances(current.map((row, rowIndex) => {
         if (rowIndex !== index) return row;
         const nextRow = { ...row, [field]: value };
+        if (field === 'specification2') {
+          const normalizedSpecification2 = normalizeText(value).replace(/,/g, '');
+          const matchingProjectMaterial = orderMaterialOptions.find((option) => (
+            option.materialId === row.materialId &&
+            option.projectMaterialId &&
+            normalizeText(option.specification_2).replace(/,/g, '') === normalizedSpecification2
+          ));
+          nextRow.projectMaterialId = matchingProjectMaterial?.projectMaterialId || '';
+          nextRow.previousQuantity = matchingProjectMaterial?.previousQuantity || 0;
+          nextRow.executionQuantity = matchingProjectMaterial?.executionQuantity || row.executionQuantity;
+          nextRow.cumulativeQuantity = nextRow.previousQuantity + numberValue(nextRow.currentQuantity);
+          nextRow.executionRatio = nextRow.executionQuantity > 0
+            ? (nextRow.cumulativeQuantity / nextRow.executionQuantity) * 100
+            : 0;
+          return nextRow;
+        }
         if (field === 'specification' && row.materialId) return row;
         if (['standardName', 'specification', 'specification2', 'unit'].includes(field)) {
           nextRow.projectMaterialId = '';
@@ -2117,13 +2132,11 @@ export default function MaterialOrderUpload({
         if (rowIndex !== index) return row;
 
         const execution = numberValue(material.executionQuantity);
-        const previous = numberValue(material.previousQuantity);
         const currentQuantity = numberValue(row.currentQuantity);
-        const cumulative = previous + currentQuantity;
 
         return {
           ...row,
-          projectMaterialId: material.projectMaterialId || '',
+          projectMaterialId: '',
           materialId: material.materialId || material.material_id || '',
           masterStandardName: material.standard_name || '',
           masterSpecification: material.specification || '',
@@ -2134,9 +2147,9 @@ export default function MaterialOrderUpload({
           specification2: '',
           unit: material.unit || '',
           executionQuantity: execution,
-          previousQuantity: previous,
-          cumulativeQuantity: cumulative,
-          executionRatio: execution > 0 ? (cumulative / execution) * 100 : 0,
+          previousQuantity: 0,
+          cumulativeQuantity: currentQuantity,
+          executionRatio: execution > 0 ? (currentQuantity / execution) * 100 : 0,
         };
       })),
     );
