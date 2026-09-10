@@ -4522,12 +4522,31 @@ export default function MaterialOrderUpload({
         </DialogActions>
       </Dialog>
 
-      <Dialog open={confirmationHistoryOpen} onClose={() => setConfirmationHistoryOpen(false)} fullWidth maxWidth="sm">
+      <Dialog
+        open={confirmationHistoryOpen}
+        onClose={() => setConfirmationHistoryOpen(false)}
+        fullWidth
+        maxWidth="md"
+        slotProps={{
+          paper: {
+            sx: {
+              width: 'calc(100% - 32px)',
+              maxWidth: 760,
+              m: 2,
+              height: 820,
+              maxHeight: 'calc(100dvh - 32px)',
+              display: 'flex',
+              flexDirection: 'column',
+              overflow: 'hidden',
+            },
+          },
+        }}
+      >
         <DialogTitle sx={{ fontSize: '1.05rem', fontWeight: 900 }}>확정 취소 이력</DialogTitle>
-        <DialogContent dividers>
-          <Stack spacing={2}>
+        <DialogContent dividers sx={{ p: { xs: 2, md: 3 }, flex: '1 1 auto', minHeight: 0, overflowY: 'auto', overflowX: 'hidden', overscrollBehavior: 'contain' }}>
+          <Stack spacing={2} sx={{ minWidth: 0 }}>
             {[...(order.confirmationHistory || [])].reverse().map((entry, index) => (
-              <Paper key={`${entry.cancelled_at}-${index}`} variant="outlined" sx={{ p: 2 }}>
+              <Paper key={`${entry.cancelled_at}-${index}`} variant="outlined" sx={{ p: 2, minWidth: 0 }}>
                 <Typography sx={{ fontSize: '0.88rem', fontWeight: 700 }}>{entry.order_snapshot?.order_no || order.orderNo}</Typography>
                 <Typography sx={{ mt: 0.5, color: '#64748b', fontSize: '0.72rem' }}>{new Date(entry.cancelled_at).toLocaleString('ko-KR')} · {entry.cancelled_by_email || entry.cancelled_by}</Typography>
                 <Typography sx={{ mt: 1, fontSize: '0.88rem', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{entry.reason}</Typography>
@@ -4535,9 +4554,9 @@ export default function MaterialOrderUpload({
                 <Box component="details" sx={{ mt: 1, fontSize: '0.8rem' }}>
                   <Box component="summary" sx={{ cursor: 'pointer', color: '#2563eb' }}>취소 전 발주내용 보기</Box>
                   <Typography sx={{ mt: 1, fontSize: '0.8rem', overflowWrap: 'anywhere' }}>수령자 {entry.order_snapshot?.receiver_name || '-'} · 납품장소 {entry.order_snapshot?.delivery_location || '-'}</Typography>
-                  <TableContainer sx={{ mt: 1 }}>
-                    <Table size="small" sx={{ minWidth: 420 }}>
-                      <TableHead><TableRow>{['품명', '규격', '규격(2)', '단위', '금회발주량'].map((label) => <TableCell key={label}>{label}</TableCell>)}</TableRow></TableHead>
+                  <TableContainer sx={{ mt: 1, overflowX: 'auto' }}>
+                    <Table size="small" sx={{ minWidth: 620, '& .MuiTableCell-root': { whiteSpace: 'nowrap', px: 1, py: 1 } }}>
+                      <TableHead><TableRow>{['품명', '규격', '규격(2)', '단위', '금회발주량'].map((label) => <TableCell key={label} align="center">{label}</TableCell>)}</TableRow></TableHead>
                       <TableBody>
                         {(entry.item_snapshot || []).map((item, itemIndex) => (
                           <TableRow key={item.id || itemIndex}>
