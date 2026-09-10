@@ -4433,38 +4433,16 @@ export default function MaterialOrderUpload({
         }}
         disableEscapeKeyDown={settingsRequired}
         fullWidth
-        maxWidth="lg"
-        sx={{
-          '& .MuiDialog-paper': {
-            height: {
-              xs: 'calc(100vh - 32px) !important',
-              md: '820px !important',
-            },
-            minHeight: {
-              xs: 'calc(100vh - 32px) !important',
-              md: '820px !important',
-            },
-            maxHeight: {
-              xs: 'calc(100vh - 32px) !important',
-              md: '820px !important',
-            },
-          },
-        }}
+        maxWidth="md"
         slotProps={{
           paper: {
             sx: {
-              height: {
-                xs: 'calc(100vh - 32px) !important',
-                md: '820px !important',
-              },
-              minHeight: {
-                xs: 'calc(100vh - 32px) !important',
-                md: '820px !important',
-              },
-              maxHeight: {
-                xs: 'calc(100vh - 32px) !important',
-                md: '820px !important',
-              },
+              // 탭에 관계없이 같은 크기를 유지하고 낮은 화면에서는 본문만 스크롤합니다.
+              width: 'calc(100% - 32px)',
+              maxWidth: 760,
+              m: 2,
+              height: 820,
+              maxHeight: 'calc(100dvh - 32px)',
               display: 'flex',
               flexDirection: 'column',
               overflow: 'hidden',
@@ -4474,7 +4452,7 @@ export default function MaterialOrderUpload({
       >
         <DialogTitle
           sx={{
-            px: 2.25,
+            px: { xs: 2, md: 3 },
             py: 1.5,
             borderBottom: '1px solid #e2e8f0',
             color: '#0f172a',
@@ -4486,9 +4464,8 @@ export default function MaterialOrderUpload({
               <Typography
                 sx={{
                   color: '#0f172a',
-                  fontSize: '1.15rem',
+                  fontSize: '1.05rem',
                   fontWeight: 900,
-                  letterSpacing: '-0.02em',
                 }}
               >
                 자재발주 기본설정
@@ -4497,8 +4474,8 @@ export default function MaterialOrderUpload({
                 sx={{
                   mt: 0.25,
                   color: '#64748b',
-                  fontSize: '0.76rem',
-                  lineHeight: 1.55,
+                  fontSize: '0.72rem',
+                  lineHeight: 1.85,
                 }}
               >
                 {projectName} · 발주서에 반복 입력되는 기본정보를 설정합니다.
@@ -4520,7 +4497,8 @@ export default function MaterialOrderUpload({
           onChange={(_, value) => setSettingsTab(value)}
           sx={{
             position: 'relative',
-            px: 2.25,
+            px: { xs: 2, md: 3 },
+            flexShrink: 0,
             minHeight: 44,
             '&::after': {
               content: '""',
@@ -4547,9 +4525,8 @@ export default function MaterialOrderUpload({
               position: 'relative',
               overflow: 'visible',
               color: '#64748b',
-              fontSize: '0.86rem',
-              fontWeight: 900,
-              letterSpacing: '-0.015em',
+              fontSize: '0.88rem',
+              fontWeight: 700,
             },
             '& .MuiTab-root.Mui-selected': {
               color: '#2563eb',
@@ -4596,16 +4573,18 @@ export default function MaterialOrderUpload({
             <Box
               sx={{
                 width: '100%',
-                maxWidth: 820,
+                maxWidth: 640,
                 mx: 'auto',
                 boxSizing: 'border-box',
                 '& .MuiOutlinedInput-root': {
                   bgcolor: '#ffffff',
+                  minHeight: 40,
                 },
                 '& .MuiInputBase-input': {
-                  color: '#1e293b',
-                  fontSize: '0.96rem',
-                  lineHeight: 1.55,
+                  color: '#334155',
+                  fontSize: '0.88rem',
+                  fontWeight: 400,
+                  lineHeight: 1.85,
                 },
                 '& .MuiInputLabel-root': {
                   color: '#475569',
@@ -4617,9 +4596,10 @@ export default function MaterialOrderUpload({
                 },
                 '& .MuiFormHelperText-root': {
                   mt: 0.4,
-                  color: '#94a3b8',
-                  fontSize: '0.74rem',
-                  lineHeight: 1.6,
+                  mx: 0,
+                  color: '#64748b',
+                  fontSize: '0.72rem',
+                  lineHeight: 1.85,
                 },
               }}
             >
@@ -4627,7 +4607,7 @@ export default function MaterialOrderUpload({
                 sx={{
                   display: 'grid',
                   gridTemplateColumns: 'minmax(0, 1fr)',
-                  gap: 1.35,
+                  gap: 2,
                 }}
               >
                 <Box>
@@ -4766,7 +4746,7 @@ export default function MaterialOrderUpload({
               <Paper
                 variant="outlined"
                 sx={{
-                  mt: 2,
+                  mt: 2.5,
                   p: 2,
                   bgcolor: '#f8fafc',
                   borderColor: '#e2e8f0',
@@ -4776,7 +4756,7 @@ export default function MaterialOrderUpload({
                 <Typography
                   sx={{
                     color: '#0f172a',
-                    fontSize: '0.92rem',
+                    fontSize: '0.88rem',
                     fontWeight: 900,
                   }}
                 >
@@ -4785,12 +4765,12 @@ export default function MaterialOrderUpload({
                 <Typography
                   sx={{
                     mt: 0.65,
-                    color: '#64748b',
-                    fontSize: '0.84rem',
+                    color: '#334155',
+                    fontSize: '0.88rem',
                     lineHeight: 1.85,
                   }}
                 >
-                  기본설정을 저장한 이후 생성하는 발주서에는 작성자(요청자), 수령자, 연락처, 납품장소가 자동 입력됩니다.
+                  기본설정을 저장한 이후 생성하는 발주서에는 작성자, 수령자, 연락처, 납품장소가 자동 입력됩니다.
                   <br />
                   이미 저장된 발주서의 값은 변경하지 않으며, 새 발주서에서 필요할 때 직접 수정할 수 있습니다.
                 </Typography>
@@ -4961,7 +4941,7 @@ export default function MaterialOrderUpload({
               sx={{
                 width: '100%',
                 minWidth: 0,
-                maxWidth: 820,
+                maxWidth: 640,
                 mx: 'auto',
                 boxSizing: 'border-box',
                 '@media (max-width: 600px)': {
@@ -4975,9 +4955,8 @@ export default function MaterialOrderUpload({
                 sx={{
                   mb: 1.25,
                   color: '#0f172a',
-                  fontSize: '1rem',
+                  fontSize: '1.05rem',
                   fontWeight: 900,
-                  letterSpacing: '-0.015em',
                 }}
               >
                 기본설정 변경이력
@@ -4990,13 +4969,13 @@ export default function MaterialOrderUpload({
                     py: 5,
                     textAlign: 'center',
                     color: '#94a3b8',
-                    fontSize: '0.72rem',
+                    fontSize: '0.88rem',
                   }}
                 >
                   아직 저장된 변경이력이 없습니다.
                 </Paper>
               ) : (
-                <Stack spacing={0.8}>
+                <Stack spacing={1.5}>
                   {settingsHistory.map((history, index) => {
                     const basic = history.basic_defaults || {};
                     const materials = Array.isArray(history.material_snapshot)
@@ -5011,17 +4990,17 @@ export default function MaterialOrderUpload({
                         key={history.id || `${history.changed_at}-${index}`}
                         variant="outlined"
                         sx={{
-                          p: 1.6,
+                          p: 2,
                           borderColor: '#e2e8f0',
                           borderRadius: 1.5,
                           bgcolor: '#ffffff',
                         }}
                       >
-                        <Stack direction="row" alignItems="center" spacing={0.6}>
+                        <Stack direction="row" alignItems="center" useFlexGap spacing={0.8} sx={{ flexWrap: 'wrap' }}>
                           <Typography
                             sx={{
                               color: '#1e293b',
-                              fontSize: '0.9rem',
+                              fontSize: '0.88rem',
                               fontWeight: 900,
                             }}
                           >
@@ -5036,7 +5015,7 @@ export default function MaterialOrderUpload({
                             sx={{
                               ml: 'auto !important',
                               color: '#94a3b8',
-                              fontSize: '0.74rem',
+                              fontSize: '0.72rem',
                             }}
                           >
                             {history.changed_at
@@ -5048,9 +5027,10 @@ export default function MaterialOrderUpload({
                         <Typography
                           sx={{
                             mt: 0.75,
-                            color: '#475569',
-                            fontSize: '0.82rem',
-                            lineHeight: 1.75,
+                            color: '#334155',
+                            fontSize: '0.88rem',
+                            lineHeight: 1.85,
+                            overflowWrap: 'anywhere',
                           }}
                         >
                           요청자 {basic.requesterName || '-'} · 수령자 {basic.receiverName || '-'} · 연락처 {basic.receiverPhone || '-'} · 납품장소 {basic.deliveryLocation || '-'}
@@ -5060,7 +5040,8 @@ export default function MaterialOrderUpload({
                           sx={{
                             mt: 0.45,
                             color: '#94a3b8',
-                            fontSize: '0.74rem',
+                            fontSize: '0.72rem',
+                            overflowWrap: 'anywhere',
                           }}
                         >
                           변경자 {history.changed_by || '-'}
@@ -5076,8 +5057,11 @@ export default function MaterialOrderUpload({
 
         <DialogActions
           sx={{
-            px: 2.25,
+            px: { xs: 2, md: 3 },
             py: 1.25,
+            gap: 1,
+            flexWrap: 'wrap',
+            '& > :not(style) ~ :not(style)': { ml: 0 },
             borderTop: '1px solid #e2e8f0',
             bgcolor: '#ffffff',
           }}
