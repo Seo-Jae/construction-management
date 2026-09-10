@@ -1,4 +1,4 @@
-import React, {
+import {
   useCallback,
   useEffect,
   useRef,
@@ -278,9 +278,12 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
+    let currentSession = null;
+    let authEventReceived = false;
 
     supabase.auth.getSession().then(({ data: { session: nextSession } }) => {
-      if (!active) return;
+      if (!active || authEventReceived) return;
+      currentSession = nextSession;
       setSession(nextSession);
 
       if (nextSession) {
@@ -294,6 +297,17 @@ export default function App() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((authEvent, nextSession) => {
       if (!active) return;
+      authEventReceived = true;
+
+      // v52.48.5.44.173: 새 로그인에 이전 접속의 비활동 시간을 적용하지 않습니다.
+      // 세션 복원, 토큰 갱신, 창 복귀의 반복 SIGNED_IN은 기존 시간을 유지합니다.
+      if (authEvent === 'SIGNED_IN' && nextSession && !currentSession) {
+        window.localStorage.setItem(LAST_ACTIVITY_STORAGE_KEY, String(Date.now()));
+        window.sessionStorage.removeItem(LAST_ACTIVITY_STORAGE_KEY);
+        setLoginNotice('');
+      }
+
+      currentSession = nextSession;
       setSession(nextSession);
 
       if (nextSession) {
