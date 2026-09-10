@@ -571,6 +571,17 @@ export default function MaterialOrderUpload({
     () => new Set(),
   );
   const [saving, setSaving] = useState(false);
+  const [materialRequestOpen, setMaterialRequestOpen] = useState(false);
+  const [materialRequestTargetKey, setMaterialRequestTargetKey] = useState('');
+  const [materialRequestPrompt, setMaterialRequestPrompt] = useState(null);
+  const materialNameInputs = useRef(new Map());
+  const [materialRequestForm, setMaterialRequestForm] = useState({ standardName: '', specification: '', unit: '' });
+  const [materialRequestsOpen, setMaterialRequestsOpen] = useState(false);
+  const [materialRequests, setMaterialRequests] = useState([]);
+  const [reviewRequest, setReviewRequest] = useState(null);
+  const [requestMasterOptions, setRequestMasterOptions] = useState([]);
+  const [requestMasterSelection, setRequestMasterSelection] = useState(null);
+  const [newMasterRequest, setNewMasterRequest] = useState(null);
   const [confirmationCancelOpen, setConfirmationCancelOpen] = useState(false);
   const [confirmationCancelReason, setConfirmationCancelReason] = useState('');
   const [confirmationHistoryOpen, setConfirmationHistoryOpen] = useState(false);
@@ -628,7 +639,7 @@ export default function MaterialOrderUpload({
 
   const notify = useCallback((severity, text) => {
     setToast({ severity, text });
-  }, []);
+  }, [setToast]);
 
   const handleSchemaError = useCallback(
     (error) => {
@@ -1442,6 +1453,23 @@ export default function MaterialOrderUpload({
     [projectName],
   );
 
+  const resolveRequestedMaterials = useCallback(async (items) => {
+    const ids = [...new Set(items.map((item) => item.materialRequestId).filter(Boolean))];
+    if (!ids.length) return items;
+    const { data, error } = await supabase.from('material_registration_requests')
+      .select('id, material_id, master:material_master_items(id, category_id, process_name, standard_name, specification, unit, is_active)')
+      .eq('project_name', projectName).in('id', ids);
+    if (error) throw error;
+    const requests = new Map((data || []).map((row) => [row.id, row]));
+    return items.map((item) => {
+      const master = requests.get(item.materialRequestId)?.master;
+      if (!master?.is_active) return item;
+      return { ...item, materialId: master.id, projectMaterialId: item.materialId === master.id ? item.projectMaterialId : '',
+        categoryId: master.category_id, processName: master.process_name || '', standardName: master.standard_name,
+        masterStandardName: master.standard_name, specification: master.specification || '', masterSpecification: master.specification || '', unit: master.unit || '' };
+    });
+  }, [projectName]);
+
   const openOrder = useCallback(
     async (row) => {
       setLoading(true);
@@ -1455,6 +1483,7 @@ export default function MaterialOrderUpload({
 
         let mapped = (items || []).map((item) => ({
           id: item.id,
+          materialRequestId: item.material_request_id || '',
           clientKey: item.id || createOrderItemKey(),
           projectMaterialId: item.project_material_id || '',
           materialId: item.material_id,
@@ -1474,7 +1503,7 @@ export default function MaterialOrderUpload({
           note: item.note || '',
         }));
 
-        if (row.status === 'draft') mapped = await refreshBalances(mapped, row.id);
+        if (row.status === 'draft') mapped = await refreshBalances(await resolveRequestedMaterials(mapped), row.id);
         else mapped = recalculateOrderItemBalances(mapped);
 
         const nextCategoryId = row.category_id || categories[0]?.id || '';
@@ -1510,7 +1539,7 @@ export default function MaterialOrderUpload({
         setLoading(false);
       }
     },
-    [categories, categoryFolders, notify, refreshBalances],
+    [categories, categoryFolders, notify, refreshBalances, resolveRequestedMaterials],
   );
 
   const loadMaterialPicker = useCallback(async () => {
@@ -2173,6 +2202,7 @@ export default function MaterialOrderUpload({
           ...row,
           projectMaterialId: '',
           materialId: material.materialId || material.material_id || '',
+          materialRequestId: '',
           masterStandardName: material.standard_name || '',
           masterSpecification: material.specification || '',
           categoryId: material.category_id || '',
@@ -2199,6 +2229,7 @@ export default function MaterialOrderUpload({
           ...row,
           projectMaterialId: '',
           materialId: '',
+          materialRequestId: '',
           masterStandardName: '',
           masterSpecification: '',
           categoryId: order.categoryId,
@@ -2362,7 +2393,7 @@ export default function MaterialOrderUpload({
   const saveOrder = async (status = 'draft') => {
     if (!projectName || isLocked) return;
 
-    const savableItems = orderItems.filter((row) =>
+    let savableItems = orderItems.filter((row) =>
       [
         row.standardName,
         row.specification,
@@ -2411,9 +2442,19 @@ export default function MaterialOrderUpload({
       return;
     }
 
+    try {
+      savableItems = await resolveRequestedMaterials(savableItems);
+    } catch (error) {
+      notify('error', `자재 등록 요청 조회 실패: ${error.message}`);
+      return;
+    }
     const unlinkedMaterial = savableItems.find((row) => !row.materialId);
-    if (unlinkedMaterial) {
-      notify('warning', '품명은 자재마스터에 등록된 항목에서 선택해주세요.');
+    if (unlinkedMaterial && status !== 'draft') {
+      notify('warning', '등록 대기 자재가 있습니다. 자재관리자의 마스터 연결 후 확정해주세요.');
+      return;
+    }
+    if (savableItems.some((row) => !row.materialId && !row.materialRequestId)) {
+      notify('warning', '미등록 품목은 신규 자재 등록 요청으로 추가해주세요.');
       return;
     }
 
@@ -2486,7 +2527,7 @@ export default function MaterialOrderUpload({
       const resolvedItems = projectCatalogReady
         ? await Promise.all(
           savableItems.map(async (row) => {
-            if (row.projectMaterialId) return row;
+            if (row.projectMaterialId || !row.materialId) return row;
             const { data: projectMaterialId, error } = await supabase.rpc(
               'resolve_material_supply_project_item',
               {
@@ -2577,6 +2618,7 @@ export default function MaterialOrderUpload({
           ? { project_material_id: row.projectMaterialId }
           : {}),
         material_id: row.materialId || null,
+        ...(row.materialRequestId ? { material_request_id: row.materialRequestId } : {}),
         sort_order: index + 1,
         category_id: row.categoryId || order.categoryId || null,
         process_name: row.processName || order.processName || null,
@@ -2744,7 +2786,104 @@ export default function MaterialOrderUpload({
     }
   };
 
+  const openMaterialRequest = (standardName = '', itemKey = '') => {
+    if (!order.categoryId || (categoryFolders.some((row) => row.category_id === order.categoryId) && !order.processName)) {
+      notify('warning', '먼저 자재분류와 하위폴더를 선택해주세요.');
+      return;
+    }
+    setMaterialRequestTargetKey(itemKey);
+    setMaterialRequestForm({ standardName, specification: '', unit: '' });
+    setMaterialRequestOpen(true);
+  };
+
+  const promptMaterialRequest = (itemKey) => {
+    const standardName = normalizeText(materialNameInputs.current.get(itemKey));
+    if (!standardName || isLocked || saving || orderMaterialOptionsLoading || materialRequestOpen || materialRequestPrompt) return false;
+    if (filterOrderMaterialOptions(orderMaterialOptions, { inputValue: standardName }).length) return false;
+    materialNameInputs.current.delete(itemKey);
+    setOpenMaterialHintKey('');
+    setMaterialRequestPrompt({ standardName, itemKey });
+    return true;
+  };
+
+  const submitMaterialRequest = async () => {
+    if (saving || isLocked) return;
+    if (!normalizeText(materialRequestForm.standardName) || !normalizeText(materialRequestForm.unit)) {
+      notify('warning', '품명과 단위를 입력해주세요.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const { data, error } = await supabase.from('material_registration_requests').insert({
+        project_name: projectName, category_id: order.categoryId, process_name: order.processName || '',
+        standard_name: normalizeText(materialRequestForm.standardName), specification: normalizeText(materialRequestForm.specification),
+        unit: normalizeText(materialRequestForm.unit),
+      }).select('*').single();
+      if (error) throw error;
+      setOrderItems((current) => {
+        const requestedItem = { ...createBlankOrderItem(), materialRequestId: data.id,
+          categoryId: data.category_id, processName: data.process_name, standardName: data.standard_name,
+          specification: data.specification || '', unit: data.unit };
+        if (!materialRequestTargetKey) return [...current, requestedItem];
+        return recalculateOrderItemBalances(current.map((row, index) =>
+          getOrderItemKey(row, index) === materialRequestTargetKey
+            ? { ...requestedItem, id: row.id, clientKey: row.clientKey, specification2: row.specification2,
+                currentQuantity: row.currentQuantity, cumulativeQuantity: numberValue(row.currentQuantity), note: row.note }
+            : row));
+      });
+      setMaterialRequestOpen(false);
+      notify('success', '등록 요청을 접수하고 품목에 추가했습니다. 발주서도 저장해주세요.');
+    } catch (error) {
+      notify('error', `자재 등록 요청 실패: ${error.message} (v180 SQL 적용 여부를 확인해주세요.)`);
+    } finally { setSaving(false); }
+  };
+
+  const loadMaterialRequests = async () => {
+    if (!canManageMaster || !projectName) return;
+    const { data, error } = await supabase.from('material_registration_requests').select('*')
+      .eq('project_name', projectName).is('material_id', null).order('created_at', { ascending: true });
+    if (error) { notify('error', `등록 요청 조회 실패: ${error.message}`); return; }
+    setMaterialRequests(data || []);
+  };
+
+  const startRequestReview = async (request) => {
+    if (!canManageMaster) return;
+    setReviewRequest(request);
+    setRequestMasterSelection(null);
+    setRequestMasterOptions([]);
+    const { data, error } = await supabase.from('material_master_items').select('*')
+      .eq('is_active', true).eq('category_id', request.category_id).order('standard_name');
+    if (error) { notify('error', error.message); return; }
+    setRequestMasterOptions((data || []).filter((row) => normalizeText(row.process_name) === normalizeText(request.process_name)));
+  };
+
+  const linkMaterialRequest = async (request, materialId) => {
+    const { error } = await supabase.rpc('resolve_material_registration_request_v180', {
+      p_request_id: request.id, p_project_name: projectName, p_material_id: materialId,
+    });
+    if (error) throw error;
+    setReviewRequest(null);
+    await loadMaterialRequests();
+  };
+
+  const approveMaterialRequest = async () => {
+    if (!canManageMaster || !reviewRequest || !requestMasterSelection || saving) return;
+    setSaving(true);
+    try { await linkMaterialRequest(reviewRequest, requestMasterSelection.id); notify('success', '기존 자재에 연결했습니다. 발주서를 다시 열면 반영됩니다.'); }
+    catch (error) { notify('error', `자재 연결 실패: ${error.message}`); }
+    finally { setSaving(false); }
+  };
+
+  const createMasterFromRequest = () => {
+    if (!canManageMaster || !reviewRequest) return;
+    setNewMasterRequest(reviewRequest);
+    setMasterForm({ ...EMPTY_MASTER, categoryId: reviewRequest.category_id, processName: reviewRequest.process_name,
+      standardName: reviewRequest.standard_name, specification: reviewRequest.specification || '', unit: reviewRequest.unit });
+    setMasterDialogOpen(true);
+  };
+
   const openNewMaster = () => {
+    setNewMasterRequest(null);
     if (!canManageMaster) {
       notify('warning', '자재 마스터 관리 권한이 없습니다.');
       return;
@@ -2757,6 +2896,7 @@ export default function MaterialOrderUpload({
   };
 
   const openEditMaster = (row) => {
+    setNewMasterRequest(null);
     if (!canManageMaster) {
       notify('warning', '자재 마스터 관리 권한이 없습니다.');
       return;
@@ -2828,6 +2968,12 @@ export default function MaterialOrderUpload({
           .single();
         if (error) throw error;
         materialId = data.id;
+        if (newMasterRequest) setMasterForm((current) => ({ ...current, id: materialId }));
+      }
+
+      if (newMasterRequest) {
+        await linkMaterialRequest(newMasterRequest, materialId);
+        setNewMasterRequest(null);
       }
 
       notify('success', masterForm.id ? '자재 마스터를 수정했습니다.' : '자재 마스터를 등록했습니다.');
@@ -3207,6 +3353,8 @@ export default function MaterialOrderUpload({
         )}
 
         {pageMode === 'order' && (
+          <Stack direction="row" spacing={1} sx={{ ml: 'auto' }}>
+          {!isLocked && <Button size="small" variant="outlined" disabled={saving} onClick={() => openMaterialRequest()} sx={{ fontWeight: 850, whiteSpace: 'nowrap' }}>신규자재요청</Button>}
           <Button
             size="small"
             variant="outlined"
@@ -3216,6 +3364,7 @@ export default function MaterialOrderUpload({
           >
             새 발주서
           </Button>
+          </Stack>
         )}
 
         {pageMode === 'order' && (
@@ -3291,7 +3440,10 @@ export default function MaterialOrderUpload({
             </TextField>
             <Button variant="outlined" onClick={loadMasterRows} startIcon={<SearchRoundedIcon />} disabled={masterLoading}>조회</Button>
             {canManageMaster && (
-              <Button variant="outlined" onClick={() => setCategoryDialogOpen(true)} startIcon={<CategoryRoundedIcon />}>분류 관리</Button>
+              <>
+                <Button variant="outlined" onClick={() => setCategoryDialogOpen(true)} startIcon={<CategoryRoundedIcon />}>분류 관리</Button>
+                <Button variant="outlined" onClick={() => { setMaterialRequestsOpen(true); setReviewRequest(null); loadMaterialRequests(); }}>등록 요청 검토</Button>
+              </>
             )}
             {canManageMaster && (
               <>
@@ -4292,13 +4444,19 @@ export default function MaterialOrderUpload({
                                     (option) =>
                                       (option.materialId || option.id) === row.materialId,
                                   ) || null
-                                : null
+                                : row.materialRequestId ? { id: row.materialRequestId, standard_name: row.standardName } : null
                             }
                             onOpen={() => setOpenMaterialHintKey(itemKey)}
-                            onClose={() =>
-                              setOpenMaterialHintKey((current) => current === itemKey ? '' : current)
-                            }
+                            onInputChange={(_, value, reason) => {
+                              if (reason === 'input') materialNameInputs.current.set(itemKey, value);
+                              if (reason === 'clear') materialNameInputs.current.delete(itemKey);
+                            }}
+                            onClose={(_, reason) => {
+                              setOpenMaterialHintKey((current) => current === itemKey ? '' : current);
+                              if (reason === 'blur') promptMaterialRequest(itemKey);
+                            }}
                             onChange={(_, value) => {
+                              materialNameInputs.current.delete(itemKey);
                               if (value) {
                                 applyMaterialHint(index, value);
                               } else {
@@ -4306,7 +4464,8 @@ export default function MaterialOrderUpload({
                               }
                             }}
                             disabled={isLocked}
-                            noOptionsText="자재마스터에 등록된 일치 자재가 없습니다."
+                            readOnly={Boolean(row.materialRequestId && !row.materialId)}
+                            noOptionsText={<Button size="small" onMouseDown={(event) => event.preventDefault()} onClick={() => promptMaterialRequest(itemKey)}>일치 자재 없음 · 신규 등록 요청</Button>}
                             sx={entryFieldSx(row.standardName)}
                             renderOption={(props, option) => {
                               const { key, ...optionProps } = props;
@@ -4331,8 +4490,18 @@ export default function MaterialOrderUpload({
                               <TextField
                                 {...params}
                                 inputRef={(node) => setOrderItemInputRef(itemKey, 'standardName', node)}
-                                onKeyDown={(event) => handleOrderGridKeyDown(event, index, 'standardName')}
+                                onKeyDown={(event) => {
+                                  if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+                                  if (event.key === 'Enter' && promptMaterialRequest(itemKey)) {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    event.defaultMuiPrevented = true;
+                                    return;
+                                  }
+                                  handleOrderGridKeyDown(event, index, 'standardName');
+                                }}
                                 placeholder="품명 검색"
+                                helperText={row.materialRequestId && !row.materialId ? '등록 대기 · 확정 불가' : ''}
                               />
                             )}
                           />
@@ -4346,7 +4515,7 @@ export default function MaterialOrderUpload({
                             onKeyDown={(event) => handleOrderGridKeyDown(event, index, 'specification')}
                             inputRef={(node) => setOrderItemInputRef(itemKey, 'specification', node)}
                             placeholder="규격"
-                            disabled={isLocked || Boolean(row.materialId)}
+                            disabled={isLocked || Boolean(row.materialId) || Boolean(row.materialRequestId)}
                             sx={entryFieldSx(row.specification)}
                           />
                         </TableCell>
@@ -4426,7 +4595,7 @@ export default function MaterialOrderUpload({
                             onKeyDown={(event) => handleOrderGridKeyDown(event, index, 'unit')}
                             inputRef={(node) => setOrderItemInputRef(itemKey, 'unit', node)}
                             placeholder="단위"
-                            disabled={isLocked || Boolean(row.materialId)}
+                            disabled={isLocked || Boolean(row.materialId) || Boolean(row.materialRequestId)}
                             inputProps={{ style: { textAlign: 'center' } }}
                             sx={entryFieldSx(row.unit)}
                           />
@@ -4508,6 +4677,64 @@ export default function MaterialOrderUpload({
 
         </Box>
       )}
+
+      <Dialog open={Boolean(materialRequestPrompt)} onClose={() => setMaterialRequestPrompt(null)} fullWidth maxWidth="xs">
+        <DialogTitle>신규 자재 등록 요청</DialogTitle>
+        <DialogContent>
+          <Typography sx={{ mb: 1, fontWeight: 700 }}>{materialRequestPrompt?.standardName}</Typography>
+          <Typography>등록된 자재가 없습니다. 신규 자재로 등록요청하시겠습니까?</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setMaterialRequestPrompt(null)}>아니요</Button>
+          <Button variant="contained" onClick={() => {
+            openMaterialRequest(materialRequestPrompt.standardName, materialRequestPrompt.itemKey);
+            setMaterialRequestPrompt(null);
+          }}>예</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={materialRequestOpen} onClose={() => !saving && setMaterialRequestOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle sx={{ fontSize: '1.05rem', fontWeight: 900 }}>신규 자재 등록 요청</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            <Alert severity="info">요청은 즉시 접수됩니다. 발주서는 임시저장할 수 있으며, 자재관리자가 연결하기 전에는 확정·엑셀 다운로드할 수 없습니다.</Alert>
+            <Typography>{projectName} · {categoryNameById(categories, order.categoryId)} · {order.processName}</Typography>
+            <TextField label="품명" required value={materialRequestForm.standardName} disabled={saving} onChange={(e) => setMaterialRequestForm((v) => ({ ...v, standardName: e.target.value }))} />
+            <TextField label="규격(1)" value={materialRequestForm.specification} disabled={saving} onChange={(e) => setMaterialRequestForm((v) => ({ ...v, specification: e.target.value }))} />
+            <TextField label="단위" required value={materialRequestForm.unit} disabled={saving} onChange={(e) => setMaterialRequestForm((v) => ({ ...v, unit: e.target.value }))} />
+          </Stack>
+        </DialogContent>
+        <DialogActions><Button disabled={saving} onClick={() => setMaterialRequestOpen(false)}>닫기</Button><Button variant="contained" disabled={saving} onClick={submitMaterialRequest}>요청 접수 및 품목 추가</Button></DialogActions>
+      </Dialog>
+
+      <Dialog open={materialRequestsOpen} onClose={() => !saving && setMaterialRequestsOpen(false)} fullWidth maxWidth="md">
+        <DialogTitle sx={{ fontSize: '1.05rem', fontWeight: 900 }}>자재 등록 요청 검토 · {projectName}</DialogTitle>
+        <DialogContent dividers>
+          {reviewRequest ? (
+            <Stack spacing={2}>
+              <Typography>{reviewRequest.standard_name} · {reviewRequest.specification || '규격 없음'} · {reviewRequest.unit} · {reviewRequest.process_name}</Typography>
+              <Alert severity="info">동일한 자재가 있으면 기존 자재에 연결해주세요. 없으면 요청 내용으로 신규 자재를 등록할 수 있습니다.</Alert>
+              <Autocomplete options={requestMasterOptions} value={requestMasterSelection} onChange={(_, value) => setRequestMasterSelection(value)} getOptionKey={(v) => v.id} getOptionLabel={(v) => `${v.standard_name} · ${v.specification || '-'} · ${v.unit || '-'}`} renderInput={(params) => <TextField {...params} label="같은 분류·공정의 기존 자재 검색" />} />
+              <Stack direction="row" spacing={1}>
+                <Button disabled={saving} onClick={() => setReviewRequest(null)}>목록</Button>
+                <Button disabled={saving} onClick={createMasterFromRequest}>신규 마스터 등록</Button>
+                <Button variant="contained" disabled={saving || !requestMasterSelection} onClick={approveMaterialRequest}>선택 자재에 연결</Button>
+              </Stack>
+            </Stack>
+          ) : (
+            <Stack spacing={1}>
+              <Button onClick={loadMaterialRequests}>목록 새로고침</Button>
+              {materialRequests.length === 0 && <Typography>등록 대기 중인 요청이 없습니다.</Typography>}
+              {materialRequests.map((request) => <Paper key={request.id} variant="outlined" sx={{ p: 1.5 }}>
+                <Typography>{request.standard_name} · {request.specification || '-'} · {request.unit}</Typography>
+                <Typography sx={{ fontSize: '0.75rem', color: '#64748b' }}>{request.process_name} · {new Date(request.created_at).toLocaleString('ko-KR')}</Typography>
+                <Button onClick={() => startRequestReview(request)}>검토 및 연결</Button>
+              </Paper>)}
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions><Button disabled={saving} onClick={() => setMaterialRequestsOpen(false)}>닫기</Button></DialogActions>
+      </Dialog>
 
       <Dialog open={confirmationCancelOpen} onClose={() => !saving && setConfirmationCancelOpen(false)} fullWidth maxWidth="sm">
         <DialogTitle sx={{ fontSize: '1.05rem', fontWeight: 900 }}>발주확정 취소</DialogTitle>
