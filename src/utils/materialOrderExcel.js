@@ -18,16 +18,19 @@ const formatSpecification2 = (value) => {
     maximumFractionDigits: 3,
   });
 };
-const buildSpecificationCellValue = (specification, specification2) => {
+const buildSpecificationCellValue = (specification, specification2, processName) => {
   const firstSpecification = normalizeText(specification);
   const secondSpecification = formatSpecification2(specification2);
+  const process = normalizeText(processName);
+  // 단열은 현장 규격만 출력하며, 두 규격을 함께 쓰는 공정은 경량벽체뿐입니다.
+  if (process === '단열' && !secondSpecification) return '';
   if (!secondSpecification) return firstSpecification;
   const secondFont = {
     bold: true,
     size: 9,
     color: { argb: 'FFFF0000' },
   };
-  if (!firstSpecification) {
+  if (process !== '경량벽체' || !firstSpecification) {
     return {
       richText: [{ text: secondSpecification, font: secondFont }],
     };
@@ -311,6 +314,7 @@ export const saveMaterialOrderWorkbook = async ({
     worksheet.getCell(`B${rowNumber}`).value = buildSpecificationCellValue(
       item.specification,
       item.specification2,
+      normalizeText(item.processName) || order.processName,
     );
     ['A', 'B', 'I'].forEach((column) => {
       const cell = worksheet.getCell(`${column}${rowNumber}`);
@@ -339,8 +343,8 @@ export const saveMaterialOrderWorkbook = async ({
       ['G', cumulativeQuantity],
     ].forEach(([column, value]) => {
       worksheet.getCell(`${column}${rowNumber}`).numFmt = Number.isInteger(value)
-        ? '#,##0'
-        : '#,##0.###';
+        ? '#,##0;-#,##0;"-"'
+        : '#,##0.###;-#,##0.###;"-"';
     });
     worksheet.getCell(`H${rowNumber}`).numFmt = '0.0%';
   }
