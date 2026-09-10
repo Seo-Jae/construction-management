@@ -571,6 +571,9 @@ export default function MaterialOrderUpload({
     () => new Set(),
   );
   const [saving, setSaving] = useState(false);
+  const [confirmationCancelOpen, setConfirmationCancelOpen] = useState(false);
+  const [confirmationCancelReason, setConfirmationCancelReason] = useState('');
+  const [confirmationHistoryOpen, setConfirmationHistoryOpen] = useState(false);
   const [schemaMissing, setSchemaMissing] = useState(false);
   const [toast, setToast] = useState(null);
   const [order, setOrder] = useState({
@@ -1492,6 +1495,7 @@ export default function MaterialOrderUpload({
           processName: nextProcessName,
           note: row.note || '',
           status: row.status || 'draft',
+          confirmationHistory: row.confirmation_history || [],
         });
         setSelectedOrderFolderId(nextCategoryId);
         setSelectedOrderFolderProcess(
@@ -2535,11 +2539,10 @@ export default function MaterialOrderUpload({
         category_id: order.categoryId || null,
         process_name: normalizeText(order.processName) || null,
         note: normalizeText(order.note) || null,
-        status,
+        // 확정은 품목 저장이 끝난 뒤 처리합니다. 확정 문서 품목은 DB에서도 수정 금지입니다.
+        status: 'draft',
         updated_by: currentUserId || null,
         updated_at: new Date().toISOString(),
-        ...(status === 'ordered' ? { ordered_at: new Date().toISOString() } : {}),
-        ...(status === 'confirmed' ? { confirmed_at: new Date().toISOString() } : {}),
       };
 
       if (!orderId) {
@@ -2550,12 +2553,16 @@ export default function MaterialOrderUpload({
           .single();
         if (error) throw error;
         orderId = inserted.id;
+        // 후속 품목 저장/확정이 실패해도 재시도 시 같은 문서를 사용합니다.
+        setOrder((current) => ({ ...current, id: orderId, orderNo, status: 'draft' }));
       } else {
         const { error } = await supabase
           .from('material_supply_orders')
           .update(headerPayload)
           .eq('id', orderId)
-          .eq('status', 'draft');
+          .eq('status', 'draft')
+          .select('id')
+          .single();
         if (error) throw error;
         const { error: deleteError } = await supabase
           .from('material_supply_order_items')
@@ -2590,6 +2597,18 @@ export default function MaterialOrderUpload({
         .insert(itemPayloads);
       if (itemError) throw itemError;
 
+      if (status !== 'draft') {
+        const { error: finalizeError } = await supabase
+          .from('material_supply_orders')
+          .update({ status, ...(status === 'ordered' ? { ordered_at: new Date().toISOString() } : {}) })
+          .eq('id', orderId)
+          .eq('project_name', projectName)
+          .eq('status', 'draft')
+          .select('id')
+          .single();
+        if (finalizeError) throw finalizeError;
+      }
+
       notify(
         'success',
         status === 'ordered' ? '발주서를 확정하고 누계에 반영했습니다.' : '발주서를 저장했습니다.',
@@ -2609,6 +2628,7 @@ export default function MaterialOrderUpload({
         process_name: order.processName,
         note: order.note,
         status,
+        confirmation_history: order.confirmationHistory || [],
       };
       await openOrder(savedRow);
       await loadOrderMaterialOptions();
@@ -2620,17 +2640,18 @@ export default function MaterialOrderUpload({
   };
 
   const deleteOrder = async () => {
-    if (!order.id) return;
-    const isFinalized = ['ordered', 'confirmed'].includes(order.status);
-    const warning = isFinalized
-      ? '\n발주 품목과 누계발주량에서도 함께 제외되며 복구할 수 없습니다.'
-      : '';
-    if (!window.confirm(`${order.orderNo || '현재 발주서'}를 삭제할까요?${warning}`)) return;
+    if (!order.id || saving) return;
+    if (order.status !== 'draft' || order.confirmationHistory?.length) {
+      notify('warning', '확정 문서나 확정 취소 이력이 있는 문서는 삭제할 수 없습니다.');
+      return;
+    }
+    if (!window.confirm(`${order.orderNo || '현재 발주서'}를 삭제할까요?`)) return;
     const { data: deletedOrder, error } = await supabase
       .from('material_supply_orders')
       .delete()
       .eq('id', order.id)
       .eq('project_name', projectName)
+      .eq('status', 'draft')
       .select('id')
       .maybeSingle();
     if (error) {
@@ -2641,9 +2662,37 @@ export default function MaterialOrderUpload({
       notify('error', '발주서를 삭제하지 못했습니다. 삭제 권한을 확인해주세요.');
       return;
     }
-    notify('success', isFinalized ? '확정된 발주서를 삭제하고 누계에서 제외했습니다.' : '작성중 발주서를 삭제했습니다.');
+    notify('success', '작성중 발주서를 삭제했습니다.');
     createNewOrder();
     await loadOrders();
+  };
+
+  const cancelOrderConfirmation = async () => {
+    const reason = confirmationCancelReason.trim();
+    if (!order.id || order.status !== 'ordered' || saving || !reason) return;
+    setSaving(true);
+    try {
+      const { data, error } = await supabase.rpc('cancel_material_order_confirmation_v177', {
+        p_order_id: order.id,
+        p_project_name: projectName,
+        p_reason: reason,
+      });
+      if (error) throw error;
+      const restoredOrder = Array.isArray(data) ? data[0] : data;
+      if (!restoredOrder) throw new Error('문서 상태나 수정 권한을 확인해주세요.');
+      setConfirmationCancelOpen(false);
+      setConfirmationCancelReason('');
+      await loadOrders();
+      await openOrder(restoredOrder);
+      await loadOrderMaterialOptions();
+      notify('success', '확정을 취소하고 누계에서 제외했습니다. 수정 후 다시 확정해주세요.');
+    } catch (error) {
+      notify('error', error.code === 'PGRST202' || error.code === '42883'
+        ? '확정 취소 SQL(v52.48.5.44.177)을 먼저 적용해주세요.'
+        : `확정 취소 실패: ${error.message}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const resetMaterialOrderTestData = async () => {
@@ -3778,7 +3827,15 @@ export default function MaterialOrderUpload({
               </Box>
               {order.orderNo && <Chip label={formatOrderDisplayNo(order)} size="small" variant="outlined" />}
               {order.status !== 'draft' && <Chip label={ORDER_STATUS_LABELS[order.status] || order.status} size="small" color={['ordered', 'confirmed'].includes(order.status) ? 'success' : 'default'} />}
-              {order.id && <Button size="small" color="error" variant="outlined" onClick={deleteOrder} startIcon={<DeleteOutlineRoundedIcon />} sx={{ ml: 'auto' }}>삭제</Button>}
+              {order.id && order.status === 'draft' && !order.confirmationHistory?.length && (
+                <Button size="small" color="error" variant="outlined" onClick={deleteOrder} disabled={saving} startIcon={<DeleteOutlineRoundedIcon />} sx={{ ml: 'auto' }}>삭제</Button>
+              )}
+              {order.id && order.status === 'ordered' && (
+                <Button size="small" color="warning" variant="outlined" disabled={saving} sx={{ ml: 'auto' }} onClick={() => { setConfirmationCancelReason(''); setConfirmationCancelOpen(true); }}>확정 취소</Button>
+              )}
+              {order.confirmationHistory?.length > 0 && (
+                <Button size="small" variant="outlined" onClick={() => setConfirmationHistoryOpen(true)}>확정 취소 이력 ({order.confirmationHistory.length})</Button>
+              )}
             </Stack>
 
             <Stack
@@ -4451,6 +4508,56 @@ export default function MaterialOrderUpload({
 
         </Box>
       )}
+
+      <Dialog open={confirmationCancelOpen} onClose={() => !saving && setConfirmationCancelOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle sx={{ fontSize: '1.05rem', fontWeight: 900 }}>발주확정 취소</DialogTitle>
+        <DialogContent dividers>
+          <Alert severity="warning" sx={{ mb: 2 }}>확정을 취소하면 발주 수량이 누계에서 제외됩니다. 기존 발주내용과 취소 이력은 보존되며, 수정 후 다시 확정할 수 있습니다.</Alert>
+          <Typography sx={{ mb: 2, fontSize: '0.88rem' }}>{order.orderNo} · {projectName}</Typography>
+          <TextField autoFocus fullWidth required multiline minRows={3} label="취소 사유" value={confirmationCancelReason} onChange={(event) => setConfirmationCancelReason(event.target.value)} disabled={saving} inputProps={{ maxLength: 1000 }} helperText="거래처에 전달한 발주서는 변경·취소 내용을 별도로 안내해주세요." />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmationCancelOpen(false)} disabled={saving}>닫기</Button>
+          <Button variant="contained" color="warning" onClick={cancelOrderConfirmation} disabled={saving || !confirmationCancelReason.trim()}>사유 기록 후 확정 취소</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={confirmationHistoryOpen} onClose={() => setConfirmationHistoryOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle sx={{ fontSize: '1.05rem', fontWeight: 900 }}>확정 취소 이력</DialogTitle>
+        <DialogContent dividers>
+          <Stack spacing={2}>
+            {[...(order.confirmationHistory || [])].reverse().map((entry, index) => (
+              <Paper key={`${entry.cancelled_at}-${index}`} variant="outlined" sx={{ p: 2 }}>
+                <Typography sx={{ fontSize: '0.88rem', fontWeight: 700 }}>{entry.order_snapshot?.order_no || order.orderNo}</Typography>
+                <Typography sx={{ mt: 0.5, color: '#64748b', fontSize: '0.72rem' }}>{new Date(entry.cancelled_at).toLocaleString('ko-KR')} · {entry.cancelled_by_email || entry.cancelled_by}</Typography>
+                <Typography sx={{ mt: 1, fontSize: '0.88rem', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{entry.reason}</Typography>
+                <Typography sx={{ mt: 1, color: '#64748b', fontSize: '0.72rem' }}>취소 당시 품목 {entry.item_snapshot?.length || 0}개</Typography>
+                <Box component="details" sx={{ mt: 1, fontSize: '0.8rem' }}>
+                  <Box component="summary" sx={{ cursor: 'pointer', color: '#2563eb' }}>취소 전 발주내용 보기</Box>
+                  <Typography sx={{ mt: 1, fontSize: '0.8rem', overflowWrap: 'anywhere' }}>수령자 {entry.order_snapshot?.receiver_name || '-'} · 납품장소 {entry.order_snapshot?.delivery_location || '-'}</Typography>
+                  <TableContainer sx={{ mt: 1 }}>
+                    <Table size="small" sx={{ minWidth: 420 }}>
+                      <TableHead><TableRow>{['품명', '규격', '규격(2)', '단위', '금회발주량'].map((label) => <TableCell key={label}>{label}</TableCell>)}</TableRow></TableHead>
+                      <TableBody>
+                        {(entry.item_snapshot || []).map((item, itemIndex) => (
+                          <TableRow key={item.id || itemIndex}>
+                            <TableCell>{item.standard_name}</TableCell>
+                            <TableCell>{item.specification || '-'}</TableCell>
+                            <TableCell>{item.specification_2 || '-'}</TableCell>
+                            <TableCell>{item.unit || '-'}</TableCell>
+                            <TableCell align="right">{numberValue(item.current_order_quantity).toLocaleString('ko-KR')}</TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Box>
+              </Paper>
+            ))}
+          </Stack>
+        </DialogContent>
+        <DialogActions><Button onClick={() => setConfirmationHistoryOpen(false)}>닫기</Button></DialogActions>
+      </Dialog>
 
       <Dialog
         open={settingsDialogOpen}
