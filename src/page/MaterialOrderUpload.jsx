@@ -4401,7 +4401,7 @@ export default function MaterialOrderUpload({
                                       {option.value}
                                     </Typography>
                                     <Typography sx={{ fontSize: '0.56rem', color: '#94a3b8' }}>
-                                      {option.orderDate ? option.orderDate.replace(/-/g, '.') : ''}
+                                      {option.orderDate ? option.orderDate.replace(/^\d{2}(\d{2}-\d{2}-\d{2})$/, '$1') : ''}
                                     </Typography>
                                   </Stack>
                                 </Box>
