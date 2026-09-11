@@ -601,7 +601,7 @@ export default function MaterialOrderUpload({
   const [orderMaterialOptions, setOrderMaterialOptions] = useState([]);
   const [orderProjectMaterialOptions, setOrderProjectMaterialOptions] = useState([]);
   const [orderMaterialOptionsLoading, setOrderMaterialOptionsLoading] = useState(false);
-  const [specification2Options, setSpecification2Options] = useState({});
+  const [specificationOptions, setSpecificationOptions] = useState({});
   const [openMaterialHintKey, setOpenMaterialHintKey] = useState('');
   const orderItemInputRefs = useRef(new Map());
   const masterExcelInputRef = useRef(null);
@@ -734,14 +734,17 @@ export default function MaterialOrderUpload({
     }
 
     setOrders(data || []);
-    setSpecification2Options({});
+    setSpecificationOptions({});
   }, [handleSchemaError, notify, projectName]);
 
-  const loadSpecification2Options = useCallback(async (materialId) => {
+  const specificationScopeKey = JSON.stringify([projectName, order.categoryId, order.processName]);
+  const loadSpecificationOptions = useCallback(async (materialId, field = 'specification_2') => {
     if (!projectName || !materialId) return;
-    if (Object.prototype.hasOwnProperty.call(specification2Options, materialId)) return;
+    const cacheKey = JSON.stringify([specificationScopeKey, materialId, field]);
+    if (Object.prototype.hasOwnProperty.call(specificationOptions, cacheKey)) return;
 
     const savedOrders = orders.filter((row) => (
+      row.project_name === projectName &&
       ['ordered', 'confirmed'].includes(row.status) &&
       (!order.categoryId || row.category_id === order.categoryId) &&
       (!order.processName || row.process_name === order.processName)
@@ -753,13 +756,13 @@ export default function MaterialOrderUpload({
 
     const { data, error } = await supabase
       .from('material_supply_order_items')
-      .select('specification_2, order_id')
+      .select(`${field}, order_id`)
       .in('order_id', savedOrderIds)
       .eq('material_id', materialId)
-      .not('specification_2', 'is', null);
+      .not(field, 'is', null);
 
     if (error) {
-      setSpecification2Options((current) => ({ ...current, [materialId]: [] }));
+      notify('error', `규격 이력 조회 실패: ${error.message}`);
       return;
     }
 
@@ -769,7 +772,7 @@ export default function MaterialOrderUpload({
     ]));
     const latestByValue = new Map();
     (data || []).forEach((row) => {
-      const value = formatSpecification2(row.specification_2);
+      const value = field === 'specification_2' ? formatSpecification2(row[field]) : normalizeText(row[field]);
       if (!value) return;
       const orderDate = orderDateById.get(row.order_id) || '';
       const previous = latestByValue.get(value);
@@ -779,8 +782,8 @@ export default function MaterialOrderUpload({
     });
     const values = [...latestByValue.values()]
       .sort((first, second) => second.orderDate.localeCompare(first.orderDate));
-    setSpecification2Options((current) => ({ ...current, [materialId]: values }));
-  }, [order.categoryId, order.processName, orders, projectName, specification2Options]);
+    setSpecificationOptions((current) => ({ ...current, [cacheKey]: values }));
+  }, [notify, order.categoryId, order.processName, orders, projectName, specificationOptions, specificationScopeKey]);
 
 
   const loadProjectSettings = useCallback(async ({ openWhenIncomplete = true } = {}) => {
@@ -1797,7 +1800,7 @@ export default function MaterialOrderUpload({
 
   const addMaterialToOrder = (material) => {
     const execution = numberValue(material.executionQuantity);
-    loadSpecification2Options(material.materialId || material.id);
+    loadSpecificationOptions(material.materialId || material.id);
     setOrderItems((current) =>
       recalculateOrderItemBalances([
         ...current,
@@ -2199,7 +2202,7 @@ export default function MaterialOrderUpload({
 
   const applyMaterialHint = (index, material) => {
     if (!material || typeof material !== 'object') return;
-    loadSpecification2Options(material.materialId || material.material_id);
+    loadSpecificationOptions(material.materialId || material.material_id);
 
     setOrderItems((current) =>
       recalculateOrderItemBalances(current.map((row, rowIndex) => {
@@ -4421,15 +4424,18 @@ export default function MaterialOrderUpload({
                   ) : orderItems.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={11} align="center" sx={{ py: 9, color: '#94a3b8' }}>
-                        상단의 + 버튼을 눌러 행을 추가한 뒤 자재마스터에서 품명을 선택해주세요. 규격(1)은 기본값을 현장에 맞게 수정할 수 있고, 규격(2)는 현장 발주 이력에서 안내됩니다.
+                        상단의 + 버튼을 눌러 행을 추가한 뒤 자재마스터에서 품명을 선택해주세요. 규격(1)·규격(2)는 현장 발주확정 이력에서 선택하거나 직접 입력할 수 있습니다.
                       </TableCell>
                     </TableRow>
                   ) : orderItems.map((row, index) => {
                     const over = row.executionRatio > 100;
                     const itemKey = getOrderItemKey(row, index);
                     const selected = selectedOrderItemKeys.has(itemKey);
+                    const specificationSuggestions = row.materialId
+                      ? specificationOptions[JSON.stringify([specificationScopeKey, row.materialId, 'specification'])] || []
+                      : [];
                     const specification2Suggestions = row.materialId
-                      ? specification2Options[row.materialId] || []
+                      ? specificationOptions[JSON.stringify([specificationScopeKey, row.materialId, 'specification_2'])] || []
                       : [];
                     return (
                       <TableRow key={itemKey} hover selected={selected}>
@@ -4556,16 +4562,75 @@ export default function MaterialOrderUpload({
                           />
                         </TableCell>
                         <TableCell sx={{ p: 0.35 }}>
-                          <TextField
+                          <Autocomplete
+                            freeSolo
+                            openOnFocus
+                            slots={{ popper: ScaleAwareAutocompletePopper }}
                             size="small"
-                            fullWidth
+                            options={specificationSuggestions}
+                            filterOptions={(options) => options}
                             value={row.specification}
-                            onChange={(event) => updateOrderItem(index, 'specification', event.target.value)}
-                            onKeyDown={(event) => handleOrderGridKeyDown(event, index, 'specification')}
-                            inputRef={(node) => setOrderItemInputRef(itemKey, 'specification', node)}
-                            placeholder="규격(1)"
+                            getOptionLabel={(option) => (
+                              typeof option === 'string' ? option : option.value || ''
+                            )}
                             disabled={isLocked || (Boolean(row.materialRequestId) && !row.materialId)}
+                            slotProps={{
+                              listbox: {
+                                sx: {
+                                  p: 0,
+                                  maxHeight: 276,
+                                  overflowY: 'auto',
+                                  '& .MuiAutocomplete-option': {
+                                    minHeight: '36px !important',
+                                    height: '36px !important',
+                                    boxSizing: 'border-box',
+                                    fontSize: '0.68rem',
+                                  },
+                                },
+                              },
+                            }}
+                            noOptionsText="이전에 사용한 규격(1)이 없습니다. 직접 입력할 수 있습니다."
+                            onOpen={() => loadSpecificationOptions(row.materialId, 'specification')}
+                            onInputChange={(_, value, reason) => {
+                              if (reason === 'input' || reason === 'clear') {
+                                updateOrderItem(index, 'specification', value);
+                              }
+                            }}
+                            onChange={(_, value) => {
+                              updateOrderItem(
+                                index,
+                                'specification',
+                                typeof value === 'string' ? value : value?.value || '',
+                              );
+                            }}
                             sx={entryFieldSx(row.specification)}
+                            renderOption={(props, option) => {
+                              const { key, ...optionProps } = props;
+                              return (
+                                <Box component="li" key={key} {...optionProps}>
+                                  <Stack direction="row" alignItems="baseline" spacing={0.8}>
+                                    <Typography sx={{ fontSize: '0.68rem', fontWeight: 800 }}>
+                                      {option.value}
+                                    </Typography>
+                                    <Typography sx={{ fontSize: '0.56rem', color: '#94a3b8' }}>
+                                      {option.orderDate ? option.orderDate.replace(/^\d{2}(\d{2}-\d{2}-\d{2})$/, '$1') : ''}
+                                    </Typography>
+                                  </Stack>
+                                </Box>
+                              );
+                            }}
+                            renderInput={(params) => (
+                              <TextField
+                                {...params}
+                                inputRef={(node) => setOrderItemInputRef(itemKey, 'specification', node)}
+                                onKeyDown={(event) => {
+                                  if (event.target.getAttribute('aria-expanded') === 'true'
+                                    && ['ArrowUp', 'ArrowDown', 'Enter'].includes(event.key)) return;
+                                  handleOrderGridKeyDown(event, index, 'specification');
+                                }}
+                                placeholder="규격(1)"
+                              />
+                            )}
                           />
                         </TableCell>
                         <TableCell sx={{ p: 0.35 }}>
@@ -4596,7 +4661,7 @@ export default function MaterialOrderUpload({
                               },
                             }}
                             noOptionsText="이전에 사용한 규격(2)이 없습니다. 직접 입력할 수 있습니다."
-                            onOpen={() => loadSpecification2Options(row.materialId)}
+                            onOpen={() => loadSpecificationOptions(row.materialId)}
                             onInputChange={(_, value, reason) => {
                               if (reason === 'input' || reason === 'clear') {
                                 updateOrderItem(index, 'specification2', value);
