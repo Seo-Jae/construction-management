@@ -113,6 +113,9 @@ import {
 } from '../utils/materialMasterExcel.js';
 import { saveMaterialOrderWorkbook } from '../utils/materialOrderExcel.js';
 import ScaleAwareAutocompletePopper from '../components/ScaleAwareAutocompletePopper.jsx';
+import MaterialAliasDialog from '../components/MaterialAliasDialog.jsx';
+import { attachMaterialAliases, isKnownMaterialAlias, isMaterialAliasSchemaMissing,
+  loadMaterialAliasPages, loadMaterialRowsInBatches, matchingMaterialAliases, normalizeMaterialAlias } from '../utils/materialAliases.js';
 
 const PROCESS_OPTIONS = [
   '경량벽체',
@@ -468,6 +471,7 @@ const buildOrderMaterialSearchText = (material) =>
     material?.manufacturer,
     material?.process_name,
     ...(Array.isArray(material?.aliases) ? material.aliases : []),
+    ...(material?.sharedAliases || []).map((alias) => alias.keyword),
   ]
     .map(normalizeText)
     .filter(Boolean)
@@ -503,7 +507,8 @@ const filterOrderMaterialOptions = (options, state) => {
   return options
     .filter((option) => {
       const searchText = option.orderSearchText || buildOrderMaterialSearchText(option);
-      return keywords.every((word) => searchText.includes(word));
+      return keywords.every((word) => searchText.includes(word))
+        || matchingMaterialAliases(option, keyword).length > 0;
     })
     .sort((first, second) => {
       const firstName = normalizeText(first.standard_name).toLocaleLowerCase('ko-KR');
@@ -512,6 +517,8 @@ const filterOrderMaterialOptions = (options, state) => {
         name === keyword ? 0 : name.startsWith(keyword) ? 1 : name.includes(keyword) ? 2 : 3;
       return (
         score(firstName) - score(secondName) ||
+        Number(matchingMaterialAliases(second, keyword).some((alias) => alias.status === 'approved')) -
+          Number(matchingMaterialAliases(first, keyword).some((alias) => alias.status === 'approved')) ||
         Number(second.isProjectMaterial === true) -
           Number(first.isProjectMaterial === true) ||
         Number(second.is_main_material === true) -
@@ -575,6 +582,11 @@ export default function MaterialOrderUpload({
   const [materialRequestTargetKey, setMaterialRequestTargetKey] = useState('');
   const [materialRequestPrompt, setMaterialRequestPrompt] = useState(null);
   const materialNameInputs = useRef(new Map());
+  const [materialAliasProposal, setMaterialAliasProposal] = useState(null);
+  const [materialAliasReviewOpen, setMaterialAliasReviewOpen] = useState(false);
+  const [materialAliasAvailability, setMaterialAliasAvailability] = useState(null);
+  const materialAliasPrompted = useRef(new Set());
+  const materialOptionsRequest = useRef(0);
   const [materialRequestForm, setMaterialRequestForm] = useState({ standardName: '', specification: '', unit: '' });
   const [materialRequestsOpen, setMaterialRequestsOpen] = useState(false);
   const [materialRequests, setMaterialRequests] = useState([]);
@@ -638,6 +650,7 @@ export default function MaterialOrderUpload({
   const currentUserName = getProfileName(userProfile);
   const isSuperAdmin = isSuperAdminProfile(userProfile);
   const isLocked = ['ordered', 'confirmed', 'cancelled'].includes(order.status);
+  const materialAliasesReady = materialAliasAvailability?.projectName === projectName && materialAliasAvailability.ready;
   const dateReasonRequired = order.status !== 'draft' || Boolean(order.confirmationHistory?.length);
   const canChangeOrderDate = order.status !== 'cancelled' && (!dateReasonRequired || canManageMaster);
 
@@ -1631,6 +1644,7 @@ export default function MaterialOrderUpload({
   ]);
 
   const loadOrderMaterialOptions = useCallback(async () => {
+    const requestId = ++materialOptionsRequest.current;
     if (!projectName) {
       setOrderMaterialOptions([]);
       setOrderProjectMaterialOptions([]);
@@ -1647,7 +1661,7 @@ export default function MaterialOrderUpload({
         .eq('is_active', true)
         .order('display_order', { ascending: true })
         .order('standard_name', { ascending: true })
-        .limit(500);
+        .order('id', { ascending: true });
 
       if (order.categoryId) {
         query = query.eq('category_id', order.categoryId);
@@ -1673,13 +1687,30 @@ export default function MaterialOrderUpload({
         projectItemQuery = projectItemQuery.eq('process_name', order.processName);
       }
 
-      const [masterResult, projectItemResult] = await Promise.all([
-        query,
+      const [masterResult, projectItemResult, aliasResult] = await Promise.all([
+        (async () => {
+          const materials = [];
+          for (let offset = 0; ; offset += 500) {
+            const { data, error } = await query.range(offset, offset + 499);
+            if (error) return { error };
+            materials.push(...(data || []));
+            if (!data || data.length < 500) return { data: materials };
+          }
+        })(),
         projectItemQuery,
+        loadMaterialAliasPages(supabase, 'list_material_aliases_v185', {
+          p_project_name: projectName, p_category_id: order.categoryId || null,
+          p_process_name: order.processName || null,
+        }).then((data) => ({ data }), (error) => ({ error })),
       ]);
+      if (requestId !== materialOptionsRequest.current) return;
       if (masterResult.error) throw masterResult.error;
+      setMaterialAliasAvailability({ projectName, ready: !aliasResult.error });
+      if (aliasResult.error && !isMaterialAliasSchemaMissing(aliasResult.error)) {
+        notify('warning', `공동 검색어를 불러오지 못했습니다. 기본 자재 검색은 사용할 수 있습니다. (${aliasResult.error.message})`);
+      }
 
-      const materials = masterResult.data || [];
+      const materials = attachMaterialAliases(masterResult.data || [], aliasResult.data || []);
       const projectCatalogReady = !projectItemResult.error;
       const projectItems = projectCatalogReady ? projectItemResult.data || [] : [];
 
@@ -1690,11 +1721,11 @@ export default function MaterialOrderUpload({
       if (ids.length > 0 || projectItems.length > 0) {
         const [quantityResult, cumulativeResult] = await Promise.all([
           ids.length > 0
-            ? supabase
+            ? loadMaterialRowsInBatches(ids, (batch) => supabase
             .from('material_project_materials')
             .select('material_id, execution_quantity')
             .eq('project_name', projectName)
-            .in('material_id', ids)
+            .in('material_id', batch))
             : Promise.resolve({ data: [], error: null }),
           projectCatalogReady && projectItems.length > 0
             ? supabase
@@ -1703,11 +1734,11 @@ export default function MaterialOrderUpload({
               .eq('project_name', projectName)
               .in('project_material_id', projectItems.map((row) => row.id))
             : ids.length > 0
-              ? supabase
+              ? loadMaterialRowsInBatches(ids, (batch) => supabase
                 .from('material_supply_cumulative')
                 .select('material_id, cumulative_order_quantity')
                 .eq('project_name', projectName)
-                .in('material_id', ids)
+                .in('material_id', batch))
               : Promise.resolve({ data: [], error: null }),
         ]);
         if (quantityResult.error) throw quantityResult.error;
@@ -1767,16 +1798,18 @@ export default function MaterialOrderUpload({
 
       // 품명 선택지는 자재마스터만 사용한다.
       // 현장 자재(projectOptions)는 규격(2)별 누계/전회발주량 연결에만 사용한다.
+      if (requestId !== materialOptionsRequest.current) return;
       setOrderMaterialOptions(masterOptions);
       setOrderProjectMaterialOptions(projectOptions);
     } catch (error) {
+      if (requestId !== materialOptionsRequest.current) return;
       if (!handleSchemaError(error)) {
         notify('error', `자재 힌트 불러오기 실패: ${error.message}`);
       }
       setOrderMaterialOptions([]);
       setOrderProjectMaterialOptions([]);
     } finally {
-      setOrderMaterialOptionsLoading(false);
+      if (requestId === materialOptionsRequest.current) setOrderMaterialOptionsLoading(false);
     }
   }, [
     handleSchemaError,
@@ -2842,7 +2875,7 @@ export default function MaterialOrderUpload({
       return;
     }
     setMaterialRequestTargetKey(itemKey);
-    setMaterialRequestForm({ standardName, specification: '', unit: '' });
+    setMaterialRequestForm({ standardName, specification: '', unit: '', searchTerm: standardName });
     setMaterialRequestOpen(true);
   };
 
@@ -2868,6 +2901,7 @@ export default function MaterialOrderUpload({
         project_name: projectName, category_id: order.categoryId, process_name: order.processName || '',
         standard_name: normalizeText(materialRequestForm.standardName), specification: normalizeText(materialRequestForm.specification),
         unit: normalizeText(materialRequestForm.unit),
+        ...(materialAliasesReady ? { search_term: normalizeText(materialRequestForm.searchTerm) } : {}),
       }).select('*').single();
       if (error) throw error;
       setOrderItems((current) => {
@@ -3493,6 +3527,7 @@ export default function MaterialOrderUpload({
               <>
                 <Button variant="outlined" onClick={() => setCategoryDialogOpen(true)} startIcon={<CategoryRoundedIcon />}>분류 관리</Button>
                 <Button variant="outlined" onClick={() => { setMaterialRequestsOpen(true); setReviewRequest(null); loadMaterialRequests(); }}>등록 요청 검토</Button>
+                <Button variant="outlined" onClick={() => setMaterialAliasReviewOpen(true)}>공동 검색어 검토</Button>
               </>
             )}
             {canManageMaster && (
@@ -4481,7 +4516,7 @@ export default function MaterialOrderUpload({
                                   overflowY: 'auto',
                                   '& .MuiAutocomplete-option': {
                                     minHeight: '46px !important',
-                                    height: '46px !important',
+                                    height: 'auto !important',
                                     boxSizing: 'border-box',
                                   },
                                 },
@@ -4511,9 +4546,17 @@ export default function MaterialOrderUpload({
                               if (reason === 'blur') promptMaterialRequest(itemKey);
                             }}
                             onChange={(_, value) => {
+                              const keyword = normalizeText(materialNameInputs.current.get(itemKey));
                               materialNameInputs.current.delete(itemKey);
                               if (value) {
                                 applyMaterialHint(index, value);
+                                const promptKey = JSON.stringify([projectName, value.materialId || value.id, normalizeMaterialAlias(keyword)]);
+                                if (materialAliasesReady && !isKnownMaterialAlias(value, keyword)
+                                  && !normalizeMaterialAlias(value.standard_name).includes(normalizeMaterialAlias(keyword))
+                                  && !materialAliasPrompted.current.has(promptKey)) {
+                                  materialAliasPrompted.current.add(promptKey);
+                                  setMaterialAliasProposal({ projectName, keyword, material: value });
+                                }
                               } else {
                                 clearOrderMaterialSelection(index);
                               }
@@ -4538,6 +4581,11 @@ export default function MaterialOrderUpload({
                                     {option.specification || '규격 없음'} · {option.unit || '단위 없음'}
                                     {option.executionQuantity > 0 ? ` · 실행 ${formatNumber(option.executionQuantity)}` : ''}
                                   </Typography>
+                                  {matchingMaterialAliases(option, materialNameInputs.current.get(itemKey)).slice(0, 2).map((alias) => (
+                                    <Typography key={alias.id} sx={{ fontSize: '0.6rem', color: alias.status === 'approved' ? '#2563eb' : '#a16207' }}>
+                                      {alias.status === 'approved' ? '공통 검색어' : '담당자 추천 후보'}: {alias.keyword}
+                                    </Typography>
+                                  ))}
                                 </Box>
                               );
                             }}
@@ -4556,7 +4604,14 @@ export default function MaterialOrderUpload({
                                   handleOrderGridKeyDown(event, index, 'standardName');
                                 }}
                                 placeholder="품명 검색"
-                                helperText={row.materialRequestId && !row.materialId ? '등록 대기 · 확정 불가' : ''}
+                                helperText={row.materialRequestId && !row.materialId ? '등록 대기 · 확정 불가' : materialAliasesReady && row.materialId && !isLocked ? (
+                                  <Box component="span" onMouseDown={(event) => event.preventDefault()}>
+                                    <Button size="small" sx={{ p: 0, minWidth: 0, fontSize: '0.6rem' }} onClick={() => {
+                                      const material = orderMaterialOptions.find((option) => option.materialId === row.materialId);
+                                      if (material) setMaterialAliasProposal({ projectName, keyword: '', material });
+                                    }}>검색어 연결·검토 요청</Button>
+                                  </Box>
+                                ) : ''}
                               />
                             )}
                           />
@@ -4790,6 +4845,15 @@ export default function MaterialOrderUpload({
           </Paper>
 
         </Box>
+      )}
+
+      {materialAliasProposal?.projectName === projectName && !isLocked && (
+        <MaterialAliasDialog key={`proposal:${projectName}`} projectName={projectName} proposal={materialAliasProposal}
+          onClose={() => setMaterialAliasProposal(null)} onChanged={(message) => { if (message) notify('success', message); loadOrderMaterialOptions(); }} />
+      )}
+      {materialAliasReviewOpen && canManageMaster && projectName && (
+        <MaterialAliasDialog key={`review:${projectName}`} projectName={projectName} review
+          onClose={() => setMaterialAliasReviewOpen(false)} onChanged={() => { if (mainTab === 'order') loadOrderMaterialOptions(); }} />
       )}
 
       <Dialog open={Boolean(materialRequestPrompt)} onClose={() => setMaterialRequestPrompt(null)} fullWidth maxWidth="xs">
