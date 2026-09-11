@@ -22,7 +22,7 @@ const buildSpecificationCellValue = (specification, specification2, processName)
   const firstSpecification = normalizeText(specification);
   const secondSpecification = formatSpecification2(specification2);
   const process = normalizeText(processName);
-  // 단열은 현장 규격만 출력하며, 두 규격을 함께 쓰는 공정은 경량벽체뿐입니다.
+  // 단열 출력은 유지하고, 몰딩·걸레받이는 현장에서 입력한 규격(1)도 출력합니다.
   if (process === '단열' && !secondSpecification) return '';
   if (!secondSpecification) return firstSpecification;
   const secondFont = {
@@ -30,7 +30,7 @@ const buildSpecificationCellValue = (specification, specification2, processName)
     size: 9,
     color: { argb: 'FFFF0000' },
   };
-  if (process !== '경량벽체' || !firstSpecification) {
+  if (!['경량벽체', '몰딩', '걸레받이'].includes(process) || !firstSpecification) {
     return {
       richText: [{ text: secondSpecification, font: secondFont }],
     };

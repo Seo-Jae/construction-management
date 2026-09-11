@@ -1470,7 +1470,9 @@ export default function MaterialOrderUpload({
       if (!master?.is_active) return item;
       return { ...item, materialId: master.id, projectMaterialId: item.materialId === master.id ? item.projectMaterialId : '',
         categoryId: master.category_id, processName: master.process_name || '', standardName: master.standard_name,
-        masterStandardName: master.standard_name, specification: master.specification || '', masterSpecification: master.specification || '', unit: master.unit || '' };
+        masterStandardName: master.standard_name,
+        specification: item.materialId === master.id ? item.specification : master.specification || '',
+        masterSpecification: master.specification || '', unit: master.unit || '' };
     });
   }, [projectName]);
 
@@ -2038,6 +2040,7 @@ export default function MaterialOrderUpload({
           const matchingProjectMaterial = orderProjectMaterialOptions.find((option) => (
             option.materialId === row.materialId &&
             option.projectMaterialId &&
+            normalizeMaterialIdentityPart(option.specification) === normalizeMaterialIdentityPart(row.specification) &&
             normalizeText(option.specification_2).replace(/,/g, '') === normalizedSpecification2
           ));
           nextRow.projectMaterialId = matchingProjectMaterial?.projectMaterialId || '';
@@ -2049,7 +2052,8 @@ export default function MaterialOrderUpload({
             : 0;
           return nextRow;
         }
-        if (field === 'specification' && row.materialId) return row;
+        // 규격(1)은 현장 입력값이며, 자재 연결과 기존 누계 기준은 유지합니다.
+        if (field === 'specification' && row.materialId) return { ...nextRow, projectMaterialId: '' };
         if (['standardName', 'specification', 'specification2', 'unit'].includes(field)) {
           nextRow.projectMaterialId = '';
           nextRow.previousQuantity = 0;
@@ -2542,7 +2546,7 @@ export default function MaterialOrderUpload({
                 p_category_id: row.categoryId || order.categoryId || null,
                 p_process_name: row.processName || order.processName || null,
                 p_standard_name: normalizeText(row.standardName),
-                p_specification: normalizeText(row.masterSpecification || row.specification) || null,
+                p_specification: normalizeText(row.specification) || null,
                 p_specification_2: normalizeText(row.specification2) || null,
                 p_unit: normalizeText(row.unit) || null,
                 p_updated_by: currentUserId || null,
@@ -2631,7 +2635,7 @@ export default function MaterialOrderUpload({
         category_id: row.categoryId || order.categoryId || null,
         process_name: row.processName || order.processName || null,
         standard_name: normalizeText(row.standardName),
-        specification: normalizeText(row.materialId ? row.masterSpecification || row.specification : row.specification) || null,
+        specification: normalizeText(row.specification) || null,
         specification_2: normalizeText(row.specification2) || null,
         unit: normalizeText(row.unit) || null,
         execution_quantity: numberValue(row.executionQuantity),
@@ -4391,7 +4395,7 @@ export default function MaterialOrderUpload({
                     </TableCell>
                     {[
                       ['품명', 220, 'center'],
-                      ['규격', 175, 'center'],
+                      ['규격(1)', 175, 'center'],
                       ['규격(2)', 160, 'center'],
                       ['단위', 50, 'center'],
                       ['실행물량', 105, 'center'],
@@ -4417,7 +4421,7 @@ export default function MaterialOrderUpload({
                   ) : orderItems.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={11} align="center" sx={{ py: 9, color: '#94a3b8' }}>
-                        상단의 + 버튼을 눌러 행을 추가한 뒤 자재마스터에서 품명을 선택해주세요. 규격(2)는 현장 발주 이력에서 안내됩니다.
+                        상단의 + 버튼을 눌러 행을 추가한 뒤 자재마스터에서 품명을 선택해주세요. 규격(1)은 기본값을 현장에 맞게 수정할 수 있고, 규격(2)는 현장 발주 이력에서 안내됩니다.
                       </TableCell>
                     </TableRow>
                   ) : orderItems.map((row, index) => {
@@ -4559,8 +4563,8 @@ export default function MaterialOrderUpload({
                             onChange={(event) => updateOrderItem(index, 'specification', event.target.value)}
                             onKeyDown={(event) => handleOrderGridKeyDown(event, index, 'specification')}
                             inputRef={(node) => setOrderItemInputRef(itemKey, 'specification', node)}
-                            placeholder="규격"
-                            disabled={isLocked || Boolean(row.materialId) || Boolean(row.materialRequestId)}
+                            placeholder="규격(1)"
+                            disabled={isLocked || (Boolean(row.materialRequestId) && !row.materialId)}
                             sx={entryFieldSx(row.specification)}
                           />
                         </TableCell>
@@ -4859,7 +4863,7 @@ export default function MaterialOrderUpload({
                   <Typography sx={{ mt: 1, fontSize: '0.8rem', overflowWrap: 'anywhere' }}>수령자 {entry.order_snapshot?.receiver_name || '-'} · 납품장소 {entry.order_snapshot?.delivery_location || '-'}</Typography>
                   <TableContainer sx={{ mt: 1, overflowX: 'auto' }}>
                     <Table size="small" sx={{ minWidth: 620, '& .MuiTableCell-root': { whiteSpace: 'nowrap', px: 1, py: 1 } }}>
-                      <TableHead><TableRow>{['품명', '규격', '규격(2)', '단위', '금회발주량'].map((label) => <TableCell key={label} align="center">{label}</TableCell>)}</TableRow></TableHead>
+                      <TableHead><TableRow>{['품명', '규격(1)', '규격(2)', '단위', '금회발주량'].map((label) => <TableCell key={label} align="center">{label}</TableCell>)}</TableRow></TableHead>
                       <TableBody>
                         {(entry.item_snapshot || []).map((item, itemIndex) => (
                           <TableRow key={item.id || itemIndex}>
