@@ -130,7 +130,7 @@ const PROCESS_OPTIONS = [
 const PROCESS_FOLDER_CATEGORY_NAME = '각 공정자재';
 const REMOVED_CATEGORY_NAMES = new Set(['각 공정 잡자재']);
 const PROCESS_FOLDER_OPTIONS = PROCESS_OPTIONS.filter(
-  (processName) => !['안전', '가설', '기타'].includes(processName),
+  (processName) => !['합지', '안전', '가설', '기타'].includes(processName),
 );
 
 const ORDER_STATUS_LABELS = {
@@ -585,6 +585,8 @@ export default function MaterialOrderUpload({
   const [confirmationCancelOpen, setConfirmationCancelOpen] = useState(false);
   const [confirmationCancelReason, setConfirmationCancelReason] = useState('');
   const [confirmationHistoryOpen, setConfirmationHistoryOpen] = useState(false);
+  const [orderDateDialog, setOrderDateDialog] = useState(null);
+  const [orderDateHistoryOpen, setOrderDateHistoryOpen] = useState(false);
   const [schemaMissing, setSchemaMissing] = useState(false);
   const [toast, setToast] = useState(null);
   const [order, setOrder] = useState({
@@ -636,6 +638,8 @@ export default function MaterialOrderUpload({
   const currentUserName = getProfileName(userProfile);
   const isSuperAdmin = isSuperAdminProfile(userProfile);
   const isLocked = ['ordered', 'confirmed', 'cancelled'].includes(order.status);
+  const dateReasonRequired = order.status !== 'draft' || Boolean(order.confirmationHistory?.length);
+  const canChangeOrderDate = order.status !== 'cancelled' && (!dateReasonRequired || canManageMaster);
 
   const notify = useCallback((severity, text) => {
     setToast({ severity, text });
@@ -1525,6 +1529,8 @@ export default function MaterialOrderUpload({
           note: row.note || '',
           status: row.status || 'draft',
           confirmationHistory: row.confirmation_history || [],
+          dateHistory: row.order_date_history || [],
+          createdAt: row.created_at || '',
         });
         setSelectedOrderFolderId(nextCategoryId);
         setSelectedOrderFolderProcess(
@@ -2554,7 +2560,7 @@ export default function MaterialOrderUpload({
 
       // 첫 저장부터 번호를 예약하고, 확정 시에는 저장된 번호를 유지합니다.
       const numberDate = String(order.orderDate || '').replace(/-/g, '').slice(2);
-      if (!orderId || !orderNo || !orderNo.startsWith(`${numberDate}-`)) {
+      if (!orderId || !orderNo || (!order.confirmationHistory?.length && !orderNo.startsWith(`${numberDate}-`))) {
         const { data: nextNo, error: numberError } = await supabase.rpc(
           'reserve_material_supply_order_no_v175',
           { p_project_name: projectName, p_order_date: order.orderDate },
@@ -2602,6 +2608,8 @@ export default function MaterialOrderUpload({
           .update(headerPayload)
           .eq('id', orderId)
           .eq('status', 'draft')
+          .eq('project_name', projectName)
+          .eq('order_date', order.orderDate)
           .select('id')
           .single();
         if (error) throw error;
@@ -2672,7 +2680,10 @@ export default function MaterialOrderUpload({
         status,
         confirmation_history: order.confirmationHistory || [],
       };
-      await openOrder(savedRow);
+      const { data: persistedOrder, error: reloadError } = await supabase
+        .from('material_supply_orders').select('*').eq('id', orderId).eq('project_name', projectName).single();
+      if (reloadError) throw reloadError;
+      await openOrder(persistedOrder || savedRow);
       await loadOrderMaterialOptions();
     } catch (error) {
       if (!handleSchemaError(error)) notify('error', `발주서 저장 실패: ${error.message}`);
@@ -2683,8 +2694,8 @@ export default function MaterialOrderUpload({
 
   const deleteOrder = async () => {
     if (!order.id || saving) return;
-    if (order.status !== 'draft' || order.confirmationHistory?.length) {
-      notify('warning', '확정 문서나 확정 취소 이력이 있는 문서는 삭제할 수 없습니다.');
+    if (order.status !== 'draft' || order.confirmationHistory?.length || order.dateHistory?.length) {
+      notify('warning', '확정 문서나 확정 취소·발주일 변경 이력이 있는 문서는 삭제할 수 없습니다.');
       return;
     }
     if (!window.confirm(`${order.orderNo || '현재 발주서'}를 삭제할까요?`)) return;
@@ -2732,6 +2743,38 @@ export default function MaterialOrderUpload({
       notify('error', error.code === 'PGRST202' || error.code === '42883'
         ? '확정 취소 SQL(v52.48.5.44.177)을 먼저 적용해주세요.'
         : `확정 취소 실패: ${error.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const changeOrderDate = async () => {
+    if (!orderDateDialog || saving || !canChangeOrderDate) return;
+    if (orderDateDialog.orderId !== order.id || orderDateDialog.projectName !== projectName) {
+      setOrderDateDialog(null);
+      notify('warning', '현장 또는 문서가 변경되었습니다. 다시 열어주세요.');
+      return;
+    }
+    setSaving(true);
+    try {
+      const { data, error } = await supabase.rpc('change_material_order_date_v181', {
+        p_order_id: order.id, p_project_name: projectName,
+        p_expected_date: order.orderDate, p_order_date: orderDateDialog.date,
+        p_reason: orderDateDialog.reason.trim(),
+      });
+      if (error) throw error;
+      const changed = Array.isArray(data) ? data[0] : data;
+      if (!changed) throw new Error('문서 상태와 수정 권한을 확인해주세요.');
+      setOrder((current) => current.id === changed.id ? {
+        ...current, orderDate: changed.order_date, orderNo: changed.order_no,
+        dateHistory: changed.order_date_history || [], createdAt: changed.created_at,
+      } : current);
+      setOrderDateDialog(null);
+      await loadOrders();
+      notify('success', '발주일을 변경하고 이력을 기록했습니다.');
+    } catch (error) {
+      notify('error', ['PGRST202', '42883'].includes(error.code)
+        ? '발주일 수정 SQL(v181)을 먼저 적용해주세요.' : `발주일 수정 실패: ${error.message}`);
     } finally {
       setSaving(false);
     }
@@ -3958,7 +4001,7 @@ export default function MaterialOrderUpload({
           </Paper>
 
           <Paper variant="outlined" sx={{ minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            <Stack direction="row" alignItems="center" spacing={0.7} sx={{ px: 1, py: 0.7, borderBottom: '1px solid #cbd5e1', bgcolor: '#eef1f4' }}>
+            <Stack direction="row" alignItems="center" spacing={0.7} useFlexGap sx={{ flexWrap: 'wrap', px: 1, py: 0.7, borderBottom: '1px solid #cbd5e1', bgcolor: '#eef1f4' }}>
               <Typography sx={{ fontSize: '0.82rem', fontWeight: 900 }}>사급자재 발주서</Typography>
               <Box
                 sx={{
@@ -3978,8 +4021,10 @@ export default function MaterialOrderUpload({
                 {selectedOrderFolderProcess ? ' > ' + selectedOrderFolderProcess : ''}
               </Box>
               {order.orderNo && <Chip label={formatOrderDisplayNo(order)} size="small" variant="outlined" />}
+              {order.id && canChangeOrderDate && <Button size="small" variant="outlined" disabled={saving || loading} sx={{ flexShrink: 0 }} onClick={() => setOrderDateDialog({ orderId: order.id, projectName, date: order.orderDate, reason: '' })}>발주일 수정</Button>}
+              {order.id && <Button size="small" variant="outlined" onClick={() => setOrderDateHistoryOpen(true)}>발주일 이력 ({order.dateHistory?.length || 0})</Button>}
               {order.status !== 'draft' && <Chip label={ORDER_STATUS_LABELS[order.status] || order.status} size="small" color={['ordered', 'confirmed'].includes(order.status) ? 'success' : 'default'} />}
-              {order.id && order.status === 'draft' && !order.confirmationHistory?.length && (
+              {order.id && order.status === 'draft' && !order.confirmationHistory?.length && !order.dateHistory?.length && (
                 <Button size="small" color="error" variant="outlined" onClick={deleteOrder} disabled={saving} startIcon={<DeleteOutlineRoundedIcon />} sx={{ ml: 'auto' }}>삭제</Button>
               )}
               {order.id && order.status === 'ordered' && (
@@ -4196,7 +4241,7 @@ export default function MaterialOrderUpload({
 
             <Box sx={{ p: 0.7, borderBottom: '1px solid #cbd5e1', bgcolor: '#eef1f4' }}>
               <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, minmax(0, 1fr))', columnGap: 0.7, rowGap: 0.55 }}>
-                <TextField size="small" label="발주일" type="date" slotProps={{ inputLabel: { shrink: true } }} value={order.orderDate} onChange={(e) => setOrder((current) => ({ ...current, orderDate: e.target.value }))} disabled={isLocked} sx={compactDateFieldSx(order.orderDate)} />
+                <TextField size="small" label="발주일" type="date" slotProps={{ inputLabel: { shrink: true } }} value={order.orderDate} onChange={(e) => setOrder((current) => ({ ...current, orderDate: e.target.value }))} disabled={isLocked || Boolean(order.id) || saving} sx={compactDateFieldSx(order.orderDate)} />
                 <TextField size="small" label="요청자" slotProps={{ inputLabel: { shrink: true } }} value={order.requesterName} onChange={(e) => setOrder((current) => ({ ...current, requesterName: e.target.value }))} disabled={isLocked} sx={compactEntryFieldSx(order.requesterName)} />
                 <Box sx={compactSelectFieldSx(order.categoryId, isLocked)}>
                   <Box component="label" htmlFor="material-order-category">자재분류</Box>
@@ -4734,6 +4779,37 @@ export default function MaterialOrderUpload({
           )}
         </DialogContent>
         <DialogActions><Button disabled={saving} onClick={() => setMaterialRequestsOpen(false)}>닫기</Button></DialogActions>
+      </Dialog>
+
+      <Dialog open={Boolean(orderDateDialog)} onClose={() => !saving && setOrderDateDialog(null)} fullWidth maxWidth="sm">
+        <DialogTitle sx={{ fontSize: '1.05rem', fontWeight: 900 }}>발주일 수정</DialogTitle>
+        <DialogContent dividers>
+          <Alert severity="info" sx={{ mb: 2 }}>과거 날짜도 입력할 수 있습니다. 변경한 날짜에 따라 월별 목록이 이동하며, 확정 이력이 있는 발주서는 기존 발주번호를 유지합니다. 날짜는 즉시 저장되고 다른 편집 내용은 별도로 저장해야 합니다.</Alert>
+          {dateReasonRequired && <Alert severity="warning" sx={{ mb: 2 }}>확정 이력이 있는 문서는 자재관리 권한과 수정 사유가 필요합니다. 거래처에 전달한 발주서는 날짜 변경을 별도로 안내해주세요.</Alert>}
+          <TextField fullWidth size="small" label="발주일" type="date" value={orderDateDialog?.date || ''} disabled={saving} slotProps={{ inputLabel: { shrink: true } }} onChange={(event) => setOrderDateDialog((current) => ({ ...current, date: event.target.value }))} sx={{ mb: 2 }} />
+          <TextField fullWidth multiline minRows={2} label="수정 사유" required={dateReasonRequired} value={orderDateDialog?.reason || ''} disabled={saving} inputProps={{ maxLength: 1000 }} onChange={(event) => setOrderDateDialog((current) => ({ ...current, reason: event.target.value }))} />
+        </DialogContent>
+        <DialogActions>
+          <Button disabled={saving} onClick={() => setOrderDateDialog(null)}>닫기</Button>
+          <Button variant="contained" onClick={changeOrderDate} disabled={saving || !orderDateDialog?.date || orderDateDialog.date === order.orderDate || (dateReasonRequired && !orderDateDialog?.reason.trim())}>발주일 저장</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={orderDateHistoryOpen} onClose={() => setOrderDateHistoryOpen(false)} fullWidth maxWidth="sm">
+        <DialogTitle sx={{ fontSize: '1.05rem', fontWeight: 900 }}>발주일 변경 이력</DialogTitle>
+        <DialogContent dividers sx={{ overflowWrap: 'anywhere' }}>
+          <Typography sx={{ mb: 2 }}>최초 등록: {order.createdAt ? new Date(order.createdAt).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' }) : '등록시각 정보 없음'}</Typography>
+          {!order.dateHistory?.length && <Typography color="text.secondary">기록된 발주일 변경 이력이 없습니다. 이력은 기능 적용 이후부터 기록됩니다.</Typography>}
+          <Stack spacing={1.5}>{[...(order.dateHistory || [])].reverse().map((entry, index) => (
+            <Paper key={`${entry.changed_at}-${index}`} variant="outlined" sx={{ p: 2 }}>
+              <Typography fontWeight={700}>{entry.old_date} → {entry.new_date}</Typography>
+              <Typography variant="caption" color="text.secondary">{new Date(entry.changed_at).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} · {entry.changed_by_name || entry.changed_by}</Typography>
+              <Typography sx={{ mt: 1, whiteSpace: 'pre-wrap' }}>{entry.reason || '작성중 날짜 수정'}</Typography>
+              {entry.old_order_no !== entry.new_order_no && <Typography variant="caption">발주번호: {entry.old_order_no} → {entry.new_order_no}</Typography>}
+            </Paper>
+          ))}</Stack>
+        </DialogContent>
+        <DialogActions><Button onClick={() => setOrderDateHistoryOpen(false)}>닫기</Button></DialogActions>
       </Dialog>
 
       <Dialog open={confirmationCancelOpen} onClose={() => !saving && setConfirmationCancelOpen(false)} fullWidth maxWidth="sm">
