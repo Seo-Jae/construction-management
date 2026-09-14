@@ -16,6 +16,8 @@ import {
   Typography,
 } from '@mui/material';
 import { supabase } from '../supabaseClient';
+import DashboardScheduleHistoryDialog from '../components/DashboardScheduleHistoryDialog.jsx';
+import { canArchiveSavedSchedule } from '../utils/dashboardScheduleHistory.js';
 
 const RECORD_ID = 'main-dashboard';
 
@@ -431,6 +433,8 @@ function SiteSchedulePanel({
   onAdd,
   onDelete,
   onSave,
+  onHistory,
+  historyReady,
 }) {
   const textColumns = [
     {
@@ -479,7 +483,9 @@ function SiteSchedulePanel({
         saving={saving}
         onSave={canEdit ? onSave : null}
         rightContent={
-          canEdit ? <>
+          <>
+            <Button size="small" variant="outlined" onClick={onHistory} sx={{ minWidth: 64, whiteSpace: 'nowrap', fontSize: '0.65rem' }}>과거 이력</Button>
+            {canEdit && <>
             <Button
               size="small"
               variant="outlined"
@@ -501,7 +507,7 @@ function SiteSchedulePanel({
               color="error"
               onClick={onDelete}
               disabled={
-                siteSchedules.length === 0
+                saving || !historyReady || siteSchedules.length === 0
               }
               sx={{
                 minWidth: 44,
@@ -513,7 +519,8 @@ function SiteSchedulePanel({
             >
               삭제
             </Button>
-          </> : null
+            </>}
+          </>
         }
       />
 
@@ -1386,6 +1393,9 @@ function CalendarPanel({
 }
 
 export default function AdminDashboardScheduleBoard({ canEdit = false }) {
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyReady, setHistoryReady] = useState(false);
+  const [savedSiteSchedules, setSavedSiteSchedules] = useState([]);
   const [siteSchedules, setSiteSchedules] =
     useState(() =>
       normalizeSiteSchedules([]),
@@ -1462,6 +1472,9 @@ export default function AdminDashboardScheduleBoard({ canEdit = false }) {
             data?.site_schedules,
           ),
         );
+        setSavedSiteSchedules(normalizeSiteSchedules(data?.site_schedules));
+        const { error: historyError } = await supabase.from('admin_dashboard_site_history').select('id').limit(0);
+        setHistoryReady(!historyError);
 
         setMeetings(
           normalizeMeetings(
@@ -1581,30 +1594,22 @@ export default function AdminDashboardScheduleBoard({ canEdit = false }) {
     setSuccessMessage('');
   };
 
-  const handleDeleteSiteSchedule = () => {
-    if (!canEdit) return;
-
-    setSiteSchedules((previous) => {
-      if (previous.length === 0) {
-        return previous;
+  const handleDeleteSiteSchedule = async () => {
+    if (!canEdit || saving || !historyReady) return;
+    const target = siteSchedules.find((row) => row.id === selectedSiteScheduleId) || siteSchedules.at(-1);
+    if (!target) return;
+    if (hasSiteScheduleContent(target)) {
+      if (!canArchiveSavedSchedule(target, savedSiteSchedules)) {
+        setErrorMessage('새로 작성하거나 수정한 내용은 먼저 저장한 뒤 삭제해주세요. 저장된 내용은 과거 이력에 남습니다.');
+        return;
       }
-
-      const targetId =
-        selectedSiteScheduleId ||
-        previous[
-          previous.length - 1
-        ].id;
-
-      const next = previous.filter(
-        (row) => row.id !== targetId,
-      );
-
-      setSelectedSiteScheduleId('');
-
-      return next;
-    });
-
-    setSuccessMessage('');
+      if (!window.confirm(`${target.siteName || target.constructionCompany || '선택한 일정'}을 삭제할까요? 삭제 즉시 저장되며 과거 이력에서 다시 볼 수 있습니다.`)) return;
+      await handleSave(siteSchedules.filter((row) => row.id !== target.id), target);
+      return;
+    }
+    setSiteSchedules((previous) => previous.filter((row) => row.id !== target.id));
+    setSelectedSiteScheduleId('');
+    setSuccessMessage('빈 행을 삭제했습니다.');
   };
 
   const handleAddMeeting = () => {
@@ -1648,7 +1653,9 @@ export default function AdminDashboardScheduleBoard({ canEdit = false }) {
     setSuccessMessage('');
   };
 
-  const handleSave = async () => {
+  const handleSave = async (schedules = siteSchedules, deletedSchedule = null) => {
+    if (saving) return;
+    const schedulesToSave = Array.isArray(schedules) ? schedules : siteSchedules;
     if (!canEdit) {
       setErrorMessage('Dashboard 조회 권한에서는 일정을 저장할 수 없습니다.');
       return;
@@ -1678,7 +1685,7 @@ export default function AdminDashboardScheduleBoard({ canEdit = false }) {
         'save_admin_dashboard_planning_v52_13',
         {
           p_record_id: RECORD_ID,
-          p_site_schedules: siteSchedules,
+          p_site_schedules: schedulesToSave,
           p_meeting_schedules: meetings,
         },
       );
@@ -1687,6 +1694,19 @@ export default function AdminDashboardScheduleBoard({ canEdit = false }) {
         throw error;
       }
 
+      setSavedSiteSchedules(schedulesToSave.map((row) => ({ ...row })));
+      if (deletedSchedule) {
+        setSiteSchedules((previous) => previous.filter((row) => row.id !== deletedSchedule.id));
+        setSelectedSiteScheduleId('');
+        const { data: history, error: historyError } = await supabase.from('admin_dashboard_site_history')
+          .select('id').eq('board_id', RECORD_ID).eq('schedule_id', deletedSchedule.id).limit(1);
+        if (historyError || !history?.length) {
+          setErrorMessage('삭제는 저장되었지만 과거 이력 등록을 확인하지 못했습니다. 이력 조회 권한과 DB 보관 기능을 확인해주세요.');
+          return;
+        }
+        setSuccessMessage('삭제했습니다. 과거 이력에서 확인할 수 있습니다.');
+        return;
+      }
       setSuccessMessage(
         'Dashboard 일정이 저장되었습니다.',
       );
@@ -1816,6 +1836,8 @@ export default function AdminDashboardScheduleBoard({ canEdit = false }) {
         }}
       >
         <SiteSchedulePanel
+          onHistory={() => setHistoryOpen(true)}
+          historyReady={historyReady}
           siteSchedules={
             siteSchedules
           }
@@ -1838,6 +1860,7 @@ export default function AdminDashboardScheduleBoard({ canEdit = false }) {
           }
           onSave={handleSave}
         />
+        {historyOpen && <DashboardScheduleHistoryDialog boardId={RECORD_ID} onClose={() => setHistoryOpen(false)} />}
 
         <Box
           sx={{
