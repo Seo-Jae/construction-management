@@ -46,7 +46,6 @@ import { supabase } from '../supabaseClient';
 import LaborSecurityPhoneDialog from '../components/LaborSecurityPhoneDialog.jsx';
 import LaborDownloadAuthDialog from '../components/LaborDownloadAuthDialog.jsx';
 
-import SystemPageTitle from '../components/SystemPageTitle.jsx';
 const TRADE_OPTIONS = [
   '소장',
   '관리자',
@@ -1613,8 +1612,7 @@ export default function MonthlyLaborManagement({
         sx={{
           px: 1.5,
           py: 1.25,
-          borderColor:
-            '#cbd5e1',
+          border: 'none',
         }}
       >
         <Stack
@@ -1634,10 +1632,7 @@ export default function MonthlyLaborManagement({
               flexGrow: 1,
             }}
           >
-            <SystemPageTitle
-              title="월별 노임작성"
-              help="월별 공정 및 근로자 노임을 작성하고 예상·실적 현황을 관리합니다."
-            />
+            <Box sx={{ flex: 1 }} />
 
             <Typography
               sx={{

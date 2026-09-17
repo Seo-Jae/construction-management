@@ -18,7 +18,6 @@ import VisibilityRoundedIcon from '@mui/icons-material/VisibilityRounded';
 import VisibilityOffRoundedIcon from '@mui/icons-material/VisibilityOffRounded';
 import { supabase } from '../supabaseClient';
 import GuideAnnotatedImage from '../components/GuideAnnotatedImage.jsx';
-import SystemPageTitle from '../components/SystemPageTitle.jsx';
 import {
   GUIDE_GROUPS, GUIDE_IMAGE_BUCKET, GUIDE_ITEMS, createGuideSection,
   isGuideAnnotationNumberVisible, normalizeGuideAnnotations, normalizeGuideSections,
@@ -184,7 +183,7 @@ export default function Guide() {
   const renderItem=(item,nested=false)=>{const selected=item.id===selectedGuideId;return <ListItemButton key={item.id} selected={selected} onClick={()=>setSelectedGuideId(item.id)} sx={{minHeight:34,ml:nested?1.5:0,mb:.2,pl:nested?1.5:1.2,pr:.8,py:.25,borderRadius:1,'&.Mui-selected':{bgcolor:'#eff6ff',color:'#1d4ed8'},'&.Mui-selected:hover':{bgcolor:'#dbeafe'}}}><ListItemText primary={item.label} primaryTypographyProps={{noWrap:true,fontSize:'.76rem',fontWeight:selected?800:600}}/><Stack direction="row" spacing={.4}>{item.systemPreparing&&<Chip label="기능 준비중" size="small" sx={{...statusChipSx,color:'#92400e',bgcolor:'#fef3c7'}}/>}{renderStatus(item)}</Stack></ListItemButton>;};
 
   return <Box sx={{height:'100%',minHeight:0,display:'flex',flexDirection:'column',gap:1}}>
-    <Paper variant="outlined" sx={{px:1.25,py:1,borderColor:'#dbe3ed'}}><Stack direction={{xs:'column',md:'row'}} spacing={1} alignItems={{xs:'flex-start',md:'center'}} justifyContent="space-between"><SystemPageTitle title="가이드 설정" meta="최고관리자 전용 · 실제 시스템 화면 이미지 위에 번호/동그라미/점선박스/화살표를 넣어 사용자 가이드를 제작합니다."/><Stack direction="row" spacing={.6}><Chip label={`공개 ${Object.values(guideRows).filter((r)=>r.status==='published').length}`} size="small" sx={{color:'#166534',bgcolor:'#dcfce7',fontWeight:900}}/><Chip label={`전체 ${GUIDE_ITEMS.length}`} size="small" sx={{color:'#334155',bgcolor:'#f1f5f9',fontWeight:900}}/></Stack></Stack></Paper>
+    <Paper variant="outlined" sx={{px:1.25,py:1,border: 'none'}}><Stack direction={{xs:'column',md:'row'}} spacing={1} alignItems={{xs:'flex-start',md:'center'}} justifyContent="space-between"><Box sx={{ flex: 1 }} /><Stack direction="row" spacing={.6}><Chip label={`공개 ${Object.values(guideRows).filter((r)=>r.status==='published').length}`} size="small" sx={{color:'#166534',bgcolor:'#dcfce7',fontWeight:900}}/><Chip label={`전체 ${GUIDE_ITEMS.length}`} size="small" sx={{color:'#334155',bgcolor:'#f1f5f9',fontWeight:900}}/></Stack></Stack></Paper>
     {message&&<Alert severity={message.severity} onClose={()=>setMessage(null)} sx={{py:.2}}>{message.text}</Alert>}
     {(loading||saving)&&<LinearProgress/>}
     <Box sx={{flex:1,minHeight:0,display:'grid',gridTemplateColumns:{xs:'1fr',lg:'345px minmax(0,1fr)'},gap:1}}>

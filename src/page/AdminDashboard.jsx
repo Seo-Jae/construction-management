@@ -19,7 +19,6 @@ import { countUniqueUnits } from '../utils/buildingUnits.js';
 import AdminDashboardReportPreview from './AdminDashboardReportPreview.jsx';
 import AdminDashboardScheduleBoard from './AdminDashboardScheduleBoard.jsx';
 
-import SystemPageTitle from '../components/SystemPageTitle.jsx';
 const PAGE_SIZE = 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -1436,7 +1435,7 @@ export default function AdminDashboard({
         variant="outlined"
         sx={{
           mb: 1.5,
-          borderColor: '#cbd5e1',
+          border: 'none',
           bgcolor: '#ffffff',
           overflow: 'hidden',
         }}
@@ -1463,7 +1462,7 @@ export default function AdminDashboard({
                 justifyContent: 'space-between',
                 gap: 1,
                 cursor: 'pointer',
-                bgcolor: '#f8fafc',
+                bgcolor: '#ffffff',
                 '&:hover': {
                   bgcolor: '#f1f5f9',
                 },
@@ -1473,10 +1472,7 @@ export default function AdminDashboard({
                 },
               }}
             >
-              <SystemPageTitle
-                title="전체현장 Dashboard"
-                help="전체 현장의 금일 출력·일보 등록·공정률·주요일정을 한 화면에서 확인합니다."
-              />
+              <Box sx={{ flex: 1 }} />
 
               <Typography
                 sx={{
@@ -1501,7 +1497,8 @@ export default function AdminDashboard({
               gap: 1,
             }}
           >
-            <Box>
+            <Box sx={{ flex: 1 }} />
+            <Box sx={{ display: 'none', displayPrint: 'block' }}>
               <Typography
                 fontWeight={900}
                 sx={{

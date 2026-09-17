@@ -3,8 +3,8 @@
 // v52.48.5.44.118 좌측메뉴 목록 폭 고정
 // v52.48.5.44.89 업무자료실 대메뉴
 // v52.48.5.44.47 가이드 설정 최고관리자 전용
-// v52.48.5.44.30 세대물량관리 독립 대메뉴 분리
-// v52.48.5.44.29 옵션관리 세대물량관리 메뉴 추가
+// v52.48.5.44.30 세대 물량 관리 독립 대메뉴 분리
+// v52.48.5.44.29 옵션관리 세대 물량 관리 메뉴 추가
 // v52.48.5.44.12 옵션관리 메뉴 추가
 import React, { useEffect, useState } from 'react';
 import {
@@ -20,15 +20,11 @@ import {
 import HomeRoundedIcon from '@mui/icons-material/HomeRounded';
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import AssignmentIcon from '@mui/icons-material/Assignment';
-import EngineeringIcon from '@mui/icons-material/Engineering';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import Inventory2OutlinedIcon from '@mui/icons-material/Inventory2Outlined';
-import RequestQuoteOutlinedIcon from '@mui/icons-material/RequestQuoteOutlined';
-import BadgeOutlinedIcon from '@mui/icons-material/BadgeOutlined';
 import ManageAccountsOutlinedIcon from '@mui/icons-material/ManageAccountsOutlined';
 import DomainAddRoundedIcon from '@mui/icons-material/DomainAddRounded';
 import PunchClockRoundedIcon from '@mui/icons-material/PunchClockRounded';
-import TableRowsRoundedIcon from '@mui/icons-material/TableRowsRounded';
 import MenuBookRoundedIcon from '@mui/icons-material/MenuBookRounded';
 import FeedbackOutlinedIcon from '@mui/icons-material/FeedbackOutlined';
 import FolderCopyOutlinedIcon from '@mui/icons-material/FolderCopyOutlined';
@@ -55,11 +51,11 @@ const dailyMenus = [
 const weeklyOverviewMenus = [
   {
     value: 'weekly-overview',
-    label: '주간업무작성',
+    label: '주간 업무 작성',
   },
   {
     value: 'weekly-overview-archive',
-    label: '주간업무보관',
+    label: '주간 업무 보관',
   },
 ];
 
@@ -95,34 +91,34 @@ const materialMenus = [
 const laborMenus = [
   {
     value: 'labor-monthly',
-    label: '월별 노임작성',
+    label: '월별 노임 작성',
   },
   {
     value: 'labor-worker-master',
-    label: '근로자 정보관리',
+    label: '근로자 정보 관리',
   },
   {
     value: 'labor-contract',
-    label: '근로계약서작성',
+    label: '근로계약서 작성',
   },
   {
     value: 'labor-cost',
-    label: '공정별 노임작성',
+    label: '공정별 노임 작성',
   },
 ];
 
 const paymentMenus = [
   {
     value: 'payment-claim',
-    label: '기성내역서작성',
+    label: '기성 내역서 작성',
   },
   {
     value: 'payment-contract-mapping',
-    label: '계약품목 공정연결',
+    label: '계약 품목 공정 연결',
   },
   {
     value: 'payment-sales-status',
-    label: '매입매출현황',
+    label: '매입·매출 현황',
     disabled: true,
     statusLabel: INACTIVE_MENU_STATUS,
   },
@@ -159,13 +155,13 @@ const MENU_SELECTED_BACKGROUND = '#cce7ec';
 const shortcutMenus = [
   { value: 'main', label: 'Main' },
   { value: 'admin-dashboard', label: 'Dashboard' },
-  { value: 'project-management', label: '현장관리', adminOnly: true },
-  { value: 'user-management', label: '회원관리', adminOnly: true },
+  { value: 'project-management', label: '현장 관리', adminOnly: true },
+  { value: 'user-management', label: '회원 관리', adminOnly: true },
   { value: 'attendance', label: '근태관리' },
   { value: 'approval-inbox', label: '결재함' },
   { value: 'organization-chart', label: '조직도' },
-  { value: 'household-quantity-management', label: '세대물량관리' },
-  { value: 'drawing-quantity', label: '타입별 도면분석' },
+  { value: 'household-quantity-management', label: '세대 물량 관리', group: '공무 관리' },
+  { value: 'drawing-quantity', label: '타입별 도면 분석', group: '공무 관리' },
   { value: 'business-library', label: '업무자료실' },
   { value: 'feedback', label: '건의·오류 제보' },
   { value: 'guide', label: '가이드 설정', adminOnly: true },
@@ -173,10 +169,10 @@ const shortcutMenus = [
     [dailyMenus, '공사 관리 · 공사 일보 관리'],
     [progressMenus, '공사 관리 · 공정 진척 관리'],
     [optionMenus, '공사 관리 · 옵션 관리'],
-    [weeklyOverviewMenus, '주간업무총괄'],
+    [weeklyOverviewMenus, '주간 업무 총괄'],
     [materialMenus, '자재 관리'],
-    [laborMenus, '노임관리'],
-    [paymentMenus, '기성관리'],
+    [laborMenus, '공무 관리 · 노임 관리'],
+    [paymentMenus, '공무 관리 · 기성 관리'],
     [reportMenus, '업무 보고 관리'],
   ].flatMap(([items, group]) => items.map((item) => ({ ...item, group }))),
 ];
@@ -410,6 +406,11 @@ export default function Sidebar({
 
   const [dailyOpen, setDailyOpen] = useState(isDailyView);
   const [constructionOpen, setConstructionOpen] = useState(true);
+  const isOfficeView = isPaymentView || isLaborView || ['household-quantity-management', 'drawing-quantity'].includes(currentView);
+  const hasOfficeMenu = hasPaymentMenu || hasLaborMenu || canAccessView('household-quantity-management') || canAccessView('drawing-quantity');
+  const [officeExpanded, setOfficeExpanded] = useState(false);
+  const [officeCollapsedView, setOfficeCollapsedView] = useState(null);
+  const officeOpen = officeExpanded || (isOfficeView && officeCollapsedView !== currentView);
   const [
     weeklyOverviewOpen,
     setWeeklyOverviewOpen,
@@ -721,7 +722,7 @@ export default function Sidebar({
 
       {isSuperAdmin && (
         <Tooltip
-          title={drawerOpen ? '' : '현장관리'}
+          title={drawerOpen ? '' : '현장 관리'}
           placement="right"
           arrow
         >
@@ -740,7 +741,7 @@ export default function Sidebar({
               <DomainAddRoundedIcon fontSize="small" />
             </ListItemIcon>
             <ListItemText
-              primary="현장관리"
+              primary="현장 관리"
               primaryTypographyProps={{
                 noWrap: true,
                 fontSize: '0.72rem',
@@ -756,7 +757,7 @@ export default function Sidebar({
           title={
             drawerOpen
               ? ''
-              : `회원관리${
+              : `회원 관리${
                   registrationPendingCount > 0
                     ? ` (${registrationPendingCount})`
                     : ''
@@ -797,7 +798,7 @@ export default function Sidebar({
             </ListItemIcon>
 
             <ListItemText
-              primary="회원관리"
+              primary="회원 관리"
               primaryTypographyProps={{
                 noWrap: true,
                 fontSize: '0.72rem',
@@ -934,7 +935,7 @@ export default function Sidebar({
             title={
               drawerOpen
                 ? ''
-                : '주간업무총괄'
+                : '주간 업무 총괄'
             }
             placement="right"
             arrow
@@ -965,7 +966,7 @@ export default function Sidebar({
               </ListItemIcon>
 
               <ListItemText
-                primary="주간업무총괄"
+                primary="주간 업무 총괄"
                 primaryTypographyProps={{
                   noWrap: true,
                   fontSize: '0.72rem',
@@ -1243,76 +1244,6 @@ export default function Sidebar({
         </Collapse>
       </>}
 
-      {canAccessView('household-quantity-management') && (
-      <Tooltip
-        title={drawerOpen ? '' : '세대물량관리'}
-        placement="right"
-        arrow
-      >
-        <ListItemButton
-          selected={currentView === 'household-quantity-management'}
-          onClick={() => handleViewChange('household-quantity-management')}
-          sx={topMenuSx(currentView === 'household-quantity-management')}
-        >
-          <ListItemIcon
-            sx={{
-              minWidth: 34,
-              color: 'inherit',
-              justifyContent: 'center',
-            }}
-          >
-            <TableRowsRoundedIcon fontSize="small" />
-          </ListItemIcon>
-
-          <ListItemText
-            primary="세대물량관리"
-            primaryTypographyProps={{
-              noWrap: true,
-              fontSize: '0.72rem',
-              fontWeight:
-                currentView === 'household-quantity-management' ? 700 : 500,
-            }}
-            sx={{ opacity: drawerOpen ? 1 : 0 }}
-          />
-        </ListItemButton>
-      </Tooltip>      )}
-
-
-      {canAccessView('drawing-quantity') && (
-      <Tooltip
-        title={drawerOpen ? '' : '타입별 도면분석'}
-        placement="right"
-        arrow
-      >
-        <ListItemButton
-          selected={currentView === 'drawing-quantity'}
-          onClick={() => handleViewChange('drawing-quantity')}
-          sx={topMenuSx(currentView === 'drawing-quantity')}
-        >
-          <ListItemIcon
-            sx={{
-              minWidth: 34,
-              color: 'inherit',
-              justifyContent: 'center',
-            }}
-          >
-            <EngineeringIcon fontSize="small" />
-          </ListItemIcon>
-
-          <ListItemText
-            primary="타입별 도면분석"
-            primaryTypographyProps={{
-              noWrap: true,
-              fontSize: '0.72rem',
-              fontWeight:
-                currentView === 'drawing-quantity' ? 700 : 500,
-            }}
-            sx={{ opacity: drawerOpen ? 1 : 0 }}
-          />
-        </ListItemButton>
-      </Tooltip>      )}
-
-
       {hasMaterialMenu && (
         <>
       <Tooltip
@@ -1397,128 +1328,6 @@ export default function Sidebar({
       )}
 
 
-      {hasPaymentMenu && (
-        <>
-      <Tooltip
-        title={drawerOpen ? '' : '기성관리'}
-        placement="right"
-        arrow
-      >
-        <ListItemButton
-          selected={isPaymentView}
-          onClick={() =>
-            setPaymentOpen(
-              (previous) => !previous,
-            )
-          }
-          sx={topMenuSx(isPaymentView)}
-        >
-          <ListItemIcon
-            sx={{
-              minWidth: 34,
-              color: 'inherit',
-              justifyContent: 'center',
-            }}
-          >
-            <RequestQuoteOutlinedIcon fontSize="small" />
-          </ListItemIcon>
-
-          <ListItemText
-            primary="기성관리"
-            primaryTypographyProps={{
-              noWrap: true,
-              fontSize: '0.72rem',
-              fontWeight: isPaymentView ? 700 : 500,
-            }}
-            sx={{ opacity: drawerOpen ? 1 : 0 }}
-          />
-
-          {drawerOpen &&
-            (paymentOpen ? (
-              <ExpandLessIcon fontSize="small" />
-            ) : (
-              <ExpandMoreIcon fontSize="small" />
-            ))}
-        </ListItemButton>
-      </Tooltip>
-
-      <Collapse
-        in={drawerOpen && paymentOpen}
-        timeout={0}
-        unmountOnExit
-      >
-        <SubMenuList
-          items={paymentMenus}
-          currentView={currentView}
-          onViewChange={handleViewChange}
-          canView={canAccessView}
-        />
-      </Collapse>        </>
-      )}
-
-
-      {hasLaborMenu && (
-        <>
-      <Tooltip
-        title={drawerOpen ? '' : '노임관리'}
-        placement="right"
-        arrow
-      >
-        <ListItemButton
-          selected={isLaborView}
-          onClick={() =>
-            setLaborOpen(
-              (previous) => !previous,
-            )
-          }
-          sx={topMenuSx(isLaborView)}
-        >
-          <ListItemIcon
-            sx={{
-              minWidth: 34,
-              color: 'inherit',
-              justifyContent: 'center',
-            }}
-          >
-            <BadgeOutlinedIcon fontSize="small" />
-          </ListItemIcon>
-
-          <ListItemText
-            primary="노임관리"
-            primaryTypographyProps={{
-              noWrap: true,
-              fontSize: '0.72rem',
-              fontWeight: isLaborView ? 700 : 500,
-            }}
-            sx={{
-              opacity: drawerOpen ? 1 : 0,
-            }}
-          />
-
-          {drawerOpen &&
-            (laborOpen ? (
-              <ExpandLessIcon fontSize="small" />
-            ) : (
-              <ExpandMoreIcon fontSize="small" />
-            ))}
-        </ListItemButton>
-      </Tooltip>
-
-      <Collapse
-        in={drawerOpen && laborOpen}
-        timeout={0}
-        unmountOnExit
-      >
-        <SubMenuList
-          items={laborMenus}
-          currentView={currentView}
-          onViewChange={handleViewChange}
-          canView={canAccessView}
-        />
-      </Collapse>        </>
-      )}
-
-
       {hasReportMenu && (
         <>
       <Tooltip
@@ -1566,6 +1375,182 @@ export default function Sidebar({
       </Collapse>        </>
       )}
 
+      {hasOfficeMenu && <>
+        <Tooltip title={drawerOpen ? '' : '공무 관리'} placement="right" arrow>
+          <ListItemButton onClick={() => {
+            if (!drawerOpen) { onExpandDrawer?.(); setOfficeExpanded(true); }
+            else { setOfficeExpanded(!officeOpen); setOfficeCollapsedView(currentView); }
+          }} aria-label="공무 관리" aria-expanded={drawerOpen && officeOpen} aria-controls="office-menu-sections"
+            sx={{ ...topMenuSx(false), bgcolor: isOfficeView ? '#f3f4f6' : 'transparent' }}>
+            <ListItemIcon sx={{ minWidth: 34, color: 'inherit', justifyContent: 'center' }}><AssignmentIcon fontSize="small" /></ListItemIcon>
+            <ListItemText primary="공무 관리" primaryTypographyProps={{ noWrap: true, fontSize: 13, fontWeight: 900 }} sx={{ opacity: drawerOpen ? 1 : 0 }} />
+            {drawerOpen && (officeOpen ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />)}
+          </ListItemButton>
+        </Tooltip>
+        <Collapse in={drawerOpen && officeOpen} timeout={0} unmountOnExit>
+          <Box id="office-menu-sections" sx={{ position: 'relative', '&::after': { content: '""', position: 'absolute', left: 26, top: 0, bottom: 4, borderLeft: '1px solid #d5dde1', pointerEvents: 'none' } }}>
+      {hasPaymentMenu && (
+        <>
+      <Tooltip
+        title={drawerOpen ? '' : '기성 관리'}
+        placement="right"
+        arrow
+      >
+        <ListItemButton
+          selected={isPaymentView}
+          onClick={() =>
+            setPaymentOpen(
+              (previous) => !previous,
+            )
+          }
+          sx={constructionSectionSx(isPaymentView)}
+        >
+
+          <ListItemText
+            primary="기성 관리"
+            primaryTypographyProps={{
+              noWrap: true,
+              fontSize: '0.72rem',
+              fontWeight: isPaymentView ? 700 : 500,
+            }}
+            sx={{ opacity: drawerOpen ? 1 : 0 }}
+          />
+
+          {drawerOpen &&
+            (paymentOpen ? (
+              <ExpandLessIcon fontSize="small" />
+            ) : (
+              <ExpandMoreIcon fontSize="small" />
+            ))}
+        </ListItemButton>
+      </Tooltip>
+
+      <Collapse
+        in={drawerOpen && paymentOpen}
+        timeout={0}
+        unmountOnExit
+      >
+        <SubMenuList
+          indented
+          items={paymentMenus}
+          currentView={currentView}
+          onViewChange={handleViewChange}
+          canView={canAccessView}
+        />
+      </Collapse>        </>
+      )}
+
+
+      {hasLaborMenu && (
+        <>
+      <Tooltip
+        title={drawerOpen ? '' : '노임 관리'}
+        placement="right"
+        arrow
+      >
+        <ListItemButton
+          selected={isLaborView}
+          onClick={() =>
+            setLaborOpen(
+              (previous) => !previous,
+            )
+          }
+          sx={constructionSectionSx(isLaborView)}
+        >
+
+          <ListItemText
+            primary="노임 관리"
+            primaryTypographyProps={{
+              noWrap: true,
+              fontSize: '0.72rem',
+              fontWeight: isLaborView ? 700 : 500,
+            }}
+            sx={{
+              opacity: drawerOpen ? 1 : 0,
+            }}
+          />
+
+          {drawerOpen &&
+            (laborOpen ? (
+              <ExpandLessIcon fontSize="small" />
+            ) : (
+              <ExpandMoreIcon fontSize="small" />
+            ))}
+        </ListItemButton>
+      </Tooltip>
+
+      <Collapse
+        in={drawerOpen && laborOpen}
+        timeout={0}
+        unmountOnExit
+      >
+        <SubMenuList
+          indented
+          items={laborMenus}
+          currentView={currentView}
+          onViewChange={handleViewChange}
+          canView={canAccessView}
+        />
+      </Collapse>        </>
+      )}
+
+
+      {canAccessView('household-quantity-management') && (
+      <Tooltip
+        title={drawerOpen ? '' : '세대 물량 관리'}
+        placement="right"
+        arrow
+      >
+        <ListItemButton
+          selected={currentView === 'household-quantity-management'}
+          onClick={() => handleViewChange('household-quantity-management')}
+          sx={constructionSectionSx(currentView === 'household-quantity-management')}
+        >
+
+          <ListItemText
+            primary="세대 물량 관리"
+            primaryTypographyProps={{
+              noWrap: true,
+              fontSize: '0.72rem',
+              fontWeight:
+                currentView === 'household-quantity-management' ? 700 : 500,
+            }}
+            sx={{ opacity: drawerOpen ? 1 : 0 }}
+          />
+        </ListItemButton>
+      </Tooltip>      )}
+
+
+      {canAccessView('drawing-quantity') && (
+      <Tooltip
+        title={drawerOpen ? '' : '타입별 도면 분석'}
+        placement="right"
+        arrow
+      >
+        <ListItemButton
+          selected={currentView === 'drawing-quantity'}
+          onClick={() => handleViewChange('drawing-quantity')}
+          sx={constructionSectionSx(currentView === 'drawing-quantity')}
+        >
+
+          <ListItemText
+            primary="타입별 도면 분석"
+            primaryTypographyProps={{
+              noWrap: true,
+              fontSize: '0.72rem',
+              fontWeight:
+                currentView === 'drawing-quantity' ? 700 : 500,
+            }}
+            sx={{ opacity: drawerOpen ? 1 : 0 }}
+          />
+        </ListItemButton>
+      </Tooltip>      )}
+
+
+
+          </Box>
+        </Collapse>
+      </>}
       {canAccessView('business-library') && (
         <Tooltip
           title={drawerOpen ? '' : '업무자료실'}

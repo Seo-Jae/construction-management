@@ -24,7 +24,6 @@ import {
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
 
-import SystemPageTitle from '../components/SystemPageTitle.jsx';
 import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 const TEMPLATE_PROJECTS = [
   {
@@ -4062,7 +4061,7 @@ export default function WeeklyOverview({
         width: '100%',
         minHeight:
           'calc(100vh - 96px)',
-        bgcolor: '#f1f5f9',
+        bgcolor: '#ffffff',
         display: 'grid',
         gridTemplateColumns: {
           xs: '1fr',
@@ -4080,7 +4079,7 @@ export default function WeeklyOverview({
           minWidth: 0,
           display: 'flex',
           flexDirection: 'column',
-          borderColor: '#cbd5e1',
+          border: 'none',
           boxShadow: 'none',
           overflow: 'hidden',
         }}
@@ -4094,19 +4093,11 @@ export default function WeeklyOverview({
             justifyContent:
               'space-between',
             gap: 1,
-            borderBottom:
-              '1px solid #e2e8f0',
+            borderBottom: 'none',
             bgcolor: '#ffffff',
           }}
         >
-          <Box>
-            <SystemPageTitle
-              title="주간업무총괄 작성"
-              help="각 현장의 주간업무를 총괄 양식으로 작성·저장하고 미리보기와 Excel 파일에 반영합니다. 행 추가 내용은 줄 단위로 반영됩니다."
-            />
 
-            
-          </Box>
 
           <Box
             sx={{

@@ -6,9 +6,9 @@
 // v52.48.5.44.47 가이드 설정·현재 메뉴 팝업 가이드
 // v52.48.5.44.35 화면배율 Portal 목록 좌표 전역 보정
 // v52.48.5.44.32 세대물량 기본 공정 정리·옵션비교 선택옵션 전용
-// v52.48.5.44.31 세대물량관리 공정별 갑지·Excel 연동
-// v52.48.5.44.30 세대물량관리 독립 대메뉴 분리
-// v52.48.5.44.29 옵션관리 세대물량관리 좌·우 2분할 기본화면
+// v52.48.5.44.31 세대 물량 관리 공정별 갑지·Excel 연동
+// v52.48.5.44.30 세대 물량 관리 독립 대메뉴 분리
+// v52.48.5.44.29 옵션관리 세대 물량 관리 좌·우 2분할 기본화면
 // v52.48.5.44.27 90% 골구도 테두리·행간격 물리 1px 역보정
 // v52.48.5.44.26 화면배율 축소분 가용높이 역보정·전체화면 채움
 // v52.48.5.44.24 기본 화면 90%·사용자 배율 선택·인쇄 100% 지원
@@ -362,8 +362,8 @@ const bodyCellStyle = { borderRight: '1px solid #cbd5e1', p: 0 };
 const viewTitles = {
   main: 'Main',
   'admin-dashboard': '전체 현장 Dashboard',
-  'user-management': '회원관리',
-  'project-management': '현장관리',
+  'user-management': '회원 관리',
+  'project-management': '현장 관리',
   'organization-chart': '조직도',
   messenger: '메신저',
   daily: '출력 일보 작성',
@@ -377,27 +377,27 @@ const viewTitles = {
   'option-insulation-status': '옵션현황(단열)',
   'option-selection-status': '옵션현황(선택)',
   'option-comparison': '옵션별 비교',
-  'household-quantity-management': '세대물량관리',
+  'household-quantity-management': '세대 물량 관리',
   'material-order': '자재 발주 작성',
   'material-master': '자재 마스터 관리',
   'material-input-status': '자재 투입 현황',
   'material-unit-price': '일위대가 작성',
-  'drawing-quantity': '타입별 도면분석',
-  'payment-claim': '기성내역서작성',
-  'payment-contract-mapping': '계약품목 공정연결',
-  'payment-sales-status': '매입매출현황',
-  'labor-monthly': '월별 노임작성',
-  'labor-worker-master': '근로자 정보관리',
-  'labor-contract': '근로계약서작성',
-  'labor-cost': '공정별 노임작성',
+  'drawing-quantity': '타입별 도면 분석',
+  'payment-claim': '기성 내역서 작성',
+  'payment-contract-mapping': '계약 품목 공정 연결',
+  'payment-sales-status': '매입·매출 현황',
+  'labor-monthly': '월별 노임 작성',
+  'labor-worker-master': '근로자 정보 관리',
+  'labor-contract': '근로계약서 작성',
+  'labor-cost': '공정별 노임 작성',
   'report-weekly': '주간 업무 보고',
   'report-expense-resolution': '지출결의서 작성',
   'report-approval': '품의 보고',
   'report-outsourcing-approval': '외주 품의 보고',
   'report-accident': '사고 경위 보고',
   'approval-inbox': '결재함',
-  'weekly-overview': '주간업무작성',
-  'weekly-overview-archive': '주간업무보관',
+  'weekly-overview': '주간 업무 작성',
+  'weekly-overview-archive': '주간 업무 보관',
   attendance: '근태관리',
   'business-library': '업무자료실',
   feedback: '건의·오류 제보',
@@ -3749,7 +3749,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
       <AppBar
         position="absolute"
-        sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, bgcolor: '#ffffff', color: '#475569', boxShadow: 'none', borderBottom: (['main', 'daily', 'daily-monthly-workers', 'daily-cumulative-workers', 'material-unit-price', 'material-order', 'material-input-status', 'approval-inbox', 'organization-chart', 'report-weekly', 'report-expense-resolution', 'report-approval', 'business-library', 'feedback'].includes(currentView) || currentView.startsWith('progress-') || currentView.startsWith('option-')) ? 'none' : '1px solid #e2e8f0' }}
+        sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, bgcolor: '#ffffff', color: '#475569', boxShadow: 'none', borderBottom: 'none' }}
       >
         <Toolbar
           sx={{
@@ -3901,7 +3901,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             </MenuItem>
           </Menu>
 
-          <Box ref={setMainHeaderContainer} sx={{ flexGrow: 1, minWidth: 0, display: 'flex', alignItems: 'center', pl: { xs: 1.5, md: 3 }, pr: 0, gap: 2 }}>
+          <Box ref={setMainHeaderContainer} sx={{ flexGrow: 1, minWidth: 0, display: 'flex', alignItems: 'center', pl: { xs: 1.5, md: 3 }, pr: 0, gap: 2, '& h1': { maxWidth: { md: `max(100px, calc(50vw - ${open ? drawerWidth : 72}px - 150px))` } } }}>
           </Box>
 
           {managementArea === MANAGEMENT_AREA_CONSTRUCTION &&
@@ -3922,9 +3922,9 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             ) && (
             <Box
               sx={{
-                position: 'relative',
-                left: 'auto',
-                top: 'auto',
+                position: { xs: 'relative', md: 'absolute' },
+                left: { xs: 'auto', md: '50%' },
+                top: { xs: 'auto', md: '50%' },
                 width: {
                   xs: 140,
                   md: 220,
@@ -3932,7 +3932,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                 maxWidth: '38vw',
                 flexShrink: 1,
                 minWidth: 120,
-                transform: 'none',
+                transform: { xs: 'none', md: 'translate(-50%, -50%)' },
                 zIndex: 2,
               }}
             >
@@ -4222,7 +4222,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           height: 'var(--wooklim-dashboard-viewport-height, 100vh)',
           display: 'flex',
           flexDirection: 'column',
-          bgcolor: (['main', 'daily', 'daily-monthly-workers', 'daily-cumulative-workers', 'material-unit-price', 'material-order', 'material-input-status', 'approval-inbox', 'organization-chart', 'report-weekly', 'report-expense-resolution', 'report-approval', 'business-library', 'feedback'].includes(currentView) || currentView.startsWith('progress-') || currentView.startsWith('option-')) ? '#ffffff' : '#f1f5f9',
+          bgcolor: '#ffffff',
         }}
       >
         <Toolbar sx={{ minHeight: '56px !important' }} />
@@ -4408,7 +4408,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
           {currentView !== 'main' && (
             <DashboardPageHeader key={`${user?.id}:${activeProjectName}:${canAccessView('approval-inbox')}`}
-              container={mainHeaderContainer} title={(['daily', 'daily-monthly-workers', 'daily-cumulative-workers', 'material-unit-price', 'material-order', 'material-input-status', 'approval-inbox', 'organization-chart', 'report-weekly', 'report-expense-resolution', 'report-approval', 'business-library', 'feedback'].includes(currentView) || currentView.startsWith('progress-') || currentView.startsWith('option-')) ? viewTitles[currentView] : ''}
+              container={mainHeaderContainer} title={viewTitles[currentView] || ''}
               userId={user?.id || activeUserProfile?.auth_user_id || ''} projectName={activeProjectName}
               canApprove={canAccessView('approval-inbox')} onNavigate={handleSidebarViewChange} />
           )}

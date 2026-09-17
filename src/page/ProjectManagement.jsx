@@ -27,7 +27,6 @@ import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
 import EditRoundedIcon from '@mui/icons-material/EditRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import { supabase } from '../supabaseClient';
-import SystemPageTitle from '../components/SystemPageTitle.jsx';
 import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 import { countUniqueUnits } from '../utils/buildingUnits.js';
 
@@ -936,14 +935,10 @@ export default function ProjectManagement() {
           display: 'flex',
           alignItems: 'center',
           gap: 1,
-          borderColor: '#dbe3ec',
+          border: 'none',
           boxShadow: 'none',
         }}
       >
-        <SystemPageTitle
-          title="현장관리"
-          help="최고관리자가 시스템 안에서 현장명·시작일·종료일과 동·층·세대·호별 타입을 관리합니다. 시작일·종료일은 Main 및 전체 현장 Dashboard의 공사기간과 D-Day에 공통 적용됩니다. 펜트하우스처럼 특정 층의 타입만 달라지는 경우 층별 타입 예외를 사용할 수 있습니다. 현장 삭제는 최고관리자 본인의 로그인 비밀번호를 다시 확인한 뒤 실행됩니다."
-        />
         <Chip size="small" variant="outlined" label={`등록현장 ${projects.length}`} />
         <Box sx={{ flex: 1 }} />
         <SystemRefreshButton onClick={() => loadProjects()} loading={loading} />

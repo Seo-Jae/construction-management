@@ -3,13 +3,13 @@ export const GUIDE_IMAGE_BUCKET = 'system-guide-images';
 
 export const GUIDE_GROUPS = [
   { id: 'admin-dashboard-group', label: 'Dashboard', direct: true, items: [{ id: 'admin-dashboard', label: 'Dashboard' }] },
-  { id: 'project-management-group', label: '현장관리', direct: true, items: [{ id: 'project-management', label: '현장관리' }] },
-  { id: 'user-management-group', label: '회원관리', direct: true, items: [{ id: 'user-management', label: '회원관리' }] },
+  { id: 'project-management-group', label: '현장 관리', direct: true, items: [{ id: 'project-management', label: '현장 관리' }] },
+  { id: 'user-management-group', label: '회원 관리', direct: true, items: [{ id: 'user-management', label: '회원 관리' }] },
   { id: 'attendance-group', label: '근태관리', direct: true, items: [{ id: 'attendance', label: '근태관리' }] },
   { id: 'approval-inbox-group', label: '결재함', direct: true, items: [{ id: 'approval-inbox', label: '결재함' }] },
-  { id: 'weekly-overview-group', label: '주간업무총괄', items: [
-    { id: 'weekly-overview', label: '주간업무작성' },
-    { id: 'weekly-overview-archive', label: '주간업무보관' },
+  { id: 'weekly-overview-group', label: '주간 업무 총괄', items: [
+    { id: 'weekly-overview', label: '주간 업무 작성' },
+    { id: 'weekly-overview-archive', label: '주간 업무 보관' },
   ] },
   { id: 'main-group', label: 'Main', direct: true, items: [{ id: 'main', label: 'Main' }] },
   { id: 'organization-chart-group', label: '조직도', direct: true, items: [{ id: 'organization-chart', label: '조직도' }] },
@@ -30,23 +30,23 @@ export const GUIDE_GROUPS = [
     { id: 'option-selection-status', label: '옵션현황(선택)' },
     { id: 'option-comparison', label: '옵션별 비교' },
   ] },
-  { id: 'household-quantity-group', label: '세대물량관리', direct: true, items: [{ id: 'household-quantity-management', label: '세대물량관리' }] },
-  { id: 'drawing-quantity-group', label: '타입별 도면분석', direct: true, items: [{ id: 'drawing-quantity', label: '타입별 도면분석' }] },
+  { id: 'household-quantity-group', label: '세대 물량 관리', direct: true, items: [{ id: 'household-quantity-management', label: '세대 물량 관리' }] },
+  { id: 'drawing-quantity-group', label: '타입별 도면 분석', direct: true, items: [{ id: 'drawing-quantity', label: '타입별 도면 분석' }] },
   { id: 'material-group', label: '자재관리', items: [
     { id: 'material-unit-price', label: '일위대가 작성' },
     { id: 'material-order', label: '자재 발주 작성', systemPreparing: true },
     { id: 'material-input-status', label: '자재 투입 현황' },
   ] },
-  { id: 'payment-group', label: '기성관리', items: [
-    { id: 'payment-claim', label: '기성내역서작성' },
-    { id: 'payment-contract-mapping', label: '계약품목 공정연결' },
-    { id: 'payment-sales-status', label: '매입매출현황', systemPreparing: true },
+  { id: 'payment-group', label: '기성 관리', items: [
+    { id: 'payment-claim', label: '기성 내역서 작성' },
+    { id: 'payment-contract-mapping', label: '계약 품목 공정 연결' },
+    { id: 'payment-sales-status', label: '매입·매출 현황', systemPreparing: true },
   ] },
-  { id: 'labor-group', label: '노임관리', items: [
-    { id: 'labor-monthly', label: '월별 노임작성' },
-    { id: 'labor-worker-master', label: '근로자 정보관리' },
-    { id: 'labor-contract', label: '근로계약서작성' },
-    { id: 'labor-cost', label: '공정별 노임작성' },
+  { id: 'labor-group', label: '노임 관리', items: [
+    { id: 'labor-monthly', label: '월별 노임 작성' },
+    { id: 'labor-worker-master', label: '근로자 정보 관리' },
+    { id: 'labor-contract', label: '근로계약서 작성' },
+    { id: 'labor-cost', label: '공정별 노임 작성' },
     { id: 'labor-documents', label: '노임서류작성', systemPreparing: true },
   ] },
   { id: 'report-group', label: '업무 보고 관리', items: [

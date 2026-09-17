@@ -32,7 +32,6 @@ import ExpandMoreRoundedIcon from '@mui/icons-material/ExpandMoreRounded';
 import ExpandLessRoundedIcon from '@mui/icons-material/ExpandLessRounded';
 import { supabase } from '../supabaseClient';
 import KoreanDatePicker from '../components/KoreanDatePicker.jsx';
-import SystemPageTitle from '../components/SystemPageTitle.jsx';
 
 import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 const ROLE_OPTIONS = ['담당자', '안전관리자', '관리자', '최고관리자'];
@@ -1762,7 +1761,7 @@ export default function UserManagement({ currentUserId = '' }) {
         minHeight: 0,
         display: 'flex',
         flexDirection: 'column',
-        borderColor: '#cbd5e1',
+        border: 'none',
         overflow: 'hidden',
       }}
     >
@@ -1770,7 +1769,7 @@ export default function UserManagement({ currentUserId = '' }) {
         sx={{
           px: 2,
           py: 1.35,
-          borderBottom: '1px solid #e2e8f0',
+          borderBottom: 'none',
           bgcolor: '#ffffff',
           display: 'flex',
           alignItems: { xs: 'stretch', md: 'center' },
@@ -1779,10 +1778,7 @@ export default function UserManagement({ currentUserId = '' }) {
           gap: 1.2,
         }}
       >
-        <SystemPageTitle
-          title="회원관리"
-          help={'왼쪽 회원목록에서 계정을 선택한 뒤 기본정보, 현장배정, 직급 및 메뉴별 조회·수정 권한을 설정합니다.'}
-        />
+        <Box sx={{ flex: 1 }} />
 
         <Box sx={{ display: 'flex', gap: 0.8, flexWrap: 'wrap' }}>
           <SystemRefreshButton

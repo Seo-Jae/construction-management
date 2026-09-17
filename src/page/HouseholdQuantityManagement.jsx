@@ -27,7 +27,6 @@ import PictureAsPdfRoundedIcon from '@mui/icons-material/PictureAsPdfRounded';
 import PrintRoundedIcon from '@mui/icons-material/PrintRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
-import SystemPageTitle from '../components/SystemPageTitle.jsx';
 import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 import BuildingGrid from '../BuildingGrid.jsx';
 import { supabase } from '../supabaseClient';
@@ -996,19 +995,11 @@ export default function HouseholdQuantityManagement({
           flexWrap: 'wrap',
           alignItems: 'center',
           gap: 1,
-          borderColor: '#cbd5e1',
+          border: 'none',
           boxShadow: 'none',
         }}
       >
-        <Box sx={{ minWidth: 245 }}>
-          <SystemPageTitle
-            title="세대물량관리"
-            help="타입별 기본물량과 옵션별 증감물량을 입력하면 골구도 세대정보를 기준으로 공정별 예정물량을 계산합니다."
-          />
-          <Typography sx={{ mt: 0.15, color: '#64748b', fontSize: '0.67rem' }}>
-            {projectName || '현장명 미등록'} · 공정별 세대물량 갑지
-          </Typography>
-        </Box>
+
         <Stack direction="row" spacing={0.7} alignItems="center" useFlexGap flexWrap="wrap" sx={{ flex: 1 }}>
           <Chip size="small" variant="outlined" color="primary" label={`${definitions.processes.length.toLocaleString()}개 공정`} />
           <Chip size="small" variant="outlined" label={`${definitions.unitCount.toLocaleString()}세대`} />

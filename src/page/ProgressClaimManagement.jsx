@@ -55,7 +55,6 @@ import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
 import KoreanMonthSelect from '../components/KoreanMonthSelect.jsx';
 
-import SystemPageTitle from '../components/SystemPageTitle.jsx';
 const DIRECT_SECTION_START = '[직접공사비]';
 const GRAND_TOTAL_LABEL = '공사비합계';
 
@@ -3703,7 +3702,7 @@ export default function ProgressClaimManagement({
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden',
-            borderColor: '#cbd5e1',
+            border: 'none',
           }}
         >
           <Box
@@ -3711,8 +3710,8 @@ export default function ProgressClaimManagement({
               px: 1.5,
               pt: 1.15,
               pb: 0.8,
-              borderBottom: '1px solid #cbd5e1',
-              bgcolor: '#f8fafc',
+              borderBottom: 'none',
+              bgcolor: '#ffffff',
             }}
           >
             <Box
@@ -3728,13 +3727,7 @@ export default function ProgressClaimManagement({
                 pb: 0.2,
               }}
             >
-              <Box sx={{ width: 235, minWidth: 235, flexShrink: 0 }}>
-                <SystemPageTitle
-                  title="기성내역서 작성 · 직접비"
-                  help="계약 기성내역을 불러와 직접공사비 기준으로 금월·누계 기성을 작성하고 공정 연결값과 수량을 검토합니다."
-                />
-                
-              </Box>
+
 
               <TextField
                 label="회차"

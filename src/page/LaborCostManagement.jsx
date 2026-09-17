@@ -79,7 +79,6 @@ import {
   saveLaborQuantityWorkbook,
 } from '../utils/laborQuantityExcel.js';
 
-import SystemPageTitle from '../components/SystemPageTitle.jsx';
 import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 const DEFAULT_UNIT = '㎡';
 const DEFAULT_CHANGE_REASON = '실행 예산 기준 최초 등록';
@@ -5337,7 +5336,7 @@ export default function LaborCostManagement({
         sx={{
           px: 1.25,
           pt: 0.7,
-          borderColor: '#cbd5e1',
+          border: 'none',
           boxShadow: 'none',
         }}
       >
@@ -5347,16 +5346,7 @@ export default function LaborCostManagement({
           spacing={1}
           sx={{ width: '100%' }}
         >
-          <Box sx={{ flexShrink: 0 }}>
-            <SystemPageTitle
-              title="공정별 노임작성"
-              help="세대별 물량과 노무비를 연결해 공정별 월간 노임 예상 및 실적을 산정합니다."
-            />
-            <Typography sx={{ fontSize: '0.65rem', color: '#64748b' }}>
-              {projectName} · 실행/확정단가와 세대별 물량을 연결해 월별
-              예상 노임을 계산합니다.
-            </Typography>
-          </Box>
+
 
           <Box sx={{ flex: 1 }} />
 

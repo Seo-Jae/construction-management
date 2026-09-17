@@ -17,7 +17,6 @@ import { supabase } from '../supabaseClient';
 import WeeklyOverview from './WeeklyOverview.jsx';
 import KoreanMonthSelect from '../components/KoreanMonthSelect.jsx';
 
-import SystemPageTitle from '../components/SystemPageTitle.jsx';
 import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 const PAGE_SIZE = 1000;
 
@@ -730,7 +729,7 @@ export default function WeeklyOverviewArchive({
           minHeight: 0,
           display: 'flex',
           flexDirection: 'column',
-          borderColor: '#cbd5e1',
+          border: 'none',
           bgcolor: '#ffffff',
           boxShadow: 'none',
           overflow: 'hidden',
@@ -745,15 +744,11 @@ export default function WeeklyOverviewArchive({
             justifyContent:
               'space-between',
             gap: 0.7,
-            borderBottom:
-              '1px solid #e2e8f0',
+            borderBottom: 'none',
           }}
         >
           <Box>
-            <SystemPageTitle
-              title="주간업무보관"
-              help="작성 완료된 주간업무 자료를 기간별로 조회하고 보관 내용을 확인합니다."
-            />
+            <Box sx={{ flex: 1 }} />
 
             <Typography
               sx={{

@@ -33,7 +33,6 @@ import {
   formatSquareMeters,
 } from '../utils/dxfQuantityAnalyzer.js';
 
-import SystemPageTitle from '../components/SystemPageTitle.jsx';
 const HEIGHT_SETTING_TABLE = 'drawing_quantity_height_settings';
 const DRAWING_TABLE = 'drawing_quantity_drawings';
 const ROOM_TABLE = 'drawing_quantity_rooms';
@@ -7063,14 +7062,11 @@ export default function DrawingQuantityAnalysis({ projectName, userProfile }) {
 
   return (
     <Box sx={{ height: '100%', minHeight: 0, overflow: 'auto', pr: 0.5 }}>
-      <Paper variant="outlined" sx={{ p: 2, mb: 1.5 }}>
-        <SystemPageTitle
-          title="타입별 도면분석"
-          help="타입별 DXF 원본과 분석결과를 현장에 저장하고 WL- 레이어를 기준으로 길이·면적·수량을 분석합니다. 노임·자재 연결 전 도면 물량 확인에 사용합니다."
-        />
+      <Paper variant="outlined" sx={{ border: 'none', boxShadow: 'none', p: 2, mb: 1.5 }}>
+
         
 
-        <Divider sx={{ my: 1.5 }} />
+
 
         <Box
           sx={{

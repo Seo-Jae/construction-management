@@ -1256,7 +1256,6 @@ export default function AttendanceManagement({ projectName, canManage = false, o
             <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Box><SystemPageTitle
                   title="가입 승인 대기"
-                  help="현장에서 본인과 휴대폰을 확인한 뒤 승인하고, 승인 대기 중인 근로자 계정을 관리합니다."
                 /></Box>
               <RefreshIconButton
                 onClick={() => loadDashboard()}
