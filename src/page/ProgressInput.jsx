@@ -3059,7 +3059,7 @@ export default function ProgressInput({
           alignItems: 'center',
           columnGap: 1.5,
           px: 1.25,
-          py: 0.35,
+          py: 1,
           bgcolor: '#ffffff',
           border: '1px solid #e2e8f0',
           borderRadius: 1,
@@ -3301,7 +3301,8 @@ export default function ProgressInput({
           fontWeight={800}
           sx={{
             color: '#334155',
-            fontSize: '0.9rem',
+            fontSize: '1.1rem',
+            fontWeight: 800,
             textAlign: 'center',
             whiteSpace: 'nowrap',
           }}
@@ -3763,9 +3764,8 @@ export default function ProgressInput({
                       whiteSpace:
                         'nowrap',
                       textAlign: 'left',
-                      fontSize:
-                        '0.69rem',
-                      fontWeight: 900,
+                      fontSize: '0.815rem',
+                      fontWeight: 400,
                     }}
                   >
                     {
@@ -3786,9 +3786,8 @@ export default function ProgressInput({
                       whiteSpace:
                         'nowrap',
                       textAlign: 'left',
-                      fontSize:
-                        '0.55rem',
-                      fontWeight: 800,
+                      fontSize: '0.675rem',
+                      fontWeight: 400,
                       opacity: 0.94,
                     }}
                   >
@@ -3804,9 +3803,8 @@ export default function ProgressInput({
                 <Typography
                   component="span"
                   sx={{
-                    fontSize:
-                      '0.62rem',
-                    fontWeight: 900,
+                    fontSize: '0.745rem',
+                    fontWeight: 400,
                   }}
                 >
                   ▼
@@ -3902,8 +3900,7 @@ export default function ProgressInput({
                                 'nowrap',
                               color:
                                 '#0f172a',
-                              fontSize:
-                                '0.72rem',
+                              fontSize: '0.845rem',
                               fontWeight:
                                 selected
                                   ? 900
@@ -3920,8 +3917,7 @@ export default function ProgressInput({
                               mt: 0.1,
                               color:
                                 '#64748b',
-                              fontSize:
-                                '0.58rem',
+                              fontSize: '0.705rem',
                               fontWeight:
                                 700,
                             }}
@@ -3944,10 +3940,8 @@ export default function ProgressInput({
                               selected
                                 ? color
                                 : '#94a3b8',
-                            fontSize:
-                              '0.59rem',
-                            fontWeight:
-                              900,
+                            fontSize: '0.715rem',
+                            fontWeight: 400,
                           }}
                         >
                           {selected
@@ -3985,8 +3979,8 @@ export default function ProgressInput({
               color: '#7c3aed',
               borderColor: '#c4b5fd',
               bgcolor: '#faf5ff',
-              fontSize: '0.65rem',
-              fontWeight: 900,
+              fontSize: '0.775rem',
+              fontWeight: 400,
               '&:hover': {
                 borderColor:
                   '#8b5cf6',
@@ -4016,9 +4010,8 @@ export default function ProgressInput({
                 <Typography
                   sx={{
                     color: '#334155',
-                    fontSize:
-                      '0.66rem',
-                    fontWeight: 900,
+                    fontSize: '0.785rem',
+                    fontWeight: 400,
                     whiteSpace:
                       'nowrap',
                   }}
@@ -4044,9 +4037,8 @@ export default function ProgressInput({
                     border:
                       `1px solid ${activeTargetItem.color}40`,
                     borderRadius: 0.75,
-                    fontSize:
-                      '0.59rem',
-                    fontWeight: 900,
+                    fontSize: '0.715rem',
+                    fontWeight: 400,
                     whiteSpace:
                       'nowrap',
                   }}
@@ -4059,9 +4051,8 @@ export default function ProgressInput({
                 <Typography
                   sx={{
                     color: '#64748b',
-                    fontSize:
-                      '0.59rem',
-                    fontWeight: 800,
+                    fontSize: '0.715rem',
+                    fontWeight: 400,
                     whiteSpace:
                       'nowrap',
                   }}
@@ -4078,8 +4069,8 @@ export default function ProgressInput({
               <Typography
                 sx={{
                   color: '#94a3b8',
-                  fontSize: '0.64rem',
-                  fontWeight: 800,
+                  fontSize: '0.765rem',
+                  fontWeight: 400,
                   whiteSpace:
                     'nowrap',
                 }}
@@ -4120,8 +4111,8 @@ export default function ProgressInput({
             sx={{
               minWidth: 78,
               px: 0.65,
-              fontSize: '0.63rem',
-              fontWeight: 900,
+              fontSize: '0.755rem',
+              fontWeight: 400,
               color: targetLineEditMode
                 ? '#ffffff'
                 : '#d97706',
@@ -4159,8 +4150,8 @@ export default function ProgressInput({
               px: 0.65,
               color: '#475569',
               borderColor: '#cbd5e1',
-              fontSize: '0.63rem',
-              fontWeight: 900,
+              fontSize: '0.755rem',
+              fontWeight: 400,
             }}
           >
             설정수정
@@ -4184,8 +4175,8 @@ export default function ProgressInput({
               px: 0.65,
               color: '#475569',
               borderColor: '#cbd5e1',
-              fontSize: '0.63rem',
-              fontWeight: 900,
+              fontSize: '0.755rem',
+              fontWeight: 400,
             }}
           >
             {targetPanelMinimized
@@ -4285,9 +4276,8 @@ export default function ProgressInput({
                             'nowrap',
                           textAlign:
                             'left',
-                          fontSize:
-                            '0.61rem',
-                          fontWeight: 900,
+                          fontSize: '0.735rem',
+                          fontWeight: 400,
                         }}
                       >
                         {processType}
@@ -4296,9 +4286,8 @@ export default function ProgressInput({
                       <Typography
                         component="span"
                         sx={{
-                          fontSize:
-                            '0.58rem',
-                          fontWeight: 900,
+                          fontSize: '0.705rem',
+                          fontWeight: 400,
                           whiteSpace:
                             'nowrap',
                         }}
@@ -4497,7 +4486,7 @@ export default function ProgressInput({
           minHeight: 0,
           overflowX: 'auto',
           overflowY: 'hidden',
-          bgcolor: '#f1f5f9',
+          bgcolor: '#ffffff',
           borderRadius: 1,
           scrollbarGutter: 'stable',
         }}

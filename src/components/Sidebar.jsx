@@ -28,7 +28,6 @@ import BadgeOutlinedIcon from '@mui/icons-material/BadgeOutlined';
 import ManageAccountsOutlinedIcon from '@mui/icons-material/ManageAccountsOutlined';
 import DomainAddRoundedIcon from '@mui/icons-material/DomainAddRounded';
 import PunchClockRoundedIcon from '@mui/icons-material/PunchClockRounded';
-import TuneRoundedIcon from '@mui/icons-material/TuneRounded';
 import TableRowsRoundedIcon from '@mui/icons-material/TableRowsRounded';
 import MenuBookRoundedIcon from '@mui/icons-material/MenuBookRounded';
 import FeedbackOutlinedIcon from '@mui/icons-material/FeedbackOutlined';
@@ -37,18 +36,19 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { fetchPendingApprovalSummary } from '../utils/approvalQueries.js';
 import { supabase } from '../supabaseClient';
+import SidebarMyMenu from './SidebarMyMenu.jsx';
 
 const INACTIVE_MENU_STATUS = '준비중';
 
 const dailyMenus = [
-  { value: 'daily', label: '출력일보작성' },
+  { value: 'daily', label: '출력 일보 작성' },
   {
     value: 'daily-monthly-workers',
-    label: '금월 투입현황',
+    label: '금월 투입 현황',
   },
   {
     value: 'daily-cumulative-workers',
-    label: '누계투입조회',
+    label: '누계 투입 조회',
   },
 ];
 
@@ -80,15 +80,15 @@ const optionMenus = [
 const materialMenus = [
   {
     value: 'material-unit-price',
-    label: '일위대가작성',
+    label: '일위대가 작성',
   },
   {
     value: 'material-order',
-    label: '자재발주작성',
+    label: '자재 발주 작성',
   },
   {
     value: 'material-input-status',
-    label: '자재투입현황',
+    label: '자재 투입 현황',
   },
 ];
 
@@ -108,12 +108,6 @@ const laborMenus = [
   {
     value: 'labor-cost',
     label: '공정별 노임작성',
-  },
-  {
-    value: 'labor-documents',
-    label: '노임서류작성',
-    disabled: true,
-    statusLabel: INACTIVE_MENU_STATUS,
   },
 ];
 
@@ -161,49 +155,88 @@ const reportMenus = [
   },
 ];
 
+const MENU_SELECTED_BACKGROUND = '#cce7ec';
+const shortcutMenus = [
+  { value: 'main', label: 'Main' },
+  { value: 'admin-dashboard', label: 'Dashboard' },
+  { value: 'project-management', label: '현장관리', adminOnly: true },
+  { value: 'user-management', label: '회원관리', adminOnly: true },
+  { value: 'attendance', label: '근태관리' },
+  { value: 'approval-inbox', label: '결재함' },
+  { value: 'organization-chart', label: '조직도' },
+  { value: 'household-quantity-management', label: '세대물량관리' },
+  { value: 'drawing-quantity', label: '타입별 도면분석' },
+  { value: 'business-library', label: '업무자료실' },
+  { value: 'feedback', label: '건의·오류 제보' },
+  { value: 'guide', label: '가이드 설정', adminOnly: true },
+  ...[
+    [dailyMenus, '공사 관리 · 공사 일보 관리'],
+    [progressMenus, '공사 관리 · 공정 진척 관리'],
+    [optionMenus, '공사 관리 · 옵션 관리'],
+    [weeklyOverviewMenus, '주간업무총괄'],
+    [materialMenus, '자재 관리'],
+    [laborMenus, '노임관리'],
+    [paymentMenus, '기성관리'],
+    [reportMenus, '업무 보고 관리'],
+  ].flatMap(([items, group]) => items.map((item) => ({ ...item, group }))),
+];
+const MENU_SELECTED_HOVER = '#b9dce3';
+
 const topMenuSx = (selected) => ({
-  minHeight: 39,
+  minHeight: 32,
   mb: 0.25,
   px: 1.25,
   py: 0.25,
-  borderRadius: 1,
-  color: selected ? '#ffffff' : '#cbd5e1',
-  bgcolor: selected ? '#0284c7' : 'transparent',
+  borderRadius: 1.5,
+  color: '#000000',
+  bgcolor: selected ? MENU_SELECTED_BACKGROUND : 'transparent',
   '&.Mui-selected': {
-    bgcolor: '#0284c7',
-    color: '#ffffff',
+    bgcolor: MENU_SELECTED_BACKGROUND,
+    color: '#000000',
+    boxShadow: 'inset 3px 0 0 #4c8b96',
   },
   '&.Mui-selected:hover': {
-    bgcolor: '#0369a1',
+    bgcolor: MENU_SELECTED_HOVER,
   },
   '&:hover': {
-    bgcolor: 'rgba(255,255,255,0.08)',
+    bgcolor: '#f3f4f6',
   },
 });
 
 const subMenuSx = (selected) => ({
-  minHeight: 31,
+  minHeight: 26,
   mb: 0.05,
   pl: 1.35,
   pr: 0.75,
   py: 0,
   borderRadius: 0.75,
-  color: selected ? '#ffffff' : '#aebbd0',
-  bgcolor: selected ? '#0f766e' : 'transparent',
+  color: '#000000',
+  bgcolor: selected ? MENU_SELECTED_BACKGROUND : 'transparent',
   '&.Mui-selected': {
-    bgcolor: '#0f766e',
-    color: '#ffffff',
+    bgcolor: MENU_SELECTED_BACKGROUND,
+    color: '#000000',
+    boxShadow: 'inset 3px 0 0 #4c8b96',
   },
   '&.Mui-selected:hover': {
-    bgcolor: '#115e59',
+    bgcolor: MENU_SELECTED_HOVER,
   },
   '&:hover': {
-    bgcolor: 'rgba(255,255,255,0.07)',
-    color: '#ffffff',
+    bgcolor: '#f3f4f6',
+    color: '#000000',
   },
 });
 
-function SubMenuList({ items, currentView, onViewChange, canView }) {
+const constructionSectionSx = () => ({
+  ...topMenuSx(false),
+  pl: '44px',
+  minHeight: 30,
+  mt: 0.5,
+  color: '#000000',
+  '&.Mui-selected': { bgcolor: '#edf4f5', color: '#000000', boxShadow: 'none' },
+  '&.Mui-selected:hover': { bgcolor: '#e2eef0' },
+});
+
+function SubMenuList({ items, currentView, onViewChange, canView, indented = false }) {
   const visibleItems = items.filter((item) => (
     typeof canView !== 'function' || canView(item.value)
   ));
@@ -213,11 +246,11 @@ function SubMenuList({ items, currentView, onViewChange, canView }) {
   return (
     <Box
       sx={{
-        ml: 1.25,
+        ml: indented ? 5.5 : 2.25,
         mr: 0.25,
         pl: 0.7,
-        py: 0.15,
-        borderLeft: '1px solid #334155',
+        py: 0.5,
+        borderLeft: '1px solid #d5dde1',
       }}
     >
       {visibleItems.map((item) => {
@@ -254,7 +287,7 @@ function SubMenuList({ items, currentView, onViewChange, canView }) {
               '&.Mui-disabled': {
                 opacity: 1,
                 color:
-                  '#64748b',
+                  '#000000',
                 cursor:
                   'not-allowed',
               },
@@ -267,13 +300,13 @@ function SubMenuList({ items, currentView, onViewChange, canView }) {
               primaryTypographyProps={{
                 noWrap: true,
                 fontSize:
-                  '0.72rem',
+                  '11px',
                 lineHeight: 1.2,
                 fontWeight:
                   selected &&
                   !item.disabled
                     ? 700
-                    : 500,
+                    : 400,
               }}
             />
 
@@ -287,9 +320,9 @@ function SubMenuList({ items, currentView, onViewChange, canView }) {
                   borderRadius:
                     10,
                   bgcolor:
-                    'rgba(100,116,139,0.22)',
+                    '#f1f5f9',
                   color:
-                    '#94a3b8',
+                    '#000000',
                   fontSize:
                     '0.58rem',
                   fontWeight:
@@ -316,7 +349,9 @@ export default function Sidebar({
   currentView,
   onViewChange,
   drawerOpen = true,
+  onExpandDrawer,
   userRole = '담당자',
+  userId = '',
   canView,
 }) {
   const isSuperAdmin = userRole === '최고관리자';
@@ -324,6 +359,7 @@ export default function Sidebar({
     typeof canView !== 'function' || canView(view)
   );
   const hasDashboardAccess = canAccessView('admin-dashboard');
+  const hasApprovalAccess = canAccessView('approval-inbox');
   const hasDailyMenu = dailyMenus.some((item) => canAccessView(item.value));
   const hasWeeklyOverviewMenu = weeklyOverviewMenus.some((item) => canAccessView(item.value));
   const hasProgressMenu = progressMenus.some((item) => canAccessView(item.value));
@@ -373,6 +409,7 @@ export default function Sidebar({
     );
 
   const [dailyOpen, setDailyOpen] = useState(isDailyView);
+  const [constructionOpen, setConstructionOpen] = useState(true);
   const [
     weeklyOverviewOpen,
     setWeeklyOverviewOpen,
@@ -426,7 +463,7 @@ export default function Sidebar({
     useState(0);
 
   useEffect(() => {
-    if (isDailyView) setDailyOpen(true);
+    if (isDailyView) { setDailyOpen(true); setConstructionOpen(true); }
   }, [isDailyView]);
 
   useEffect(() => {
@@ -438,12 +475,14 @@ export default function Sidebar({
   useEffect(() => {
     if (isProgressView) {
       setProgressOpen(true);
+      setConstructionOpen(true);
     }
   }, [isProgressView]);
 
   useEffect(() => {
     if (isOptionView) {
       setOptionOpen(true);
+      setConstructionOpen(true);
     }
   }, [isOptionView]);
 
@@ -473,8 +512,13 @@ export default function Sidebar({
 
   useEffect(() => {
     let active = true;
+    let inFlight = false;
+
+    if (!hasApprovalAccess) return undefined;
 
     const loadApprovalCount = async () => {
+      if (!active || inFlight) return;
+      inFlight = true;
       try {
         const result =
           await fetchPendingApprovalSummary();
@@ -493,6 +537,8 @@ export default function Sidebar({
         if (active) {
           setApprovalPendingCount(0);
         }
+      } finally {
+        inFlight = false;
       }
     };
 
@@ -526,7 +572,7 @@ export default function Sidebar({
         handleApprovalChanged,
       );
     };
-  }, [currentView]);
+  }, [userId, hasApprovalAccess]);
 
   useEffect(() => {
     if (!isSuperAdmin) {
@@ -594,6 +640,15 @@ export default function Sidebar({
         py: 0.75,
       }}
     >
+      <SidebarMyMenu
+        key={userId}
+        userId={userId}
+        drawerOpen={drawerOpen}
+        currentView={currentView}
+        onNavigate={handleViewChange}
+        menus={shortcutMenus.filter((menu) => !menu.disabled && (!menu.adminOnly || isSuperAdmin) && canAccessView(menu.value))
+          .map((menu) => menu.value === 'feedback' && isSuperAdmin ? { ...menu, label: '건의·오류 관리' } : menu)}
+      />
       {!hasDashboardAccess && canAccessView('main') && (
         <Tooltip
           title={drawerOpen ? '' : 'Main'}
@@ -619,7 +674,7 @@ export default function Sidebar({
               primary="Main"
               primaryTypographyProps={{
                 noWrap: true,
-                fontSize: '0.8rem',
+                fontSize: '0.72rem',
                 fontWeight:
                   currentView === 'main' ? 700 : 500,
               }}
@@ -654,7 +709,7 @@ export default function Sidebar({
               primary="Dashboard"
               primaryTypographyProps={{
                 noWrap: true,
-                fontSize: '0.8rem',
+                fontSize: '0.72rem',
                 fontWeight:
                   currentView === 'admin-dashboard' ? 700 : 500,
               }}
@@ -688,7 +743,7 @@ export default function Sidebar({
               primary="현장관리"
               primaryTypographyProps={{
                 noWrap: true,
-                fontSize: '0.8rem',
+                fontSize: '0.72rem',
                 fontWeight: currentView === 'project-management' ? 700 : 500,
               }}
             />
@@ -745,7 +800,7 @@ export default function Sidebar({
               primary="회원관리"
               primaryTypographyProps={{
                 noWrap: true,
-                fontSize: '0.8rem',
+                fontSize: '0.72rem',
                 fontWeight:
                   currentView === 'user-management' ? 700 : 500,
               }}
@@ -779,7 +834,7 @@ export default function Sidebar({
               primary="근태관리"
               primaryTypographyProps={{
                 noWrap: true,
-                fontSize: '0.8rem',
+                fontSize: '0.72rem',
                 fontWeight: currentView === 'attendance' ? 700 : 500,
               }}
               sx={{ opacity: drawerOpen ? 1 : 0 }}
@@ -841,7 +896,7 @@ export default function Sidebar({
             primary="결재함"
             primaryTypographyProps={{
               noWrap: true,
-              fontSize: '0.8rem',
+              fontSize: '0.72rem',
               fontWeight:
                 currentView === 'approval-inbox'
                   ? 700
@@ -913,7 +968,7 @@ export default function Sidebar({
                 primary="주간업무총괄"
                 primaryTypographyProps={{
                   noWrap: true,
-                  fontSize: '0.8rem',
+                  fontSize: '0.72rem',
                   fontWeight:
                     isWeeklyOverviewView
                       ? 700
@@ -941,7 +996,7 @@ export default function Sidebar({
               drawerOpen &&
               weeklyOverviewOpen
             }
-            timeout="auto"
+            timeout={0}
             unmountOnExit
           >
             <SubMenuList
@@ -985,7 +1040,7 @@ export default function Sidebar({
             primary="Main"
             primaryTypographyProps={{
               noWrap: true,
-              fontSize: '0.8rem',
+              fontSize: '0.72rem',
               fontWeight:
                 currentView === 'main' ? 700 : 500,
             }}
@@ -1020,7 +1075,7 @@ export default function Sidebar({
             primary="조직도"
             primaryTypographyProps={{
               noWrap: true,
-              fontSize: '0.8rem',
+              fontSize: '0.72rem',
               fontWeight:
                 currentView === 'organization-chart' ? 700 : 500,
             }}
@@ -1030,10 +1085,26 @@ export default function Sidebar({
       </Tooltip>      )}
 
 
+      {(hasDailyMenu || hasProgressMenu || hasOptionMenu) && <>
+        <Tooltip title={drawerOpen ? '' : '공사 관리'} placement="right" arrow>
+        <ListItemButton
+          onClick={() => {
+            if (!drawerOpen) { onExpandDrawer?.(); setConstructionOpen(true); }
+            else setConstructionOpen((previous) => !previous);
+          }}
+          aria-label="공사 관리" aria-expanded={drawerOpen && constructionOpen} aria-controls="construction-menu-sections"
+          sx={{ mt: 0.75, mb: 0.5, px: 1.25, py: 0.25, minHeight: 33, borderRadius: 1, bgcolor: isDailyView || isProgressView || isOptionView ? '#f3f4f6' : 'transparent', color: '#000000', '&:hover': { bgcolor: '#e9ecef' } }}>
+          <ListItemIcon sx={{ minWidth: 34, color: 'inherit', justifyContent: 'center' }}><AssignmentIcon fontSize="small" /></ListItemIcon>
+          <ListItemText primary="공사 관리" primaryTypographyProps={{ noWrap: true, fontSize: 13, fontWeight: 900 }} sx={{ opacity: drawerOpen ? 1 : 0 }} />
+          {drawerOpen && (constructionOpen ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />)}
+        </ListItemButton>
+        </Tooltip>
+        <Collapse in={drawerOpen && constructionOpen} timeout={0} unmountOnExit>
+          <Box id="construction-menu-sections" sx={{ position: 'relative', pb: 0.5, mb: 0.5, '&::after': { content: '""', position: 'absolute', left: 26, top: 0, bottom: 4, borderLeft: '1px solid #d5dde1', pointerEvents: 'none' }, '& > .MuiCollapse-root': { mb: 0.5 } }}>
       {hasDailyMenu && (
         <>
       <Tooltip
-        title={drawerOpen ? '' : '공사일보관리'}
+        title={drawerOpen ? '' : '공사 일보 관리'}
         placement="right"
         arrow
       >
@@ -1042,24 +1113,15 @@ export default function Sidebar({
           onClick={() =>
             setDailyOpen((previous) => !previous)
           }
-          sx={topMenuSx(isDailyView)}
+          sx={constructionSectionSx(isDailyView)}
+          aria-expanded={drawerOpen && dailyOpen}
         >
-          <ListItemIcon
-            sx={{
-              minWidth: 34,
-              color: 'inherit',
-              justifyContent: 'center',
-            }}
-          >
-            <AssignmentIcon fontSize="small" />
-          </ListItemIcon>
-
           <ListItemText
-            primary="공사일보관리"
+            primary="공사 일보 관리"
             primaryTypographyProps={{
               noWrap: true,
-              fontSize: '0.8rem',
-              fontWeight: isDailyView ? 700 : 500,
+              fontSize: '0.72rem',
+              fontWeight: 700,
             }}
             sx={{ opacity: drawerOpen ? 1 : 0 }}
           />
@@ -1075,11 +1137,12 @@ export default function Sidebar({
 
       <Collapse
         in={drawerOpen && dailyOpen}
-        timeout="auto"
+        timeout={0}
         unmountOnExit
       >
         <SubMenuList
           items={dailyMenus}
+          indented
           currentView={currentView}
           onViewChange={handleViewChange}
           canView={canAccessView}
@@ -1091,27 +1154,22 @@ export default function Sidebar({
       {hasProgressMenu && (
         <>
       <Tooltip
-        title={drawerOpen ? '' : '공정진척관리'}
+        title={drawerOpen ? '' : '공정 진척 관리'}
         placement="right"
         arrow
       >
         <ListItemButton
           selected={isProgressView}
           onClick={() => setProgressOpen((previous) => !previous)}
-          sx={topMenuSx(isProgressView)}
+          sx={constructionSectionSx(isProgressView)}
+          aria-expanded={drawerOpen && progressOpen}
         >
-          <ListItemIcon
-            sx={{ minWidth: 34, color: 'inherit', justifyContent: 'center' }}
-          >
-            <EngineeringIcon fontSize="small" />
-          </ListItemIcon>
-
           <ListItemText
-            primary="공정진척관리"
+            primary="공정 진척 관리"
             primaryTypographyProps={{
               noWrap: true,
-              fontSize: '0.8rem',
-              fontWeight: isProgressView ? 700 : 500,
+              fontSize: '0.72rem',
+              fontWeight: 700,
             }}
             sx={{ opacity: drawerOpen ? 1 : 0 }}
           />
@@ -1125,9 +1183,10 @@ export default function Sidebar({
         </ListItemButton>
       </Tooltip>
 
-      <Collapse in={drawerOpen && progressOpen} timeout="auto" unmountOnExit>
+      <Collapse in={drawerOpen && progressOpen} timeout={0} unmountOnExit>
         <SubMenuList
           items={progressMenus}
+          indented
           currentView={currentView}
           onViewChange={handleViewChange}
           canView={canAccessView}
@@ -1139,27 +1198,22 @@ export default function Sidebar({
       {hasOptionMenu && (
         <>
       <Tooltip
-        title={drawerOpen ? '' : '옵션관리'}
+        title={drawerOpen ? '' : '옵션 관리'}
         placement="right"
         arrow
       >
         <ListItemButton
           selected={isOptionView}
           onClick={() => setOptionOpen((previous) => !previous)}
-          sx={topMenuSx(isOptionView)}
+          sx={constructionSectionSx(isOptionView)}
+          aria-expanded={drawerOpen && optionOpen}
         >
-          <ListItemIcon
-            sx={{ minWidth: 34, color: 'inherit', justifyContent: 'center' }}
-          >
-            <TuneRoundedIcon fontSize="small" />
-          </ListItemIcon>
-
           <ListItemText
-            primary="옵션관리"
+            primary="옵션 관리"
             primaryTypographyProps={{
               noWrap: true,
-              fontSize: '0.8rem',
-              fontWeight: isOptionView ? 700 : 500,
+              fontSize: '0.72rem',
+              fontWeight: 700,
             }}
             sx={{ opacity: drawerOpen ? 1 : 0 }}
           />
@@ -1173,9 +1227,10 @@ export default function Sidebar({
         </ListItemButton>
       </Tooltip>
 
-      <Collapse in={drawerOpen && optionOpen} timeout="auto" unmountOnExit>
+      <Collapse in={drawerOpen && optionOpen} timeout={0} unmountOnExit>
         <SubMenuList
           items={optionMenus}
+          indented
           currentView={currentView}
           onViewChange={handleViewChange}
           canView={canAccessView}
@@ -1183,6 +1238,10 @@ export default function Sidebar({
       </Collapse>        </>
       )}
 
+
+          </Box>
+        </Collapse>
+      </>}
 
       {canAccessView('household-quantity-management') && (
       <Tooltip
@@ -1209,7 +1268,7 @@ export default function Sidebar({
             primary="세대물량관리"
             primaryTypographyProps={{
               noWrap: true,
-              fontSize: '0.8rem',
+              fontSize: '0.72rem',
               fontWeight:
                 currentView === 'household-quantity-management' ? 700 : 500,
             }}
@@ -1244,7 +1303,7 @@ export default function Sidebar({
             primary="타입별 도면분석"
             primaryTypographyProps={{
               noWrap: true,
-              fontSize: '0.8rem',
+              fontSize: '0.72rem',
               fontWeight:
                 currentView === 'drawing-quantity' ? 700 : 500,
             }}
@@ -1260,7 +1319,7 @@ export default function Sidebar({
         title={
           drawerOpen
             ? ''
-            : '자재관리'
+            : '자재 관리'
         }
         placement="right"
         arrow
@@ -1291,14 +1350,11 @@ export default function Sidebar({
           </ListItemIcon>
 
           <ListItemText
-            primary="자재관리"
+            primary="자재 관리"
             primaryTypographyProps={{
               noWrap: true,
-              fontSize: '0.8rem',
-              fontWeight:
-                isMaterialView
-                  ? 700
-                  : 500,
+              fontSize: 13,
+              fontWeight: 900,
             }}
             sx={{
               opacity:
@@ -1322,7 +1378,7 @@ export default function Sidebar({
           drawerOpen &&
           materialOpen
         }
-        timeout="auto"
+        timeout={0}
         unmountOnExit
       >
         <SubMenuList
@@ -1371,7 +1427,7 @@ export default function Sidebar({
             primary="기성관리"
             primaryTypographyProps={{
               noWrap: true,
-              fontSize: '0.8rem',
+              fontSize: '0.72rem',
               fontWeight: isPaymentView ? 700 : 500,
             }}
             sx={{ opacity: drawerOpen ? 1 : 0 }}
@@ -1388,7 +1444,7 @@ export default function Sidebar({
 
       <Collapse
         in={drawerOpen && paymentOpen}
-        timeout="auto"
+        timeout={0}
         unmountOnExit
       >
         <SubMenuList
@@ -1431,7 +1487,7 @@ export default function Sidebar({
             primary="노임관리"
             primaryTypographyProps={{
               noWrap: true,
-              fontSize: '0.8rem',
+              fontSize: '0.72rem',
               fontWeight: isLaborView ? 700 : 500,
             }}
             sx={{
@@ -1450,7 +1506,7 @@ export default function Sidebar({
 
       <Collapse
         in={drawerOpen && laborOpen}
-        timeout="auto"
+        timeout={0}
         unmountOnExit
       >
         <SubMenuList
@@ -1485,7 +1541,7 @@ export default function Sidebar({
             primary="업무 보고 관리"
             primaryTypographyProps={{
               noWrap: true,
-              fontSize: '0.8rem',
+              fontSize: '0.72rem',
               fontWeight: isReportView ? 700 : 500,
             }}
             sx={{ opacity: drawerOpen ? 1 : 0 }}
@@ -1500,7 +1556,7 @@ export default function Sidebar({
         </ListItemButton>
       </Tooltip>
 
-      <Collapse in={drawerOpen && reportOpen} timeout="auto" unmountOnExit>
+      <Collapse in={drawerOpen && reportOpen} timeout={0} unmountOnExit>
         <SubMenuList
           items={reportMenus}
           currentView={currentView}
@@ -1534,7 +1590,7 @@ export default function Sidebar({
               primary="업무자료실"
               primaryTypographyProps={{
                 noWrap: true,
-                fontSize: '0.8rem',
+                fontSize: '0.72rem',
                 fontWeight: currentView === 'business-library' ? 700 : 500,
               }}
               sx={{ opacity: drawerOpen ? 1 : 0 }}
@@ -1578,7 +1634,7 @@ export default function Sidebar({
               }
               primaryTypographyProps={{
                 noWrap: true,
-                fontSize: '0.8rem',
+                fontSize: '0.72rem',
                 fontWeight:
                   currentView === 'feedback'
                     ? 700
@@ -1619,7 +1675,7 @@ export default function Sidebar({
               primary="가이드 설정"
               primaryTypographyProps={{
                 noWrap: true,
-                fontSize: '0.8rem',
+                fontSize: '0.72rem',
                 fontWeight: currentView === 'guide' ? 700 : 500,
               }}
               sx={{ opacity: drawerOpen ? 1 : 0 }}

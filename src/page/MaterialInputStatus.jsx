@@ -50,7 +50,6 @@ import KoreanMonthSelect from '../components/KoreanMonthSelect.jsx';
 import KoreanDatePicker from '../components/KoreanDatePicker.jsx';
 import ScaleAwareAutocompletePopper from '../components/ScaleAwareAutocompletePopper.jsx';
 
-import SystemPageTitle from '../components/SystemPageTitle.jsx';
 import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 const PAGE_SIZE = 1000;
 const INSERT_CHUNK_SIZE = 400;
@@ -4900,13 +4899,18 @@ export default function MaterialInputStatus({
           boxShadow: 'none',
         }}
       >
-        <Box>
-          <SystemPageTitle
-              title="자재투입현황"
-              help="자재 품목의 현장 투입현황을 조회하고 기간·품목별 사용내역을 확인합니다."
-            />
-
-          
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          {activeImport && (
+            <Typography sx={{ fontSize: '14px', color: '#334155', lineHeight: 1.6, overflowWrap: 'anywhere' }}>
+              현재 자료: {activeImport.source_file_name}
+              {' · '}
+              {activeImport.row_count?.toLocaleString()}건
+              {' · '}
+              입고일 {activeImport.min_arrival_date || '-'} ~ {activeImport.max_arrival_date || '-'}
+              {' · '}
+              업로드 {new Date(activeImport.created_at).toLocaleString('ko-KR')}
+            </Typography>
+          )}
         </Box>
 
         <Box
@@ -4996,28 +5000,6 @@ export default function MaterialInputStatus({
           }
         >
           {message.text}
-        </Alert>
-      )}
-
-      {activeImport && (
-        <Alert
-          severity="info"
-          sx={{
-            py: 0.2,
-            '& .MuiAlert-message':
-              {
-                fontSize:
-                  '0.68rem',
-              },
-          }}
-        >
-          현재 자료: {activeImport.source_file_name}
-          {' · '}
-          {activeImport.row_count?.toLocaleString()}건
-          {' · '}
-          입고일 {activeImport.min_arrival_date || '-'} ~ {activeImport.max_arrival_date || '-'}
-          {' · '}
-          업로드 {new Date(activeImport.created_at).toLocaleString('ko-KR')}
         </Alert>
       )}
 

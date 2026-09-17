@@ -277,13 +277,13 @@ export default function DailyReport({
 
         <Divider sx={{ mb: 1.5 }} />
 
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', mb: 0.5 }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', mb: 1 }}>
           {['일', '월', '화', '수', '목', '금', '토'].map((day, index) => (
             <Typography
               key={day}
               variant="caption"
               sx={{
-                fontSize: '0.65rem',
+                fontSize: 12,
                 fontWeight: 'bold',
                 color: index === 0 ? '#ef4444' : index === 6 ? '#3b82f6' : '#64748b',
               }}
@@ -293,7 +293,7 @@ export default function DailyReport({
           ))}
         </Box>
 
-        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center' }}>
+        <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', rowGap: 0.5, mb: 2 }}>
           {calendarCells.map((day, index) => {
             const dayIndex = index % 7;
             let isSelectedWeek = false;
@@ -326,7 +326,8 @@ export default function DailyReport({
                   alignItems: 'center',
                   justifyContent: 'flex-start',
                   bgcolor: isSelectedWeek ? '#e0f2fe' : 'transparent',
-                  py: 0.5,
+                  py: 0.75,
+                  minHeight: 44,
                   cursor: day ? 'pointer' : 'default',
                   '&:hover': {
                     bgcolor: day && !isSelectedWeek ? '#f1f5f9' : isSelectedWeek ? '#bae6fd' : 'transparent',
@@ -353,7 +354,7 @@ export default function DailyReport({
                               ? '#3b82f6'
                               : '#334155',
                         lineHeight: '20px',
-                        fontSize: '0.7rem',
+                        fontSize: 12,
                         fontWeight: isTodayHighlight ? 'bold' : 'normal',
                       }}
                     >
@@ -364,7 +365,7 @@ export default function DailyReport({
                       variant="caption"
                       sx={{
                         color: dailyWorkers > 0 ? '#0ea5e9' : '#94a3b8',
-                        fontSize: '0.6rem',
+                        fontSize: 11,
                         fontWeight: 'bold',
                         mt: 0.2,
                       }}

@@ -6,6 +6,10 @@ import {
   useRef,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
+import DashboardOverviewPlaceholder from '../components/DashboardOverviewPlaceholder.jsx';
+import DashboardWorkforce from '../components/DashboardWorkforce.jsx';
+import DashboardWeeklyProgress from '../components/DashboardWeeklyProgress.jsx';
 import {
   Alert,
   Box,
@@ -34,17 +38,24 @@ import CalendarMonthOutlinedIcon from '@mui/icons-material/CalendarMonthOutlined
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import DeleteOutlinedIcon from '@mui/icons-material/DeleteOutlined';
-import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import EditOutlinedIcon from '@mui/icons-material/EditOutlined';
 import EventNoteOutlinedIcon from '@mui/icons-material/EventNoteOutlined';
 import PublicOutlinedIcon from '@mui/icons-material/PublicOutlined';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import TrendingUpOutlinedIcon from '@mui/icons-material/TrendingUpOutlined';
+import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import ProfilePhoto from '../components/ProfilePhoto.jsx';
+import DashboardWorkSummary from '../components/DashboardWorkSummary.jsx';
+import MainProcessSettingsDialog from '../components/MainProcessSettingsDialog.jsx';
+import MainToolbar from '../components/MainToolbar.jsx';
+import './MainDashboard.css';
+import { getMainCalendarDays } from '../utils/mainCalendarDays.js';
 import { supabase } from '../supabaseClient';
 import { getProjectCellKeys } from '../utils/buildingUnits.js';
 import MainWorkAlertDialog from './MainWorkAlertDialog.jsx';
 import KoreanDatePicker from '../components/KoreanDatePicker.jsx';
 import SystemNoticeDetailDialog from '../components/SystemNoticeDialog.jsx';
+import { mainDialogTypography } from '../components/mainDialogTypography.js';
 import {
   SYSTEM_NOTICE_BUCKET,
   fetchSystemNotices,
@@ -54,11 +65,9 @@ import {
 } from '../utils/systemNotices.js';
 
 const MAIN_PROGRESS_CACHE = new Map();
-const MAIN_LABOR_CACHE = new Map();
 const MAIN_NOTICE_CACHE_KEY = 'system-notices';
 const MAIN_NOTICE_CACHE = new Map();
 const PROGRESS_CACHE_TTL_MS = 5 * 60 * 1000;
-const LABOR_CACHE_TTL_MS = 20 * 1000;
 const NOTICE_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const EMPTY_CALENDAR_ISSUE_ACCESS = {
@@ -256,55 +265,6 @@ const getKoreaDateParts = (date = new Date()) => {
   };
 };
 
-const LABOR_MISSING_STATUSES = new Set([
-  'required',
-  'rejected',
-]);
-
-const LABOR_PROGRESS_STATUSES = new Set([
-  'form_ready',
-  'pdf_generated',
-  'scan_verified',
-]);
-
-const EMPTY_LABOR_SUMMARY = {
-  monthLabel: '',
-  total: 0,
-  missing: 0,
-  progress: 0,
-  completed: 0,
-  unsynced: 0,
-  allPeriodMissing: 0,
-  missingNames: [],
-};
-
-const normalizeWorkerName = (value) =>
-  String(value || '')
-    .trim()
-    .replace(/\s+/g, '')
-    .toLowerCase();
-
-const getRequirementName = (row) =>
-  String(
-    row?.name ||
-      row?.worker_name ||
-      row?.normalized_name ||
-      '',
-  ).trim();
-
-const getCurrentContractPeriod = () => {
-  const { year, month } = getKoreaDateParts();
-  const monthText = pad2(month);
-  const shortYear = String(year).slice(-2);
-
-  return {
-    monthKey: `${year}-${monthText}`,
-    monthLabel: `${year}년 ${month}월`,
-    reportStart: `${shortYear}.${monthText}.01`,
-    reportEnd: `${shortYear}.${monthText}.31`,
-  };
-};
-
 const hasMeaningfulReport = (report) => {
   if (!report) return false;
 
@@ -369,115 +329,6 @@ const fetchProgressSummary = async (projectName) => {
   }));
 };
 
-const fetchLaborContractSummary = async (projectName) => {
-  const period = getCurrentContractPeriod();
-  const [
-    requirementResult,
-    reportResult,
-    allPeriodResult,
-  ] = await Promise.all([
-    supabase.rpc('labor_get_contract_month', {
-      p_project_name: projectName,
-      p_contract_month: period.monthKey,
-    }),
-    supabase
-      .from('daily_reports')
-      .select('workers')
-      .eq('project_name', projectName)
-      .gte('date', period.reportStart)
-      .lte('date', period.reportEnd),
-    supabase.rpc('labor_get_all_period_missing_count', {
-      p_project_name: projectName,
-    }),
-  ]);
-
-  if (requirementResult.error) {
-    throw requirementResult.error;
-  }
-
-  if (reportResult.error) {
-    throw reportResult.error;
-  }
-
-  if (allPeriodResult.error) {
-    throw allPeriodResult.error;
-  }
-
-  const requirementRows = requirementResult.data || [];
-  const activeRows = requirementRows.filter(
-    (row) => row?.status !== 'excluded',
-  );
-  const requirementNames = new Set(
-    requirementRows
-      .map((row) => normalizeWorkerName(getRequirementName(row)))
-      .filter(Boolean),
-  );
-  const monthlyWorkers = new Map();
-
-  (reportResult.data || []).forEach((report) => {
-    const workers = Array.isArray(report?.workers)
-      ? report.workers
-      : [];
-
-    workers.forEach((worker) => {
-      const displayName = String(worker?.name || '').trim();
-      const normalizedName = normalizeWorkerName(displayName);
-
-      if (normalizedName && !monthlyWorkers.has(normalizedName)) {
-        monthlyWorkers.set(normalizedName, displayName);
-      }
-    });
-  });
-
-  const unsyncedNames = Array.from(monthlyWorkers.entries())
-    .filter(([normalizedName]) =>
-      !requirementNames.has(normalizedName),
-    )
-    .map(([, displayName]) => displayName);
-  const missingRows = activeRows.filter((row) =>
-    LABOR_MISSING_STATUSES.has(row?.status),
-  );
-  const progressCount = activeRows.filter((row) =>
-    LABOR_PROGRESS_STATUSES.has(row?.status),
-  ).length;
-  const completedCount = activeRows.filter(
-    (row) => row?.status === 'manager_confirmed',
-  ).length;
-  const missingNames = [];
-  const missingNameKeys = new Set();
-  const allPeriodRow = Array.isArray(allPeriodResult.data)
-    ? allPeriodResult.data[0]
-    : allPeriodResult.data;
-
-  [
-    ...missingRows.map(getRequirementName),
-    ...unsyncedNames,
-  ].forEach((name) => {
-    const normalizedName = normalizeWorkerName(name);
-
-    if (
-      normalizedName &&
-      !missingNameKeys.has(normalizedName)
-    ) {
-      missingNameKeys.add(normalizedName);
-      missingNames.push(String(name).trim());
-    }
-  });
-
-  return {
-    monthLabel: period.monthLabel,
-    total: activeRows.length + unsyncedNames.length,
-    missing: missingRows.length + unsyncedNames.length,
-    progress: progressCount,
-    completed: completedCount,
-    unsynced: unsyncedNames.length,
-    allPeriodMissing: Number(
-      allPeriodRow?.missing_count || 0,
-    ),
-    missingNames,
-  };
-};
-
 const getProcessState = (percentage) => {
   if (percentage >= 100) {
     return {
@@ -510,6 +361,7 @@ function ProgressSummaryCard({
 }) {
   return (
     <Paper
+      className="main-card main-card-progress"
       variant="outlined"
       sx={{
         minHeight: 146,
@@ -528,6 +380,7 @@ function ProgressSummaryCard({
         }}
       >
         <Box
+          className="main-card-summary-heading"
           sx={{
             display: 'flex',
             alignItems: 'center',
@@ -548,8 +401,8 @@ function ProgressSummaryCard({
             <Typography
               sx={{
                 color: '#0f172a',
-                fontSize: '0.88rem',
-                fontWeight: 900,
+                fontSize: 16,
+                fontWeight: 700,
               }}
             >
               진행률
@@ -560,7 +413,7 @@ function ProgressSummaryCard({
             sx={{
               color: '#0369a1',
               fontSize: '1.5rem',
-              fontWeight: 900,
+              fontWeight: 700,
               letterSpacing: '-0.04em',
             }}
           >
@@ -603,7 +456,7 @@ function ProgressSummaryCard({
             <Typography
               sx={{
                 color: '#64748b',
-                fontSize: '0.65rem',
+                fontSize: 12,
                 fontWeight: 700,
               }}
             >
@@ -613,8 +466,8 @@ function ProgressSummaryCard({
               sx={{
                 mt: 0.15,
                 color: '#0f172a',
-                fontSize: '0.78rem',
-                fontWeight: 900,
+                fontSize: 14,
+                fontWeight: 700,
               }}
             >
               {schedule.startDate}
@@ -633,7 +486,7 @@ function ProgressSummaryCard({
             <Typography
               sx={{
                 color: '#64748b',
-                fontSize: '0.65rem',
+                fontSize: 12,
                 fontWeight: 700,
               }}
             >
@@ -643,8 +496,8 @@ function ProgressSummaryCard({
               sx={{
                 mt: 0.15,
                 color: '#0f172a',
-                fontSize: '0.78rem',
-                fontWeight: 900,
+                fontSize: 14,
+                fontWeight: 700,
               }}
             >
               {schedule.endDate}
@@ -657,246 +510,28 @@ function ProgressSummaryCard({
             mt: 'auto',
             pt: 0.8,
             color: '#64748b',
-            fontSize: '0.65rem',
+            fontSize: 12,
             textAlign: 'right',
           }}
         >
-          완료 {completedCount.toLocaleString()} /
+          평균 완료 {completedCount.toLocaleString('ko-KR', { maximumFractionDigits: 2 })} /
           {' '}
-          전체 {totalCount.toLocaleString()} 공정세대
+          전체 {totalCount.toLocaleString()}세대
         </Typography>
       </Box>
     </Paper>
   );
 }
 
-function LaborContractCard({
-  summary,
-  loading,
-  errorMessage,
-  onNavigate,
-}) {
-  const hasMissing = summary.missing > 0;
-  const hasAllPeriodMissing =
-    summary.allPeriodMissing > 0;
-  const needsAttention =
-    Boolean(errorMessage) ||
-    hasMissing ||
-    hasAllPeriodMissing;
-  const visibleNames = summary.missingNames.slice(0, 3);
-  const hiddenNameCount = Math.max(
-    summary.missingNames.length - visibleNames.length,
-    0,
-  );
-
-  return (
-    <Paper
-      variant="outlined"
-      sx={{
-        minHeight: 164,
-        p: 1.7,
-        borderColor: needsAttention ? '#fecaca' : '#bbf7d0',
-        background: needsAttention
-          ? 'linear-gradient(135deg, #fff7ed 0%, #ffffff 100%)'
-          : 'linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%)',
-        boxShadow: '0 3px 12px rgba(15, 23, 42, 0.05)',
-      }}
-    >
-      <Box
-        sx={{
-          height: '100%',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 1,
-          }}
-        >
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 0.7,
-            }}
-          >
-            <DescriptionOutlinedIcon
-              sx={{
-                color: needsAttention ? '#dc2626' : '#15803d',
-                fontSize: 22,
-              }}
-            />
-            <Typography
-              sx={{
-                color: '#0f172a',
-                fontSize: '0.88rem',
-                fontWeight: 900,
-              }}
-            >
-              근로계약서 작성 현황
-            </Typography>
-          </Box>
-
-          {loading ? (
-            <CircularProgress size={22} thickness={5} />
-          ) : (
-            <Typography
-              sx={{
-                color: needsAttention ? '#b91c1c' : '#15803d',
-                fontSize: '1.2rem',
-                fontWeight: 900,
-                letterSpacing: '-0.04em',
-              }}
-            >
-              {errorMessage
-                ? '확인 필요'
-                : hasMissing
-                  ? `${summary.missing.toLocaleString()}명 미작성`
-                  : summary.total > 0
-                    ? '전체 작성완료'
-                    : '작성 대상 없음'}
-            </Typography>
-          )}
-        </Box>
-
-        <Box
-          sx={{
-            mt: 1.15,
-            display: 'grid',
-            gridTemplateColumns: 'repeat(3, minmax(0, 1fr))',
-            gap: 0.65,
-          }}
-        >
-          {[
-            ['양식 미입력', summary.missing, '#b91c1c'],
-            ['작성 진행', summary.progress, '#0369a1'],
-            ['작성 완료', summary.completed, '#15803d'],
-          ].map(([label, count, color]) => (
-            <Box
-              key={label}
-              sx={{
-                px: 0.7,
-                py: 0.7,
-                borderRadius: 1.1,
-                border: '1px solid #e2e8f0',
-                bgcolor: '#ffffff',
-                textAlign: 'center',
-              }}
-            >
-              <Typography
-                sx={{
-                  color: '#64748b',
-                  fontSize: '0.63rem',
-                  fontWeight: 700,
-                }}
-              >
-                {label}
-              </Typography>
-              <Typography
-                sx={{
-                  mt: 0.2,
-                  color,
-                  fontSize: '0.76rem',
-                  fontWeight: 900,
-                }}
-              >
-                {Number(count || 0).toLocaleString()}명
-              </Typography>
-            </Box>
-          ))}
-        </Box>
-
-        <Box
-          sx={{
-            mt: 'auto',
-            pt: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 1,
-          }}
-        >
-          <Box sx={{ minWidth: 0 }}>
-            <Typography
-              noWrap
-              sx={{
-                color: errorMessage ? '#b91c1c' : '#78716c',
-                fontSize: '0.66rem',
-                fontWeight: errorMessage ? 800 : 500,
-              }}
-            >
-              {errorMessage
-                ? errorMessage
-                : hasMissing
-                  ? visibleNames.length > 0
-                    ? `미작성: ${visibleNames.join(', ')}${hiddenNameCount > 0 ? ` 외 ${hiddenNameCount}명` : ''}`
-                    : '미작성 인원을 관리 화면에서 확인해주세요.'
-                  : `${summary.monthLabel} 대상 ${summary.total.toLocaleString()}명`}
-            </Typography>
-
-            {!errorMessage && summary.unsynced > 0 && (
-              <Typography
-                sx={{
-                  mt: 0.15,
-                  color: '#c2410c',
-                  fontSize: '0.61rem',
-                  fontWeight: 800,
-                }}
-              >
-                작성 대상 반영 필요 {summary.unsynced.toLocaleString()}명 포함
-              </Typography>
-            )}
-
-            {!errorMessage && (
-              <Typography
-                sx={{
-                  mt: 0.22,
-                  color: hasAllPeriodMissing
-                    ? '#b91c1c'
-                    : '#15803d',
-                  fontSize: '0.66rem',
-                  fontWeight: 900,
-                }}
-              >
-                전체기간 미입력 {summary.allPeriodMissing.toLocaleString()}건
-              </Typography>
-            )}
-          </Box>
-
-          <Button
-            size="small"
-            variant="outlined"
-            onClick={() => onNavigate?.('labor-contract')}
-            sx={{
-              flexShrink: 0,
-              minWidth: 0,
-              px: 1,
-              py: 0.35,
-              color: needsAttention ? '#c2410c' : '#15803d',
-              borderColor: needsAttention ? '#fdba74' : '#86efac',
-              fontSize: '0.67rem',
-              fontWeight: 800,
-              '&:hover': {
-                borderColor: needsAttention ? '#fb923c' : '#4ade80',
-                bgcolor: needsAttention ? '#fff7ed' : '#f0fdf4',
-              },
-            }}
-          >
-            관리 화면
-          </Button>
-        </Box>
-      </Box>
-    </Paper>
-  );
-}
-
 function NoticePanel({ notices, canEdit, onEdit, onOpen }) {
+  const [page, setPage] = useState(0);
+  const pageCount = Math.max(1, Math.ceil(notices.length / 5));
+  const currentPage = Math.min(page, pageCount - 1);
+  const visibleNotices = notices.slice(currentPage * 5, currentPage * 5 + 5);
+  const categoryLength = Math.max(4, ...notices.map((notice) => Array.from(notice.category || '').length));
   return (
     <Paper
+      className="main-card main-card-notices"
       variant="outlined"
       sx={{
         minHeight: 300,
@@ -929,8 +564,8 @@ function NoticePanel({ notices, canEdit, onEdit, onOpen }) {
           <Typography
             sx={{
               color: '#0f172a',
-              fontSize: '0.88rem',
-              fontWeight: 900,
+              fontSize: 16,
+              fontWeight: 700,
             }}
           >
             공지사항
@@ -965,16 +600,18 @@ function NoticePanel({ notices, canEdit, onEdit, onOpen }) {
       </Box>
 
       <Box
+        className="main-notice-list"
         sx={{
           mt: 0.6,
           display: 'flex',
           flexDirection: 'column',
         }}
       >
-        {notices.map((notice, index) => (
+        {visibleNotices.map((notice, index) => (
           <Box
             key={notice.id}
             component="button"
+            className="main-notice-row"
             type="button"
             onClick={() => onOpen?.(notice.id)}
             sx={{
@@ -991,7 +628,7 @@ function NoticePanel({ notices, canEdit, onEdit, onOpen }) {
               bgcolor: 'transparent',
               cursor: 'pointer',
               borderBottom:
-                index === notices.length - 1
+                index === visibleNotices.length - 1
                   ? 'none'
                   : '1px solid #eef2f7',
               '&:hover': {
@@ -1011,6 +648,7 @@ function NoticePanel({ notices, canEdit, onEdit, onOpen }) {
                 size="small"
                 sx={{
                   height: 20,
+                  width: `calc(${categoryLength}em + 16px)`,
                   color:
                     notice.category === '공지'
                       ? '#1d4ed8'
@@ -1023,39 +661,31 @@ function NoticePanel({ notices, canEdit, onEdit, onOpen }) {
                       : notice.category === '업데이트'
                         ? '#d1fae5'
                         : '#ede9fe',
-                  fontSize: '0.62rem',
-                  fontWeight: 900,
+                  fontSize: 12,
+                  fontWeight: 700,
                 }}
               />
             </Box>
 
             <Typography
+              className="main-notice-title"
+              title={notice.title}
               sx={{
                 mt: 0.55,
                 color: '#1e293b',
-                fontSize: '0.78rem',
-                fontWeight: 900,
+                fontSize: 14,
+                fontWeight: 700,
               }}
             >
               {notice.title}
             </Typography>
 
             <Typography
-              sx={{
-                mt: 0.3,
-                color: '#64748b',
-                fontSize: '0.68rem',
-                lineHeight: 1.55,
-              }}
-            >
-              {notice.summary || notice.content}
-            </Typography>
-
-            <Typography
+              className="main-notice-date"
               sx={{
                 mt: 0.35,
                 color: '#94a3b8',
-                fontSize: '0.62rem',
+                fontSize: 12,
                 textAlign: 'right',
               }}
             >
@@ -1063,6 +693,14 @@ function NoticePanel({ notices, canEdit, onEdit, onOpen }) {
             </Typography>
           </Box>
         ))}
+        {Array.from({ length: 5 - visibleNotices.length }, (_, index) => (
+          <Box key={`empty-${index}`} className="main-notice-empty-row" aria-hidden="true" />
+        ))}
+      </Box>
+      <Box className="main-notice-pagination" sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 1, mt: 1 }}>
+        <IconButton size="small" aria-label="공지사항 이전 페이지" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}><ChevronLeftIcon /></IconButton>
+        <Typography sx={{ fontSize: 12, color: '#64748b' }} aria-live="polite">{currentPage + 1} / {pageCount}</Typography>
+        <IconButton size="small" aria-label="공지사항 다음 페이지" disabled={currentPage >= pageCount - 1} onClick={() => setPage(currentPage + 1)}><ChevronRightIcon /></IconButton>
       </Box>
     </Paper>
   );
@@ -1358,6 +996,7 @@ function CalendarIssueEditDialog({
       onClose={saving ? undefined : onClose}
       fullWidth
       maxWidth="sm"
+      sx={mainDialogTypography}
     >
       <DialogTitle
         sx={{
@@ -1430,7 +1069,7 @@ function CalendarIssueEditDialog({
                   m: 0,
                   '& .MuiFormControlLabel-label': {
                     color: '#1e3a8a',
-                    fontSize: '0.78rem',
+                    fontSize: '0.88rem',
                     fontWeight: 900,
                   },
                 }}
@@ -1439,22 +1078,14 @@ function CalendarIssueEditDialog({
                 sx={{
                   ml: 4,
                   color: '#64748b',
-                  fontSize: '0.66rem',
+                  fontSize: '0.88rem',
+                  lineHeight: 1.85,
                 }}
               >
                 체크하면 한 현장에서 등록한 일정이 모든 현장의 Main 캘린더에 표시됩니다.
               </Typography>
             </Box>
-          ) : (
-            <Typography
-              sx={{
-                color: '#64748b',
-                fontSize: '0.7rem',
-              }}
-            >
-              이 일정은 현재 현장에만 등록됩니다. 전체현장 공유 권한은 회원관리에서 최고관리자가 부여할 수 있습니다.
-            </Typography>
-          )}
+          ) : null}
         </Box>
       </DialogContent>
 
@@ -1640,16 +1271,6 @@ function CalendarPanel({
   onDeleteIssue,
 }) {
   const [selectedIssueDate, setSelectedIssueDate] = useState('');
-  const firstDay = new Date(
-    viewYear,
-    viewMonth,
-    1,
-  ).getDay();
-  const daysInMonth = new Date(
-    viewYear,
-    viewMonth + 1,
-    0,
-  ).getDate();
   const today = getKoreaDateParts();
   const isCurrentMonth =
     today.year === viewYear &&
@@ -1671,20 +1292,11 @@ function CalendarPanel({
     [issues, selectedIssueDate],
   );
 
-  const cells = [
-    ...Array.from({ length: firstDay }, () => null),
-    ...Array.from(
-      { length: daysInMonth },
-      (_, index) => index + 1,
-    ),
-  ];
-
-  while (cells.length % 7 !== 0) {
-    cells.push(null);
-  }
+  const cells = getMainCalendarDays(viewYear, viewMonth);
 
   return (
     <Paper
+      className="main-card main-card-calendar"
       variant="outlined"
       sx={{
         minHeight: 430,
@@ -1711,11 +1323,12 @@ function CalendarPanel({
           display: 'grid',
           gridTemplateColumns: {
             xs: '1fr',
-            md: 'minmax(0, 2fr) minmax(240px, 1fr)',
+            md: '1fr',
           },
           gap: 1.4,
           flex: 1,
           minHeight: 0,
+          alignContent: 'start',
           alignItems: 'stretch',
         }}
       >
@@ -1728,10 +1341,10 @@ function CalendarPanel({
             sx={{
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between',
-              gap: 1,
-              pb: 1,
-              borderBottom: '1px solid #e2e8f0',
+              justifyContent: 'center',
+              flexDirection: 'column',
+              gap: 1.5,
+              pb: 1.5,
             }}
           >
             <Box
@@ -1739,6 +1352,7 @@ function CalendarPanel({
                 display: 'flex',
                 alignItems: 'center',
                 gap: 0.7,
+                alignSelf: 'flex-start',
               }}
             >
               <CalendarMonthOutlinedIcon
@@ -1747,8 +1361,8 @@ function CalendarPanel({
               <Typography
                 sx={{
                   color: '#0f172a',
-                  fontSize: '0.88rem',
-                  fontWeight: 900,
+                  fontSize: 16,
+                  fontWeight: 700,
                 }}
               >
                 캘린더
@@ -1772,11 +1386,11 @@ function CalendarPanel({
 
               <Typography
                 sx={{
-                  minWidth: 88,
+                  minWidth: 112,
                   textAlign: 'center',
-                  color: '#334155',
-                  fontSize: '0.73rem',
-                  fontWeight: 900,
+                  color: '#303b3c',
+                  fontSize: 18,
+                  fontWeight: 700,
                 }}
               >
                 {viewYear}년 {viewMonth + 1}월
@@ -1813,8 +1427,8 @@ function CalendarPanel({
                     : index === 6
                       ? '#2563eb'
                       : '#64748b',
-                fontSize: '0.64rem',
-                fontWeight: 900,
+                fontSize: 12,
+                fontWeight: 700,
               }}
             >
               {label}
@@ -1822,33 +1436,24 @@ function CalendarPanel({
           ),
         )}
 
-        {cells.map((day, index) => {
-          if (!day) {
-            return (
-              <Box
-                key={`empty-${index}`}
-                sx={{ minHeight: 34 }}
-              />
-            );
-          }
-
+        {cells.map(({ year, month, day, inMonth }, index) => {
           const dateKey = createDateKey(
-            viewYear,
-            viewMonth,
+            year,
+            month,
             day,
           );
-          const hasReport = hasMeaningfulReport(
+          const hasReport = inMonth && hasMeaningfulReport(
             savedData?.[dateKey],
           );
           const isoDate = createIsoDate(
-            viewYear,
-            viewMonth,
+            year,
+            month,
             day,
           );
-          const hasIssue = issueDateSet.has(isoDate);
+          const hasIssue = inMonth && issueDateSet.has(isoDate);
           const dayOfWeek = index % 7;
           const isToday =
-            isCurrentMonth && today.day === day;
+            inMonth && isCurrentMonth && today.day === day;
 
           return (
             <Box
@@ -1867,36 +1472,30 @@ function CalendarPanel({
               }
               sx={{
                 position: 'relative',
-                width: '100%',
-                minHeight: 38,
+                width: 32,
+                height: 32,
+                justifySelf: 'center',
                 p: 0,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                border: isToday
-                  ? '2px solid #ef4444'
-                  : '1px solid #e2e8f0',
-                borderRadius: 1,
-                bgcolor: isToday
-                  ? '#fff7ed'
-                  : hasReport
-                    ? '#f0fdf4'
-                    : '#ffffff',
+                border: 'none',
+                borderRadius: '50%',
+                bgcolor: isToday ? '#303b3c' : 'transparent',
                 color:
-                  dayOfWeek === 0
+                  !inMonth ? '#b5bbc1' : isToday ? '#ffffff' : dayOfWeek === 0
                     ? '#dc2626'
                     : dayOfWeek === 6
                       ? '#2563eb'
                       : '#334155',
                 fontFamily: 'inherit',
-                fontSize: '0.68rem',
-                fontWeight: isToday ? 900 : 700,
+                fontSize: 12,
+                fontWeight: isToday ? 700 : 500,
                 appearance: 'none',
                 cursor: hasIssue ? 'pointer' : 'default',
                 '&:hover': hasIssue
                   ? {
-                      borderColor: '#e11d48',
-                      bgcolor: '#fff1f2',
+                      bgcolor: isToday ? '#475557' : '#f1f5f9',
                     }
                   : undefined,
               }}
@@ -1977,7 +1576,7 @@ function CalendarPanel({
               <Typography
                 sx={{
                   color: '#64748b',
-                  fontSize: '0.62rem',
+                  fontSize: 12,
                 }}
               >
                 {label}
@@ -1992,16 +1591,10 @@ function CalendarPanel({
           sx={{
             minWidth: 0,
             alignSelf: 'stretch',
-            pl: { xs: 0, md: 1.4 },
-            pt: { xs: 1.2, md: 0 },
-            borderLeft: {
-              xs: 'none',
-              md: '1px solid #e2e8f0',
-            },
-            borderTop: {
-              xs: '1px solid #e2e8f0',
-              md: 'none',
-            },
+            pl: 0,
+            pt: 2,
+            borderLeft: 'none',
+            borderTop: '1px solid #e2e8f0',
           }}
         >
         <Box
@@ -2018,8 +1611,8 @@ function CalendarPanel({
           <Typography
             sx={{
               color: '#0f172a',
-              fontSize: '0.82rem',
-              fontWeight: 900,
+              fontSize: 14,
+              fontWeight: 700,
             }}
           >
             {viewYear}년 {viewMonth + 1}월 주요일정
@@ -2036,8 +1629,8 @@ function CalendarPanel({
                 minWidth: 0,
                 px: 1,
                 py: 0.35,
-                fontSize: '0.67rem',
-                fontWeight: 900,
+                fontSize: 12,
+                fontWeight: 700,
               }}
             >
               일정 등록
@@ -2076,7 +1669,7 @@ function CalendarPanel({
             }}
           >
             <Typography
-              sx={{ color: '#94a3b8', fontSize: '0.7rem' }}
+              sx={{ color: '#94a3b8', fontSize: 12 }}
             >
               등록된 주요일정이 없습니다.
             </Typography>
@@ -2117,12 +1710,12 @@ function CalendarPanel({
                     }}
                   >
                     <Typography
-                      sx={{ fontSize: '0.58rem', fontWeight: 700 }}
+                      sx={{ fontSize: 12, fontWeight: 700 }}
                     >
                       {year}
                     </Typography>
                     <Typography
-                      sx={{ fontSize: '0.7rem', fontWeight: 900 }}
+                      sx={{ fontSize: 12, fontWeight: 700 }}
                     >
                       {month}.{day}
                     </Typography>
@@ -2166,8 +1759,8 @@ function CalendarPanel({
                           bgcolor: issue.share_all_projects
                             ? '#dbeafe'
                             : '#d1fae5',
-                          fontSize: '0.6rem',
-                          fontWeight: 900,
+                          fontSize: 12,
+                          fontWeight: 700,
                           '& .MuiChip-icon': {
                             color: 'inherit',
                             fontSize: 14,
@@ -2181,7 +1774,7 @@ function CalendarPanel({
                           sx={{
                             minWidth: 0,
                             color: '#64748b',
-                            fontSize: '0.6rem',
+                            fontSize: 12,
                           }}
                         >
                           {issue.project_name}
@@ -2226,8 +1819,8 @@ function CalendarPanel({
                       sx={{
                         mt: 0.55,
                         color: '#1e293b',
-                        fontSize: '0.74rem',
-                        fontWeight: 800,
+                        fontSize: 14,
+                        fontWeight: 600,
                         lineHeight: 1.5,
                         whiteSpace: 'pre-wrap',
                         wordBreak: 'break-word',
@@ -2240,7 +1833,7 @@ function CalendarPanel({
                       sx={{
                         mt: 0.35,
                         color: '#94a3b8',
-                        fontSize: '0.58rem',
+                        fontSize: 12,
                         textAlign: 'right',
                       }}
                     >
@@ -2262,9 +1855,19 @@ function MainProcessPanel({
   processStats,
   loading,
   onRefresh,
+  preferenceKey,
 }) {
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [selectedProcesses, setSelectedProcesses] = useState(() => {
+    try {
+      const value = JSON.parse(localStorage.getItem(preferenceKey));
+      return Array.isArray(value) ? value.filter((name) => typeof name === 'string') : null;
+    } catch { return null; }
+  });
+  const visibleProcesses = selectedProcesses === null ? processStats : processStats.filter((process) => selectedProcesses.includes(process.name));
   return (
     <Paper
+      className="main-card main-card-processes"
       variant="outlined"
       sx={{
         p: 1.5,
@@ -2296,14 +1899,15 @@ function MainProcessPanel({
           <Typography
             sx={{
               color: '#0f172a',
-              fontSize: '0.88rem',
-              fontWeight: 900,
+              fontSize: 16,
+              fontWeight: 700,
             }}
           >
             주요공정
           </Typography>
         </Box>
 
+        <Box sx={{ display: 'flex', flexShrink: 0 }}>
         <Tooltip title="공정현황 새로고침">
           <span>
             <IconButton
@@ -2320,9 +1924,23 @@ function MainProcessPanel({
             </IconButton>
           </span>
         </Tooltip>
+        <Tooltip title="표시할 공정 선택">
+          <IconButton aria-label="표시할 공정 선택" onClick={() => setSettingsOpen(true)}><SettingsOutlinedIcon fontSize="small" /></IconButton>
+        </Tooltip>
+        </Box>
       </Box>
 
+      {settingsOpen && <MainProcessSettingsDialog names={processStats.map((process) => process.name)} selected={selectedProcesses}
+        onClose={() => setSettingsOpen(false)} onSave={(names) => {
+          localStorage.setItem(preferenceKey, JSON.stringify(names));
+          setSelectedProcesses(names); setSettingsOpen(false);
+        }} />}
+
       <Box
+        className="main-process-grid"
+        tabIndex={0}
+        role="region"
+        aria-label="주요공정 목록, 위아래로 스크롤하여 확인"
         sx={{
           mt: 1.1,
           display: 'grid',
@@ -2334,11 +1952,13 @@ function MainProcessPanel({
           gap: 1,
         }}
       >
-        {processStats.map((process) => {
+        {visibleProcesses.length === 0 && <Typography sx={{ fontSize: 13, color: '#64748b', p: 1 }}>표시할 공정이 없습니다. 톱니바퀴에서 공정을 선택해주세요.</Typography>}
+        {visibleProcesses.map((process) => {
           const state = getProcessState(process.percentage);
 
           return (
             <Box
+              className="main-process-item"
               key={process.name}
               sx={{
                 p: 1.15,
@@ -2368,8 +1988,8 @@ function MainProcessPanel({
                     textOverflow: 'ellipsis',
                     whiteSpace: 'nowrap',
                     color: '#1e293b',
-                    fontSize: '0.76rem',
-                    fontWeight: 900,
+                    fontSize: 14,
+                    fontWeight: 700,
                   }}
                 >
                   {process.name}
@@ -2383,8 +2003,8 @@ function MainProcessPanel({
                     flexShrink: 0,
                     color: state.color,
                     bgcolor: state.bgcolor,
-                    fontSize: '0.6rem',
-                    fontWeight: 900,
+                    fontSize: 12,
+                    fontWeight: 700,
                   }}
                 />
               </Box>
@@ -2419,7 +2039,7 @@ function MainProcessPanel({
                 <Typography
                   sx={{
                     color: '#64748b',
-                    fontSize: '0.63rem',
+                    fontSize: 12,
                   }}
                 >
                   {process.completed.toLocaleString()}
@@ -2430,8 +2050,8 @@ function MainProcessPanel({
                 <Typography
                   sx={{
                     color: '#0f766e',
-                    fontSize: '0.76rem',
-                    fontWeight: 900,
+                    fontSize: 14,
+                    fontWeight: 700,
                   }}
                 >
                   {process.percentage.toFixed(2)}%
@@ -2446,7 +2066,18 @@ function MainProcessPanel({
 }
 
 export default function MainDashboard({
+  headerContainer = null,
   projectName = '',
+  userName = '',
+  userId = '',
+  canViewWeekly = false,
+  canViewDaily = false,
+  canViewWorkforce = false,
+  canViewProgress = false,
+  canViewContract = false,
+  canViewProposal = false,
+  canViewApprovals = false,
+  userPosition = '',
   userRole = '담당자',
   buildingConfigs = {},
   processOptions = [],
@@ -2469,15 +2100,10 @@ export default function MainDashboard({
       projectName,
     ),
   );
-  const [laborSummary, setLaborSummary] = useState(
-    EMPTY_LABOR_SUMMARY,
-  );
-  const [laborLoading, setLaborLoading] = useState(false);
-  const [laborErrorMessage, setLaborErrorMessage] =
-    useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [notices, setNotices] = useState(DEFAULT_NOTICES);
+  const noticeRequestRef = useRef(null);
   const [noticeViewerOpen, setNoticeViewerOpen] = useState(false);
   const [selectedNoticeId, setSelectedNoticeId] = useState('');
   const [noticeDialogOpen, setNoticeDialogOpen] =
@@ -2513,7 +2139,6 @@ export default function MainDashboard({
     message: '',
   });
   const progressRequestIdRef = useRef(0);
-  const laborRequestIdRef = useRef(0);
 
   const isSuperAdmin = userRole === '최고관리자';
 
@@ -2661,7 +2286,10 @@ export default function MainDashboard({
       return;
     }
 
-    const data = await fetchSystemNotices();
+    if (!noticeRequestRef.current) {
+      noticeRequestRef.current = fetchSystemNotices().finally(() => { noticeRequestRef.current = null; });
+    }
+    const data = await noticeRequestRef.current;
     setCachedValue(
       MAIN_NOTICE_CACHE,
       MAIN_NOTICE_CACHE_KEY,
@@ -3065,67 +2693,6 @@ export default function MainDashboard({
     }
   };
 
-  const loadLaborSummary = useCallback(async ({ force = false } = {}) => {
-    const requestId = laborRequestIdRef.current + 1;
-    laborRequestIdRef.current = requestId;
-
-    if (!projectName) {
-      setLaborSummary(EMPTY_LABOR_SUMMARY);
-      setLaborErrorMessage('');
-      return;
-    }
-
-    const cachedSummary = getCachedValue(
-      MAIN_LABOR_CACHE,
-      projectName,
-      LABOR_CACHE_TTL_MS,
-    );
-
-    if (!force && cachedSummary) {
-      setLaborSummary(cachedSummary);
-      setLaborErrorMessage('');
-      setLaborLoading(false);
-      return;
-    }
-
-    if (!cachedSummary) {
-      setLaborSummary(EMPTY_LABOR_SUMMARY);
-    }
-
-    setLaborLoading(true);
-    setLaborErrorMessage('');
-
-    try {
-      const nextSummary =
-        await fetchLaborContractSummary(projectName);
-
-      setCachedValue(
-        MAIN_LABOR_CACHE,
-        projectName,
-        nextSummary,
-      );
-
-      if (requestId !== laborRequestIdRef.current) return;
-
-      setLaborSummary(nextSummary);
-    } catch (error) {
-      if (requestId !== laborRequestIdRef.current) return;
-
-      console.error(
-        'Main 근로계약서 작성 현황 조회 오류:',
-        error,
-      );
-      setLaborSummary(EMPTY_LABOR_SUMMARY);
-      setLaborErrorMessage(
-        error?.message || '근로계약 현황을 불러오지 못했습니다.',
-      );
-    } finally {
-      if (requestId === laborRequestIdRef.current) {
-        setLaborLoading(false);
-      }
-    }
-  }, [projectName]);
-
   const loadProgress = useCallback(async ({ force = false } = {}) => {
     const requestId = progressRequestIdRef.current + 1;
     progressRequestIdRef.current = requestId;
@@ -3196,42 +2763,6 @@ export default function MainDashboard({
   }, [loadProgress]);
 
   useEffect(() => {
-    loadLaborSummary();
-
-    const timer = window.setInterval(
-      () => loadLaborSummary({ force: true }),
-      20 * 1000,
-    );
-
-    const handleFocus = () => {
-      loadLaborSummary({ force: true });
-    };
-
-    const handleLaborChanged = () => {
-      MAIN_LABOR_CACHE.delete(projectName);
-      loadLaborSummary({ force: true });
-    };
-
-    window.addEventListener('focus', handleFocus);
-    window.addEventListener(
-      'labor-contract-changed',
-      handleLaborChanged,
-    );
-
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener('focus', handleFocus);
-      window.removeEventListener(
-        'labor-contract-changed',
-        handleLaborChanged,
-      );
-    };
-  }, [
-    loadLaborSummary,
-    projectName,
-  ]);
-
-  useEffect(() => {
     const handleProgressChanged = (event) => {
       const changedProjectName = String(
         event?.detail?.projectName || '',
@@ -3297,17 +2828,20 @@ export default function MainDashboard({
     (total, process) => total + process.completed,
     0,
   );
-  const totalCount = totalUnits * processOptions.length;
+  const averageCompletedUnits = processOptions.length > 0
+    ? completedCount / processOptions.length
+    : 0;
   const overallPercentage =
-    totalCount === 0
+    totalUnits === 0
       ? 0
-      : (completedCount / totalCount) * 100;
+      : (averageCompletedUnits / totalUnits) * 100;
 
   const schedule =
     projectSchedule;
 
   return (
     <Box
+      className="main-workspace"
       sx={{
         height: '100%',
         minHeight: 0,
@@ -3395,50 +2929,38 @@ export default function MainDashboard({
         </Alert>
       </Snackbar>
 
-      <Box
-        sx={{
-          display: 'grid',
-          gridTemplateColumns: {
-            xs: '1fr',
-            lg: 'repeat(2, minmax(0, 1fr))',
-          },
-          gap: 1.2,
-        }}
-      >
+      {headerContainer && createPortal(<>
+        <Typography component="h1" noWrap sx={{ flex: 1, minWidth: 0, fontSize: { xs: 18, md: 22 }, fontWeight: 800, color: '#172033' }}>전사 대시보드</Typography>
+        <MainToolbar key={`${userId}:${projectName}:${canViewApprovals}`} userId={userId} projectName={projectName}
+          canApprove={canViewApprovals}
+          onNotice={handleOpenNoticeViewer} onNavigate={onNavigate} onReloadNotices={loadNotices} />
+      </>, headerContainer)}
+
+      <Box className="main-workspace-grid">
+      <Box className="main-workspace-column main-workspace-overview">
+        <Paper variant="outlined" className="main-workspace-project">
+          <ProfilePhoto key={userId} userId={userId} userName={userName} />
+          <Typography component="h2">{[userName.trim() || '이름 미등록', userPosition.trim()].filter(Boolean).join(' ')}</Typography>
+          <Typography className="main-workspace-role">{userRole}</Typography>
+          <Typography className="main-workspace-project-name">{projectName || '현장 미선택'}</Typography>
+          <Box className="main-workspace-project-stats">
+            <Box><Typography>{totalUnits.toLocaleString()}</Typography><Typography>관리 세대</Typography></Box>
+            <Box><Typography>{processOptions.length}</Typography><Typography>관리 공정</Typography></Box>
+          </Box>
+          <DashboardWorkSummary key={`${userId}:${projectName}:${canViewWeekly}:${canViewDaily}:${canViewContract}:${canViewApprovals}`}
+            userId={userId} projectName={projectName} canWeekly={canViewWeekly} canDaily={canViewDaily} canContract={canViewContract}
+            canApprove={canViewApprovals} onNavigate={onNavigate} />
+        </Paper>
         <ProgressSummaryCard
           schedule={schedule}
           percentage={overallPercentage}
-          completedCount={completedCount}
-          totalCount={totalCount}
+          completedCount={averageCompletedUnits}
+          totalCount={totalUnits}
         />
 
-        <LaborContractCard
-          summary={laborSummary}
-          loading={laborLoading}
-          errorMessage={laborErrorMessage}
-          onNavigate={onNavigate}
-        />
       </Box>
 
-      <Box
-        sx={{
-          mt: 1.2,
-          display: 'grid',
-          gridTemplateColumns: {
-            xs: '1fr',
-            lg: 'minmax(280px, 1fr) minmax(0, 2fr)',
-          },
-          gap: 1.2,
-          alignItems: 'stretch',
-        }}
-      >
-        <NoticePanel
-          notices={notices.slice(0, 3)}
-          canEdit={isSuperAdmin}
-          onEdit={handleOpenNoticeEditor}
-          onOpen={handleOpenNoticeViewer}
-        />
-
+      <Box className="main-workspace-column main-workspace-feed">
         <CalendarPanel
           viewYear={viewYear}
           viewMonth={viewMonth}
@@ -3453,29 +2975,36 @@ export default function MainDashboard({
           onEditIssue={handleOpenCalendarIssueEdit}
           onDeleteIssue={handleDeleteCalendarIssue}
         />
+
+
       </Box>
 
-      <Box sx={{ mt: 1.2 }}>
+      <Box className="main-workspace-column main-workspace-schedule">
+        <NoticePanel
+          notices={notices}
+          canEdit={isSuperAdmin}
+          onEdit={handleOpenNoticeEditor}
+          onOpen={handleOpenNoticeViewer}
+        />
+        <DashboardOverviewPlaceholder type="sales" />
+      </Box>
+      <Box className="main-workspace-column main-workspace-processes">
         {errorMessage ? (
-          <Paper
-            variant="outlined"
-            sx={{
-              p: 2,
-              borderColor: '#fecaca',
-              bgcolor: '#fff1f2',
-              color: '#b91c1c',
-              fontSize: '0.78rem',
-            }}
-          >
-            {errorMessage}
-          </Paper>
+          <Alert severity="error">{errorMessage}</Alert>
         ) : (
           <MainProcessPanel
+            key={`${userId}:${projectName}`}
+            preferenceKey={`main-visible-processes:${userId}:${projectName}`}
             processStats={processStats}
             loading={loading}
             onRefresh={() => loadProgress({ force: true })}
           />
         )}
+      </Box>
+      <Box className="main-workspace-column main-workspace-workforce">
+        <DashboardWorkforce key={`${userId}:${projectName}:${canViewWorkforce}`} projectName={projectName} canView={canViewWorkforce} />
+        <DashboardWeeklyProgress key={`${userId}:${projectName}:${canViewProgress}`} userId={userId} projectName={projectName} names={processOptions} canView={canViewProgress} />
+      </Box>
       </Box>
     </Box>
   );

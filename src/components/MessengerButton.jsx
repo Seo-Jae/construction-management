@@ -209,14 +209,14 @@ export default function MessengerButton({
         sx={{
           width: 38,
           height: 38,
-          color: active ? '#ffffff' : '#cbd5e1',
+          color: active ? '#0284c7' : '#475569',
           bgcolor: active ? 'rgba(14,165,233,0.28)' : 'transparent',
           border: active
             ? '1px solid rgba(125,211,252,0.65)'
             : '1px solid transparent',
           '&:hover': {
-            color: '#ffffff',
-            bgcolor: 'rgba(255,255,255,0.1)',
+            color: '#0284c7',
+            bgcolor: '#f1f5f9',
           },
         }}
       >

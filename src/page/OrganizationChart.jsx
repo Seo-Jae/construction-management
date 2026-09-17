@@ -28,7 +28,6 @@ import {
 } from '@mui/material';
 import { supabase } from '../supabaseClient';
 import { UI_FONT_FAMILY } from '../theme.js';
-import SystemPageTitle from '../components/SystemPageTitle.jsx';
 
 const TABLE_NAME = 'organization_chart_nodes';
 const ROOT_KEY = '__root__';
@@ -2462,7 +2461,7 @@ export default function OrganizationChart({
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
-        borderColor: '#cbd5e1',
+        border: 'none',
         bgcolor: '#ffffff',
         fontFamily: CHART_FONT_FAMILY,
         textRendering: 'geometricPrecision',
@@ -2484,15 +2483,9 @@ export default function OrganizationChart({
           flexWrap: 'wrap',
         }}
       >
-        <SystemPageTitle
-          title="욱림건설 조직도"
-          help={
-            layoutMode
-              ? '배치 편집에서는 부서 제목을 끌면 하위 조직 전체가 함께 이동합니다. 가로 분기선은 위·아래로 이동할 수 있으며 24px 격자에 맞춰 저장됩니다.'
-              : '빈 화면을 마우스로 끌어 이동하고, 마우스 위치에서 휠로 확대·축소할 수 있습니다. 최고관리자는 배치 편집과 조직정보 수정 기능을 사용할 수 있습니다.'
-          }
-          meta={latestUpdatedAt ? '최종 수정 ' + formatDateTime(latestUpdatedAt) : ''}
-        />
+        <Typography sx={{ color: '#64748b', fontSize: 14, lineHeight: 1.6 }}>
+          {latestUpdatedAt ? '최종 수정 ' + formatDateTime(latestUpdatedAt) : ''}
+        </Typography>
 
         <Stack direction="row" spacing={0.65} alignItems="center" flexWrap="wrap" useFlexGap>
           <Stack direction="row" spacing={0.2} alignItems="center">
@@ -2563,8 +2556,6 @@ export default function OrganizationChart({
         </Stack>
       </Box>
 
-      <Divider />
-
       {message && (
         <Alert severity={message.severity} onClose={() => setMessage(null)} sx={{ mx: 2, mt: 1.2, py: 0.15 }}>
           {message.text}
@@ -2583,7 +2574,7 @@ export default function OrganizationChart({
           flexGrow: 1,
           minHeight: 0,
           overflow: 'hidden',
-          bgcolor: '#f8fafc',
+          bgcolor: '#ffffff',
           cursor: movingBranchParentId
             ? 'ns-resize'
             : isPanning

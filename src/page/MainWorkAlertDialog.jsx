@@ -32,10 +32,7 @@ import EngineeringOutlinedIcon from '@mui/icons-material/EngineeringOutlined';
 import FactCheckOutlinedIcon from '@mui/icons-material/FactCheckOutlined';
 import { supabase } from '../supabaseClient';
 
-const COMPLETE_CONTRACT_STATUSES = new Set([
-  'manager_confirmed',
-  'excluded',
-]);
+import { countMissingContracts } from '../utils/contractWorkSummary.js';
 
 const pad2 = (value) => String(value).padStart(2, '0');
 
@@ -69,12 +66,6 @@ const getKoreaDateKeys = (date = new Date()) => {
     displayDate: `${yyyy}.${mm}.${dd}`,
   };
 };
-
-const normalizeName = (value) =>
-  String(value || '')
-    .trim()
-    .replace(/\s+/g, '')
-    .toLowerCase();
 
 const hasMeaningfulDailyReport = (report) => {
   if (!report) return false;
@@ -125,34 +116,6 @@ const hasMeaningfulDailyReport = (report) => {
       ).trim(),
   );
 };
-
-const getMonthlyWorkerNames = (reportRows) => {
-  const names = new Set();
-
-  (reportRows || []).forEach((report) => {
-    const workers = Array.isArray(report?.workers)
-      ? report.workers
-      : [];
-
-    workers.forEach((worker) => {
-      const normalizedName = normalizeName(worker?.name);
-
-      if (normalizedName) {
-        names.add(normalizedName);
-      }
-    });
-  });
-
-  return names;
-};
-
-const getRequirementName = (row) =>
-  normalizeName(
-    row?.normalized_name ||
-      row?.name ||
-      row?.worker_name ||
-      '',
-  );
 
 const initialSummary = {
   laborMissingCount: null,
@@ -347,25 +310,7 @@ export default function MainWorkAlertDialog({
     let laborMissingCount = null;
 
     if (!contractResult.error && !reportResult.error) {
-      const requirementRows = contractResult.data || [];
-      const monthlyWorkerNames = getMonthlyWorkerNames(reportRows);
-      const requirementNames = new Set(
-        requirementRows
-          .map(getRequirementName)
-          .filter(Boolean),
-      );
-      const unsyncedWorkerCount = Array.from(
-        monthlyWorkerNames,
-      ).filter(
-        (workerName) => !requirementNames.has(workerName),
-      ).length;
-      const pendingRequirementCount = requirementRows.filter(
-        (row) =>
-          !COMPLETE_CONTRACT_STATUSES.has(row?.status),
-      ).length;
-
-      laborMissingCount =
-        pendingRequirementCount + unsyncedWorkerCount;
+      laborMissingCount = countMissingContracts(contractResult.data || [], reportRows);
     }
 
     setSummary({
@@ -529,17 +474,6 @@ export default function MainWorkAlertDialog({
       <DialogContent
         sx={{ px: { xs: 1.6, sm: 2.5 }, py: 2.2 }}
       >
-        <Typography
-          sx={{
-            mb: 1.4,
-            color: '#475569',
-            fontSize: '0.78rem',
-            lineHeight: 1.6,
-          }}
-        >
-          현재 처리 상태를 확인하고 필요한 화면으로 바로 이동할 수 있습니다.
-        </Typography>
-
         {errorMessage && (
           <Alert severity="warning" sx={{ mb: 1.3 }}>
             {errorMessage}

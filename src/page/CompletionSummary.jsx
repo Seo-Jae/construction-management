@@ -25,7 +25,6 @@ import {
   getProjectCellKeys,
 } from '../utils/buildingUnits.js';
 
-import SystemPageTitle from '../components/SystemPageTitle.jsx';
 import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 const PAGE_SIZE = 1000;
 
@@ -349,6 +348,10 @@ export default function CompletionSummary({
       <Paper
         variant="outlined"
         sx={{
+          alignSelf: 'flex-end',
+          maxWidth: '100%',
+          overflowX: 'auto',
+          flexShrink: 0,
           px: 1.5,
           py: 1,
           display: 'flex',
@@ -359,14 +362,7 @@ export default function CompletionSummary({
           boxShadow: 'none',
         }}
       >
-        <Box>
-          <SystemPageTitle
-            title={isMonthly ? '월별 완료 집계' : '주별 완료 집계'}
-            help="공정별 작업완료 세대를 완료일 기준으로 집계하고 기간별 완료 현황을 비교합니다."
-          />
-        </Box>
-
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+<Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Typography variant="caption" color="text.secondary">
             표시 기간
           </Typography>

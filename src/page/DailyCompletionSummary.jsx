@@ -25,7 +25,6 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
 
-import SystemPageTitle from '../components/SystemPageTitle.jsx';
 import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 const PAGE_SIZE = 1000;
 const DATE_RANGE_OPTIONS = [
@@ -1540,6 +1539,10 @@ export default function DailyCompletionSummary({
       <Paper
         variant="outlined"
         sx={{
+          alignSelf: 'flex-end',
+          maxWidth: '100%',
+          overflowX: 'auto',
+          flexShrink: 0,
           px: 1.5,
           py: 1,
           display: 'flex',
@@ -1552,16 +1555,7 @@ export default function DailyCompletionSummary({
           boxShadow: 'none',
         }}
       >
-        <Box>
-          <SystemPageTitle
-              title="일별 완료 집계"
-              help="공정별 작업완료 세대를 완료일 기준으로 집계해 일자별 완료 현황을 확인합니다."
-            />
-
-          
-        </Box>
-
-        <Box
+<Box
           sx={{
             display: 'flex',
             alignItems: 'center',

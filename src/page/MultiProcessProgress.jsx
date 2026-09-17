@@ -1758,7 +1758,7 @@ export default function MultiProcessProgress({
         }}
       >
         <Box sx={{ minWidth: 190 }}>
-          <Typography fontWeight={800} color="#334155">
+          <Typography sx={{ fontWeight: 800 }} color="#334155">
             비교할 공종 선택
           </Typography>
           <Typography variant="caption" color="text.secondary">
@@ -1907,7 +1907,7 @@ export default function MultiProcessProgress({
                 </Typography>
                 <Typography
                   sx={{
-                    fontSize: '0.72rem',
+                    fontSize: '0.8rem',
                     fontWeight: 800,
                     color: '#475569',
                     whiteSpace: 'nowrap',
@@ -1947,7 +1947,7 @@ export default function MultiProcessProgress({
           p: 0.75,
           borderColor: 'transparent',
           boxShadow: 'none',
-          bgcolor: '#f1f5f9',
+          bgcolor: '#ffffff',
         }}
       >
         {(loading || targetLoading) && (

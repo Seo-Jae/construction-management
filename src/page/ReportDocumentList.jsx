@@ -38,7 +38,6 @@ import ApprovalReportViewer, {
   downloadApprovalReportExcel,
 } from './ApprovalReportViewer.jsx';
 
-import SystemPageTitle from '../components/SystemPageTitle.jsx';
 const DeleteOutlineIcon = ({ fontSize = 'medium', ...props }) => {
   const size = fontSize === 'small' ? 20 : 24;
 
@@ -369,25 +368,13 @@ export default function ReportDocumentList({
         sx={{
           px: 1.5,
           py: 1.2,
-          borderColor: '#cbd5e1',
+          border: 'none',
           bgcolor: '#ffffff',
           boxShadow: 'none',
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1 }}>
-          <Box>
-            <SystemPageTitle
-              title={reportName}
-              help={
-                reportType === 'weekly'
-                  ? '주간 업무 보고 문서를 작성·저장하고 결재 진행상태와 작성 문서를 관리합니다.'
-                  : '품의 보고 문서를 작성·저장하고 결재 요청·진행상태와 작성 문서를 관리합니다.'
-              }
-            />
-            <Typography sx={{ mt: 0.2, color: '#64748b', fontSize: '0.7rem' }}>
-              {projectName} · 작성 문서 {documents.length.toLocaleString()}건
-            </Typography>
-          </Box>
+          <Box sx={{ flex: 1 }} />
 
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.7 }}>
             {reportType === 'proposal' && (

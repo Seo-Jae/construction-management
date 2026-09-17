@@ -64,7 +64,6 @@ import StorageRoundedIcon from '@mui/icons-material/StorageRounded';
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import * as tus from 'tus-js-client';
 import { supabase } from '../supabaseClient';
-import SystemPageTitle from '../components/SystemPageTitle.jsx';
 import {
   BUSINESS_LIBRARY_BUCKET,
   BUSINESS_LIBRARY_CATEGORIES,
@@ -1029,22 +1028,6 @@ export default function BusinessLibrary({
         </Alert>
       </Snackbar>
 
-      <Paper variant="outlined" sx={{ px:1.4, py:1, borderColor:'#d8e0ea' }}>
-        <Box sx={{ display:'flex', alignItems:'center', width:'100%', gap:1 }}>
-          <SystemPageTitle
-            title="업무자료실"
-            help={'회사 공통 양식과 현장 업무자료를 한곳에서 조회하고 내려받습니다.\n자료 등록·수정·삭제와 저장용량 관리는 최고관리자만 사용할 수 있습니다.'}
-            meta="회사양식, 시공계획서, 카탈로그, 시방서 등 최신 업무자료를 공유합니다."
-          />
-          <Stack direction="row" gap={0.7} alignItems="center" sx={{ ml:'auto', flexShrink:0 }}>
-            {isSuperAdmin && (
-              <Button size="small" variant="contained" startIcon={<AddRoundedIcon />} onClick={openCreate}>자료 등록</Button>
-            )}
-            <Tooltip title="새로고침"><IconButton size="small" onClick={() => Promise.all([loadRows(), loadStorageUsage()])}><RefreshRoundedIcon fontSize="small" /></IconButton></Tooltip>
-          </Stack>
-        </Box>
-      </Paper>
-
       {message && <Alert severity={message.severity} onClose={() => setMessage(null)} sx={{ py:0 }}>{message.text}</Alert>}
 
       {isSuperAdmin && (
@@ -1098,6 +1081,12 @@ export default function BusinessLibrary({
             InputProps={{ startAdornment:<SearchRoundedIcon sx={{ mr:0.7, color:'#94a3b8', fontSize:18 }} /> }}
             sx={{ ...fieldSx, flex:1 }}
           />
+          <Stack direction="row" gap={0.7} alignItems="center" justifyContent="flex-end" sx={{ flexShrink:0 }}>
+            {isSuperAdmin && (
+              <Button size="small" variant="contained" startIcon={<AddRoundedIcon />} onClick={openCreate}>자료 등록</Button>
+            )}
+            <Tooltip title="새로고침"><IconButton aria-label="업무자료실 새로고침" size="small" onClick={() => Promise.all([loadRows(), loadStorageUsage()])}><RefreshRoundedIcon fontSize="small" /></IconButton></Tooltip>
+          </Stack>
         </Stack>
       </Paper>
 

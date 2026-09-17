@@ -506,6 +506,8 @@ const compactBodyCellSx = {
 };
 
 const compactFilterFieldSx = {
+  '&& .MuiInputLabel-root': { fontSize: '14px !important' },
+  '&& .MuiInputBase-input, && .MuiSelect-select': { fontSize: '14px !important' },
   '& .MuiInputLabel-root': {
     fontSize: '0.68rem',
     transform: 'translate(10px, 7px) scale(1)',
@@ -3333,7 +3335,8 @@ export default function UnitPriceAnalysis({
     return (
       <Paper sx={{ p: 3 }}>
         <SystemPageTitle
-              title="일위대가작성"
+              title="일위대가 작성"
+              hideTitle
               help="1㎡ 기준 재료비·노무비·경비를 산정하고 저장·공유·출력하며 기술자료를 함께 관리합니다."
             />
         <Alert severity="warning" sx={{ mb: 2 }}>{loadError}</Alert>
@@ -3366,15 +3369,13 @@ export default function UnitPriceAnalysis({
         }
       `}</style>
 
-      <Paper sx={{ mb: 1.2, px: 2, py: 1.2, border: '1px solid #dbe3ec' }}>
+      <Paper elevation={0} sx={{ mb: 1.2, px: 1.5, py: 0.5, bgcolor: '#ffffff' }}>
         <Box sx={{ width: '100%', display: 'flex', alignItems: 'center', gap: 1, flexWrap: { xs: 'wrap', md: 'nowrap' } }}>
-          <Stack direction="row" spacing={1.2} alignItems="center">
-            <SystemPageTitle
-              title="일위대가작성"
-              help="1㎡ 기준 재료비·노무비·경비를 산정하고 저장·공유·출력하며 기술자료를 함께 관리합니다."
-            />
-            <Chip label={`현재 현장 · ${projectName || '미선택'}`} color="primary" variant="outlined" />
-          </Stack>
+          <Tabs value={mainTab} onChange={(_, value) => setMainTab(value)} variant="scrollable" scrollButtons="auto" sx={{ minWidth: 0, maxWidth: '100%', '&& .MuiTab-root': { fontSize: '14px !important' } }}>
+            <Tab label="일위대가 작성" />
+            <Tab label={`저장·공유 (${documents.length})`} />
+            <Tab label="기준정보·단가" />
+          </Tabs>
           <Box sx={{ flex: 1, minWidth: 12 }} />
           <Stack direction="row" spacing={0.45} alignItems="center" justifyContent="flex-end" sx={{ ml: 'auto', flexShrink: 0 }}>
             <Tooltip title="새 일위대가 작성">
@@ -3412,11 +3413,6 @@ export default function UnitPriceAnalysis({
       </Paper>
 
       <Paper sx={{ border: '1px solid #dbe3ec' }}>
-        <Tabs value={mainTab} onChange={(_, value) => setMainTab(value)} sx={{ px: 1.5, borderBottom: '1px solid #e2e8f0' }}>
-          <Tab label="일위대가 작성" />
-          <Tab label={`저장·공유 (${documents.length})`} />
-          <Tab label="기준정보·단가" />
-        </Tabs>
 
         {mainTab === 0 && (
           <Box sx={{ p: 1.5 }}>

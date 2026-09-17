@@ -13,6 +13,7 @@ export default function SystemPageTitle({
   help = '',
   meta = '',
   titleComponent = 'h2',
+  hideTitle = false,
 }) {
   const [anchorEl, setAnchorEl] = useState(null);
   const hasHelp = Boolean(help);
@@ -22,7 +23,7 @@ export default function SystemPageTitle({
   return (
     <Box sx={{ minWidth: 0 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.55, minWidth: 0 }}>
-        <Typography
+        {!hideTitle && <Typography
           component={titleComponent}
           className="wooklim-system-page-title"
           sx={{
@@ -36,7 +37,7 @@ export default function SystemPageTitle({
           }}
         >
           {title}
-        </Typography>
+        </Typography>}
 
         {hasHelp && (
           <>

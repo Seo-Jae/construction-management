@@ -63,7 +63,6 @@ import PrintRoundedIcon from '@mui/icons-material/PrintRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import BuildingGrid from '../BuildingGrid.jsx';
-import SystemPageTitle from '../components/SystemPageTitle.jsx';
 import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 import { supabase } from '../supabaseClient';
 import {
@@ -1132,26 +1131,24 @@ export default function OptionManagementOverview({
           p: 1.25,
           display: 'flex',
           flexWrap: 'wrap',
+          alignSelf: 'flex-end',
+          width: 'fit-content',
+          maxWidth: '100%',
+          boxSizing: 'border-box',
+          flexShrink: 0,
           alignItems: 'center',
           gap: 1,
           borderColor: '#cbd5e1',
           boxShadow: 'none',
         }}
       >
-        <Box sx={{ minWidth: 245 }}>
-          <SystemPageTitle title={pageConfig.title} help={pageConfig.help} />
-          <Typography sx={{ mt: 0.15, color: '#64748b', fontSize: '0.67rem' }}>
-            {projectName || '현장명 미등록'} · 현장관리 골구도 연동
-          </Typography>
-        </Box>
-
         <Stack
           direction="row"
           spacing={0.7}
           alignItems="center"
           useFlexGap
           flexWrap="wrap"
-          sx={{ flex: 1 }}
+          sx={{ flex: 1, justifyContent: 'flex-end' }}
         >
           <Box
             component="span"
@@ -1160,10 +1157,10 @@ export default function OptionManagementOverview({
               display: 'inline-flex',
               alignItems: 'center',
               px: 1.2,
-              bgcolor: `${pageConfig.accent}16`,
-              border: `1px solid ${pageConfig.accent}66`,
+              bgcolor: '#0284c716',
+              border: '1px solid #0284c766',
               borderRadius: '16px',
-              color: pageConfig.accent,
+              color: '#0284c7',
               fontSize: '0.72rem',
               fontWeight: 800,
               lineHeight: 1,
@@ -1782,7 +1779,7 @@ export default function OptionManagementOverview({
             p: 0.75,
             borderColor: 'transparent',
             boxShadow: 'none',
-            bgcolor: isComparison ? '#ffffff' : '#f1f5f9',
+            bgcolor: '#ffffff',
             position: 'relative',
           }}
         >

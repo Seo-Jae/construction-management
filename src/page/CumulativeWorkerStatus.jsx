@@ -23,7 +23,7 @@ import {
 } from '@mui/material';
 import { supabase } from '../supabaseClient';
 
-import SystemPageTitle from '../components/SystemPageTitle.jsx';
+
 import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 const SUPABASE_PAGE_SIZE = 1000;
 const ALL_PROJECTS_OPTION = '전체현장';
@@ -820,102 +820,18 @@ export default function CumulativeWorkerStatus({
       <Paper
         variant="outlined"
         sx={{
-          px: 1.4,
-          py: 1.15,
+          px: 1.5,
+          py: 1.2,
           borderColor: '#cbd5e1',
           bgcolor: '#ffffff',
           boxShadow: 'none',
         }}
       >
-        <Box
-          sx={{
-            display: 'grid',
-            gridTemplateColumns: {
-              xs: '1fr',
-              lg:
-                'minmax(250px, 0.75fr) minmax(430px, 1.25fr)',
-            },
-            border:
-              '1px solid #64748b',
-          }}
-        >
-          <Box
-            sx={{
-              minHeight: 76,
-              display: 'grid',
-              gridTemplateColumns:
-                '78px minmax(0, 1fr)',
-              borderRight: {
-                xs: 0,
-                lg:
-                  '1px solid #64748b',
-              },
-              borderBottom: {
-                xs:
-                  '1px solid #64748b',
-                lg: 0,
-              },
-            }}
-          >
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderRight:
-                  '1px solid #64748b',
-                bgcolor: '#f8fafc',
-              }}
-            >
-              <Typography
-                sx={{
-                  fontSize: '0.74rem',
-                  fontWeight: 900,
-                }}
-              >
-                조회현장
-              </Typography>
-            </Box>
-
-            <Box
-              sx={{
-                minWidth: 0,
-                display: 'flex',
-                alignItems: 'center',
-                px: 1.25,
-              }}
-            >
-              <Typography
-                noWrap
-                title={scopeLabel}
-                sx={{
-                  color: '#0f172a',
-                  fontSize: '0.84rem',
-                  fontWeight: 900,
-                }}
-              >
-                {scopeLabel}
-              </Typography>
-            </Box>
-          </Box>
-
-          <Box
-            sx={{
-              minHeight: 76,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 0.15,
-            }}
-          >
-            <SystemPageTitle
-              title="누계투입조회"
-              help="근로자별 최근 월 투입 이력을 누계로 조회하고 장기 투입 여부를 확인합니다."
-            />
-
-            
-          </Box>
+        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5 }}>
+          <Typography sx={{ fontSize: 17, fontWeight: 800, color: '#0f172a', textAlign: 'center', overflowWrap: 'anywhere' }}>{scopeLabel}</Typography>
+          {monthKeys.length > 0 && <Typography sx={{ fontSize: 14, fontWeight: 800, color: '#475569', textAlign: 'center' }}>
+            {monthKeys[0].replace('-', '년 ')}월 ~ {monthKeys[monthKeys.length - 1].replace('-', '년 ')}월
+          </Typography>}
         </Box>
 
         <Box

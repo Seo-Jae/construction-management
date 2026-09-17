@@ -33,9 +33,9 @@ export const GUIDE_GROUPS = [
   { id: 'household-quantity-group', label: '세대물량관리', direct: true, items: [{ id: 'household-quantity-management', label: '세대물량관리' }] },
   { id: 'drawing-quantity-group', label: '타입별 도면분석', direct: true, items: [{ id: 'drawing-quantity', label: '타입별 도면분석' }] },
   { id: 'material-group', label: '자재관리', items: [
-    { id: 'material-unit-price', label: '일위대가작성' },
-    { id: 'material-order', label: '자재발주작성', systemPreparing: true },
-    { id: 'material-input-status', label: '자재투입현황' },
+    { id: 'material-unit-price', label: '일위대가 작성' },
+    { id: 'material-order', label: '자재 발주 작성', systemPreparing: true },
+    { id: 'material-input-status', label: '자재 투입 현황' },
   ] },
   { id: 'payment-group', label: '기성관리', items: [
     { id: 'payment-claim', label: '기성내역서작성' },

@@ -40,13 +40,15 @@ import {
   TableRow,
   TextField,
   Toolbar,
+  Tooltip,
   Typography,
 } from '@mui/material';
 import ChevronLeftRoundedIcon from '@mui/icons-material/ChevronLeftRounded';
 import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import CloseIcon from '@mui/icons-material/Close';
 import KeyboardArrowDownRoundedIcon from '@mui/icons-material/KeyboardArrowDownRounded';
-import ZoomOutMapRoundedIcon from '@mui/icons-material/ZoomOutMapRounded';
+import SettingsOutlinedIcon from '@mui/icons-material/SettingsOutlined';
+import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
 import ExcelJS from 'exceljs';
 import { supabase } from './supabaseClient';
 import {
@@ -55,10 +57,10 @@ import {
 } from './utils/buildingUnits.js';
 import Sidebar from './components/Sidebar.jsx';
 import MessengerButton from './components/MessengerButton.jsx';
-import SystemGuideButton from './components/SystemGuideButton.jsx';
 import FeedbackButton from './components/FeedbackButton.jsx';
 import KoreanDatePicker from './components/KoreanDatePicker.jsx';
 import MainDashboard from './page/MainDashboard.jsx';
+import DashboardPageHeader from './components/DashboardPageHeader.jsx';
 import DailyReport from './page/DailyReport.jsx';
 import MonthlyWorkerStatus from './page/MonthlyWorkerStatus.jsx';
 import CumulativeWorkerStatus from './page/CumulativeWorkerStatus.jsx';
@@ -264,18 +266,6 @@ const getKoreaDateTimeParts = (date = new Date()) => {
   };
 };
 
-const formatKoreaAccessDateTime = (value) => {
-  if (!value) return '-';
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '-';
-
-  const parts = getKoreaDateTimeParts(date);
-  const pad = (number) => String(number).padStart(2, '0');
-
-  return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}[${pad(parts.hour)}:${pad(parts.minute)}:${pad(parts.second)}]`;
-};
-
 const createKoreaCalendarDate = (date = new Date()) => {
   const parts = getKoreaDateTimeParts(date);
 
@@ -376,9 +366,9 @@ const viewTitles = {
   'project-management': '현장관리',
   'organization-chart': '조직도',
   messenger: '메신저',
-  daily: '출력일보작성',
-  'daily-monthly-workers': '금월 투입현황',
-  'daily-cumulative-workers': '누계투입조회',
+  daily: '출력 일보 작성',
+  'daily-monthly-workers': '금월 투입 현황',
+  'daily-cumulative-workers': '누계 투입 조회',
   'progress-input': '공종별 현황 입력',
   'progress-multi': '다중 공종 진척 현황',
   'progress-daily': '일별 완료 집계',
@@ -388,10 +378,10 @@ const viewTitles = {
   'option-selection-status': '옵션현황(선택)',
   'option-comparison': '옵션별 비교',
   'household-quantity-management': '세대물량관리',
-  'material-order': '자재발주작성',
+  'material-order': '자재 발주 작성',
   'material-master': '자재 마스터 관리',
-  'material-input-status': '자재투입현황',
-  'material-unit-price': '일위대가작성',
+  'material-input-status': '자재 투입 현황',
+  'material-unit-price': '일위대가 작성',
   'drawing-quantity': '타입별 도면분석',
   'payment-claim': '기성내역서작성',
   'payment-contract-mapping': '계약품목 공정연결',
@@ -410,7 +400,7 @@ const viewTitles = {
   'weekly-overview-archive': '주간업무보관',
   attendance: '근태관리',
   'business-library': '업무자료실',
-  feedback: '건의·오류',
+  feedback: '건의·오류 제보',
   guide: '가이드 설정',
 };
 
@@ -432,7 +422,7 @@ const VIEW_PERMISSION_KEYS = {
   'option-insulation-status': 'construction.progress.view',
   'option-selection-status': 'construction.progress.view',
   'option-comparison': 'construction.progress.view',
-  'household-quantity-management': 'construction.progress.view',
+  'household-quantity-management': 'construction.household_quantity.view',
   'drawing-quantity': 'construction.drawing.view',
   'material-order': 'material.order.view',
   'material-master': 'material.input.view',
@@ -585,6 +575,7 @@ const resolveUserRole = (profile) => {
 };
 
 export default function Dashboard({ user, userProfile, onLogout }) {
+  const [mainHeaderContainer, setMainHeaderContainer] = useState(null);
   const dashboardScaleStorageKey = `${DASHBOARD_SCALE_STORAGE_KEY}:${
     user?.id || user?.email || 'anonymous'
   }`;
@@ -1094,13 +1085,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     role: userRole,
     project_name: activeProjectName,
   };
-
-  const recentAccessAt =
-    user?.last_sign_in_at ||
-    userProfile?.last_sign_in_at ||
-    userProfile?.last_login_at ||
-    userProfile?.last_access_at ||
-    '';
 
   /*
     한국시간 기준 시계입니다.
@@ -2874,6 +2858,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     }));
 
     await syncDataToDB(selectedDateKey, overrides);
+    window.dispatchEvent(new Event('daily-reports-changed'));
     handleCloseModal();
     showDashboardToast('안전하게 저장되었습니다!', 'success');
   };
@@ -3713,37 +3698,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
   const actionName = selectedStatusAction === '작업완료' ? '완료' : selectedStatusAction;
 
-  const globalConstructionViews = [
-    'admin-dashboard',
-    'user-management',
-    'organization-chart',
-    'messenger',
-    'approval-inbox',
-    'weekly-overview',
-    'weekly-overview-archive',
-    'labor-worker-master',
-  ];
-  const constructionLocationTitle =
-    currentView === 'daily-cumulative-workers'
-      ? cumulativeProjectScope
-      : globalConstructionViews.includes(currentView)
-        ? ''
-        : activeProjectName || '현장을 선택해주세요';
-  const constructionHeaderTitle = [
-    constructionLocationTitle,
-    viewTitles[currentView] || '현장 관리',
-  ]
-    .filter(Boolean)
-    .join(' - ');
-  const headerTitle =
-    currentView === 'messenger'
-      ? '메신저'
-      : managementArea === MANAGEMENT_AREA_SAFETY
-        ? '안전 관리'
-        : managementArea === MANAGEMENT_AREA_MATERIAL
-          ? '자재 마스터 관리'
-          : constructionHeaderTitle;
-
   const managementAreaLabel =
     managementArea === MANAGEMENT_AREA_SAFETY
       ? '안전 관리'
@@ -3795,7 +3749,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
       <AppBar
         position="absolute"
-        sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, bgcolor: '#1e293b' }}
+        sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, bgcolor: '#ffffff', color: '#475569', boxShadow: 'none', borderBottom: (['main', 'daily', 'daily-monthly-workers', 'daily-cumulative-workers', 'material-unit-price', 'material-order', 'material-input-status', 'approval-inbox', 'organization-chart', 'report-weekly', 'report-expense-resolution', 'report-approval', 'business-library', 'feedback'].includes(currentView) || currentView.startsWith('progress-') || currentView.startsWith('option-')) ? 'none' : '1px solid #e2e8f0' }}
       >
         <Toolbar
           sx={{
@@ -3808,11 +3762,12 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               width: open ? drawerWidth : 72,
               minWidth: open ? drawerWidth : 72,
               height: 56,
+              bgcolor: '#f1f5f9',
               px: open ? 1 : 0.5,
               display: 'flex',
               alignItems: 'center',
               gap: open ? 0.5 : 0.15,
-              borderRight: '1px solid rgba(255,255,255,0.14)',
+              borderRight: '1px solid #cbd5e1',
               boxSizing: 'border-box',
               transition: 'width 0.3s, min-width 0.3s, padding 0.3s',
             }}
@@ -3849,7 +3804,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                   flexGrow: 1,
                   height: 40,
                   px: 0.75,
-                  color: '#ffffff',
+                  color: '#000000',
                   justifyContent: 'center',
                   fontSize: '0.9rem',
                   fontWeight: 900,
@@ -3858,7 +3813,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                     ml: 0.35,
                   },
                   '&:hover': {
-                    bgcolor: 'rgba(255,255,255,0.08)',
+                    bgcolor: '#f3f4f6',
                   },
                 }}
               >
@@ -3878,8 +3833,8 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                 color: '#94a3b8',
                 borderRadius: 0.8,
                 '&:hover': {
-                  color: '#ffffff',
-                  bgcolor: 'rgba(255,255,255,0.08)',
+                  color: '#374151',
+                  bgcolor: '#f3f4f6',
                 },
               }}
             >
@@ -3946,20 +3901,8 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             </MenuItem>
           </Menu>
 
-          <Typography
-            component="h1"
-            variant="subtitle1"
-            color="inherit"
-            noWrap
-            sx={{
-              flexGrow: 1,
-              minWidth: 0,
-              px: 1.5,
-              fontWeight: 'bold',
-            }}
-          >
-            {headerTitle}
-          </Typography>
+          <Box ref={setMainHeaderContainer} sx={{ flexGrow: 1, minWidth: 0, display: 'flex', alignItems: 'center', pl: { xs: 1.5, md: 3 }, pr: 0, gap: 2 }}>
+          </Box>
 
           {managementArea === MANAGEMENT_AREA_CONSTRUCTION &&
             (
@@ -3979,16 +3922,17 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             ) && (
             <Box
               sx={{
-                position: 'absolute',
-                left: '50%',
-                top: '50%',
+                position: 'relative',
+                left: 'auto',
+                top: 'auto',
                 width: {
-                  xs: 240,
-                  md: 330,
+                  xs: 140,
+                  md: 220,
                 },
                 maxWidth: '38vw',
-                transform:
-                  'translate(-50%, -50%)',
+                flexShrink: 1,
+                minWidth: 120,
+                transform: 'none',
                 zIndex: 2,
               }}
             >
@@ -4035,19 +3979,19 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                     minHeight: 36,
                     py: '0 !important',
                     pr: '34px !important',
-                    color: '#ffffff',
+                    color: '#334155',
                     bgcolor:
-                      'rgba(255,255,255,0.13)',
+                      '#f8fafc',
                     borderRadius: 1.2,
                     fontSize: '0.78rem',
                     fontWeight: 900,
                     '& fieldset': {
                       borderColor:
-                        'rgba(255,255,255,0.38)',
+                        '#cbd5e1',
                     },
                     '&:hover fieldset': {
                       borderColor:
-                        'rgba(255,255,255,0.72)',
+                        '#94a3b8',
                     },
                     '&.Mui-focused fieldset': {
                       borderColor: '#7dd3fc',
@@ -4056,69 +4000,33 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                   '& .MuiInputBase-input': {
                     py: '7px !important',
                     textAlign: 'center',
-                    color: '#ffffff',
+                    color: '#334155',
                     cursor: 'pointer',
                   },
                   '& .MuiInputBase-input::placeholder': {
-                    color: '#cbd5e1',
+                    color: '#64748b',
                     opacity: 1,
                   },
                   '& .MuiAutocomplete-popupIndicator': {
-                    color: '#e2e8f0',
+                    color: '#64748b',
                   },
                   '& .MuiAutocomplete-clearIndicator': {
-                    color: '#e2e8f0',
+                    color: '#64748b',
                   },
                 }}
               />
             </Box>
           )}
 
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.1 }}>
-            <Button
-              id="dashboard-scale-button"
-              color="inherit"
-              size="small"
-              aria-controls={
-                dashboardScaleMenuAnchor
-                  ? 'dashboard-scale-menu'
-                  : undefined
-              }
-              aria-haspopup="true"
-              aria-expanded={
-                dashboardScaleMenuAnchor ? 'true' : undefined
-              }
-              onClick={handleOpenDashboardScaleMenu}
-              startIcon={
-                <ZoomOutMapRoundedIcon
-                  sx={{ fontSize: '0.92rem !important' }}
-                />
-              }
-              endIcon={
-                <KeyboardArrowDownRoundedIcon
-                  sx={{ fontSize: '0.95rem !important' }}
-                />
-              }
-              sx={{
-                minWidth: 0,
-                height: 32,
-                px: 0.9,
-                color: '#e2e8f0',
-                border: '1px solid rgba(255,255,255,0.34)',
-                borderRadius: 1,
-                fontSize: '0.7rem',
-                fontWeight: 800,
-                whiteSpace: 'nowrap',
-                '& .MuiButton-startIcon': { mr: 0.45 },
-                '& .MuiButton-endIcon': { ml: 0.25 },
-                '&:hover': {
-                  borderColor: 'rgba(255,255,255,0.66)',
-                  bgcolor: 'rgba(255,255,255,0.08)',
-                },
-              }}
-            >
-              화면 {Math.round(dashboardScale * 100)}%
-            </Button>
+          <Box className="dashboard-header-actions" sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, flexShrink: 0 }}>
+            <Tooltip title={`화면 배율 설정 (현재 ${Math.round(dashboardScale * 100)}%)`}>
+              <IconButton id="dashboard-scale-button" aria-label="화면 배율 설정"
+                aria-controls={dashboardScaleMenuAnchor ? 'dashboard-scale-menu' : undefined}
+                aria-haspopup="menu" aria-expanded={Boolean(dashboardScaleMenuAnchor)}
+                onClick={handleOpenDashboardScaleMenu} sx={{ color: '#475569' }}>
+                <SettingsOutlinedIcon />
+              </IconButton>
+            </Tooltip>
 
             <Menu
               id="dashboard-scale-menu"
@@ -4155,8 +4063,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               ))}
             </Menu>
 
-            <SystemGuideButton currentView={currentView} />
-
             <FeedbackButton
               userId={user?.id || userProfile?.auth_user_id || ''}
               userProfile={activeUserProfile}
@@ -4171,26 +4077,11 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               onOpen={handleToggleMessenger}
             />
 
-            <Box sx={{ textAlign: 'right', lineHeight: 1.15 }}>
-              <Typography variant="caption" sx={{ display: 'block', color: '#e2e8f0' }}>
-                접속자: {userProfile?.manager_name} ({userRole})
-              </Typography>
-              <Typography
-                variant="caption"
-                sx={{ display: 'block', mt: 0.15, color: '#94a3b8', fontSize: '0.64rem' }}
-              >
-                최근 접속일시: {formatKoreaAccessDateTime(recentAccessAt)}
-              </Typography>
-            </Box>
-
-            <Button
-              color="inherit"
-              onClick={onLogout}
-              size="small"
-              sx={{ border: '1px solid rgba(255,255,255,0.5)' }}
-            >
-              로그아웃
-            </Button>
+            <Tooltip title="로그아웃">
+              <IconButton aria-label="로그아웃" onClick={onLogout} sx={{ color: '#475569' }}>
+                <LogoutOutlinedIcon />
+              </IconButton>
+            </Tooltip>
           </Box>
         </Toolbar>
       </AppBar>
@@ -4213,23 +4104,26 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             overflowY: 'auto',
             scrollbarGutter: 'stable',
             scrollbarWidth: 'thin',
+            scrollbarColor: '#94a3b8 #f1f5f9',
             '&::-webkit-scrollbar': {
               width: 8,
             },
             '&::-webkit-scrollbar-track': {
-              bgcolor: 'transparent',
+              bgcolor: '#f1f5f9',
             },
+            '&::-webkit-scrollbar-corner': { bgcolor: '#f1f5f9' },
             '&::-webkit-scrollbar-thumb': {
               bgcolor: 'rgba(148,163,184,0.42)',
               borderRadius: 999,
-              border: '2px solid #0f172a',
+              border: '2px solid #f1f5f9',
             },
             '&::-webkit-scrollbar-thumb:hover': {
-              bgcolor: 'rgba(203,213,225,0.58)',
+              bgcolor: '#94a3b8',
             },
             transition: 'width 0.3s',
-            bgcolor: '#0f172a',
-            color: 'white',
+            bgcolor: '#f1f5f9',
+            color: '#000000',
+            borderRight: '1px solid #cbd5e1',
           },
         }}
       >
@@ -4239,6 +4133,8 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             currentView={currentView}
             onViewChange={handleSidebarViewChange}
             drawerOpen={open}
+            onExpandDrawer={() => setOpen(true)}
+            userId={user?.id || ''}
             userRole={userRole}
             canView={(view) =>
               canAccessView(
@@ -4326,7 +4222,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           height: 'var(--wooklim-dashboard-viewport-height, 100vh)',
           display: 'flex',
           flexDirection: 'column',
-          bgcolor: '#f1f5f9',
+          bgcolor: (['main', 'daily', 'daily-monthly-workers', 'daily-cumulative-workers', 'material-unit-price', 'material-order', 'material-input-status', 'approval-inbox', 'organization-chart', 'report-weekly', 'report-expense-resolution', 'report-approval', 'business-library', 'feedback'].includes(currentView) || currentView.startsWith('progress-') || currentView.startsWith('option-')) ? '#ffffff' : '#f1f5f9',
         }}
       >
         <Toolbar sx={{ minHeight: '56px !important' }} />
@@ -4481,7 +4377,18 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
           {currentView === 'main' && activeProjectName && (
             <MainDashboard
+              headerContainer={mainHeaderContainer}
               projectName={activeProjectName}
+              userName={activeUserProfile?.manager_name || ''}
+              canViewWeekly={canAccessView('report-weekly')}
+              canViewDaily={canAccessView('daily')}
+              canViewWorkforce={canAccessView('daily-monthly-workers') || canAccessView('daily-cumulative-workers')}
+              canViewProgress={canAccessView('progress-input')}
+              canViewContract={canAccessView('labor-contract', activeProjectName)}
+              canViewProposal={canAccessView('report-approval')}
+              canViewApprovals={canAccessView('approval-inbox')}
+              userId={user?.id || activeUserProfile?.auth_user_id || ''}
+              userPosition={activeUserProfile?.position_title || ''}
               userRole={userRole}
               buildingConfigs={buildingConfigs}
               processOptions={activeProcessOptions}
@@ -4497,6 +4404,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               }
               onCloseWorkAlert={handleCloseWorkAlert}
             />
+          )}
+
+          {currentView !== 'main' && (
+            <DashboardPageHeader key={`${user?.id}:${activeProjectName}:${canAccessView('approval-inbox')}`}
+              container={mainHeaderContainer} title={(['daily', 'daily-monthly-workers', 'daily-cumulative-workers', 'material-unit-price', 'material-order', 'material-input-status', 'approval-inbox', 'organization-chart', 'report-weekly', 'report-expense-resolution', 'report-approval', 'business-library', 'feedback'].includes(currentView) || currentView.startsWith('progress-') || currentView.startsWith('option-')) ? viewTitles[currentView] : ''}
+              userId={user?.id || activeUserProfile?.auth_user_id || ''} projectName={activeProjectName}
+              canApprove={canAccessView('approval-inbox')} onNavigate={handleSidebarViewChange} />
           )}
 
           {currentView === 'daily' && activeProjectName && (
@@ -4641,6 +4555,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             )}
 
           {currentView === 'household-quantity-management' &&
+            canAccessView('household-quantity-management', activeProjectName) &&
             activeProjectName && (
               <HouseholdQuantityManagement
                 projectName={activeProjectName}
@@ -4832,7 +4747,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       <Modal open={modalOpen} onClose={handleCloseModal}>
         <Box sx={modalStyle}>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 2, bgcolor: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-            <Typography variant="subtitle1" fontWeight="bold" color="#334155">내장공사 / [{selectedDateDisplay}]</Typography>
+            <Typography sx={{ fontSize: 17, fontWeight: 800, lineHeight: 1.5, color: '#334155' }}>내장공사 / [{selectedDateDisplay}]</Typography>
             <IconButton onClick={handleCloseModal} size="small"><CloseIcon /></IconButton>
           </Box>
 
@@ -4858,14 +4773,15 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                   justifyContent: 'space-between',
                   alignItems: 'center',
                   mb: 1,
+                  flexWrap: 'wrap',
+                  gap: 1.5,
                 }}
               >
                 <Box>
                   <Typography
-                    variant="subtitle2"
-                    fontWeight="bold"
+                    sx={{ fontSize: 15, fontWeight: 800, lineHeight: 1.5 }}
                   >
-                    근로자
+                    근로자 명단
                   </Typography>
 
                   <Box
@@ -4876,9 +4792,9 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                     <Typography
                       sx={{
                         color: '#64748b',
-                        fontSize: '0.62rem',
+                        fontSize: 12,
                         fontWeight: 700,
-                        lineHeight: 1.35,
+                        lineHeight: 1.6,
                       }}
                     >
                       TAB / Shift+TAB: 좌우 이동 · ↑↓: 같은 열의 위·아래 행 이동 · ENTER / 숫자패드 Enter: 아래 행 이동
@@ -4887,9 +4803,9 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                     <Typography
                       sx={{
                         color: '#94a3b8',
-                        fontSize: '0.57rem',
+                        fontSize: 11,
                         fontWeight: 700,
-                        lineHeight: 1.3,
+                        lineHeight: 1.6,
                       }}
                     >
                       구분·공정 목록이 열려 있을 때 ↑↓ 키는 목록 항목 선택에 사용됩니다.

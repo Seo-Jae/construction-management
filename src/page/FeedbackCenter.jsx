@@ -31,10 +31,8 @@ import {
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
 import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded';
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
-import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
 import SaveRoundedIcon from '@mui/icons-material/SaveRounded';
 import { supabase } from '../supabaseClient';
-import SystemPageTitle from '../components/SystemPageTitle.jsx';
 import FeedbackSubmitDialog from '../components/FeedbackSubmitDialog.jsx';
 import {
   FEEDBACK_BUCKET,
@@ -273,58 +271,9 @@ export default function FeedbackCenter({
     }
   };
 
-  const pageTitle = isSuperAdmin ? '건의·오류 관리' : '건의·오류 제보';
 
   return (
     <Box sx={{ p: 1.5 }}>
-      <Paper
-        variant="outlined"
-        sx={{
-          p: 1.35,
-          borderColor: '#cbd5e1',
-        }}
-      >
-        <Stack
-          direction={{ xs: 'column', md: 'row' }}
-          alignItems={{ xs: 'stretch', md: 'center' }}
-          justifyContent="space-between"
-          gap={1}
-        >
-          <SystemPageTitle
-            title={pageTitle}
-            meta={isSuperAdmin
-              ? '전 현장의 건의사항·오류 제보를 확인하고 처리상태와 답변을 관리합니다.'
-              : '내가 등록한 건의사항·오류 제보와 처리상태를 확인합니다.'}
-            help={'사용 중 발견한 오류나 기능개선 의견을 등록할 수 있습니다.\n현재 메뉴·현장·브라우저 환경은 제보 시 자동 기록됩니다.'}
-          />
-
-          <Stack direction="row" gap={0.65} justifyContent="flex-end">
-            <Tooltip title="새로고침" arrow>
-              <span>
-                <IconButton
-                  size="small"
-                  onClick={loadRows}
-                  disabled={loading}
-                  sx={{ border: '1px solid #cbd5e1', borderRadius: 1 }}
-                >
-                  <RefreshRoundedIcon sx={{ fontSize: 18 }} />
-                </IconButton>
-              </span>
-            </Tooltip>
-
-            <Button
-              variant="contained"
-              size="small"
-              startIcon={<AddRoundedIcon />}
-              onClick={() => setCreateOpen(true)}
-              sx={{ fontWeight: 900 }}
-            >
-              새 제보
-            </Button>
-          </Stack>
-        </Stack>
-      </Paper>
-
       {message && (
         <Alert
           severity={message.severity}
@@ -351,7 +300,9 @@ export default function FeedbackCenter({
         </Paper>
       )}
 
-      <Stack direction="row" gap={0.8} flexWrap="wrap" sx={{ mt: 1 }}>
+      <Paper variant="outlined" sx={{ mt: 1, p: 0.9, borderColor: '#cbd5e1' }}>
+      <Stack direction={{ xs: 'column', lg: 'row' }} gap={1} alignItems={{ xs: 'stretch', lg: 'center' }}>
+      <Stack direction="row" gap={0.8} flexWrap="wrap" sx={{ minWidth: 0 }}>
         <Box sx={statCardSx}>
           <Typography sx={{ color: '#64748b', fontSize: '0.65rem', fontWeight: 800 }}>전체</Typography>
           <Typography sx={{ mt: 0.15, fontSize: '1.05rem', fontWeight: 950 }}>{stats.total}건</Typography>
@@ -368,6 +319,21 @@ export default function FeedbackCenter({
           </Box>
         ))}
       </Stack>
+          <Stack direction="row" gap={0.65} justifyContent="flex-end" sx={{ ml: 'auto', flexShrink: 0 }}>
+
+
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={<AddRoundedIcon />}
+              onClick={() => setCreateOpen(true)}
+              sx={{ fontWeight: 900, width: statCardSx.minWidth, minWidth: statCardSx.minWidth }}
+            >
+              새 제보
+            </Button>
+          </Stack>
+      </Stack>
+      </Paper>
 
       <Paper
         variant="outlined"

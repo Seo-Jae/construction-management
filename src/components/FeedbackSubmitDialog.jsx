@@ -16,6 +16,7 @@ import {
 } from '@mui/material';
 import AttachFileRoundedIcon from '@mui/icons-material/AttachFileRounded';
 import SendRoundedIcon from '@mui/icons-material/SendRounded';
+import { mainDialogTypography } from './mainDialogTypography.js';
 import { supabase } from '../supabaseClient';
 import {
   FEEDBACK_BUCKET,
@@ -237,15 +238,13 @@ export default function FeedbackSubmitDialog({
       onClose={saving ? undefined : onClose}
       fullWidth
       maxWidth="sm"
+      sx={mainDialogTypography}
     >
       {saving && <LinearProgress />}
 
       <DialogTitle sx={{ pb: 1 }}>
-        <Typography sx={{ fontSize: '1rem', fontWeight: 900 }}>
+        <Typography sx={{ fontSize: '1.05rem', fontWeight: 900 }}>
           건의·오류 제보
-        </Typography>
-        <Typography sx={{ mt: 0.25, color: '#64748b', fontSize: '0.7rem' }}>
-          현재 화면과 사용자 정보는 자동으로 함께 기록됩니다.
         </Typography>
       </DialogTitle>
 
@@ -265,10 +264,10 @@ export default function FeedbackSubmitDialog({
               bgcolor: '#eff6ff',
             }}
           >
-            <Typography sx={{ color: '#1e3a8a', fontSize: '0.69rem', fontWeight: 800 }}>
+            <Typography sx={{ color: '#1e3a8a', fontSize: '0.88rem', fontWeight: 900 }}>
               발생 화면
             </Typography>
-            <Typography sx={{ mt: 0.15, color: '#334155', fontSize: '0.76rem' }}>
+            <Typography sx={{ mt: 0.15, color: '#334155', fontSize: '0.88rem', lineHeight: 1.85 }}>
               {sourceText}
               {projectName ? ` · ${projectName}` : ''}
             </Typography>
@@ -285,7 +284,7 @@ export default function FeedbackSubmitDialog({
             }))}
           >
             {FEEDBACK_CATEGORIES.map((item) => (
-              <MenuItem key={item.value} value={item.value}>
+              <MenuItem key={item.value} value={item.value} sx={{ fontSize: '0.88rem' }}>
                 {item.label}
               </MenuItem>
             ))}
@@ -335,7 +334,7 @@ export default function FeedbackSubmitDialog({
               />
             </Button>
 
-            <Typography sx={{ mt: 0.5, color: '#94a3b8', fontSize: '0.64rem' }}>
+            <Typography sx={{ mt: 0.5, color: '#94a3b8', fontSize: '0.72rem' }}>
               최대 5개 · 파일당 10MB
             </Typography>
 

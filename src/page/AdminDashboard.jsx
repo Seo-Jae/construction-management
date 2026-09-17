@@ -1,3 +1,4 @@
+import { hasMeaningfulDailyReport } from '../utils/dashboardReportTasks.js';
 // v52.48.5.44.8.1 Admin Dashboard 날짜 parser 안전수정
 // v52.48.5.44.8 현장관리 시작일·종료일 연동
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -351,57 +352,6 @@ function CollapseIcon(props) {
     </SvgIcon>
   );
 }
-
-const hasMeaningfulDailyReport = (report) => {
-  const workers = Array.isArray(report?.workers)
-    ? report.workers
-    : [];
-  const tasks = Array.isArray(report?.tasks)
-    ? report.tasks
-    : [];
-
-  const hasWorker = workers.some((worker) => {
-    const name = String(worker?.name || '').trim();
-    const job = String(worker?.job || '').trim();
-    const process = String(worker?.process || '').trim();
-    const location = String(worker?.location || '').trim();
-    const workContent = String(
-      worker?.workContent || worker?.work_content || '',
-    ).trim();
-    const day = Number(worker?.day) || 0;
-    const night = Number(worker?.night) || 0;
-
-    return Boolean(
-      name ||
-        job ||
-        process ||
-        location ||
-        workContent ||
-        day > 0 ||
-        night > 0,
-    );
-  });
-
-  const hasTask = tasks.some((task) =>
-    Object.values(task || {}).some((value) =>
-      String(value ?? '').trim(),
-    ),
-  );
-
-  const todayTask = String(report?.today_task || '').trim();
-  const tomorrowTask = String(report?.tomorrow_task || '').trim();
-
-  /*
-    단순히 마감 상태 행만 존재하는 것은 일보 등록으로 보지 않습니다.
-    근로자/작업 내용 또는 '작업없음' 같은 실제 내용이 있어야 등록입니다.
-  */
-  return Boolean(
-    hasWorker ||
-      hasTask ||
-      todayTask ||
-      tomorrowTask,
-  );
-};
 
 const calculateProjectUnits = (settings) =>
   settings.reduce(

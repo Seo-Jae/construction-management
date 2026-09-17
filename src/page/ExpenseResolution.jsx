@@ -48,7 +48,6 @@ import { supabase } from '../supabaseClient';
 import { downloadExpenseResolutionExcel } from '../utils/expenseResolutionExcel';
 import { parseHiPlusReceiptPdf } from '../utils/highpassReceiptPdf';
 
-import SystemPageTitle from '../components/SystemPageTitle.jsx';
 const CATEGORY_OPTIONS = [
   { value: 'fuel', label: '유류대' },
   { value: 'toll', label: '통행료' },
@@ -2274,7 +2273,7 @@ function ExpenseList({ userProfile, onCreate, onEdit }) {
         minHeight: 0,
         display: 'flex',
         flexDirection: 'column',
-        borderColor: '#cbd5e1',
+        border: 'none',
         boxShadow: 'none',
         overflow: 'hidden',
       }}
@@ -2287,14 +2286,9 @@ function ExpenseList({ userProfile, onCreate, onEdit }) {
           alignItems: 'center',
           justifyContent: 'space-between',
           gap: 1,
-          borderBottom: '1px solid #e2e8f0',
         }}
       >
         <Box>
-          <SystemPageTitle
-              title="지출결의서 작성"
-              help="사용내역과 증빙자료를 입력하여 지출결의서를 작성하고 결재·출력 자료를 관리합니다."
-            />
           
         </Box>
         <Stack direction="row" spacing={0.8} alignItems="center">
@@ -2318,7 +2312,7 @@ function ExpenseList({ userProfile, onCreate, onEdit }) {
 
       <StatusToast message={message} onClose={() => setMessage(null)} />
 
-      <TableContainer sx={{ flex: 1, minHeight: 0 }}>
+      <TableContainer sx={{ flex: 1, minHeight: 0, border: '1px solid #cbd5e1', borderRadius: 1, boxSizing: 'border-box' }}>
         <Table stickyHeader size="small">
           <TableHead>
             <TableRow>

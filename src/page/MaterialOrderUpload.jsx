@@ -3344,16 +3344,16 @@ export default function MaterialOrderUpload({
   return (
     <Box sx={{ height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', gap: 0.8, p: 1 }}>
       <Paper variant="outlined" sx={{ position: 'relative', px: 1.25, py: 0.8, display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-        <Box sx={{ minWidth: 210 }}>
+        {pageMode === 'master' && <Box sx={{ minWidth: 210 }}>
           <Typography sx={{ fontSize: '1rem', fontWeight: 900, color: '#0f172a' }}>
-            {pageMode === 'master' ? '자재 마스터 관리' : '자재발주작성'}
+            {pageMode === 'master' ? '자재 마스터 관리' : '자재 발주 작성'}
           </Typography>
           {pageMode === 'master' && (
             <Typography sx={{ mt: 0.1, fontSize: '0.64rem', color: '#64748b', fontWeight: 700 }}>
               전 현장에서 공통으로 사용하는 품명·규격·단위·검색 별칭을 관리합니다.
             </Typography>
           )}
-        </Box>
+        </Box>}
 
         {pageMode === 'order' && (
         <Stack direction="row" spacing={0.5} sx={{ ml: 1 }}>

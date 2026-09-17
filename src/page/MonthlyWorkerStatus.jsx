@@ -16,7 +16,6 @@ import {
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 
-import SystemPageTitle from '../components/SystemPageTitle.jsx';
 const pad2 = (value) => String(value).padStart(2, '0');
 const TOTAL_DAY_COLUMNS = 31;
 
@@ -322,75 +321,36 @@ export default function MonthlyWorkerStatus({
         gap: 1.2,
       }}
     >
-      <Paper
-        variant="outlined"
+      <Box
         sx={{
           px: 1.5,
           py: 1.2,
-          borderColor: '#cbd5e1',
-          boxShadow: 'none',
+          border: '1px solid #cbd5e1',
+          borderRadius: 1,
           bgcolor: '#ffffff',
         }}
       >
         <Box
           sx={{
-            display: 'grid',
-            gridTemplateColumns:
-              'minmax(240px, 1fr) minmax(320px, 1.5fr)',
-            alignItems: 'stretch',
-            border: '1px solid #64748b',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 0.5,
           }}
         >
-          <Box
-            sx={{
-              display: 'grid',
-              gridTemplateColumns: '68px 1fr',
-              minHeight: 72,
-              borderRight: '1px solid #64748b',
-            }}
-          >
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderRight: '1px solid #64748b',
-                bgcolor: '#f8fafc',
-              }}
-            >
               <Typography
                 sx={{
-                  fontSize: '0.72rem',
-                  fontWeight: 900,
-                  letterSpacing: '0.08em',
-                }}
-              >
-                현장명
-              </Typography>
-            </Box>
-
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                px: 1.4,
-              }}
-            >
-              <Typography
-                sx={{
-                  fontSize: '0.82rem',
+                  fontSize: 17,
                   fontWeight: 800,
                   color: '#0f172a',
+                  textAlign: 'center',
+                  overflowWrap: 'anywhere',
                 }}
               >
                 {projectName || '현장명 미등록'}
               </Typography>
-            </Box>
-          </Box>
-
           <Box
             sx={{
-              minHeight: 72,
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
@@ -398,11 +358,6 @@ export default function MonthlyWorkerStatus({
               gap: 0.2,
             }}
           >
-            <SystemPageTitle
-              title="금월 투입현황"
-              help="선택한 월의 근로자별 투입일과 일자별 인원 소계를 조회합니다."
-            />
-
             <Box
               sx={{
                 display: 'flex',
@@ -423,7 +378,7 @@ export default function MonthlyWorkerStatus({
                 sx={{
                   minWidth: 92,
                   textAlign: 'center',
-                  fontSize: '0.74rem',
+                  fontSize: 14,
                   fontWeight: 800,
                   color: '#475569',
                 }}
@@ -570,7 +525,7 @@ export default function MonthlyWorkerStatus({
             />
           </Box>
         </Box>
-      </Paper>
+      </Box>
 
       <TableContainer
         component={Paper}
