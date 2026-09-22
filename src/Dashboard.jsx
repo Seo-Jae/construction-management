@@ -359,6 +359,9 @@ const modalStyle = {
 const headerCellStyle = { borderRight: '1px solid #cbd5e1', fontWeight: 'bold', color: '#334155', py: 1 };
 const bodyCellStyle = { borderRight: '1px solid #cbd5e1', p: 0 }; 
 
+const DASHBOARD_CHROME_COLOR = '#34424e';
+const DASHBOARD_CHROME_BORDER = '#2c3944';
+
 const viewTitles = {
   main: 'Main',
   'admin-dashboard': '전체 현장 Dashboard',
@@ -1347,7 +1350,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
         while (true) {
           const { data, error } = await supabase
-            .from('building_settings')
+            .from('project_registry')
             .select('project_name')
             .not('project_name', 'is', null)
             .order('project_name', {
@@ -3749,7 +3752,20 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
       <AppBar
         position="absolute"
-        sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, bgcolor: '#ffffff', color: '#475569', boxShadow: 'none', borderBottom: 'none' }}
+        sx={{
+          zIndex: (theme) => theme.zIndex.drawer + 1,
+          bgcolor: DASHBOARD_CHROME_COLOR,
+          color: '#ffffff',
+          '& h1, & .MuiIconButton-root, & .MuiButton-root': { color: '#ffffff' },
+          '& .MuiAutocomplete-root': { bgcolor: '#ffffff', borderRadius: 1 },
+          boxShadow: 'none',
+          borderBottom: 'none',
+          '&::after': {
+            content: '""', position: 'absolute',
+            left: open ? drawerWidth : 72, right: 0, top: 0, bottom: 0,
+            border: `1px solid ${DASHBOARD_CHROME_BORDER}`, pointerEvents: 'none',
+          },
+        }}
       >
         <Toolbar
           sx={{
@@ -3762,12 +3778,12 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               width: open ? drawerWidth : 72,
               minWidth: open ? drawerWidth : 72,
               height: 56,
-              bgcolor: '#f1f5f9',
+              bgcolor: DASHBOARD_CHROME_COLOR,
               px: open ? 1 : 0.5,
               display: 'flex',
               alignItems: 'center',
               gap: open ? 0.5 : 0.15,
-              borderRight: '1px solid #cbd5e1',
+              borderRight: `1px solid ${DASHBOARD_CHROME_BORDER}`,
               boxSizing: 'border-box',
               transition: 'width 0.3s, min-width 0.3s, padding 0.3s',
             }}
@@ -4104,32 +4120,44 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             overflowY: 'auto',
             scrollbarGutter: 'stable',
             scrollbarWidth: 'thin',
-            scrollbarColor: '#94a3b8 #f1f5f9',
+            scrollbarColor: `#94a3b8 ${DASHBOARD_CHROME_COLOR}`,
             '&::-webkit-scrollbar': {
               width: 8,
             },
             '&::-webkit-scrollbar-track': {
-              bgcolor: '#f1f5f9',
+              bgcolor: DASHBOARD_CHROME_COLOR,
             },
-            '&::-webkit-scrollbar-corner': { bgcolor: '#f1f5f9' },
+            '&::-webkit-scrollbar-corner': { bgcolor: DASHBOARD_CHROME_COLOR },
             '&::-webkit-scrollbar-thumb': {
               bgcolor: 'rgba(148,163,184,0.42)',
               borderRadius: 999,
-              border: '2px solid #f1f5f9',
+              border: `2px solid ${DASHBOARD_CHROME_COLOR}`,
             },
             '&::-webkit-scrollbar-thumb:hover': {
               bgcolor: '#94a3b8',
             },
             transition: 'width 0.3s',
-            bgcolor: '#f1f5f9',
-            color: '#000000',
-            borderRight: '1px solid #cbd5e1',
+            bgcolor: DASHBOARD_CHROME_COLOR,
+            color: '#ffffff',
+            '& .MuiTypography-root, & .MuiSvgIcon-root': { color: '#ffffff' },
+            '& .MuiListItemButton-root': { color: '#ffffff', bgcolor: 'transparent' },
+            '& .MuiListItemButton-root:hover': { bgcolor: '#435360' },
+            '& .MuiListItemButton-root.Mui-selected': {
+              bgcolor: '#cce7ec', color: '#172033',
+              '& .MuiTypography-root, & .MuiSvgIcon-root': { color: '#172033' },
+            },
+            '& .MuiInputBase-root': {
+              bgcolor: '#ffffff', color: '#172033',
+              '& .MuiSvgIcon-root': { color: '#475569' },
+            },
+            borderRight: `1px solid ${DASHBOARD_CHROME_BORDER}`,
           },
         }}
       >
         <Toolbar sx={{ minHeight: '56px !important' }} />
         {managementArea === MANAGEMENT_AREA_CONSTRUCTION ? (
           <Sidebar
+            key={user?.id || userProfile?.auth_user_id || ''}
             currentView={currentView}
             onViewChange={handleSidebarViewChange}
             drawerOpen={open}
@@ -4229,7 +4257,9 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
         <Box
           sx={{
-            p: 2,
+            px: 2,
+            pb: 2,
+            pt: 1,
             flexGrow: 1,
             minHeight: 0,
             overflow:
@@ -4408,7 +4438,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
           {currentView !== 'main' && (
             <DashboardPageHeader key={`${user?.id}:${activeProjectName}:${canAccessView('approval-inbox')}`}
-              container={mainHeaderContainer} title={viewTitles[currentView] || ''}
+              container={mainHeaderContainer} view={currentView} title={viewTitles[currentView] || ''}
               userId={user?.id || activeUserProfile?.auth_user_id || ''} projectName={activeProjectName}
               canApprove={canAccessView('approval-inbox')} onNavigate={handleSidebarViewChange} />
           )}

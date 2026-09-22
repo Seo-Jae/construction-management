@@ -326,9 +326,9 @@ const normalizeProjects = (value) => (
       return {
         projectName,
         startDate:
-          projectDates.startDate,
+          normalizeProjectDate(item.start_date) || projectDates.startDate,
         endDate:
-          projectDates.endDate,
+          normalizeProjectDate(item.end_date) || projectDates.endDate,
         buildings,
       };
     })
@@ -557,7 +557,7 @@ export default function ProjectManagement() {
       projectName: '',
       startDate: '',
       endDate: '',
-      buildings: [createEmptyBuilding(0)],
+      buildings: [],
     });
     setEditExisting(false);
     setMessage({
@@ -859,11 +859,6 @@ export default function ProjectManagement() {
       return;
     }
 
-    if (!Array.isArray(draft.buildings) || draft.buildings.length === 0) {
-      setMessage({ severity: 'warning', text: '최소 1개 동을 등록해주세요.' });
-      return;
-    }
-
     try {
       const preparedBuildings = draft.buildings.map((building) => {
         const buildingName = String(building.buildingName || '').trim();
@@ -888,10 +883,12 @@ export default function ProjectManagement() {
       setSaving(true);
       setMessage(EMPTY_MESSAGE);
 
-      const { error } = await supabase.rpc('admin_save_project_v1', {
+      const { error } = await supabase.rpc('admin_save_project_registration_v190', {
         p_original_project_name: draft.originalProjectName || null,
         p_project_name: projectName,
         p_buildings: preparedBuildings,
+        p_start_date: startDate,
+        p_end_date: endDate,
       });
       if (error) throw error;
 
@@ -1198,6 +1195,11 @@ export default function ProjectManagement() {
                 <Divider sx={{ mb: 1.3 }} />
 
                 <Stack spacing={1.05}>
+                  {draft.buildings.length === 0 && (
+                    <Alert severity="info">
+                      골구도 미설정 현장입니다. 동 정보 없이 현장을 저장할 수 있습니다.
+                    </Alert>
+                  )}
                   {draft.buildings.map((building, index) => {
                     const unitCount = getUnitCountSafe(building);
                     const rowEditable = editable;
@@ -1217,7 +1219,7 @@ export default function ProjectManagement() {
                             <Chip size="small" variant="outlined" label={`${unitCount.toLocaleString()}세대`} />
                           )}
                           <Box sx={{ flex: 1 }} />
-                          {!building.persisted && rowEditable && draft.buildings.length > 1 && (
+                          {!building.persisted && rowEditable && (
                             <Tooltip title="아직 저장하지 않은 동 삭제" arrow>
                               <IconButton
                                 size="small"

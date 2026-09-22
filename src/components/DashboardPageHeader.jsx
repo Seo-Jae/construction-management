@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Alert, Snackbar, Typography } from '@mui/material';
+import { Alert, Snackbar } from '@mui/material';
+import HeaderMenuTitle from './HeaderMenuTitle.jsx';
 import MainToolbar from './MainToolbar.jsx';
 import SystemNoticeDetailDialog from './SystemNoticeDialog.jsx';
 import { fetchSystemNotices } from '../utils/systemNotices.js';
 
-export default function DashboardPageHeader({ container, title, userId, projectName, canApprove, onNavigate }) {
+export default function DashboardPageHeader({ container, title, view, userId, projectName, canApprove, onNavigate }) {
   const [notices, setNotices] = useState([]);
   const [noticeOpen, setNoticeOpen] = useState(false);
   const [selectedNotice, setSelectedNotice] = useState(null);
@@ -32,7 +33,7 @@ export default function DashboardPageHeader({ container, title, userId, projectN
   if (!container) return null;
   return <>
     {createPortal(<>
-      <Typography component="h1" noWrap sx={{ flex: 1, minWidth: 0, fontSize: { xs: 18, md: 22 }, fontWeight: 800, color: '#172033' }}>{title}</Typography>
+      <HeaderMenuTitle title={title} view={view} userId={userId} />
       <MainToolbar userId={userId} projectName={projectName}
         canApprove={canApprove} onNavigate={onNavigate} onReloadNotices={reloadNotices}
         onNotice={(id) => { setSelectedNotice(id); setNoticeOpen(true); }} />

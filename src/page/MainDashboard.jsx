@@ -1,3 +1,4 @@
+import HeaderMenuTitle from '../components/HeaderMenuTitle.jsx';
 // v52.48.5.44.88 공지사항 목록·상세·이미지 팝업
 import {
   useCallback,
@@ -2160,19 +2161,15 @@ export default function MainDashboard({
       try {
         const { data, error } =
           await supabase
-            .from('building_settings')
+            .from('project_registry')
             .select(
-              'building_name, config_json',
+              'start_date, end_date',
             )
             .eq(
               'project_name',
               projectName,
             )
-            .order(
-              'building_name',
-              { ascending: true },
-            )
-            .limit(50);
+            .limit(1);
 
         if (error) throw error;
 
@@ -2183,7 +2180,7 @@ export default function MainDashboard({
         )
           .map(
             (row) =>
-              row?.config_json || {},
+              ({ projectStartDate: row.start_date, projectEndDate: row.end_date }),
           )
           .filter(Boolean);
 
@@ -2930,7 +2927,7 @@ export default function MainDashboard({
       </Snackbar>
 
       {headerContainer && createPortal(<>
-        <Typography component="h1" noWrap sx={{ flex: 1, minWidth: 0, fontSize: { xs: 18, md: 22 }, fontWeight: 800, color: '#172033' }}>전사 대시보드</Typography>
+        <HeaderMenuTitle title="전사 대시보드" view="main" userId={userId} />
         <MainToolbar key={`${userId}:${projectName}:${canViewApprovals}`} userId={userId} projectName={projectName}
           canApprove={canViewApprovals}
           onNotice={handleOpenNoticeViewer} onNavigate={onNavigate} onReloadNotices={loadNotices} />

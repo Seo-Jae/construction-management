@@ -99,6 +99,11 @@ export const getCellKey = (buildingName, unitCode) =>
   1층 제외호는 현장 골구도 표기 기준에 따라 대각선으로 표시합니다.
 */
 export const getVisualCellType = (config, floor, visualUnitNumber) => {
+  if (config?.linePilotiFloors && Object.hasOwn(config.linePilotiFloors, visualUnitNumber)) {
+    if (normalizeNumberArray(config.linePilotiFloors[visualUnitNumber]).includes(Number(floor))) return 'piloti';
+    const exception = getFloorException(config, floor);
+    return exception && !normalizeNumberArray(exception.units).includes(Number(visualUnitNumber)) ? 'empty' : 'valid';
+  }
   const pilotiFloors = normalizeNumberArray(config?.pilotiFloors);
   const floorException = getFloorException(config, floor);
   const activeUnits = normalizeNumberArray(floorException?.units);

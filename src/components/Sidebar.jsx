@@ -33,6 +33,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { fetchPendingApprovalSummary } from '../utils/approvalQueries.js';
 import { supabase } from '../supabaseClient';
 import SidebarMyMenu from './SidebarMyMenu.jsx';
+import useSidebarFolder from '../hooks/useSidebarFolder.js';
 
 const INACTIVE_MENU_STATUS = '준비중';
 
@@ -46,6 +47,7 @@ const dailyMenus = [
     value: 'daily-cumulative-workers',
     label: '누계 투입 조회',
   },
+  { value: 'labor-contract', label: '근로계약서 작성' },
 ];
 
 const weeklyOverviewMenus = [
@@ -96,10 +98,6 @@ const laborMenus = [
   {
     value: 'labor-worker-master',
     label: '근로자 정보 관리',
-  },
-  {
-    value: 'labor-contract',
-    label: '근로계약서 작성',
   },
   {
     value: 'labor-cost',
@@ -368,6 +366,7 @@ export default function Sidebar({
     'daily',
     'daily-monthly-workers',
     'daily-cumulative-workers',
+    'labor-contract',
   ].includes(currentView);
   const isWeeklyOverviewView = [
     'weekly-overview',
@@ -389,7 +388,7 @@ export default function Sidebar({
       'material-',
     );
 
-  const isLaborView =
+  const isLaborView = currentView !== 'labor-contract' &&
     currentView?.startsWith(
       'labor-',
     );
@@ -404,112 +403,23 @@ export default function Sidebar({
       'report-',
     );
 
-  const [dailyOpen, setDailyOpen] = useState(isDailyView);
-  const [constructionOpen, setConstructionOpen] = useState(true);
   const isOfficeView = isPaymentView || isLaborView || ['household-quantity-management', 'drawing-quantity'].includes(currentView);
   const hasOfficeMenu = hasPaymentMenu || hasLaborMenu || canAccessView('household-quantity-management') || canAccessView('drawing-quantity');
-  const [officeExpanded, setOfficeExpanded] = useState(false);
-  const [officeCollapsedView, setOfficeCollapsedView] = useState(null);
-  const officeOpen = officeExpanded || (isOfficeView && officeCollapsedView !== currentView);
-  const [
-    weeklyOverviewOpen,
-    setWeeklyOverviewOpen,
-  ] = useState(
-    isWeeklyOverviewView,
-  );
-  const [
-    progressOpen,
-    setProgressOpen,
-  ] = useState(
-    isProgressView,
-  );
-
-  const [
-    optionOpen,
-    setOptionOpen,
-  ] = useState(
-    isOptionView,
-  );
-
-  const [
-    materialOpen,
-    setMaterialOpen,
-  ] = useState(
-    isMaterialView,
-  );
-
-  const [
-    laborOpen,
-    setLaborOpen,
-  ] = useState(
-    isLaborView,
-  );
-
-  const [
-    paymentOpen,
-    setPaymentOpen,
-  ] = useState(
-    isPaymentView,
-  );
-
-  const [
-    reportOpen,
-    setReportOpen,
-  ] = useState(
-    isReportView,
-  );
+  const [favoritesContainer, setFavoritesContainer] = useState(null);
+  const [dailyOpen, setDailyOpen] = useSidebarFolder(userId, 'daily');
+  const [constructionOpen, setConstructionOpen] = useSidebarFolder(userId, 'construction');
+  const [weeklyOverviewOpen, setWeeklyOverviewOpen] = useSidebarFolder(userId, 'weeklyOverview');
+  const [progressOpen, setProgressOpen] = useSidebarFolder(userId, 'progress');
+  const [optionOpen, setOptionOpen] = useSidebarFolder(userId, 'option');
+  const [materialOpen, setMaterialOpen] = useSidebarFolder(userId, 'material');
+  const [laborOpen, setLaborOpen] = useSidebarFolder(userId, 'labor');
+  const [paymentOpen, setPaymentOpen] = useSidebarFolder(userId, 'payment');
+  const [reportOpen, setReportOpen] = useSidebarFolder(userId, 'report');
+  const [officeOpen, setOfficeOpen] = useSidebarFolder(userId, 'office');
   const [approvalPendingCount, setApprovalPendingCount] =
     useState(0);
   const [registrationPendingCount, setRegistrationPendingCount] =
     useState(0);
-
-  useEffect(() => {
-    if (isDailyView) { setDailyOpen(true); setConstructionOpen(true); }
-  }, [isDailyView]);
-
-  useEffect(() => {
-    if (isWeeklyOverviewView) {
-      setWeeklyOverviewOpen(true);
-    }
-  }, [isWeeklyOverviewView]);
-
-  useEffect(() => {
-    if (isProgressView) {
-      setProgressOpen(true);
-      setConstructionOpen(true);
-    }
-  }, [isProgressView]);
-
-  useEffect(() => {
-    if (isOptionView) {
-      setOptionOpen(true);
-      setConstructionOpen(true);
-    }
-  }, [isOptionView]);
-
-  useEffect(() => {
-    if (isMaterialView) {
-      setMaterialOpen(true);
-    }
-  }, [isMaterialView]);
-
-  useEffect(() => {
-    if (isLaborView) {
-      setLaborOpen(true);
-    }
-  }, [isLaborView]);
-
-  useEffect(() => {
-    if (isPaymentView) {
-      setPaymentOpen(true);
-    }
-  }, [isPaymentView]);
-
-  useEffect(() => {
-    if (isReportView) {
-      setReportOpen(true);
-    }
-  }, [isReportView]);
 
   useEffect(() => {
     let active = true;
@@ -644,6 +554,7 @@ export default function Sidebar({
       <SidebarMyMenu
         key={userId}
         userId={userId}
+        favoritesContainer={favoritesContainer}
         drawerOpen={drawerOpen}
         currentView={currentView}
         onNavigate={handleViewChange}
@@ -1378,8 +1289,8 @@ export default function Sidebar({
       {hasOfficeMenu && <>
         <Tooltip title={drawerOpen ? '' : '공무 관리'} placement="right" arrow>
           <ListItemButton onClick={() => {
-            if (!drawerOpen) { onExpandDrawer?.(); setOfficeExpanded(true); }
-            else { setOfficeExpanded(!officeOpen); setOfficeCollapsedView(currentView); }
+            if (!drawerOpen) { onExpandDrawer?.(); setOfficeOpen(true); }
+            else { setOfficeOpen(!officeOpen); }
           }} aria-label="공무 관리" aria-expanded={drawerOpen && officeOpen} aria-controls="office-menu-sections"
             sx={{ ...topMenuSx(false), bgcolor: isOfficeView ? '#f3f4f6' : 'transparent' }}>
             <ListItemIcon sx={{ minWidth: 34, color: 'inherit', justifyContent: 'center' }}><AssignmentIcon fontSize="small" /></ListItemIcon>
@@ -1669,6 +1580,7 @@ export default function Sidebar({
         </Tooltip>
       )}
 
+      <Box ref={setFavoritesContainer} />
     </List>
   );
 }

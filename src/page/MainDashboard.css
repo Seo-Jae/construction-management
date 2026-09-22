@@ -8,7 +8,7 @@
   min-width: 0;
   overflow-x: hidden;
   container-type: inline-size;
-  padding: 24px !important;
+  padding: 12px 24px 24px !important;
   background: #ffffff;
   color: #30343b;
 }
@@ -217,7 +217,7 @@
 }
 
 @media (max-width: 899px) {
-  .main-workspace { padding: 16px !important; }
+  .main-workspace { padding: 8px 16px 16px !important; }
 }
 
 @container (max-width: 650px) {

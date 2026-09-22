@@ -89,7 +89,7 @@ export default function DashboardWorkforce({ projectName, canView }) {
             <TableBody>{values?.map((row) => <TableRow key={row.month}>
               <TableCell align="center">{row.month}</TableCell>
               <TableCell align="right">{row.average.toLocaleString('ko-KR', { maximumFractionDigits: 1 })}명</TableCell>
-              <TableCell align="right">{row.cumulative.toLocaleString()}명·일</TableCell>
+              <TableCell align="right">{row.cumulative.toLocaleString()}명 (월 누계)</TableCell>
               <TableCell align="right">{row.added.toLocaleString()}명</TableCell>
             </TableRow>)}</TableBody>
           </Table>

@@ -17,6 +17,7 @@ export const GUIDE_GROUPS = [
     { id: 'daily', label: '출력일보작성' },
     { id: 'daily-monthly-workers', label: '금월 투입현황' },
     { id: 'daily-cumulative-workers', label: '누계투입조회' },
+    { id: 'labor-contract', label: '근로계약서 작성' },
   ] },
   { id: 'progress-group', label: '공정진척관리', items: [
     { id: 'progress-input', label: '공종별 현황 입력' },
@@ -45,7 +46,6 @@ export const GUIDE_GROUPS = [
   { id: 'labor-group', label: '노임 관리', items: [
     { id: 'labor-monthly', label: '월별 노임 작성' },
     { id: 'labor-worker-master', label: '근로자 정보 관리' },
-    { id: 'labor-contract', label: '근로계약서 작성' },
     { id: 'labor-cost', label: '공정별 노임 작성' },
     { id: 'labor-documents', label: '노임서류작성', systemPreparing: true },
   ] },

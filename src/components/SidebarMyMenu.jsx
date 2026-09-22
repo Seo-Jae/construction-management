@@ -1,55 +1,33 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Alert, Box, Collapse, IconButton, InputAdornment, ListItemButton, ListItemText, TextField, Tooltip, Typography } from '@mui/material';
+import { createPortal } from 'react-dom';
+import useSidebarFolder from '../hooks/useSidebarFolder.js';
 import { UI_FONT_FAMILY } from '../theme.js';
 import SearchIcon from '@mui/icons-material/Search';
 import CloseIcon from '@mui/icons-material/Close';
-import HistoryIcon from '@mui/icons-material/History';
 import StarBorderIcon from '@mui/icons-material/StarBorder';
 import StarIcon from '@mui/icons-material/Star';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import { readMenuPreferences, recordRecentMenu, toggleFavoriteMenu } from '../utils/sidebarMenuPreferences.js';
+import { saveFavoriteToggle } from '../utils/sidebarMenuPreferences.js';
+import useMenuPreferences from '../hooks/useMenuPreferences.js';
 
-export default function SidebarMyMenu({ userId, menus, currentView, onNavigate, drawerOpen }) {
+export default function SidebarMyMenu({ userId, menus, currentView, onNavigate, drawerOpen, favoritesContainer }) {
   const storageKey = `sidebar-my-menu:${userId}`;
-  const [preferences, setPreferences] = useState(() => readMenuPreferences(storageKey));
+  const preferences = useMenuPreferences(storageKey);
   const [query, setQuery] = useState('');
-  const [myMenuOpen, setMyMenuOpen] = useState(true);
-  const [recentOpen, setRecentOpen] = useState(true);
-  const [favoritesOpen, setFavoritesOpen] = useState(true);
+  const [favoritesOpen, setFavoritesOpen] = useSidebarFolder(userId, 'favorites');
   const [saveError, setSaveError] = useState(false);
-  const currentAllowed = menus.some((menu) => menu.value === currentView);
-
-  useEffect(() => {
-    if (!userId || !currentAllowed) return;
-    const next = recordRecentMenu(readMenuPreferences(storageKey), currentView);
-    // Persist visits made through either the sidebar or an in-page shortcut.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setPreferences(next);
-    try { localStorage.setItem(storageKey, JSON.stringify(next)); setSaveError(false); }
-    catch { setSaveError(true); }
-  }, [currentView, currentAllowed, storageKey, userId]);
-
-  useEffect(() => {
-    const sync = (event) => {
-      if (event.key === storageKey || event.key === null) setPreferences(readMenuPreferences(storageKey));
-    };
-    window.addEventListener('storage', sync);
-    return () => window.removeEventListener('storage', sync);
-  }, [storageKey]);
 
   const toggleFavorite = (value) => {
-    const next = toggleFavoriteMenu(preferences, value);
     try {
-      localStorage.setItem(storageKey, JSON.stringify(next));
-      setPreferences(next);
+      saveFavoriteToggle(storageKey, value);
       setSaveError(false);
     } catch { setSaveError(true); }
   };
   const normalize = (value) => value.replace(/\s/g, '').toLocaleLowerCase();
   const matches = (menu, text) => normalize(`${menu.group || ''}${menu.label}`).includes(normalize(text));
   const findMenus = (ids) => ids.map((id) => menus.find((menu) => menu.value === id)).filter(Boolean);
-  const recentMenus = findMenus(preferences.recent);
   const favoriteMenus = findMenus(preferences.favorites);
   const renderRow = (menu, showGroup = false) => (
     <Box key={menu.value} sx={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
@@ -73,7 +51,7 @@ export default function SidebarMyMenu({ userId, menus, currentView, onNavigate, 
   const sectionButton = (label, Icon, open, toggle) => (
     <ListItemButton onClick={toggle} aria-expanded={open} sx={{ px: 1, py: 0.25, gap: 0.75, borderRadius: 1 }}>
       <Icon sx={{ fontSize: 18, color: '#333' }} />
-      <ListItemText primary={label} primaryTypographyProps={{ noWrap: true, fontSize: '0.72rem', fontWeight: 500 }} sx={{ color: '#000' }} />
+      <ListItemText primary={label} primaryTypographyProps={{ noWrap: true, fontSize: 13, fontWeight: 900 }} sx={{ color: '#000' }} />
       {open ? <ExpandLessIcon sx={{ fontSize: 16 }} /> : <ExpandMoreIcon sx={{ fontSize: 16 }} />}
     </ListItemButton>
   );
@@ -87,19 +65,7 @@ export default function SidebarMyMenu({ userId, menus, currentView, onNavigate, 
       {menus.filter((menu) => matches(menu, query)).map((menu) => renderRow(menu, true))}
       {!menus.some((menu) => matches(menu, query)) && <Typography sx={{ p: 1, fontSize: 12 }}>검색 결과가 없습니다.</Typography>}
     </Box>}
-    <ListItemButton onClick={() => setMyMenuOpen((previous) => !previous)} aria-expanded={myMenuOpen} aria-controls="sidebar-my-menu-items" sx={{ px: 1, mb: 0.5, minHeight: 33, borderRadius: 1 }}>
-      <Typography sx={{ flex: 1, fontSize: 13, fontWeight: 900, color: '#000' }}>My menu</Typography>
-      {myMenuOpen ? <ExpandLessIcon sx={{ fontSize: 16 }} /> : <ExpandMoreIcon sx={{ fontSize: 16 }} />}
-    </ListItemButton>
-    <Collapse in={myMenuOpen} timeout={0}>
-    <Box id="sidebar-my-menu-items" sx={{ ml: 1, pl: 0.75, borderLeft: '1px solid #d5dde1' }}>
-    {sectionButton('최근 사용한 메뉴', HistoryIcon, recentOpen, () => setRecentOpen(!recentOpen))}
-    <Collapse in={recentOpen} timeout={0}>
-      <Box sx={{ ml: 2, pl: 0.5, borderLeft: '1px solid #d5dde1' }}>
-        {recentMenus.map((menu) => renderRow(menu))}
-        {!recentMenus.length && <Typography sx={{ p: 1, fontSize: 12, color: '#64748b' }}>최근 사용한 메뉴가 없습니다.</Typography>}
-      </Box>
-    </Collapse>
+    {favoritesContainer && createPortal(<Box sx={{ display: drawerOpen ? 'block' : 'none' }}>
     {sectionButton('즐겨찾기', StarBorderIcon, favoritesOpen, () => setFavoritesOpen(!favoritesOpen))}
     <Collapse in={favoritesOpen} timeout={0}>
       <Box sx={{ ml: 2, pl: 0.5, maxHeight: 240, overflowY: 'auto', borderLeft: '1px solid #d5dde1' }}>
@@ -107,8 +73,7 @@ export default function SidebarMyMenu({ userId, menus, currentView, onNavigate, 
         {!favoriteMenus.length && <Typography sx={{ p: 1, fontSize: 12, color: '#64748b' }}>등록한 메뉴가 없습니다.</Typography>}
       </Box>
     </Collapse>
-    </Box>
-    </Collapse>
+    </Box>, favoritesContainer)}
     {saveError && <Alert severity="error" sx={{ mt: 1, fontSize: 12 }}>메뉴 설정을 저장하지 못했습니다.</Alert>}
 
   </Box>;

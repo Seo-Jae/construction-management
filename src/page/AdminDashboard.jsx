@@ -101,6 +101,7 @@ const getProjectSchedule = (
   projectName,
   todayKey,
   projectBuildings = [],
+  registry = {},
 ) => {
   const configs = (
     Array.isArray(
@@ -146,12 +147,12 @@ const getProjectSchedule = (
 
   const schedule = {
     startDate:
-      configuredStartDate ||
+      formatAdminScheduleDate(registry.start_date) || configuredStartDate ||
       formatAdminScheduleDate(
         legacy.startDate,
       ),
     endDate:
-      configuredEndDate ||
+      formatAdminScheduleDate(registry.end_date) || configuredEndDate ||
       formatAdminScheduleDate(
         legacy.endDate,
       ),
@@ -1035,6 +1036,7 @@ export default function AdminDashboard({
         dailyReports,
         progressRows,
         weeklyReports,
+        registryRows,
       ] = await Promise.all([
         fetchAllRows(
           'building_settings',
@@ -1060,9 +1062,11 @@ export default function AdminDashboard({
               currentWeek.weekStart,
             ),
         ),
+        fetchAllRows('project_registry', 'project_name, start_date, end_date', applyProjectScope),
       ]);
 
       const projectNames = new Set();
+      registryRows.forEach((row) => projectNames.add(row.project_name));
 
       buildingRows.forEach((row) => {
         if (row?.project_name) projectNames.add(row.project_name);
@@ -1087,6 +1091,7 @@ export default function AdminDashboard({
             projectName,
             todayKey,
             projectBuildings,
+            registryRows.find((row) => row.project_name === projectName),
           );
           const todayDateNumber = dateKeyToNumber(todayKey);
 

@@ -35,6 +35,7 @@ import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded';
 import BuildingGrid from '../BuildingGrid';
 import { supabase } from '../supabaseClient';
 import KoreanDatePicker from '../components/KoreanDatePicker.jsx';
+import BuildingInitialSetupDialog from '../components/BuildingInitialSetupDialog.jsx';
 import {
   buildFloorVisualCells,
   getCanonicalUnitNumber,
@@ -1301,6 +1302,7 @@ export default function ProgressInput({
   handleGridCellClick,
   handleFloorClick,
 }) {
+  const [initialSetupOpen, setInitialSetupOpen] = useState(false);
   const [
     progressTargets,
     setProgressTargets,
@@ -3667,8 +3669,8 @@ export default function ProgressInput({
           mt: 0.5,
           minHeight:
             targetPanelMinimized
-              ? 42
-              : 58,
+              ? 36
+              : 48,
           flexShrink: 0,
           display: 'grid',
           gridTemplateColumns:
@@ -3720,6 +3722,7 @@ export default function ProgressInput({
                 sx={{
                   minWidth: 138,
                   maxWidth: 180,
+                  minHeight: 30,
                   px: 0.9,
                   py: 0.35,
                   display: 'grid',
@@ -3775,29 +3778,7 @@ export default function ProgressInput({
                     }
                   </Typography>
 
-                  <Typography
-                    component="span"
-                    sx={{
-                      mt: 0.05,
-                      width: '100%',
-                      overflow: 'hidden',
-                      textOverflow:
-                        'ellipsis',
-                      whiteSpace:
-                        'nowrap',
-                      textAlign: 'left',
-                      fontSize: '0.675rem',
-                      fontWeight: 400,
-                      opacity: 0.94,
-                    }}
-                  >
-                    공정{' '}
-                    {activeTargetItem
-                      .target
-                      .process_types
-                      .length.toLocaleString()}
-                    개
-                  </Typography>
+
                 </Box>
 
                 <Typography
@@ -3922,9 +3903,6 @@ export default function ProgressInput({
                                 700,
                             }}
                           >
-                            공정{' '}
-                            {target.process_types.length.toLocaleString()}
-                            개 ·{' '}
                             {formatDday(
                               getDdayValue(
                                 target
@@ -4485,7 +4463,7 @@ export default function ProgressInput({
           flexGrow: 1,
           minHeight: 0,
           overflowX: 'auto',
-          overflowY: 'hidden',
+          overflowY: 'auto',
           bgcolor: '#ffffff',
           borderRadius: 1,
           scrollbarGutter: 'stable',
@@ -4512,10 +4490,20 @@ export default function ProgressInput({
             sx={{
               height: '100%',
               display: 'flex',
+              flexDirection: 'column',
+              gap: 1.5,
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
+            <Button
+              variant="contained"
+              disabled={!projectName}
+              onClick={() => setInitialSetupOpen(true)}
+              sx={{ px: 2.5, py: 1, fontWeight: 900 }}
+            >
+              초기설정 시작하기
+            </Button>
             <Typography sx={{ color: '#94a3b8', fontSize: '0.85rem' }}>
               등록된 동 정보가 없습니다.
             </Typography>
@@ -4971,6 +4959,12 @@ export default function ProgressInput({
           </Box>
         </DialogActions>
       </Dialog>
+      <BuildingInitialSetupDialog
+        key={projectName}
+        open={initialSetupOpen && sortedBuildings.length === 0 && Boolean(projectName)}
+        onClose={() => setInitialSetupOpen(false)}
+        projectName={projectName}
+      />
     </Box>
   );
 }
