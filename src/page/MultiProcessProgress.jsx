@@ -21,6 +21,7 @@ import PrintIcon from '@mui/icons-material/Print';
 import CheckBoxOutlineBlankIcon from '@mui/icons-material/CheckBoxOutlineBlank';
 import CheckBoxIcon from '@mui/icons-material/CheckBox';
 import { supabase } from '../supabaseClient';
+import { MULTI_PROGRESS_PRINT_CSS, prepareMultiProgressPrint, clearMultiProgressPrint } from '../utils/multiProgressPrint.js';
 import {
   buildFloorVisualCells,
   countUniqueUnits,
@@ -1610,99 +1611,24 @@ export default function MultiProcessProgress({
     setSelectedProcesses(nextValue);
   };
 
+  useEffect(() => {
+    const prepare = () => prepareMultiProgressPrint(document.getElementById('multi-progress-print-area'));
+    window.addEventListener('beforeprint', prepare);
+    window.addEventListener('afterprint', clearMultiProgressPrint);
+    return () => {
+      window.removeEventListener('beforeprint', prepare);
+      window.removeEventListener('afterprint', clearMultiProgressPrint);
+      clearMultiProgressPrint();
+    };
+  }, []);
+
   const handlePrint = () => {
     window.print();
   };
 
   return (
     <>
-      <style>
-        {`
-          .multi-progress-print-only {
-            display: none;
-          }
-
-          @media print {
-            @page {
-              size: A4 landscape;
-              margin: 8mm;
-            }
-
-            html,
-            body {
-              background: #ffffff !important;
-            }
-
-            body * {
-              visibility: hidden !important;
-            }
-
-            #multi-progress-print-area,
-            #multi-progress-print-area * {
-              visibility: visible !important;
-            }
-
-            #multi-progress-print-area {
-              position: absolute !important;
-              left: 0 !important;
-              top: 0 !important;
-              width: 100% !important;
-              height: auto !important;
-              min-height: 0 !important;
-              overflow: visible !important;
-              display: block !important;
-              background: #ffffff !important;
-              padding: 0 !important;
-              margin: 0 !important;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-
-            #multi-progress-print-area .multi-progress-no-print {
-              display: none !important;
-            }
-
-            #multi-progress-print-area .multi-progress-print-only {
-              display: flex !important;
-            }
-
-            #multi-progress-print-area .multi-progress-stats {
-              grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-              margin-bottom: 4mm !important;
-            }
-
-            #multi-progress-print-area .multi-progress-scroll {
-              height: auto !important;
-              min-height: 0 !important;
-              overflow: visible !important;
-              padding: 0 !important;
-              background: #ffffff !important;
-              border: none !important;
-            }
-
-            #multi-progress-print-area .multi-progress-buildings {
-              width: 100% !important;
-              min-width: 0 !important;
-              min-height: 0 !important;
-              display: flex !important;
-              flex-wrap: wrap !important;
-              align-items: flex-end !important;
-              justify-content: flex-start !important;
-              gap: 12mm 8mm !important;
-              padding: 0 !important;
-            }
-
-            #multi-progress-print-area .multi-progress-building {
-              break-inside: avoid !important;
-              page-break-inside: avoid !important;
-            }
-
-            #multi-progress-print-area .MuiPaper-root {
-              box-shadow: none !important;
-            }
-          }
-        `}
-      </style>
+      <style>{MULTI_PROGRESS_PRINT_CSS}</style>
 
       <Box
         id="multi-progress-print-area"
