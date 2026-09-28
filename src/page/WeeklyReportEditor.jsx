@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Box,
@@ -11,6 +11,7 @@ import {
 } from '@mui/material';
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
+import { getWeeklyProcesses, writeWeeklyProcessStats } from '../utils/projectProcesses.js';
 import { saveReportDocumentDraft } from '../utils/reportDocuments.js';
 
 const REPORT_PROCESSES = [
@@ -163,7 +164,7 @@ const parseCompletionDate = (value) => {
   return Number.isNaN(date.getTime()) ? null : date;
 };
 
-const buildProcessStats = (rows, totalUnits, period) => {
+const buildProcessStats = (rows, totalUnits, period, processes = REPORT_PROCESSES) => {
   const uniqueRows = new Map();
 
   rows.forEach((row) => {
@@ -182,7 +183,7 @@ const buildProcessStats = (rows, totalUnits, period) => {
     uniqueRows.set(key, normalizedRow);
   });
 
-  return REPORT_PROCESSES.map((process) => {
+  return processes.map((process) => {
     let completed = 0;
     let weeklyAmount = 0;
 
@@ -436,13 +437,7 @@ function WeeklyReportPreview({
   form,
   nextWeekHighlights,
 }) {
-  const workRows = stats.length > 0
-    ? stats
-    : REPORT_PROCESSES.map((process) => ({
-        ...process,
-        progressText: '0/0(0%)',
-        weeklyAmount: 0,
-      }));
+  const workRows = stats;
 
   return (
     <Box
@@ -576,7 +571,7 @@ function WeeklyReportPreview({
 
         <Box
           sx={{
-            gridRow: `span ${workRows.length}`,
+            gridRow: `span ${Math.max(1, workRows.length)}`,
             px: 0.7,
             display: 'flex',
             alignItems: 'center',
@@ -591,6 +586,7 @@ function WeeklyReportPreview({
           {'공사사항\n(작업현황)'}
         </Box>
 
+        {workRows.length === 0 && <Box sx={{ ...previewBodyCell, gridColumn: 'span 6' }}>선택된 공종이 없습니다.</Box>}
         {workRows.map((row, index) => (
           <React.Fragment key={row.processType}>
             <Box sx={previewBodyCell}>{row.label}</Box>
@@ -711,10 +707,12 @@ const previewSectionTitle = {
 export default function WeeklyReportEditor({
   userProfile,
   buildingConfigs = {},
+  processOptions = [],
   editingDocument,
   onBackToList,
 }) {
   const storedPayload = editingDocument?.payload || {};
+  const reportProcesses = useMemo(() => getWeeklyProcesses(REPORT_PROCESSES, processOptions), [processOptions]);
   const [form, setForm] = useState(() =>
     Object.fromEntries(
       Object.entries(INITIAL_FORM).map(([key, defaultLines]) => {
@@ -728,6 +726,7 @@ export default function WeeklyReportEditor({
     ),
   );
   const [progressRows, setProgressRows] = useState([]);
+  const progressRequest = useRef(0);
   const [progressLoaded, setProgressLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -781,8 +780,8 @@ export default function WeeklyReportEditor({
   );
 
   const calculatedStats = useMemo(
-    () => buildProcessStats(progressRows, totalUnits, period),
-    [progressRows, totalUnits, period],
+    () => buildProcessStats(progressRows, totalUnits, period, reportProcesses),
+    [progressRows, totalUnits, period, reportProcesses],
   );
   const stats =
     !progressLoaded && Array.isArray(storedPayload.stats)
@@ -837,6 +836,7 @@ export default function WeeklyReportEditor({
 
   const fetchProgressRows = async () => {
     if (!projectName) return;
+    const request = ++progressRequest.current;
 
     setLoading(true);
     setErrorMessage('');
@@ -855,7 +855,7 @@ export default function WeeklyReportEditor({
             'process_type',
             Array.from(
               new Set([
-                ...REPORT_PROCESSES.map(
+                ...reportProcesses.map(
                   (process) =>
                     process.processType,
                 ),
@@ -863,6 +863,7 @@ export default function WeeklyReportEditor({
               ]),
             ),
           )
+          .order('process_type').order('building').order('unit')
           .range(from, from + pageSize - 1);
 
         if (error) throw error;
@@ -874,19 +875,21 @@ export default function WeeklyReportEditor({
         from += pageSize;
       }
 
+      if (request !== progressRequest.current) return;
       setProgressRows(allRows);
       setProgressLoaded(true);
     } catch (error) {
       console.error('주간 업무 보고 공정 데이터 조회 실패:', error);
-      setErrorMessage(error?.message || '공정 데이터를 불러오지 못했습니다.');
+      if (request === progressRequest.current) setErrorMessage(error?.message || '공정 데이터를 불러오지 못했습니다.');
     } finally {
-      setLoading(false);
+      if (request === progressRequest.current) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchProgressRows();
-  }, [projectName]);
+    return () => { progressRequest.current += 1; };
+  }, [projectName, reportProcesses]);
 
   const handleLineChange = (key, index, value) => {
     setForm((previous) => ({
@@ -1102,11 +1105,7 @@ export default function WeeklyReportEditor({
         size: 18,
       };
 
-      stats.forEach((row, index) => {
-        const excelRow = 8 + index;
-        worksheet.getCell(`C${excelRow}`).value = row.progressText;
-        worksheet.getCell(`D${excelRow}`).value = row.weeklyAmount || '';
-      });
+      writeWeeklyProcessStats(workbook, worksheet, stats, REPORT_PROCESSES);
 
       for (
         let index = 0;

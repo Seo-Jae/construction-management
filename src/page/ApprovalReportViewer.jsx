@@ -1,3 +1,4 @@
+import { getWeeklyProcesses, writeWeeklyProcessStats } from '../utils/projectProcesses.js';
 import React, { useState } from 'react';
 import {
   Alert,
@@ -284,16 +285,7 @@ const downloadWeeklyReport = async (request) => {
     approvalSlots[2].name,
   );
 
-  stats.forEach((row, index) => {
-    const excelRow = 8 + index;
-
-    if (excelRow > 17) return;
-
-    worksheet.getCell(`C${excelRow}`).value =
-      row?.progressText || '';
-    worksheet.getCell(`D${excelRow}`).value =
-      Number(row?.weeklyAmount) || '';
-  });
+  writeWeeklyProcessStats(workbook, worksheet, stats, WEEKLY_REPORT_PROCESSES);
 
   for (let index = 0; index < 10; index += 1) {
     worksheet.getCell(`E${8 + index}`).value =
@@ -635,7 +627,7 @@ function WeeklyPreview({ request }) {
     }),
   );
 
-  const workRows = WEEKLY_REPORT_PROCESSES.map(
+  const workRows = getWeeklyProcesses(WEEKLY_REPORT_PROCESSES, [...statMap.keys()]).map(
     (process) => ({
       ...process,
       ...(statMap.get(process.processType) || {}),

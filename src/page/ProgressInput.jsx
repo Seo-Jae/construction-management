@@ -33,6 +33,8 @@ import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import DragIndicatorRoundedIcon from '@mui/icons-material/DragIndicatorRounded';
 import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded';
 import BuildingGrid from '../BuildingGrid';
+import useProgressTargetSelection from '../hooks/useProgressTargetSelection.js';
+import { reconcileTargetSelection } from '../utils/progressTargetSelection.js';
 import { supabase } from '../supabaseClient';
 import KoreanDatePicker from '../components/KoreanDatePicker.jsx';
 import BuildingInitialSetupDialog from '../components/BuildingInitialSetupDialog.jsx';
@@ -1284,6 +1286,7 @@ export default function ProgressInput({
   progressTable = 'unit_progress',
   targetTable = 'progress_targets',
   preferenceScope = projectName,
+  hideProcessSelector = false,
   selectedCells = new Set(),
   actionName = '',
   progressDate = '',
@@ -1315,7 +1318,8 @@ export default function ProgressInput({
   const [
     activeTargetId,
     setActiveTargetId,
-  ] = useState('');
+  ] = useProgressTargetSelection(`${targetTable}:${projectName}`);
+  const targetRequestVersion = useRef(0);
 
   const [
     targetLineEditMode,
@@ -1960,6 +1964,7 @@ export default function ProgressInput({
 
   const loadProgressTargets =
     useCallback(async () => {
+      const request = ++targetRequestVersion.current;
       if (!projectName) {
         setProgressTargets([]);
         setActiveTargetId('');
@@ -2001,6 +2006,7 @@ export default function ProgressInput({
           throw error;
         }
 
+        if (request !== targetRequestVersion.current) return;
         const normalizedRows =
           (data || []).map(
             (row) => ({
@@ -2023,18 +2029,7 @@ export default function ProgressInput({
           groupedTargets,
         );
 
-        setActiveTargetId(
-          (previous) =>
-            groupedTargets.some(
-              (target) =>
-                target.id ===
-                previous,
-            )
-              ? previous
-              : groupedTargets[0]
-                  ?.id ||
-                '',
-        );
+        setActiveTargetId(previous => reconcileTargetSelection(previous, groupedTargets));
 
         const targetProcessTypes =
           Array.from(
@@ -2055,6 +2050,7 @@ export default function ProgressInput({
                 targetProcessTypes,
             });
 
+          if (request !== targetRequestVersion.current) return;
           setTargetProcessProgressData(
             buildProgressDataByProcess(
               progressRows,
@@ -2063,6 +2059,7 @@ export default function ProgressInput({
         } catch (
           progressError
         ) {
+          if (request !== targetRequestVersion.current) return;
           console.error(
             '차수별 공정 진척 조회 실패:',
             progressError,
@@ -2078,15 +2075,10 @@ export default function ProgressInput({
           );
         }
       } catch (error) {
+        if (request !== targetRequestVersion.current) return;
         console.error(
           '공정 목표 조회 실패:',
           error,
-        );
-
-        setProgressTargets([]);
-        setActiveTargetId('');
-        setTargetProcessProgressData(
-          {},
         );
 
         setTargetError(
@@ -2097,17 +2089,19 @@ export default function ProgressInput({
                 '공정 목표를 불러오지 못했습니다.',
         );
       } finally {
-        setTargetLoading(false);
+        if (request === targetRequestVersion.current) setTargetLoading(false);
       }
     }, [
       processOptions,
       projectName,
       progressTable,
       targetTable,
+      setActiveTargetId,
     ]);
 
   useEffect(() => {
     loadProgressTargets();
+    return () => { targetRequestVersion.current += 1; };
   }, [loadProgressTargets]);
 
   useEffect(() => {
@@ -3331,7 +3325,8 @@ export default function ProgressInput({
             minWidth: 0,
           }}
         >
-          <Autocomplete
+          {hideProcessSelector && <Typography sx={{ fontWeight: 700, fontSize: '0.8rem', px: 1 }}>{selectedProcess}</Typography>}
+          {!hideProcessSelector && <Autocomplete
             options={processOptions}
             value={selectedProcess || null}
             onChange={(_, value) => {
@@ -3356,7 +3351,7 @@ export default function ProgressInput({
                 }}
               />
             )}
-          />
+          />}
         </Box>
       </Paper>
 

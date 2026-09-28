@@ -66,7 +66,9 @@ import MonthlyWorkerStatus from './page/MonthlyWorkerStatus.jsx';
 import CumulativeWorkerStatus from './page/CumulativeWorkerStatus.jsx';
 import ProgressInput from './page/ProgressInput.jsx';
 import MultiProcessProgress from './page/MultiProcessProgress.jsx';
-import TrialProgress from './page/TrialProgress.jsx';
+import ProcessSettingsPanel from './components/ProcessSettingsPanel.jsx';
+import useProjectProcesses from './hooks/useProjectProcesses.js';
+import { DEFAULT_PROJECT_PROCESSES } from './utils/projectProcesses.js';
 import CompletionSummary from './page/CompletionSummary.jsx';
 import DailyCompletionSummary from './page/DailyCompletionSummary.jsx';
 import WeeklyReport from './page/WeeklyReport.jsx';
@@ -308,47 +310,7 @@ const normalizeDailyReportJob = (value) => {
   return LEGACY_DAILY_REPORT_JOB_MAP[normalized] || normalized;
 };
 
-const processOptions = ['바닥먹', '허리먹', '단열', '합지', '경량골조', '경량석고', '세대천정', '1차몰딩', '2차몰딩', '1차 걸레받이', '2차 걸레받이'];
-
-const MARK_VALLEY_EXTRA_PROCESS = '조적단열';
-
-const getProjectProcessOptions = (
-  projectName,
-) => {
-  const normalizedProjectName =
-    String(projectName || '')
-      .replace(/\s+/g, '');
-
-  const isMarkValley =
-    normalizedProjectName.includes(
-      '마크밸리',
-    );
-
-  if (!isMarkValley) {
-    return processOptions;
-  }
-
-  const insulationIndex =
-    processOptions.indexOf('단열');
-
-  if (insulationIndex === -1) {
-    return [
-      ...processOptions,
-      MARK_VALLEY_EXTRA_PROCESS,
-    ];
-  }
-
-  return [
-    ...processOptions.slice(
-      0,
-      insulationIndex + 1,
-    ),
-    MARK_VALLEY_EXTRA_PROCESS,
-    ...processOptions.slice(
-      insulationIndex + 1,
-    ),
-  ];
-};
+const processOptions = DEFAULT_PROJECT_PROCESSES;
 
 const modalStyle = {
   position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
@@ -374,8 +336,6 @@ const viewTitles = {
   'daily-monthly-workers': '금월 투입 현황',
   'daily-cumulative-workers': '누계 투입 조회',
   'progress-input': '공종별 현황 입력',
-  'progress-input-trial': '공종별 현황 입력(2)',
-  'progress-multi-trial': '다중 공종 진척 현황(2)',
   'progress-multi': '다중 공종 진척 현황',
   'progress-daily': '일별 완료 집계',
   'progress-weekly': '주별 완료 집계',
@@ -421,8 +381,6 @@ const VIEW_PERMISSION_KEYS = {
   'daily-monthly-workers': 'construction.daily_monthly_workers.view',
   'daily-cumulative-workers': 'construction.daily_cumulative_workers.view',
   'progress-input': 'construction.progress.view',
-  'progress-input-trial': 'construction.progress.view',
-  'progress-multi-trial': 'construction.progress_multi.view',
   'progress-multi': 'construction.progress_multi.view',
   'progress-daily': 'construction.progress_daily.view',
   'progress-weekly': 'construction.progress_weekly.view',
@@ -1083,10 +1041,8 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       ? ALL_PROJECTS_OPTION
       : activeProjectName;
 
-  const activeProcessOptions =
-    getProjectProcessOptions(
-      activeProjectName,
-    );
+  const projectProcesses = useProjectProcesses(activeProjectName);
+  const activeProcessOptions = projectProcesses.options;
 
   const activeUserProfile = {
     ...(userProfile || {}),
@@ -1686,10 +1642,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     해당 현장에는 조적단열이 없으므로 첫 번째 공정으로 되돌립니다.
   */
   useEffect(() => {
-    const nextProcessOptions =
-      getProjectProcessOptions(
-        activeProjectName,
-      );
+    const nextProcessOptions = projectProcesses.inputOptions;
 
     if (
       !nextProcessOptions.includes(
@@ -1703,6 +1656,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   }, [
     activeProjectName,
     selectedProcess,
+    projectProcesses.inputOptions,
   ]);
 
   useEffect(() => {
@@ -4499,7 +4453,10 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             )}
 
           {currentView === 'progress-input' && activeProjectName && (
-            <ProgressInput
+            <Box sx={{ display: 'flex', gap: 1, height: '100%', minHeight: 0 }}>
+            <Box sx={{ flex: 1, minWidth: 0, minHeight: 0 }}>
+            {projectProcesses.inputOptions.length > 0 ? <ProgressInput
+              hideProcessSelector
               projectName={activeProjectName || ''}
               selectedCells={selectedCells}
               actionName={actionName}
@@ -4517,18 +4474,20 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               progressPercentage={progressPercentage}
               setSelectedProcess={setSelectedProcess}
               selectedProcess={selectedProcess}
-              processOptions={activeProcessOptions}
+              processOptions={projectProcesses.inputOptions}
               buildingConfigs={buildingConfigs}
               unitProgressData={unitProgressData}
               unitProgressProjectName={unitProgressProjectName}
               unitProgressProcess={unitProgressProcess}
               handleGridCellClick={handleGridCellClick}
               handleFloorClick={handleFloorClick}
-            />
-          )}
-          {['progress-input-trial', 'progress-multi-trial'].includes(currentView) && activeProjectName && canAccessView(currentView, activeProjectName) && (
-            <TrialProgress key={`${activeProjectName}:${currentView}`} projectName={activeProjectName}
-              buildingConfigs={buildingConfigs} comparison={currentView === 'progress-multi-trial'} />
+            /> : <Typography sx={{ p: 2 }}>오른쪽 + 버튼으로 공종을 추가해주세요.</Typography>}
+            </Box>
+            <ProcessSettingsPanel key={activeProjectName} userId={user?.id}
+              catalog={projectProcesses.catalog} selectedProcess={selectedProcess} onSelect={setSelectedProcess}
+              onUpdate={projectProcesses.update} ready={projectProcesses.ready} error={projectProcesses.error}
+              onRefresh={projectProcesses.refresh} />
+            </Box>
           )}
 
           {currentView === 'progress-multi' && activeProjectName && (
@@ -4724,6 +4683,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
           {currentView === 'report-weekly' && activeProjectName && (
             <WeeklyReport
+              processOptions={activeProcessOptions}
               userProfile={activeUserProfile}
               buildingConfigs={buildingConfigs}
             />

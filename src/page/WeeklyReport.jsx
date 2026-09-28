@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import WeeklyReportEditor from './WeeklyReportEditor.jsx';
 import ReportDocumentList from './ReportDocumentList.jsx';
 
-export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
+export default function WeeklyReport({ userProfile, buildingConfigs = {}, processOptions = [] }) {
   const [writing, setWriting] = useState(false);
   const [editingDocument, setEditingDocument] = useState(null);
 
@@ -10,6 +10,7 @@ export default function WeeklyReport({ userProfile, buildingConfigs = {} }) {
     return (
       <WeeklyReportEditor
         userProfile={userProfile}
+        processOptions={processOptions}
         buildingConfigs={buildingConfigs}
         editingDocument={editingDocument}
         onBackToList={() => {
