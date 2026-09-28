@@ -66,6 +66,7 @@ import MonthlyWorkerStatus from './page/MonthlyWorkerStatus.jsx';
 import CumulativeWorkerStatus from './page/CumulativeWorkerStatus.jsx';
 import ProgressInput from './page/ProgressInput.jsx';
 import MultiProcessProgress from './page/MultiProcessProgress.jsx';
+import TrialProgress from './page/TrialProgress.jsx';
 import CompletionSummary from './page/CompletionSummary.jsx';
 import DailyCompletionSummary from './page/DailyCompletionSummary.jsx';
 import WeeklyReport from './page/WeeklyReport.jsx';
@@ -373,6 +374,8 @@ const viewTitles = {
   'daily-monthly-workers': '금월 투입 현황',
   'daily-cumulative-workers': '누계 투입 조회',
   'progress-input': '공종별 현황 입력',
+  'progress-input-trial': '공종별 현황 입력(2)',
+  'progress-multi-trial': '다중 공종 진척 현황(2)',
   'progress-multi': '다중 공종 진척 현황',
   'progress-daily': '일별 완료 집계',
   'progress-weekly': '주별 완료 집계',
@@ -418,6 +421,8 @@ const VIEW_PERMISSION_KEYS = {
   'daily-monthly-workers': 'construction.daily_monthly_workers.view',
   'daily-cumulative-workers': 'construction.daily_cumulative_workers.view',
   'progress-input': 'construction.progress.view',
+  'progress-input-trial': 'construction.progress.view',
+  'progress-multi-trial': 'construction.progress_multi.view',
   'progress-multi': 'construction.progress_multi.view',
   'progress-daily': 'construction.progress_daily.view',
   'progress-weekly': 'construction.progress_weekly.view',
@@ -4520,6 +4525,10 @@ export default function Dashboard({ user, userProfile, onLogout }) {
               handleGridCellClick={handleGridCellClick}
               handleFloorClick={handleFloorClick}
             />
+          )}
+          {['progress-input-trial', 'progress-multi-trial'].includes(currentView) && activeProjectName && canAccessView(currentView, activeProjectName) && (
+            <TrialProgress key={`${activeProjectName}:${currentView}`} projectName={activeProjectName}
+              buildingConfigs={buildingConfigs} comparison={currentView === 'progress-multi-trial'} />
           )}
 
           {currentView === 'progress-multi' && activeProjectName && (

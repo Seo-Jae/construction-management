@@ -22,6 +22,8 @@ export const GUIDE_GROUPS = [
   { id: 'progress-group', label: '공정진척관리', items: [
     { id: 'progress-input', label: '공종별 현황 입력' },
     { id: 'progress-multi', label: '다중 공종 진척 현황' },
+    { id: 'progress-input-trial', label: '공종별 현황 입력(2)' },
+    { id: 'progress-multi-trial', label: '다중 공종 진척 현황(2)' },
     { id: 'progress-daily', label: '일별 완료 집계' },
     { id: 'progress-weekly', label: '주별 완료 집계' },
     { id: 'progress-monthly', label: '월별 완료 집계' },

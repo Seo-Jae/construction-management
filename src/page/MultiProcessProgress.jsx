@@ -1149,6 +1149,8 @@ function MultiProcessBuildingGrid({
 
 export default function MultiProcessProgress({
   projectName = '',
+  progressTable = 'unit_progress',
+  targetTable = 'progress_targets',
   processOptions = [],
   buildingConfigs = {},
 }) {
@@ -1273,7 +1275,7 @@ export default function MultiProcessProgress({
         while (true) {
           const to = from + PAGE_SIZE - 1;
           const { data, error } = await supabase
-            .from('unit_progress')
+            .from(progressTable)
             .select(
               'building, unit, process_type, status, completion_date',
             )
@@ -1312,7 +1314,7 @@ export default function MultiProcessProgress({
     return () => {
       isMounted = false;
     };
-  }, [projectName, selectedProcesses, refreshKey]);
+  }, [projectName, selectedProcesses, refreshKey, progressTable]);
 
   useEffect(() => {
     let isMounted = true;
@@ -1350,7 +1352,7 @@ export default function MultiProcessProgress({
               error,
             } = await supabase
               .from(
-                'progress_targets',
+                targetTable,
               )
               .select(
                 TARGET_SELECT_COLUMNS,
@@ -1442,6 +1444,7 @@ export default function MultiProcessProgress({
     projectName,
     refreshKey,
     selectedProcesses,
+    targetTable,
   ]);
 
   const buildingTypeSummaries = useMemo(

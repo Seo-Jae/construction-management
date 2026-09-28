@@ -1095,6 +1095,7 @@ const fetchAllTargetProgressRows =
   async ({
     projectName,
     processTypes,
+    progressTable = 'unit_progress',
   }) => {
     const normalizedTypes =
       Array.from(
@@ -1127,7 +1128,7 @@ const fetchAllTargetProgressRows =
         error,
       } = await supabase
         .from(
-          'unit_progress',
+          progressTable,
         )
         .select(
           `
@@ -1280,6 +1281,9 @@ const getStatusButtonStyle = (status, selectedStatusAction) => {
 
 export default function ProgressInput({
   projectName = '',
+  progressTable = 'unit_progress',
+  targetTable = 'progress_targets',
+  preferenceScope = projectName,
   selectedCells = new Set(),
   actionName = '',
   progressDate = '',
@@ -1392,7 +1396,7 @@ export default function ProgressInput({
     setTypeSummaryPanelState,
   ] = useState(() =>
     readStoredTypeSummaryPanelState(
-      projectName,
+      preferenceScope,
     ),
   );
 
@@ -1812,7 +1816,7 @@ export default function ProgressInput({
   useEffect(() => {
     const storedState =
       readStoredTypeSummaryPanelState(
-        projectName,
+        preferenceScope,
       );
 
     setTypeSummaryPanelState(
@@ -1849,7 +1853,7 @@ export default function ProgressInput({
               };
 
               storeTypeSummaryPanelState(
-                projectName,
+                preferenceScope,
                 next,
               );
 
@@ -1866,6 +1870,7 @@ export default function ProgressInput({
     };
   }, [
     projectName,
+    preferenceScope,
     getDockedTypeSummaryPanelPosition,
   ]);
 
@@ -1927,7 +1932,7 @@ export default function ProgressInput({
                 };
 
           storeTypeSummaryPanelState(
-            projectName,
+            preferenceScope,
             next,
           );
 
@@ -1949,6 +1954,7 @@ export default function ProgressInput({
     };
   }, [
     projectName,
+    preferenceScope,
     getDockedTypeSummaryPanelPosition,
   ]);
 
@@ -1975,7 +1981,7 @@ export default function ProgressInput({
           error,
         } = await supabase
           .from(
-            'progress_targets',
+            targetTable,
           )
           .select(
             TARGET_SELECT_COLUMNS,
@@ -2043,6 +2049,7 @@ export default function ProgressInput({
         try {
           const progressRows =
             await fetchAllTargetProgressRows({
+              progressTable,
               projectName,
               processTypes:
                 targetProcessTypes,
@@ -2095,6 +2102,8 @@ export default function ProgressInput({
     }, [
       processOptions,
       projectName,
+      progressTable,
+      targetTable,
     ]);
 
   useEffect(() => {
@@ -2110,18 +2119,18 @@ export default function ProgressInput({
   useEffect(() => {
     setTargetPanelMinimized(
       readStoredTargetPanelMinimized(
-        projectName,
+        preferenceScope,
       ),
     );
     setHiddenTargetSequences(
       readStoredHiddenTargetSequences(
-        projectName,
+        preferenceScope,
       ),
     );
     setTargetVisibilityMenuAnchor(
       null,
     );
-  }, [projectName]);
+  }, [projectName, preferenceScope]);
 
   /*
     현재 화면에서 수정한 공정은 Dashboard의 최신 데이터를
@@ -2473,7 +2482,7 @@ export default function ProgressInput({
           error: upsertError,
         } = await supabase
           .from(
-            'progress_targets',
+            targetTable,
           )
           .upsert(
             upsertRows,
@@ -2514,7 +2523,7 @@ export default function ProgressInput({
               deleteRemovedError,
           } = await supabase
             .from(
-              'progress_targets',
+              targetTable,
             )
             .delete()
             .eq(
@@ -2601,7 +2610,7 @@ export default function ProgressInput({
           error,
         } = await supabase
           .from(
-            'progress_targets',
+            targetTable,
           )
           .delete()
           .eq(
@@ -2698,7 +2707,7 @@ export default function ProgressInput({
           error,
         } = await supabase
           .from(
-            'progress_targets',
+            targetTable,
           )
           .update({
             building_floor_targets:
@@ -2817,7 +2826,7 @@ export default function ProgressInput({
               : updater;
 
           storeTypeSummaryPanelState(
-            projectName,
+            preferenceScope,
             next,
           );
 
@@ -2984,7 +2993,7 @@ export default function ProgressInput({
             !previous;
 
           storeTargetPanelMinimized(
-            projectName,
+            preferenceScope,
             next,
           );
 
@@ -3031,7 +3040,7 @@ export default function ProgressInput({
                 );
 
           storeHiddenTargetSequences(
-            projectName,
+            preferenceScope,
             next,
           );
 
