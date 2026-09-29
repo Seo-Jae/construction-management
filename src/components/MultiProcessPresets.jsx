@@ -40,12 +40,12 @@ export default function MultiProcessPresets({ projectName, selectedProcesses, pr
 
   const activePreset = presets.find(preset => String(preset.id) === selectedId);
   const matches = activePreset && activePreset.processes.length === selectedProcesses.length
-    && activePreset.processes.every(process => selectedProcesses.includes(process));
+    && activePreset.processes.every((process, index) => selectedProcesses[index] === process);
 
   function apply(id) {
     const preset = presets.find(item => String(item.id) === id);
     if (!preset) return;
-    const available = processOptions.filter(process => preset.processes.includes(process));
+    const available = preset.processes.filter(process => processOptions.includes(process));
     const missing = preset.processes.filter(process => !processOptions.includes(process));
     setSelectedId(id);
     setNotice(missing.length ? `현재 사용할 수 없는 공종은 제외했습니다: ${missing.join(', ')}` : '');

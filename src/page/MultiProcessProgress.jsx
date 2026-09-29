@@ -1187,8 +1187,8 @@ export default function MultiProcessProgress({
   const selectionWasChanged = useRef(false);
   useEffect(() => {
     setSelectedProcesses((previous) => {
-      const validPrevious = safeProcessOptions.filter((processName) =>
-        previous.includes(processName),
+      const validPrevious = previous.filter((processName) =>
+        safeProcessOptions.includes(processName),
       );
 
       if (validPrevious.length > 0 || selectionWasChanged.current) return validPrevious;
