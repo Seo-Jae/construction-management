@@ -2999,8 +2999,8 @@ export default function MainDashboard({
         )}
       </Box>
       <Box className="main-workspace-column main-workspace-workforce">
-        <DashboardWorkforce key={`${userId}:${projectName}:${canViewWorkforce}`} projectName={projectName} canView={canViewWorkforce} />
-        <DashboardWeeklyProgress key={`${userId}:${projectName}:${canViewProgress}`} userId={userId} projectName={projectName} names={processOptions} canView={canViewProgress} />
+        <DashboardWorkforce key={`workforce:${userId}:${projectName}:${canViewWorkforce}`} projectName={projectName} canView={canViewWorkforce} />
+        <DashboardWeeklyProgress key={`weekly-progress:${userId}:${projectName}:${canViewProgress}`} userId={userId} projectName={projectName} names={processOptions} canView={canViewProgress} />
       </Box>
       </Box>
     </Box>

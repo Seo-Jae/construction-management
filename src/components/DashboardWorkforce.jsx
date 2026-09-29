@@ -24,13 +24,13 @@ export default function DashboardWorkforce({ projectName, canView }) {
         for (let offset = 0; ; offset += 500) {
           const { data, error: queryError } = await supabase.from('daily_reports')
             .select('project_name,date,workers').eq('project_name', projectName)
-            .order('date').range(offset, offset + 499);
+            .order('date').order('id').range(offset, offset + 499);
           if (!active) return;
           if (queryError) throw queryError;
           rows.push(...(data || []));
           if (!data || data.length < 500) break;
         }
-        setResult({ endMonth, refresh, values: summarizeWorkforce(rows, projectName, workforceMonths(endMonth), today) });
+        setResult({ projectName, endMonth, refresh, values: summarizeWorkforce(rows, projectName, workforceMonths(endMonth), today) });
         setError(false);
       } catch { if (active) setError(true); }
     };
@@ -46,7 +46,7 @@ export default function DashboardWorkforce({ projectName, canView }) {
       window.removeEventListener('focus', reload);
     };
   }, []);
-  const values = result?.endMonth === endMonth && result?.refresh === refresh ? result.values : null;
+  const values = result?.projectName === projectName && result?.endMonth === endMonth && result?.refresh === refresh ? result.values : null;
   const move = (amount) => {
     const date = new Date(Date.UTC(Number(endMonth.slice(0, 4)), Number(endMonth.slice(5)) - 1 + amount, 1));
     setEndMonth(date.toISOString().slice(0, 7)); setError(false);
