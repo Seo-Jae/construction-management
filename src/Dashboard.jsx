@@ -4492,6 +4492,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
           {currentView === 'progress-multi' && activeProjectName && (
             <MultiProcessProgress
+              key={activeProjectName}
               projectName={activeProjectName || ''}
               processOptions={activeProcessOptions}
               buildingConfigs={buildingConfigs}

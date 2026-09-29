@@ -1,6 +1,6 @@
 // v52.48.5.44.37 다중공종 Autocomplete 가상 기준좌표 보정
 // v52.48.5.44.6.4 다중공종 셀확대·필로티X·하단타입
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Autocomplete,
@@ -34,6 +34,7 @@ import {
 import SystemPageTitle from '../components/SystemPageTitle.jsx';
 import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 import ScaleAwareAutocompletePopper from '../components/ScaleAwareAutocompletePopper.jsx';
+import MultiProcessPresets from '../components/MultiProcessPresets.jsx';
 const PAGE_SIZE = 1000;
 const UNIT_TYPE_PAGE_SIZE = 1000;
 
@@ -47,7 +48,7 @@ const TYPE_ROW_HEIGHT = 17;
 const PROCESS_COLORS = [
   '#38bdf8',
   '#fb7185',
-  '#a78bfa',
+  '#ef4444',
   '#84cc16',
   '#f59e0b',
   '#22d3ee',
@@ -1172,13 +1173,14 @@ export default function MultiProcessProgress({
   const [refreshKey, setRefreshKey] = useState(0);
   const [unitTypeData, setUnitTypeData] = useState({});
 
+  const selectionWasChanged = useRef(false);
   useEffect(() => {
     setSelectedProcesses((previous) => {
       const validPrevious = safeProcessOptions.filter((processName) =>
         previous.includes(processName),
       );
 
-      if (validPrevious.length > 0) return validPrevious;
+      if (validPrevious.length > 0 || selectionWasChanged.current) return validPrevious;
       return safeProcessOptions.slice(0, 2);
     });
   }, [safeProcessOptions]);
@@ -1608,6 +1610,7 @@ export default function MultiProcessProgress({
   );
 
   const handleProcessChange = (_event, nextValue) => {
+    selectionWasChanged.current = true;
     setSelectedProcesses(nextValue);
   };
 
@@ -1748,6 +1751,14 @@ export default function MultiProcessProgress({
               }
             />
           )}
+        />
+
+        <MultiProcessPresets
+          key={projectName}
+          projectName={projectName}
+          selectedProcesses={selectedProcesses}
+          processOptions={safeProcessOptions}
+          onApply={processes => handleProcessChange(null, processes)}
         />
 
         <Tooltip title="다중 공종 진척 현황 인쇄">
