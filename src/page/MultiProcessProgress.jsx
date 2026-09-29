@@ -9,6 +9,10 @@ import {
   Checkbox,
   Chip,
   CircularProgress,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
   IconButton,
   LinearProgress,
   Paper,
@@ -450,7 +454,8 @@ const getBuildingTypeSummary = ({
   };
 };
 
-const getProcessColor = (processName, processOptions) => {
+const getProcessColor = (processName, processOptions, colors = {}) => {
+  if (/^#[0-9a-f]{6}$/i.test(colors[processName] || '')) return colors[processName];
   const processIndex = processOptions.indexOf(processName);
   const safeIndex = processIndex >= 0 ? processIndex : 0;
   return PROCESS_COLORS[safeIndex % PROCESS_COLORS.length];
@@ -637,6 +642,7 @@ function MultiStatusCell({
   unitCode,
   selectedProcesses,
   processOptions,
+  colors,
   progressMap,
   cellWidth = GRID_CELL_WIDTH,
 }) {
@@ -656,7 +662,7 @@ function MultiStatusCell({
       {selectedProcesses.map((processName) => {
         const item = cellProgress[processName];
         const isCompleted = item?.status === '작업완료';
-        const color = getProcessColor(processName, processOptions);
+        const color = getProcessColor(processName, processOptions, colors);
 
         return (
           <Box
@@ -714,7 +720,7 @@ function MultiStatusCell({
           {selectedProcesses.map((processName, index) => {
             const isCompleted =
               cellProgress[processName]?.status === '작업완료';
-            const color = getProcessColor(processName, processOptions);
+            const color = getProcessColor(processName, processOptions, colors);
 
             return (
               <Box
@@ -766,6 +772,7 @@ function MultiProcessBuildingGrid({
   config,
   selectedProcesses,
   processOptions,
+  colors,
   progressMap,
   unitTypeData = {},
   typeFooterRowSlots = 1,
@@ -993,6 +1000,7 @@ function MultiProcessBuildingGrid({
                     unitCode={cell.unitCode}
                     selectedProcesses={selectedProcesses}
                     processOptions={processOptions}
+                    colors={colors}
                     progressMap={progressMap}
                     cellWidth={cellWidth}
                   />
@@ -1172,6 +1180,9 @@ export default function MultiProcessProgress({
   const [targetErrorMessage, setTargetErrorMessage] = useState('');
   const [refreshKey, setRefreshKey] = useState(0);
   const [unitTypeData, setUnitTypeData] = useState({});
+  const [colors, setColors] = useState({});
+  const [colorProcess, setColorProcess] = useState('');
+  const [draftColor, setDraftColor] = useState('#38bdf8');
 
   const selectionWasChanged = useRef(false);
   useEffect(() => {
@@ -1603,10 +1614,10 @@ export default function MultiProcessProgress({
           completed,
           total,
           percentage,
-          color: getProcessColor(processName, safeProcessOptions),
+          color: getProcessColor(processName, safeProcessOptions, colors),
         };
       }),
-    [progressMap, safeProcessOptions, selectedProcesses, validCellKeys],
+    [progressMap, safeProcessOptions, selectedProcesses, validCellKeys, colors],
   );
 
   const handleProcessChange = (_event, nextValue) => {
@@ -1720,7 +1731,7 @@ export default function MultiProcessProgress({
           )}
           renderTags={(value, getTagProps) =>
             value.map((option, index) => {
-              const color = getProcessColor(option, safeProcessOptions);
+              const color = getProcessColor(option, safeProcessOptions, colors);
               const tagProps = getTagProps({ index });
 
               return (
@@ -1758,7 +1769,11 @@ export default function MultiProcessProgress({
           projectName={projectName}
           selectedProcesses={selectedProcesses}
           processOptions={safeProcessOptions}
-          onApply={processes => handleProcessChange(null, processes)}
+          colors={colors}
+          onApply={(processes, savedColors) => {
+            handleProcessChange(null, processes);
+            setColors(savedColors);
+          }}
         />
 
         <Tooltip title="다중 공종 진척 현황 인쇄">
@@ -1821,8 +1836,16 @@ export default function MultiProcessProgress({
           {processStats.map((stat) => (
             <Paper
               key={stat.processName}
+              component="button"
+              type="button"
+              aria-label={`${stat.processName} 색상 변경`}
+              title="클릭하여 공종 색상 변경"
+              onClick={() => { setColorProcess(stat.processName); setDraftColor(stat.color); }}
               variant="outlined"
               sx={{
+                cursor: 'pointer', textAlign: 'left', font: 'inherit', minWidth: 0,
+                '&:hover': { bgcolor: '#f8fafc' },
+                '&:focus-visible': { outline: '2px solid #2563eb' },
                 px: 1.25,
                 py: 1,
                 borderColor: `${stat.color}aa`,
@@ -1947,6 +1970,7 @@ export default function MultiProcessProgress({
                   config={config}
                   selectedProcesses={selectedProcesses}
                   processOptions={safeProcessOptions}
+                  colors={colors}
                   progressMap={progressMap}
                   unitTypeData={unitTypeData}
                   typeFooterRowSlots={
@@ -1963,6 +1987,19 @@ export default function MultiProcessProgress({
         )}
       </Paper>
       </Box>
+      <Dialog open={Boolean(colorProcess)} onClose={() => setColorProcess('')} maxWidth="xs" fullWidth>
+        <DialogTitle>{colorProcess} 색상 설정</DialogTitle>
+        <DialogContent>
+          <Box component="input" type="color" aria-label="공종 색상" value={draftColor}
+            onChange={event => setDraftColor(event.target.value)} sx={{ width: '100%', height: 64, cursor: 'pointer' }} />
+          <Typography variant="body2" sx={{ mt: 1 }}>설정을 저장하면 선택한 색상도 함께 저장됩니다.</Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => { setColors(previous => { const next = { ...previous }; delete next[colorProcess]; return next; }); setColorProcess(''); }}>기본 색상</Button>
+          <Button onClick={() => setColorProcess('')}>취소</Button>
+          <Button variant="contained" onClick={() => { setColors(previous => ({ ...previous, [colorProcess]: draftColor })); setColorProcess(''); }}>적용</Button>
+        </DialogActions>
+      </Dialog>
     </>
   );
 }
