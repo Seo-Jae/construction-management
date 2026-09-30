@@ -95,6 +95,7 @@ const emptyForm = {
   department: '',
   position_title: '',
   person_name: '',
+  profile_user_id: '',
   contact: '',
   sort_order: 0,
 };
@@ -1095,6 +1096,10 @@ export default function OrganizationChart({
 
   const [nodes, setNodes] = useState([]);
   const [storedUpdatedAt, setStoredUpdatedAt] = useState('');
+  const [profileAccounts, setProfileAccounts] = useState([]);
+  const [profileAccountsError, setProfileAccountsError] = useState('');
+  const [profileAccountsLoading, setProfileAccountsLoading] = useState(false);
+  const [profileLinksAvailable, setProfileLinksAvailable] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingLayout, setSavingLayout] = useState(false);
@@ -1144,6 +1149,10 @@ export default function OrganizationChart({
               : `조직도를 불러오지 못했습니다: ${error.message}`,
       });
     } else {
+      const { data: photoLinks, error: photoLinksError } = await supabase.from(TABLE_NAME)
+        .select('id, profile_user_id').eq('is_active', true);
+      const photoLinkMap = new Map((photoLinks || []).map(row => [row.id, row.profile_user_id]));
+      setProfileLinksAvailable(!photoLinksError);
       // Deleted nodes are soft-deleted; their timestamp still belongs to the chart.
       const { data: latestRows, error: latestError } = await supabase.from(TABLE_NAME)
         .select('updated_at, created_at')
@@ -1163,6 +1172,7 @@ export default function OrganizationChart({
           (data || []).map((node) => ({
             ...node,
             photo_url: photoUrls[node.id] || '',
+            profile_user_id: photoLinkMap.get(node.id) || '',
             node_type: node.node_type || NODE_TYPES.PERSON,
             layout_type: node.layout_type || LAYOUT_TYPES.NORMAL,
             connector_branch_offset_y: isFiniteCoordinate(
@@ -1195,6 +1205,29 @@ export default function OrganizationChart({
   }, [loadNodes]);
 
   const nodeById = useMemo(() => buildNodeMap(nodes), [nodes]);
+  useEffect(() => {
+    if (!dialogOpen || !isSuperAdmin) return;
+    let active = true;
+    const loadAccounts = async () => {
+      try {
+        const accounts = [];
+        for (let offset = 0; ; offset += 1000) {
+          const { data, error } = await supabase.rpc('organization_profile_accounts_v197').range(offset, offset + 999);
+          if (!active) return;
+          if (error) throw error;
+          accounts.push(...(data || []));
+          if (!data || data.length < 1000) break;
+        }
+        setProfileAccounts(accounts);
+      } catch {
+        if (active) setProfileAccountsError('사진 연결 계정 목록을 불러오지 못했습니다. v197 SQL 적용 여부를 확인해주세요.');
+      } finally {
+        if (active) setProfileAccountsLoading(false);
+      }
+    };
+    loadAccounts();
+    return () => { active = false; };
+  }, [dialogOpen, isSuperAdmin]);
   const childrenByParent = useMemo(() => buildChildrenMap(nodes), [nodes]);
   const departmentMemberStats = useMemo(
     () => buildDepartmentMemberStats(nodes, childrenByParent),
@@ -1544,6 +1577,8 @@ export default function OrganizationChart({
     nodeType = NODE_TYPES.PERSON,
     defaults = {},
   ) => {
+    setProfileAccountsLoading(true);
+    setProfileAccountsError('');
     const parentNode = nodes.find((node) => node.id === parentId);
     const inheritedDepartment =
       nodeType === NODE_TYPES.PERSON &&
@@ -1563,6 +1598,8 @@ export default function OrganizationChart({
   };
 
   const openEditDialog = (node) => {
+    setProfileAccountsLoading(true);
+    setProfileAccountsError('');
     setForm({
       id: node.id,
       parent_id: node.parent_id || '',
@@ -1570,6 +1607,7 @@ export default function OrganizationChart({
       department: node.department || '',
       position_title: node.position_title || '',
       person_name: node.person_name || '',
+      profile_user_id: node.profile_user_id || '',
       contact: node.contact || '',
       sort_order: Number(node.sort_order || 0),
     });
@@ -1686,6 +1724,7 @@ export default function OrganizationChart({
       updated_by: currentUserId || null,
       updated_at: new Date().toISOString(),
       is_active: true,
+      ...(profileLinksAvailable ? { profile_user_id: isDepartment ? null : form.profile_user_id || null } : {}),
       ...(needsCoordinates
         ? { layout_x: suggested.x, layout_y: suggested.y }
         : {}),
@@ -3105,6 +3144,20 @@ export default function OrganizationChart({
                     }
                   />
                 </Stack>
+                <TextField select fullWidth size="small" label="프로필 사진 연결 계정"
+                  value={form.profile_user_id || ''}
+                  disabled={!profileLinksAvailable || profileAccountsLoading || Boolean(profileAccountsError)}
+                  onChange={event => setForm(previous => ({ ...previous, profile_user_id: event.target.value }))}
+                  helperText={profileAccountsLoading ? '계정 목록을 불러오는 중입니다.' : '사진을 등록한 계정을 선택하세요. 자동 연결은 이름이 일치하는 계정이 하나일 때만 적용됩니다.'}>
+                  <MenuItem value="">이름으로 자동 연결</MenuItem>
+                  {form.profile_user_id && !profileAccounts.some(account => account.user_id === form.profile_user_id) &&
+                    <MenuItem value={form.profile_user_id}>기존 연결 계정 (현재 목록에 없음)</MenuItem>}
+                  {profileAccounts.map(account => <MenuItem key={account.user_id} value={account.user_id}>
+                    {account.person_name || '이름 미등록'} · {account.email} · {account.has_photo ? '사진 있음' : '사진 없음'}
+                  </MenuItem>)}
+                </TextField>
+                {profileAccountsError && <Alert severity="warning">{profileAccountsError}</Alert>}
+                {!profileLinksAvailable && <Alert severity="warning">프로필 계정 연결을 사용하려면 v197 SQL 적용 후 조직도를 다시 열어주세요.</Alert>}
               </>
             )}
 
