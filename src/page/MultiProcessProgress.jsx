@@ -1897,7 +1897,7 @@ export default function MultiProcessProgress({
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {stat.completed}/{stat.total} ({stat.percentage.toFixed(1)}%)
+                  {stat.completed}/{stat.total}({stat.total - stat.completed})({stat.percentage.toFixed(1)}%)
                 </Typography>
               </Box>
 
