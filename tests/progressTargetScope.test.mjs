@@ -2,6 +2,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildProgressTargetScopes } from '../src/utils/progressTargetScope.js';
 
+test('436 cumulative target units become 272 stage-two units, excluding 164 stage-one units', () => {
+  const scopes = buildProgressTargetScopes([
+    { id: 'sequence:1', sequence: 1, building_floor_targets: { A: 41 } },
+    { id: 'sequence:2', sequence: 2, building_floor_targets: { A: 109 } },
+  ], { A: { floors: 165, unitsPerFloor: 4 } });
+  assert.equal(scopes[0].cellKeys.size, 164);
+  assert.equal(scopes[1].cellKeys.size, 272);
+  const completed = new Set([...scopes[0].cellKeys, ...[...scopes[1].cellKeys].slice(0, 117)]);
+  const stageCompleted = [...scopes[1].cellKeys].filter(key => completed.has(key)).length;
+  assert.equal(stageCompleted, 117);
+  assert.equal(scopes[1].cellKeys.size - stageCompleted, 155);
+});
+
 test('stage two excludes stage one and respects different target floors per building', () => {
   const configs = {
     A: { floors: 4, unitsPerFloor: 2, pilotiFloors: [1] },

@@ -28,7 +28,8 @@ import DownloadIcon from '@mui/icons-material/Download';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
-import { getCellKey, getProjectCellKeys, getTargetCellKeys } from '../utils/buildingUnits.js';
+import { getCellKey, getProjectCellKeys } from '../utils/buildingUnits.js';
+import { buildProgressTargetScopes } from '../utils/progressTargetScope.js';
 import { DAILY_COMPLETION_PRINT_CSS, prepareDailyCompletionPrint, clearDailyCompletionPrint } from '../utils/dailyCompletionPrint.js';
 
 import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
@@ -834,17 +835,14 @@ export default function DailyCompletionSummary({
         selectedTargetId,
     ) || null;
 
-  const selectedTargetCellKeys =
-    useMemo(
-      () =>
-        selectedTarget
-          ? getTargetCellKeys(safeBuildingConfigs, selectedTarget.floorTargets)
-          : new Set(),
-      [
-        safeBuildingConfigs,
-        selectedTarget,
-      ],
-    );
+  const targetScopes = useMemo(() => buildProgressTargetScopes(
+    targetGroups.map(target => ({ ...target, building_floor_targets: target.floorTargets })),
+    safeBuildingConfigs,
+  ), [targetGroups, safeBuildingConfigs]);
+  const selectedTargetCellKeys = useMemo(
+    () => targetScopes.find(target => target.id === selectedTargetId)?.cellKeys || new Set(),
+    [targetScopes, selectedTargetId],
+  );
 
   const periods =
     useMemo(
