@@ -28,7 +28,11 @@ import {
   Paper,
   TextField,
   Typography,
+  Tooltip,
 } from '@mui/material';
+import PrintIcon from '@mui/icons-material/Print';
+import { MULTI_PROGRESS_PRINT_CSS, clearMultiProgressPrint } from '../utils/multiProgressPrint.js';
+import { prepareProgressInputPrint } from '../utils/progressInputPrint.js';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import DragIndicatorRoundedIcon from '@mui/icons-material/DragIndicatorRounded';
 import RemoveRoundedIcon from '@mui/icons-material/RemoveRounded';
@@ -1310,6 +1314,7 @@ export default function ProgressInput({
   handleFloorClick,
 }) {
   const [initialSetupOpen, setInitialSetupOpen] = useState(false);
+  const printGridRef = useRef(null);
   const [
     progressTargets,
     setProgressTargets,
@@ -3043,6 +3048,19 @@ export default function ProgressInput({
       );
     };
 
+  useEffect(() => {
+    const prepare = () => prepareProgressInputPrint(printGridRef.current,
+      `${projectName} · ${selectedProcess} · 완료 ${completedUnits}/${totalUnits} (${progressPercentage}%)`
+      + (activeTargetItem ? ` · ${activeTargetItem.target.target_name}` : ''));
+    window.addEventListener('beforeprint', prepare);
+    window.addEventListener('afterprint', clearMultiProgressPrint);
+    return () => {
+      window.removeEventListener('beforeprint', prepare);
+      window.removeEventListener('afterprint', clearMultiProgressPrint);
+      clearMultiProgressPrint();
+    };
+  }, [projectName, selectedProcess, completedUnits, totalUnits, progressPercentage, activeTargetItem]);
+
   return (
     <Box
       sx={{
@@ -3054,6 +3072,7 @@ export default function ProgressInput({
       }}
     >
       {/* 진도율과 공정 선택을 항상 화면 최상단에 고정합니다. */}
+      <style>{MULTI_PROGRESS_PRINT_CSS}</style>
       <Paper
         elevation={1}
         sx={{
@@ -3325,6 +3344,17 @@ export default function ProgressInput({
             minWidth: 0,
           }}
         >
+          <Tooltip title="PDF 저장 / 인쇄">
+            <span style={{ display: 'inline-flex', marginRight: 12 }}>
+              <IconButton size="small" aria-label="공종별 현황 PDF 저장 / 인쇄"
+                disabled={!selectedProcess || sortedBuildings.length === 0 || targetLoading
+                  || unitProgressProjectName !== projectName || unitProgressProcess !== selectedProcess}
+                onClick={() => window.print()}
+                sx={{ width: 34, height: 34, border: '1px solid #93c5fd', borderRadius: 1, color: '#2563eb' }}>
+                <PrintIcon sx={{ fontSize: 19 }} />
+              </IconButton>
+            </span>
+          </Tooltip>
           {hideProcessSelector && <Typography sx={{ fontWeight: 700, fontSize: '0.8rem', px: 1 }}>{selectedProcess}</Typography>}
           {!hideProcessSelector && <Autocomplete
             options={processOptions}
@@ -4514,6 +4544,7 @@ export default function ProgressInput({
           </Box>
         ) : (
           <Box
+            ref={printGridRef}
             sx={{
               display: 'flex',
               flexWrap: 'nowrap',

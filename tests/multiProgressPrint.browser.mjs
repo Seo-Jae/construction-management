@@ -8,7 +8,12 @@ import { join } from 'node:path';
 
 const browser = process.argv[2];
 assert.ok(browser, 'Provide a Chromium or Edge executable path');
-const source = await readFile(new URL('../src/utils/multiProgressPrint.js', import.meta.url), 'utf8');
+const inputMode = process.argv[3] === 'input';
+let source = await readFile(new URL('../src/utils/multiProgressPrint.js', import.meta.url), 'utf8');
+if (inputMode) {
+  source += '\n' + (await readFile(new URL('../src/utils/progressInputPrint.js', import.meta.url), 'utf8'))
+    .replace(/^import .*?;\r?\n/, '');
+}
 const results = new Map();
 const cases = [
   { buildings: 7, floors: 28, zoom: 0.8, processes: 2 },
@@ -43,10 +48,12 @@ const server = createServer((req, res) => {
       ${Array.from({length:item.buildings}, (_, b) => `<div class="multi-progress-building">${Array.from({length:item.floors},(_, f) => `<div style="height:22px;border:1px solid #abc">Building ${b + 1} / floor ${item.floors - f}</div>`).join('')}<div>Type / total units</div></div>`).join('')}
       </div></div>
     </div></div><script type="module">
-      import {MULTI_PROGRESS_PRINT_CSS,prepareMultiProgressPrint,clearMultiProgressPrint} from '/module.js';
+      import {MULTI_PROGRESS_PRINT_CSS,prepareMultiProgressPrint,clearMultiProgressPrint${inputMode ? ',prepareProgressInputPrint' : ''}} from '/module.js';
       const style=document.createElement('style'); style.textContent=MULTI_PROGRESS_PRINT_CSS; document.head.append(style);
       window.addEventListener('beforeprint',()=>{
-        prepareMultiProgressPrint(document.getElementById('multi-progress-print-area'));
+        ${inputMode
+          ? "prepareProgressInputPrint(document.querySelector('.multi-progress-buildings'), 'Project / process / completion / stage');"
+          : "prepareMultiProgressPrint(document.getElementById('multi-progress-print-area'));"}
         const sheet=document.getElementById('multi-progress-print-sheet');
         const content=sheet.firstElementChild;
         const scale=Number(content.style.transform.match(/scale\\((.+)\\)/)[1]);
