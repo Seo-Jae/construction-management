@@ -1897,7 +1897,11 @@ export default function MultiProcessProgress({
                     whiteSpace: 'nowrap',
                   }}
                 >
-                  {stat.completed}/{stat.total}({stat.total - stat.completed})({stat.percentage.toFixed(1)}%)
+                  {stat.completed}/{stat.total}(
+                  <Box component="span" sx={{ color: stat.completed < stat.total ? '#dc2626' : '#000000' }}>
+                    {stat.completed > stat.total ? '+' : ''}{stat.completed - stat.total}
+                  </Box>
+                  )({stat.percentage.toFixed(1)}%)
                 </Typography>
               </Box>
 
