@@ -35,6 +35,7 @@ import { DAILY_COMPLETION_PRINT_CSS, prepareDailyCompletionPrint, clearDailyComp
 import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 const PAGE_SIZE = 1000;
 const DATE_RANGE_OPTIONS = [
+  7,
   14,
   30,
   60,
