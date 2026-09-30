@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import {
   Alert,
+  Avatar,
   Box,
   Button,
   ClickAwayListener,
@@ -28,6 +29,7 @@ import {
 } from '@mui/material';
 import { supabase } from '../supabaseClient';
 import { UI_FONT_FAMILY } from '../theme.js';
+import { loadOrganizationPhotos } from '../utils/organizationPhotos.js';
 
 const TABLE_NAME = 'organization_chart_nodes';
 const ROOT_KEY = '__root__';
@@ -820,6 +822,8 @@ function MemberCard({
       }}
     >
       <Box sx={{ flex: '0 0 4px', bgcolor: accentColor }} />
+      <Avatar variant="square" src={node.photo_url || undefined} alt={`${node.person_name || '직원'} 프로필`}
+        sx={{ width: 42, height: 42, alignSelf: 'center', ml: 0.75, flexShrink: 0, bgcolor: '#e2e8f0', color: '#64748b', borderRadius: 0.5 }} />
       <Stack
         spacing={0.15}
         justifyContent="center"
@@ -1058,7 +1062,10 @@ function PersonNode({
           />
         )}
       </Box>
-      <Stack spacing={0.15} alignItems="center" sx={{ px: 1, py: 0.7 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1, py: 0.7 }}>
+      <Avatar variant="square" src={node.photo_url || undefined} alt={`${node.person_name || '직원'} 프로필`}
+        sx={{ width: 42, height: 42, flexShrink: 0, bgcolor: '#e2e8f0', color: '#64748b', borderRadius: 0.5 }} />
+      <Stack spacing={0.15} sx={{ minWidth: 0, flex: 1 }}>
         <Typography noWrap sx={{ maxWidth: '100%', color: '#020617', fontSize: '0.94rem', fontWeight: 900, letterSpacing: '-0.02em' }}>
           {node.person_name || '이름 미입력'}
         </Typography>
@@ -1066,6 +1073,7 @@ function PersonNode({
           {node.contact || '연락처 미입력'}
         </Typography>
       </Stack>
+      </Box>
     </Paper>
   );
 }
@@ -1086,6 +1094,7 @@ export default function OrganizationChart({
   const hasCenteredRef = useRef(false);
 
   const [nodes, setNodes] = useState([]);
+  const [storedUpdatedAt, setStoredUpdatedAt] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingLayout, setSavingLayout] = useState(false);
@@ -1135,10 +1144,25 @@ export default function OrganizationChart({
               : `조직도를 불러오지 못했습니다: ${error.message}`,
       });
     } else {
+      // Deleted nodes are soft-deleted; their timestamp still belongs to the chart.
+      const { data: latestRows, error: latestError } = await supabase.from(TABLE_NAME)
+        .select('updated_at, created_at')
+        .order('updated_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (!latestError) setStoredUpdatedAt(latestRows?.[0]?.updated_at || latestRows?.[0]?.created_at || '');
+      else setMessage({ severity: 'warning', text: '조직도 최종 수정 시각을 불러오지 못했습니다.' });
+      let photoUrls = {};
+      try {
+        photoUrls = await loadOrganizationPhotos();
+      } catch {
+        setMessage({ severity: 'warning', text: '프로필 사진을 불러오지 못했습니다. 조직도 사진 조회 권한 설정을 확인해주세요.' });
+      }
       setNodes(
         sortNodes(
           (data || []).map((node) => ({
             ...node,
+            photo_url: photoUrls[node.id] || '',
             node_type: node.node_type || NODE_TYPES.PERSON,
             layout_type: node.layout_type || LAYOUT_TYPES.NORMAL,
             connector_branch_offset_y: isFiniteCoordinate(
@@ -1409,8 +1433,8 @@ export default function OrganizationChart({
         if (!value) return latest;
         if (!latest) return value;
         return new Date(value) > new Date(latest) ? value : latest;
-      }, ''),
-    [nodes],
+      }, storedUpdatedAt),
+    [nodes, storedUpdatedAt],
   );
 
   const getDescendantIds = useCallback(
@@ -1585,6 +1609,7 @@ export default function OrganizationChart({
       .update({
         card_color: nextColor,
         updated_by: currentUserId || null,
+        updated_at: new Date().toISOString(),
       })
       .eq('id', colorTarget.id);
 
@@ -1659,6 +1684,7 @@ export default function OrganizationChart({
       contact: isDepartment ? '' : contact,
       sort_order: Number(form.sort_order || 0),
       updated_by: currentUserId || null,
+      updated_at: new Date().toISOString(),
       is_active: true,
       ...(needsCoordinates
         ? { layout_x: suggested.x, layout_y: suggested.y }
@@ -1740,6 +1766,7 @@ export default function OrganizationChart({
             layout_x: safePosition.x,
             layout_y: safePosition.y,
             updated_by: currentUserId || null,
+            updated_at: new Date().toISOString(),
           })
           .eq('id', nodeId);
 
@@ -1819,6 +1846,7 @@ export default function OrganizationChart({
         .update({
           connector_branch_offset_y: safeOffset,
           updated_by: currentUserId || null,
+          updated_at: new Date().toISOString(),
         })
         .eq('id', parentId);
 
@@ -2130,6 +2158,7 @@ export default function OrganizationChart({
           layout_type: LAYOUT_TYPES.NORMAL,
           sort_order: nextSortOrder,
           updated_by: currentUserId || null,
+          updated_at: new Date().toISOString(),
         })
         .eq('id', member.id);
 
@@ -2185,6 +2214,7 @@ export default function OrganizationChart({
           layout_x: snappedPosition.x,
           layout_y: snappedPosition.y,
           updated_by: currentUserId || null,
+          updated_at: new Date().toISOString(),
         })
         .eq('id', node.id);
 
@@ -2237,6 +2267,7 @@ export default function OrganizationChart({
       .update({
         is_active: false,
         updated_by: currentUserId || null,
+        updated_at: new Date().toISOString(),
       })
       .eq('id', node.id);
 
