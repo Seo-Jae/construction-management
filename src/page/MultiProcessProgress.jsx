@@ -15,6 +15,7 @@ import {
   DialogActions,
   IconButton,
   LinearProgress,
+  MenuItem,
   Paper,
   TextField,
   Tooltip,
@@ -39,6 +40,7 @@ import SystemPageTitle from '../components/SystemPageTitle.jsx';
 import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 import ScaleAwareAutocompletePopper from '../components/ScaleAwareAutocompletePopper.jsx';
 import MultiProcessPresets from '../components/MultiProcessPresets.jsx';
+import { buildProgressTargetScopes } from '../utils/progressTargetScope.js';
 const PAGE_SIZE = 1000;
 const UNIT_TYPE_PAGE_SIZE = 1000;
 
@@ -1174,6 +1176,7 @@ export default function MultiProcessProgress({
   );
   const [progressRows, setProgressRows] = useState([]);
   const [targetRows, setTargetRows] = useState([]);
+  const [selectedTargetId, setSelectedTargetId] = useState('all');
   const [loading, setLoading] = useState(false);
   const [targetLoading, setTargetLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -1185,6 +1188,10 @@ export default function MultiProcessProgress({
   const [draftColor, setDraftColor] = useState('#38bdf8');
 
   const selectionWasChanged = useRef(false);
+  useEffect(() => {
+    setSelectedTargetId('all');
+    setTargetRows([]);
+  }, [projectName]);
   useEffect(() => {
     setSelectedProcesses((previous) => {
       const validPrevious = previous.filter((processName) =>
@@ -1336,9 +1343,7 @@ export default function MultiProcessProgress({
     const fetchTargetRows =
       async () => {
         if (
-          !projectName ||
-          selectedProcesses.length ===
-            0
+          !projectName
         ) {
           if (isMounted) {
             setTargetRows([]);
@@ -1374,10 +1379,6 @@ export default function MultiProcessProgress({
               .eq(
                 'project_name',
                 projectName,
-              )
-              .in(
-                'process_type',
-                selectedProcesses,
               )
               .order(
                 'sequence',
@@ -1457,7 +1458,6 @@ export default function MultiProcessProgress({
   }, [
     projectName,
     refreshKey,
-    selectedProcesses,
     targetTable,
   ]);
 
@@ -1595,18 +1595,26 @@ export default function MultiProcessProgress({
       safeBuildingConfigs,
     ]);
 
+  const targetScopes = useMemo(
+    () => buildProgressTargetScopes(progressTargetGroups, safeBuildingConfigs),
+    [progressTargetGroups, safeBuildingConfigs],
+  );
+  const selectedTarget = targetScopes.find(target => target.id === selectedTargetId);
+  const scopeLabel = selectedTargetId === 'all' ? '전체' : selectedTarget?.target_name || '선택 구간 없음';
+  const scopedCellKeys = selectedTargetId === 'all' ? validCellKeys : selectedTarget?.cellKeys || new Set();
+
   const processStats = useMemo(
     () =>
       selectedProcesses.map((processName) => {
         let completed = 0;
 
-        validCellKeys.forEach((cellKey) => {
+        scopedCellKeys.forEach((cellKey) => {
           if (progressMap[cellKey]?.[processName]?.status === '작업완료') {
             completed += 1;
           }
         });
 
-        const total = validCellKeys.size;
+        const total = scopedCellKeys.size;
         const percentage = total === 0 ? 0 : (completed / total) * 100;
 
         return {
@@ -1617,7 +1625,7 @@ export default function MultiProcessProgress({
           color: getProcessColor(processName, safeProcessOptions, colors),
         };
       }),
-    [progressMap, safeProcessOptions, selectedProcesses, validCellKeys, colors],
+    [progressMap, safeProcessOptions, selectedProcesses, scopedCellKeys, colors],
   );
 
   const handleProcessChange = (_event, nextValue) => {
@@ -1684,7 +1692,7 @@ export default function MultiProcessProgress({
               color: '#334155',
             }}
           >
-            선택 공종: {selectedProcesses.join(', ') || '-'}
+            집계 구간: {scopeLabel} · 선택 공종: {selectedProcesses.join(', ') || '-'}
           </Typography>
         </Box>
       <Paper
@@ -1763,6 +1771,19 @@ export default function MultiProcessProgress({
             />
           )}
         />
+
+        <TextField select size="small" label="수량 집계 구간"
+          value={selectedTargetId}
+          disabled={targetLoading || Boolean(targetErrorMessage)}
+          onChange={event => setSelectedTargetId(event.target.value)}
+          sx={{ minWidth: 150 }}>
+          <MenuItem value="all">전체</MenuItem>
+          {selectedTargetId !== 'all' && !selectedTarget &&
+            <MenuItem value={selectedTargetId}>선택 구간 없음</MenuItem>}
+          {targetScopes.map(target => <MenuItem key={target.id} value={target.id}>
+            {target.target_name}
+          </MenuItem>)}
+        </TextField>
 
         <MultiProcessPresets
           key={projectName}
