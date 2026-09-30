@@ -8,6 +8,10 @@ import {
   Box,
   Button,
   CircularProgress,
+  Checkbox,
+  FormControlLabel,
+  Tabs,
+  Tab,
   FormControl,
   MenuItem,
   Paper,
@@ -24,6 +28,8 @@ import DownloadIcon from '@mui/icons-material/Download';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
+import { getCellKey, getProjectCellKeys, getTargetCellKeys } from '../utils/buildingUnits.js';
+import { DAILY_COMPLETION_PRINT_CSS, prepareDailyCompletionPrint, clearDailyCompletionPrint } from '../utils/dailyCompletionPrint.js';
 
 import SystemRefreshButton from '../components/SystemRefreshButton.jsx';
 const PAGE_SIZE = 1000;
@@ -50,94 +56,6 @@ const pad2 = (value) =>
     2,
     '0',
   );
-
-const normalizeNumberArray = (
-  value,
-) =>
-  Array.isArray(value)
-    ? value
-        .map(Number)
-        .filter(
-          (item) =>
-            Number.isFinite(
-              item,
-            ),
-        )
-    : [];
-
-const getFloorException = (
-  exceptions,
-  floor,
-) =>
-  exceptions?.[floor] ||
-  exceptions?.[
-    String(floor)
-  ] ||
-  null;
-
-const isValidUnit = (
-  config,
-  floor,
-  unitNumber,
-) => {
-  const pilotiFloors =
-    normalizeNumberArray(
-      config?.pilotiFloors,
-    );
-
-  const floorException =
-    getFloorException(
-      config?.exceptions,
-      floor,
-    );
-
-  const exceptionUnits =
-    normalizeNumberArray(
-      floorException?.units,
-    );
-
-  const isActiveOnPiloti =
-    Boolean(floorException) &&
-    exceptionUnits.includes(
-      unitNumber,
-    );
-
-  const isPiloti =
-    pilotiFloors.includes(
-      floor,
-    ) &&
-    !isActiveOnPiloti;
-
-  const isNonExistent =
-    Boolean(floorException) &&
-    !exceptionUnits.includes(
-      unitNumber,
-    ) &&
-    !pilotiFloors.includes(
-      floor,
-    );
-
-  return (
-    !isPiloti &&
-    !isNonExistent
-  );
-};
-
-const getUnitCode = (
-  floor,
-  unitNumber,
-) =>
-  `${floor}${String(
-    unitNumber,
-  ).padStart(2, '0')}`;
-
-const getCellKey = (
-  buildingName,
-  unitCode,
-) =>
-  `${String(
-    buildingName,
-  )}-${String(unitCode)}`;
 
 const getKoreaDateParts = (
   date = new Date(),
@@ -542,85 +460,6 @@ const groupTargetRows = (
     );
 };
 
-const getTargetCellKeys = ({
-  floorTargets,
-  buildingConfigs,
-}) => {
-  const targetKeys =
-    new Set();
-
-  Object.entries(
-    normalizeFloorTargets(
-      floorTargets,
-    ),
-  ).forEach(
-    ([
-      buildingName,
-      targetFloor,
-    ]) => {
-      const config =
-        buildingConfigs?.[
-          buildingName
-        ];
-
-      if (!config) {
-        return;
-      }
-
-      const floors =
-        Math.min(
-          Number(
-            config?.floors,
-          ) || 0,
-          Number(
-            targetFloor,
-          ) || 0,
-        );
-
-      const unitsPerFloor =
-        Number(
-          config
-            ?.unitsPerFloor,
-        ) || 0;
-
-      for (
-        let floor = 1;
-        floor <= floors;
-        floor += 1
-      ) {
-        for (
-          let unitNumber = 1;
-          unitNumber <=
-          unitsPerFloor;
-          unitNumber += 1
-        ) {
-          if (
-            !isValidUnit(
-              config,
-              floor,
-              unitNumber,
-            )
-          ) {
-            continue;
-          }
-
-          targetKeys.add(
-            getCellKey(
-              buildingName,
-              getUnitCode(
-                floor,
-                unitNumber,
-              ),
-            ),
-          );
-        }
-      }
-    },
-  );
-
-  return targetKeys;
-};
-
 const getDdayValue = (
   targetDate,
 ) => {
@@ -723,6 +562,13 @@ export default function DailyCompletionSummary({
 
   const safeBuildingConfigs =
     buildingConfigs || {};
+
+  const [processTab, setProcessTab] = useState('all');
+  const [excludedProcesses, setExcludedProcesses] = useState([]);
+  useEffect(() => {
+    setProcessTab('all');
+    setExcludedProcesses([]);
+  }, [projectName]);
 
   const [
     dayCount,
@@ -949,68 +795,10 @@ export default function DailyCompletionSummary({
     safeProcessOptions,
   ]);
 
-  const validCellKeys =
-    useMemo(() => {
-      const keys =
-        new Set();
-
-      Object.entries(
-        safeBuildingConfigs,
-      ).forEach(
-        ([
-          buildingName,
-          config,
-        ]) => {
-          const floors =
-            Number(
-              config?.floors,
-            ) || 0;
-
-          const unitsPerFloor =
-            Number(
-              config
-                ?.unitsPerFloor,
-            ) || 0;
-
-          for (
-            let floor = 1;
-            floor <= floors;
-            floor += 1
-          ) {
-            for (
-              let unitNumber = 1;
-              unitNumber <=
-              unitsPerFloor;
-              unitNumber += 1
-            ) {
-              if (
-                !isValidUnit(
-                  config,
-                  floor,
-                  unitNumber,
-                )
-              ) {
-                continue;
-              }
-
-              keys.add(
-                getCellKey(
-                  buildingName,
-                  getUnitCode(
-                    floor,
-                    unitNumber,
-                  ),
-                ),
-              );
-            }
-          }
-        },
-      );
-
-      return keys;
-    }, [
-      safeBuildingConfigs,
-    ]);
+  const validCellKeys = useMemo(
+    () => getProjectCellKeys(safeBuildingConfigs),
+    [safeBuildingConfigs],
+  );
 
   const targetGroups =
     useMemo(
@@ -1050,13 +838,7 @@ export default function DailyCompletionSummary({
     useMemo(
       () =>
         selectedTarget
-          ? getTargetCellKeys({
-              floorTargets:
-                selectedTarget
-                  .floorTargets,
-              buildingConfigs:
-                safeBuildingConfigs,
-            })
+          ? getTargetCellKeys(safeBuildingConfigs, selectedTarget.floorTargets)
           : new Set(),
       [
         safeBuildingConfigs,
@@ -1287,6 +1069,24 @@ export default function DailyCompletionSummary({
       validCellKeys,
     ]);
 
+  const visibleRows = useMemo(() => processTab === 'all' ? summaryRows
+    : summaryRows.filter(row => !excludedProcesses.includes(row.processName)),
+  [summaryRows, processTab, excludedProcesses]);
+
+  useEffect(() => {
+    const prepare = () => prepareDailyCompletionPrint(
+      document.getElementById('daily-completion-table'),
+      `${projectName} · 최근 ${dayCount}일 · ${selectedTarget?.targetName || '차수 없음'} · ${visibleRows.length}개 공정`,
+    );
+    window.addEventListener('beforeprint', prepare);
+    window.addEventListener('afterprint', clearDailyCompletionPrint);
+    return () => {
+      window.removeEventListener('beforeprint', prepare);
+      window.removeEventListener('afterprint', clearDailyCompletionPrint);
+      clearDailyCompletionPrint();
+    };
+  }, [projectName, dayCount, selectedTarget, visibleRows]);
+
   const handleExcelDownload =
     async () => {
       const workbook =
@@ -1322,7 +1122,7 @@ export default function DailyCompletionSummary({
         headers,
       );
 
-      summaryRows.forEach(
+      visibleRows.forEach(
         (row) => {
           worksheet.addRow([
             row.processName,
@@ -1536,6 +1336,25 @@ export default function DailyCompletionSummary({
         gap: 1,
       }}
     >
+      <style>{DAILY_COMPLETION_PRINT_CSS}</style>
+      <Paper variant="outlined" sx={{ p: 1, flexShrink: 0 }}>
+        <Tabs value={processTab} onChange={(_event, value) => setProcessTab(value)}>
+          <Tab value="all" label="전체 공정" />
+          <Tab value="selected" label="선택 공정" />
+        </Tabs>
+        {processTab === 'selected' && <Box sx={{ mt: 1 }}>
+          <Box sx={{ display: 'flex', gap: 1, mb: 0.5 }}>
+            <Button size="small" onClick={() => setExcludedProcesses([])}>전체 선택</Button>
+            <Button size="small" onClick={() => setExcludedProcesses([...safeProcessOptions])}>전체 해제</Button>
+          </Box>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', maxHeight: 140, overflowY: 'auto' }}>
+            {safeProcessOptions.map(name => <FormControlLabel key={name} label={name}
+              control={<Checkbox size="small" checked={!excludedProcesses.includes(name)}
+                onChange={(_event, checked) => setExcludedProcesses(previous => checked
+                  ? previous.filter(item => item !== name) : [...previous, name])} />} />)}
+          </Box>
+        </Box>}
+      </Paper>
       <Paper
         variant="outlined"
         sx={{
@@ -1720,6 +1539,10 @@ export default function DailyCompletionSummary({
           />
 
           <Button
+            variant="outlined" disabled={loading || Boolean(errorMessage) || visibleRows.length === 0}
+            onClick={() => window.print()}>PDF 저장 / 인쇄</Button>
+
+          <Button
             variant="contained"
             color="success"
             startIcon={
@@ -1730,7 +1553,7 @@ export default function DailyCompletionSummary({
             }
             disabled={
               loading ||
-              summaryRows.length ===
+              visibleRows.length ===
                 0
             }
           >
@@ -1744,6 +1567,9 @@ export default function DailyCompletionSummary({
           {errorMessage}
         </Alert>
       )}
+
+      {processTab === 'selected' && visibleRows.length === 0 &&
+        <Alert severity="info">표시하고 출력할 공정을 선택해주세요.</Alert>}
 
       {!selectedTarget &&
         !loading && (
@@ -1812,6 +1638,7 @@ export default function DailyCompletionSummary({
           }}
         >
           <Table
+            id="daily-completion-table"
             stickyHeader
             size="small"
             sx={{
@@ -1976,7 +1803,7 @@ export default function DailyCompletionSummary({
             </TableHead>
 
             <TableBody>
-              {summaryRows.map(
+              {visibleRows.map(
                 (
                   row,
                   index,

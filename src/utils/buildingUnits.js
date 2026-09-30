@@ -178,6 +178,19 @@ export const getProjectCellKeys = (buildingConfigs = {}) => {
 export const countUniqueUnits = (config) =>
   getBuildingCellKeys('__building__', config).size;
 
+export const getTargetCellKeys = (buildingConfigs = {}, floorTargets = {}) => {
+  const keys = new Set();
+  Object.entries(floorTargets || {}).forEach(([buildingName, targetFloor]) => {
+    const config = buildingConfigs[buildingName];
+    if (!config) return;
+    const maxFloor = Math.min(toFiniteNumber(config.floors), toFiniteNumber(targetFloor));
+    for (let floor = 1; floor <= maxFloor; floor += 1) {
+      getFloorCellKeys(buildingName, config, floor).forEach(key => keys.add(key));
+    }
+  });
+  return keys;
+};
+
 /*
   같은 실제 세대로 연결된 연속 칸을 한 개의 넓은 칸으로 묶습니다.
   예: 21층 3·4호 칸이 모두 3호라면 span=2인 2103 세대 1칸으로 반환합니다.
