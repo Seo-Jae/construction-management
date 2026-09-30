@@ -1,3 +1,4 @@
+import { buildMonthlyDailyReport } from './utils/monthlyDailyReportExcel.js';
 // v52.48.5.44.139 자재관리 상단 관리영역·자재마스터 분리
 // v52.48.5.44.118 좌측메뉴 스크롤 발생시 폭 고정
 // v52.48.5.44.106 업무자료실 현장연동 시스템양식에 골구도 전달
@@ -2608,83 +2609,27 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       const lastDay = isCurrentMonth
         ? todayMidnight.getDate()
         : new Date(year, monthIndex + 1, 0).getDate();
-      const workbook = await loadDailyReportTemplate();
-      const templateWorksheet = workbook.worksheets[0];
-      const dayNames = ['일', '월', '화', '수', '목', '금', '토'];
-      const worksheets = [];
-
-      /*
-        원본 양식에 7월 1일 데이터를 입력하기 전에
-        2일~오늘 시트를 먼저 모두 복제합니다.
-
-        그렇지 않으면 2일 이후 시트가 이미 1일 데이터가 입력된
-        시트를 복제하게 되므로 양식 원본 상태가 유지되지 않습니다.
-      */
-      templateWorksheet.name = `${month}.1`;
-      worksheets.push(templateWorksheet);
-
-      for (let day = 2; day <= lastDay; day += 1) {
-        worksheets.push(
-          createWorksheetFromTemplate(
-            workbook,
-            templateWorksheet,
-            `${month}.${day}`,
-          ),
-        );
-      }
-
-      for (let day = 1; day <= lastDay; day += 1) {
-        const targetDate = new Date(year, monthIndex, day);
-        const dateStr = formatYYMMDD(targetDate);
-        const workers = isFutureMonth
-          ? []
-          : (savedData[dateStr]?.workers || []);
-        const worksheet = worksheets[day - 1];
-
-        // v52.48.5.42.1: Excel 하단의 날짜별 시트 탭에서 일요일은 빨간색으로 표시합니다.
-        if (targetDate.getDay() === 0) {
-          worksheet.properties.tabColor = { argb: 'FFFF0000' };
-        } else if (worksheet.properties?.tabColor) {
-          delete worksheet.properties.tabColor;
-        }
-
-        fillDailyReportWorksheet({
-          worksheet,
-          dateStr,
-          dayName: dayNames[targetDate.getDay()],
-          workers,
-        });
-
-        // v52.48.5.42.2: 월간 출력일보 전일누계는 월내 시트 수식으로 연결합니다.
-        // 1일은 0으로 시작하고, 2일부터는 바로 전날 시트의 누계 셀을 참조합니다.
-        cumulativeCellMap.forEach(({ previousCell, totalCell }) => {
-          if (day === 1) {
-            worksheet.getCell(previousCell).value = 0;
-            return;
-          }
-
-          const previousWorksheet = worksheets[day - 2];
-          const previousSheetName = String(
-            previousWorksheet?.name || `${month}.${day - 1}`,
-          ).replace(/'/g, "''");
-
-          worksheet.getCell(previousCell).value = {
-            formula: `'${previousSheetName}'!${totalCell}`,
-          };
-        });
-      }
-
-      await downloadExcelWorkbook(
-        workbook,
-        `출력일보_${year}년_${String(month).padStart(
-          2,
-          '0',
-        )}월_1-${lastDay}일.xlsx`,
-      );
+      const response = await fetch('/templates/daily-report-monthly.xlsm');
+      if (!response.ok) throw new Error('Monthly template not found');
+      const buffer = await buildMonthlyDailyReport(await response.arrayBuffer(), {
+        projectName: activeProjectName, year, month, lastDay,
+        reports: isFutureMonth ? {} : savedData,
+        normalizeJob: normalizeDailyReportJob,
+        cumulativeCells: cumulativeCellMap,
+      });
+      const blob = new Blob([buffer], { type: 'application/vnd.ms-excel.sheet.macroEnabled.12' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `출력일보_${year}년_${String(month).padStart(2, '0')}월_1-${lastDay}일.xlsm`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
     } catch (error) {
       console.error('금월 출력일보 생성 오류:', error);
       showDashboardToast(
-        '금월 출력일보를 만들지 못했습니다. 양식 파일과 데이터를 확인해주세요.',
+        error?.message || '금월 출력일보를 만들지 못했습니다. 양식 파일과 데이터를 확인해주세요.',
         'error',
       );
     }

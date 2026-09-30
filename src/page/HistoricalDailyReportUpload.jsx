@@ -967,11 +967,18 @@ export default function HistoricalDailyReportUpload({
         parseFileMonth(file.name);
 
       const preliminaryResults = [];
+      const reviewSheet = workbook.worksheets.find(sheet => normalizeText(sheet.name) === '노임검토');
+      const reviewProjectName = reviewSheet ? getCellText(reviewSheet.getCell('D2')) : '';
+      if (reviewProjectName && normalizeComparableText(reviewProjectName) !== normalizeComparableText(projectName)) {
+        throw new Error(`노임검토 D2의 현장명(${reviewProjectName})과 선택 현장(${projectName})이 다릅니다.`);
+      }
       const usedDateKeys =
         new Set();
 
       workbook.worksheets.forEach(
         (worksheet) => {
+          // The macro workbook's first sheet is a summary, not a daily report.
+          if (normalizeText(worksheet.name) === '노임검토') return;
           const errors = [];
           const warnings = [];
 
