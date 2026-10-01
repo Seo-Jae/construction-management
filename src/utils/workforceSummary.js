@@ -6,6 +6,42 @@ export function workforceMonths(endMonth, count = 6) {
   });
 }
 
+export function workforceWeek(dateKey, offset = 0) {
+  const date = new Date(`${dateKey}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - (date.getUTCDay() + 6) % 7 + offset * 7);
+  return Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(date);
+    day.setUTCDate(day.getUTCDate() + index);
+    return day.toISOString().slice(0, 10);
+  });
+}
+
+export function summarizeWeeklyWorkforce(rows, projectName, dates, today) {
+  const dailyPeople = new Map();
+  const firstDates = new Map();
+  for (const row of rows) {
+    const date = normalizeWorkforceDate(row.date);
+    if (row.project_name !== projectName || !date || date > today) continue;
+    if (!dailyPeople.has(date)) dailyPeople.set(date, new Set());
+    for (const worker of Array.isArray(row.workers) ? row.workers : []) {
+      const name = String(worker?.name || '').trim().replace(/\s+/g, ' ').toLowerCase();
+      if (!name) continue;
+      const id = `${String(worker.job || '').trim()}::${name}`;
+      dailyPeople.get(date).add(id);
+      if (!firstDates.has(id) || date < firstDates.get(id)) firstDates.set(id, date);
+    }
+  }
+  let cumulative = 0;
+  return dates.map(date => {
+    const current = dailyPeople.get(date) || new Set();
+    const future = date > today;
+    cumulative += current.size;
+    return { date, future, total: future ? null : current.size,
+      cumulative: future ? null : cumulative,
+      added: future ? null : [...current].filter(id => firstDates.get(id) === date).length };
+  });
+}
+
 export function normalizeWorkforceDate(value) {
   const match = String(value || '').trim().match(/^(\d{2}|\d{4})[-.](\d{2})[-.](\d{2})$/);
   if (!match) return null;

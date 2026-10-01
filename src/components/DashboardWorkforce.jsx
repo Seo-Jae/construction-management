@@ -6,11 +6,14 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import { supabase } from '../supabaseClient';
 import { getDashboardReportPeriod } from '../utils/dashboardReportTasks.js';
-import { summarizeWorkforce, workforceMonths } from '../utils/workforceSummary.js';
+import { summarizeWeeklyWorkforce, workforceWeek } from '../utils/workforceSummary.js';
 
 export default function DashboardWorkforce({ projectName, canView }) {
-  const { today, month: currentMonth } = getDashboardReportPeriod();
-  const [endMonth, setEndMonth] = useState(currentMonth);
+  const { today } = getDashboardReportPeriod();
+  const [weekOffset, setWeekOffset] = useState(0);
+  const dates = workforceWeek(today, weekOffset);
+  const weekStart = dates[0];
+  const weekEnd = dates[6];
   const [result, setResult] = useState(null);
   const [error, setError] = useState(false);
   const [refresh, setRefresh] = useState(0);
@@ -30,13 +33,13 @@ export default function DashboardWorkforce({ projectName, canView }) {
           rows.push(...(data || []));
           if (!data || data.length < 500) break;
         }
-        setResult({ projectName, endMonth, refresh, values: summarizeWorkforce(rows, projectName, workforceMonths(endMonth), today) });
+        setResult({ projectName, weekStart, today, refresh, values: summarizeWeeklyWorkforce(rows, projectName, workforceWeek(weekStart), today) });
         setError(false);
       } catch { if (active) setError(true); }
     };
     load();
     return () => { active = false; };
-  }, [projectName, canView, endMonth, currentMonth, today, refresh]);
+  }, [projectName, canView, weekStart, today, refresh]);
   useEffect(() => {
     const reload = () => setRefresh((value) => value + 1);
     window.addEventListener('daily-reports-changed', reload);
@@ -46,15 +49,12 @@ export default function DashboardWorkforce({ projectName, canView }) {
       window.removeEventListener('focus', reload);
     };
   }, []);
-  const values = result?.projectName === projectName && result?.endMonth === endMonth && result?.refresh === refresh ? result.values : null;
-  const move = (amount) => {
-    const date = new Date(Date.UTC(Number(endMonth.slice(0, 4)), Number(endMonth.slice(5)) - 1 + amount, 1));
-    setEndMonth(date.toISOString().slice(0, 7)); setError(false);
-  };
+  const values = result?.projectName === projectName && result?.weekStart === weekStart && result?.today === today && result?.refresh === refresh ? result.values : null;
+  const move = (amount) => { setWeekOffset(value => Math.min(0, value + amount)); setError(false); };
   const maximum = Math.max(4, ...(values || []).flatMap((row) => [row.total, row.added]));
   const step = Math.ceil(maximum / 4);
   const y = (value) => 220 - value / (step * 4) * 180;
-  const x = (index) => 44 + index * 42;
+  const x = (index) => 44 + index * 36;
   return <Paper variant="outlined" className="main-overview-placeholder main-overview-workforce">
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, pb: 1, borderBottom: '1px solid #e2e8f0' }}>
       <GroupsOutlinedIcon sx={{ color: '#00a5b5', fontSize: 20 }} />
@@ -69,28 +69,28 @@ export default function DashboardWorkforce({ projectName, canView }) {
           {[['투입 인원', '#34c98a'], ['신규 투입', '#4388ff']].map(([label, color]) => <Typography key={label} sx={{ fontSize: 11, color: '#64748b' }}><Box component="span" sx={{ display: 'inline-block', width: 8, height: 8, mr: 0.4, borderRadius: 0.5, bgcolor: color }} />{label}</Typography>)}
         </Box>
         <Box sx={{ flex: 1, minHeight: 120, display: 'flex', alignItems: 'center' }}>
-          <svg viewBox="0 0 286 252" width="100%" style={{ height: '100%', maxHeight: 230 }} role="img" aria-label={`${projectName} 월별 투입 인원 추이. 상세 보기에서 월별 수치를 확인할 수 있습니다.`}>
+          <svg viewBox="0 0 286 252" width="100%" style={{ height: '100%', maxHeight: 230 }} role="img" aria-label={`${projectName} ${weekStart}부터 ${weekEnd}까지 일별 투입 인원 추이. 상세 보기에서 일별 수치를 확인할 수 있습니다.`}>
             {Array.from({ length: 5 }, (_, index) => <g key={index}><line x1="28" x2="276" y1={y(index * step)} y2={y(index * step)} stroke="#e2e8f0" /><text x="22" y={y(index * step) + 4} textAnchor="end" fontSize="10" fill="#64748b">{index * step}</text></g>)}
-            {values.map((row, index) => <g key={row.month}><title>{`${row.month}: 투입 ${row.total}명, 신규 투입 ${row.added}명`}</title><rect x={x(index) - 4} y={y(row.added)} width="8" height={220 - y(row.added)} fill="#4388ff" /><text x={x(index)} y="241" textAnchor="middle" fontSize="9" fill="#64748b">{row.month.slice(2).replace('-', '.')}</text></g>)}
-            <polyline fill="none" stroke="#34c98a" strokeWidth="2" points={values.map((row, index) => `${x(index)},${y(row.total)}`).join(' ')} />
-            {values.map((row, index) => <circle key={row.month} cx={x(index)} cy={y(row.total)} r="3" fill="#fff" stroke="#34c98a"><title>{`${row.month}: ${row.total}명`}</title></circle>)}
+            {values.map((row, index) => <g key={row.date}><title>{row.future ? `${row.date}: 집계 전` : `${row.date}: 투입 ${row.total}명, 신규 투입 ${row.added}명`}</title>{!row.future && <rect x={x(index) - 4} y={y(row.added)} width="8" height={220 - y(row.added)} fill="#4388ff" />}<text x={x(index)} y="241" textAnchor="middle" fontSize="11" fill="#64748b">{['월', '화', '수', '목', '금', '토', '일'][index]}</text></g>)}
+            <polyline fill="none" stroke="#34c98a" strokeWidth="2" points={values.filter(row => !row.future).map((row, index) => `${x(index)},${y(row.total)}`).join(' ')} />
+            {values.map((row, index) => !row.future && <circle key={row.date} cx={x(index)} cy={y(row.total)} r="3" fill="#fff" stroke="#34c98a"><title>{`${row.date}: ${row.total}명`}</title></circle>)}
           </svg>
         </Box>
-        <Typography sx={{ fontSize: 11, color: '#64748b', mb: 1 }}>출력일보 기준 · 당월은 오늘까지 집계</Typography>
+        <Typography sx={{ fontSize: 11, color: '#64748b', mb: 1 }}>출력일보 기준 · 월~일 · 금주는 오늘까지 집계</Typography>
         <Button variant="outlined" fullWidth onClick={() => setDetailOpen(true)}>상세 보기</Button>
       </>}
-    {canView && <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mt: 1 }}><IconButton aria-label="인력 현황 이전 6개월" onClick={() => move(-6)}><ChevronLeftIcon /></IconButton><Typography sx={{ fontSize: 11 }}>{endMonth}</Typography><IconButton aria-label="인력 현황 다음 6개월" disabled={endMonth >= currentMonth} onClick={() => move(6)}><ChevronRightIcon /></IconButton></Box>}
+    {canView && <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', mt: 1 }}><IconButton aria-label="인력 현황 이전 주" onClick={() => move(-1)}><ChevronLeftIcon /></IconButton><Typography sx={{ fontSize: 11 }}>{weekStart.slice(5).replace('-', '.')} ~ {weekEnd.slice(5).replace('-', '.')}</Typography><IconButton aria-label="인력 현황 다음 주" disabled={weekOffset >= 0} onClick={() => move(1)}><ChevronRightIcon /></IconButton></Box>}
     <Dialog open={detailOpen && canView} onClose={() => setDetailOpen(false)} fullWidth maxWidth="sm">
-      <DialogTitle sx={{ fontSize: 20, fontWeight: 800 }}>인력 현황 · {projectName}</DialogTitle>
+      <DialogTitle sx={{ fontSize: 20, fontWeight: 800 }}>인력 현황 · {projectName}<Typography variant="body2">{weekStart} ~ {weekEnd}</Typography></DialogTitle>
       <DialogContent dividers>
         <Box sx={{ overflowX: 'auto' }}>
           <Table size="small" sx={{ borderCollapse: 'collapse', '& .MuiTableCell-root': { border: '1px solid #cbd5e1', fontSize: '14px !important', py: 1.25, px: 1.5, whiteSpace: 'nowrap' }, '& .MuiTableCell-head': { bgcolor: '#f8fafc', fontWeight: 700 } }}>
-            <TableHead><TableRow>{['월', '일평균 투입 인원', '총 투입 인원', '신규 투입 인원'].map((label) => <TableCell key={label} align="center">{label}</TableCell>)}</TableRow></TableHead>
-            <TableBody>{values?.map((row) => <TableRow key={row.month}>
-              <TableCell align="center">{row.month}</TableCell>
-              <TableCell align="right">{row.average.toLocaleString('ko-KR', { maximumFractionDigits: 1 })}명</TableCell>
-              <TableCell align="right">{row.cumulative.toLocaleString()}명 (월 누계)</TableCell>
-              <TableCell align="right">{row.added.toLocaleString()}명</TableCell>
+            <TableHead><TableRow>{['일자', '투입 인원', '주간 누계 인원', '신규 투입 인원'].map((label) => <TableCell key={label} align="center">{label}</TableCell>)}</TableRow></TableHead>
+            <TableBody>{values?.map((row) => <TableRow key={row.date}>
+              <TableCell align="center">{row.date}</TableCell>
+              <TableCell align="right">{row.future ? '-' : `${row.total.toLocaleString()}명`}</TableCell>
+              <TableCell align="right">{row.future ? '-' : `${row.cumulative.toLocaleString()}명`}</TableCell>
+              <TableCell align="right">{row.future ? '-' : `${row.added.toLocaleString()}명`}</TableCell>
             </TableRow>)}</TableBody>
           </Table>
         </Box>
