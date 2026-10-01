@@ -18,6 +18,8 @@ export default function DashboardWorkforce({ projectName, canView }) {
   const [error, setError] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [activeDate, setActiveDate] = useState(null);
+  useEffect(() => { setActiveDate(null); }, [projectName, weekStart, refresh]);
   useEffect(() => {
     if (!canView || !projectName) return;
     let active = true;
@@ -55,6 +57,8 @@ export default function DashboardWorkforce({ projectName, canView }) {
   const step = Math.ceil(maximum / 4);
   const y = (value) => 220 - value / (step * 4) * 180;
   const x = (index) => 44 + index * 36;
+  const activeIndex = values?.findIndex(row => row.date === activeDate && !row.future) ?? -1;
+  const activeRow = activeIndex >= 0 ? values[activeIndex] : null;
   return <Paper variant="outlined" className="main-overview-placeholder main-overview-workforce">
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, pb: 1, borderBottom: '1px solid #e2e8f0' }}>
       <GroupsOutlinedIcon sx={{ color: '#00a5b5', fontSize: 20 }} />
@@ -69,11 +73,26 @@ export default function DashboardWorkforce({ projectName, canView }) {
           {[['투입 인원', '#34c98a'], ['신규 투입', '#4388ff']].map(([label, color]) => <Typography key={label} sx={{ fontSize: 11, color: '#64748b' }}><Box component="span" sx={{ display: 'inline-block', width: 8, height: 8, mr: 0.4, borderRadius: 0.5, bgcolor: color }} />{label}</Typography>)}
         </Box>
         <Box sx={{ flex: 1, minHeight: 120, display: 'flex', alignItems: 'center' }}>
-          <svg viewBox="0 0 286 252" width="100%" style={{ height: '100%', maxHeight: 230 }} role="img" aria-label={`${projectName} ${weekStart}부터 ${weekEnd}까지 일별 투입 인원 추이. 상세 보기에서 일별 수치를 확인할 수 있습니다.`}>
+          <svg viewBox="0 0 286 252" width="100%" style={{ height: '100%', maxHeight: 230 }} role="group" onPointerLeave={() => setActiveDate(null)} aria-label={`${projectName} ${weekStart}부터 ${weekEnd}까지 일별 투입 인원 추이. 그래프에 마우스를 올리거나 탭 키로 날짜별 인원을 확인하세요.`}>
+            {activeRow && <rect x={x(activeIndex) - 17} y="32" width="34" height="193" rx="5" fill="#eff6ff" pointerEvents="none" />}
             {Array.from({ length: 5 }, (_, index) => <g key={index}><line x1="28" x2="276" y1={y(index * step)} y2={y(index * step)} stroke="#e2e8f0" /><text x="22" y={y(index * step) + 4} textAnchor="end" fontSize="10" fill="#64748b">{index * step}</text></g>)}
-            {values.map((row, index) => <g key={row.date}><title>{row.future ? `${row.date}: 집계 전` : `${row.date}: 투입 ${row.total}명, 신규 투입 ${row.added}명`}</title>{!row.future && <rect x={x(index) - 4} y={y(row.added)} width="8" height={220 - y(row.added)} fill="#4388ff" />}<text x={x(index)} y="241" textAnchor="middle" fontSize="11" fill="#64748b">{['월', '화', '수', '목', '금', '토', '일'][index]}</text></g>)}
+            {values.map((row, index) => <g key={row.date}>{!row.future && <rect x={x(index) - (activeIndex === index ? 6 : 4)} y={y(row.added)} width={activeIndex === index ? 12 : 8} height={220 - y(row.added)} fill={activeIndex === index ? '#1d4ed8' : '#4388ff'} />}<text x={x(index)} y="241" textAnchor="middle" fontSize="11" fontWeight={activeIndex === index ? 700 : 400} fill={activeIndex === index ? '#1d4ed8' : '#64748b'}>{['월', '화', '수', '목', '금', '토', '일'][index]}</text></g>)}
             <polyline fill="none" stroke="#34c98a" strokeWidth="2" points={values.filter(row => !row.future).map((row, index) => `${x(index)},${y(row.total)}`).join(' ')} />
-            {values.map((row, index) => !row.future && <circle key={row.date} cx={x(index)} cy={y(row.total)} r="3" fill="#fff" stroke="#34c98a"><title>{`${row.date}: ${row.total}명`}</title></circle>)}
+            {activeRow && <circle cx={x(activeIndex)} cy={y(activeRow.total)} r="10" fill="#34c98a" opacity="0.2" pointerEvents="none" />}
+            {values.map((row, index) => !row.future && <circle key={row.date} cx={x(index)} cy={y(row.total)} r={activeIndex === index ? 5 : 3} fill={activeIndex === index ? '#34c98a' : '#fff'} stroke={activeIndex === index ? '#168653' : '#34c98a'} strokeWidth={activeIndex === index ? 2 : 1} />)}
+            {values.map((row, index) => !row.future && <rect key={`hit:${row.date}`}
+              x={x(index) - 18} y="28" width="36" height="219" fill="transparent"
+              tabIndex={0} role="button" style={{ cursor: 'pointer' }}
+              aria-label={`${row.date}: 투입 인원 ${row.total}명, 신규 투입 ${row.added}명`}
+              onPointerEnter={() => setActiveDate(row.date)} onPointerMove={() => setActiveDate(row.date)}
+              onClick={() => setActiveDate(row.date)} onFocus={() => setActiveDate(row.date)} onBlur={() => setActiveDate(null)}
+              onKeyDown={event => { if (event.key === 'Escape') setActiveDate(null); }} />)}
+            {activeRow && <g pointerEvents="none" transform={`translate(${Math.max(28, Math.min(116, x(activeIndex) - 76))},${Math.max(0, y(activeRow.total) - 82)})`}>
+              <rect width="160" height="72" rx="6" fill="#0f172a" opacity="0.96" />
+              <text x="10" y="19" fill="#fff" fontSize="12" fontWeight="700">{activeRow.date} ({['월', '화', '수', '목', '금', '토', '일'][activeIndex]})</text>
+              <circle cx="13" cy="36" r="4" fill="#34c98a" /><text x="24" y="40" fill="#fff" fontSize="12">투입 인원: {activeRow.total}명</text>
+              <rect x="9" y="51" width="8" height="8" fill="#4388ff" /><text x="24" y="59" fill="#fff" fontSize="12">신규 투입: {activeRow.added}명</text>
+            </g>}
           </svg>
         </Box>
         <Typography sx={{ fontSize: 11, color: '#64748b', mb: 1 }}>출력일보 기준 · 월~일 · 금주는 오늘까지 집계</Typography>
