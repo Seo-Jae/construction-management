@@ -23,7 +23,10 @@ import {
   TableHead,
   TableRow,
   Typography,
+  IconButton,
+  Tooltip,
 } from '@mui/material';
+import PrintIcon from '@mui/icons-material/Print';
 import DownloadIcon from '@mui/icons-material/Download';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import ExcelJS from 'exceljs';
@@ -1537,9 +1540,14 @@ export default function DailyCompletionSummary({
             label="일별 완료 집계 새로고침"
           />
 
-          <Button
-            variant="outlined" disabled={loading || Boolean(errorMessage) || visibleRows.length === 0}
-            onClick={() => window.print()}>PDF 저장 / 인쇄</Button>
+          <Tooltip title="PDF 저장 / 인쇄">
+            <span><IconButton size="small" aria-label="일별 완료 집계 PDF 저장 / 인쇄"
+              disabled={loading || Boolean(errorMessage) || visibleRows.length === 0}
+              onClick={() => window.print()}
+              sx={{ width: 34, height: 34, border: '1px solid #93c5fd', borderRadius: 1, color: '#2563eb' }}>
+              <PrintIcon sx={{ fontSize: 19 }} />
+            </IconButton></span>
+          </Tooltip>
 
           <Button
             variant="contained"

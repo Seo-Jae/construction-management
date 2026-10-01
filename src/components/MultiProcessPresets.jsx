@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, MenuItem, TextField, Typography } from '@mui/material';
+import { Alert, Box, Button, Dialog, DialogActions, DialogContent, DialogTitle, IconButton, MenuItem, TextField, Tooltip, Typography } from '@mui/material';
+import SaveIcon from '@mui/icons-material/Save';
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutlineRounded';
 import { supabase } from '../supabaseClient';
 
 export default function MultiProcessPresets({ projectName, selectedProcesses, processOptions, colors, onApply }) {
@@ -98,15 +100,28 @@ export default function MultiProcessPresets({ projectName, selectedProcesses, pr
 
   return <Box sx={{ flex: '0 1 440px', minWidth: 300 }}>
     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-      <Button variant="outlined" size="small" disabled={!projectName || !selectedProcesses.length || loading}
-        onClick={() => { setName(''); setError(''); setOpen(true); }} sx={{ flexShrink: 0 }}>저장</Button>
       <TextField select fullWidth size="small" label="공정 저장 및 설정" value={matches ? selectedId : ''}
         disabled={loading || saving} onChange={event => apply(event.target.value)}>
         <MenuItem value="" disabled>{loading ? '불러오는 중…' : '저장한 설정 선택'}</MenuItem>
         {presets.map(preset => <MenuItem key={preset.id} value={String(preset.id)}>{preset.name}</MenuItem>)}
       </TextField>
-      <Button variant="outlined" size="small" color="error" disabled={!matches || saving}
-        onClick={() => { setError(''); setDeleteOpen(true); }} sx={{ flexShrink: 0 }}>삭제</Button>
+      <Box sx={{ display: 'flex', gap: 0.5, flexShrink: 0 }}>
+        <Tooltip title="공정 설정 저장">
+          <span><IconButton size="small" aria-label="공정 설정 저장"
+            disabled={!projectName || !selectedProcesses.length || loading || saving}
+            onClick={() => { setName(''); setError(''); setOpen(true); }}
+            sx={{ width: 34, height: 34, border: '1px solid #93c5fd', borderRadius: 1, color: '#2563eb' }}>
+            <SaveIcon sx={{ fontSize: 19 }} />
+          </IconButton></span>
+        </Tooltip>
+        <Tooltip title="저장된 설정 삭제">
+          <span><IconButton size="small" aria-label="저장된 설정 삭제" disabled={!matches || saving}
+            onClick={() => { setError(''); setDeleteOpen(true); }}
+            sx={{ width: 34, height: 34, border: '1px solid #fca5a5', borderRadius: 1, color: '#dc2626' }}>
+            <DeleteOutlineIcon sx={{ fontSize: 19 }} />
+          </IconButton></span>
+        </Tooltip>
+      </Box>
     </Box>
     {notice && <Typography role="status" variant="caption" color="text.secondary">{notice}</Typography>}
     {error && !open && !deleteOpen && <Alert severity="error" sx={{ mt: 1 }}>{error}</Alert>}
