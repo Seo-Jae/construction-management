@@ -1813,12 +1813,6 @@ export default function AdminDashboardScheduleBoard({ canEdit = false }) {
         </Alert>
       </Snackbar>
 
-      {!canEdit && (
-        <Alert severity="info" sx={{ mb: 1.2, py: 0, fontSize: '0.7rem' }}>
-          조회 전용 권한입니다. Dashboard 일정의 추가·수정·삭제·저장은 사용할 수 없습니다.
-        </Alert>
-      )}
-
       <Box
         sx={{
           display: 'grid',
