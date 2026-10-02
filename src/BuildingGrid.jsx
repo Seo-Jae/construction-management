@@ -856,7 +856,7 @@ export default function BuildingGrid({
                       }
                     : {};
                   const completionDate =
-                    progress?.status === '작업완료'
+                    (progress?.status === '작업완료' || progress?.status === '작업중')
                       ? formatCompletionMonthDay(progress?.date)
                       : '';
                   const completionWorkerNames = Array.from(
