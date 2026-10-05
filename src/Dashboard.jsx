@@ -16,7 +16,7 @@ import { buildMonthlyDailyReport } from './utils/monthlyDailyReportExcel.js';
 // v52.48.5.44.24 기본 화면 90%·사용자 배율 선택·인쇄 100% 지원
 // v52.48.5.44.13 옵션현황(단열) 업로드 사용자 연결
 // v52.48.5.44.12 옵션관리 메뉴·골구도 기본화면
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   AppBar,
