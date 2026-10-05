@@ -3,6 +3,18 @@ import assert from 'node:assert/strict';
 import ExcelJS from 'exceljs';
 import { getProjectProcessOptions, mergeProjectProcesses, getWeeklyProcesses, writeWeeklyProcessStats, buildProcessCatalog, changeProcessCatalog } from '../src/utils/projectProcesses.js';
 
+test('renamed display labels survive ordering and reload without changing historical keys', () => {
+  const defaults = ['단열', '합지'];
+  const catalog = buildProcessCatalog(defaults, [{ process_type: '합지', display_name: '합지석고', sort_order: 0 }]);
+  const moved = changeProcessCatalog(catalog, { type: 'move', name: '합지', direction: 1 });
+  const disabled = changeProcessCatalog(moved, { type: 'toggle', name: '합지', enabled: false });
+  const restored = buildProcessCatalog(defaults, disabled);
+  assert.deepEqual(restored.map(row => row.process_type), defaults);
+  assert.equal(restored[1].display_name, '합지석고');
+  assert.equal(restored[1].is_enabled, false);
+  assert.equal(restored[0].display_name, '단열');
+});
+
 test('existing site defaults and Mark Valley ordering survive catalog additions', () => {
   const original = getProjectProcessOptions('현대건설 용인마크밸리');
   assert.deepEqual(original.slice(0, 5), ['바닥먹', '허리먹', '단열', '조적단열', '합지']);

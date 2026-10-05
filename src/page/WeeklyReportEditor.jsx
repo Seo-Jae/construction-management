@@ -12,6 +12,7 @@ import {
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
 import { getWeeklyProcesses, writeWeeklyProcessStats } from '../utils/projectProcesses.js';
+import { useProcessLabel } from '../contexts/ProcessLabels.jsx';
 import { saveReportDocumentDraft } from '../utils/reportDocuments.js';
 
 const REPORT_PROCESSES = [
@@ -712,7 +713,10 @@ export default function WeeklyReportEditor({
   onBackToList,
 }) {
   const storedPayload = editingDocument?.payload || {};
-  const reportProcesses = useMemo(() => getWeeklyProcesses(REPORT_PROCESSES, processOptions), [processOptions]);
+  const processLabel = useProcessLabel();
+  const reportProcesses = useMemo(() => getWeeklyProcesses(REPORT_PROCESSES, processOptions).map(row => ({ ...row,
+    label: processLabel(row.processType) !== row.processType ? processLabel(row.processType) : row.label,
+  })), [processOptions, processLabel]);
   const [form, setForm] = useState(() =>
     Object.fromEntries(
       Object.entries(INITIAL_FORM).map(([key, defaultLines]) => {

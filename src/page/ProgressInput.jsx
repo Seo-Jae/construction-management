@@ -1,3 +1,4 @@
+import { useProcessLabel } from '../contexts/ProcessLabels.jsx';
 // v52.48.5.44.61 타입별 세대 현황 패널 우측 도킹·이동범위 복구
 // v52.48.5.44.6.2 타입행 공통높이·색상 연동
 // v52.48.5.44.5.2 타입현황 공정선택 뒤배치 + 폭 축소
@@ -1313,6 +1314,7 @@ export default function ProgressInput({
   handleGridCellClick,
   handleFloorClick,
 }) {
+  const processLabel = useProcessLabel();
   const [initialSetupOpen, setInitialSetupOpen] = useState(false);
   const printGridRef = useRef(null);
   const [
@@ -3050,7 +3052,7 @@ export default function ProgressInput({
 
   useEffect(() => {
     const prepare = () => prepareProgressInputPrint(printGridRef.current,
-      `${projectName} · ${selectedProcess} · 완료 ${completedUnits}/${totalUnits} (${progressPercentage}%)`
+      `${projectName} · ${processLabel(selectedProcess)} · 완료 ${completedUnits}/${totalUnits} (${progressPercentage}%)`
       + (activeTargetItem ? ` · ${activeTargetItem.target.target_name}` : ''));
     window.addEventListener('beforeprint', prepare);
     window.addEventListener('afterprint', clearMultiProgressPrint);
@@ -3059,7 +3061,7 @@ export default function ProgressInput({
       window.removeEventListener('afterprint', clearMultiProgressPrint);
       clearMultiProgressPrint();
     };
-  }, [projectName, selectedProcess, completedUnits, totalUnits, progressPercentage, activeTargetItem]);
+  }, [processLabel, projectName, selectedProcess, completedUnits, totalUnits, progressPercentage, activeTargetItem]);
 
   return (
     <Box
@@ -3355,8 +3357,9 @@ export default function ProgressInput({
               </IconButton>
             </span>
           </Tooltip>
-          {hideProcessSelector && <Typography sx={{ fontWeight: 700, fontSize: '0.8rem', px: 1 }}>{selectedProcess}</Typography>}
+          {hideProcessSelector && <Typography sx={{ fontWeight: 700, fontSize: '0.8rem', px: 1 }}>{processLabel(selectedProcess)}</Typography>}
           {!hideProcessSelector && <Autocomplete
+            getOptionLabel={processLabel}
             options={processOptions}
             value={selectedProcess || null}
             onChange={(_, value) => {
@@ -3478,7 +3481,7 @@ export default function ProgressInput({
                   lineHeight: 1.1,
                 }}
               >
-                {selectedProcess ||
+                {processLabel(selectedProcess) ||
                   '공정 미선택'}
               </Typography>
             </Box>
@@ -4292,7 +4295,7 @@ export default function ProgressInput({
                           fontWeight: 400,
                         }}
                       >
-                        {processType}
+                        {processLabel(processType)}
                       </Typography>
 
                       <Typography
@@ -4857,7 +4860,7 @@ export default function ProgressInput({
                         boxShadow: 'none',
                       }}
                     >
-                      {processType}
+                      {processLabel(processType)}
                     </Button>
                   );
                 },

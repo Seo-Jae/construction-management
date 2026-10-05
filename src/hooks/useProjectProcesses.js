@@ -17,7 +17,7 @@ export default function useProjectProcesses(projectName) {
         const rows = [];
         for (let from = 0; ; from += 1000) {
           const { data, error } = await supabase.from('project_processes')
-            .select('id, process_type, is_enabled, is_archived, sort_order').eq('project_name', projectName).order('id').range(from, from + 999);
+            .select('*').eq('project_name', projectName).order('id').range(from, from + 999);
           if (error) throw error;
           rows.push(...(data || []));
           if ((data || []).length < 1000) break;
@@ -47,6 +47,22 @@ export default function useProjectProcesses(projectName) {
     if (mutationLock.current) throw new Error('설정을 저장하고 있습니다.');
     const name = String(action.name || '').trim();
     if (!name || name.length > 60) throw new Error('공종명은 1~60자로 입력해주세요.');
+    if (action.type === 'rename') {
+      const displayName = String(action.displayName || '').trim();
+      if (!displayName || displayName.length > 60) throw new Error('공종명은 1~60자로 입력해주세요.');
+      if (!visible.some(row => row.process_type === name)) throw new Error('수정할 공종을 선택해주세요.');
+      if (catalog.some(row => row.process_type !== name && (row.process_type === displayName || row.display_name === displayName))) throw new Error('이미 등록된 공종명입니다.');
+      mutationLock.current = true;
+      requestVersion.current += 1;
+      try {
+        const { error } = await supabase.rpc('rename_project_process_v198', { p_project: projectName, p_process: name, p_name: displayName });
+        if (error) throw new Error(error.message);
+        const rows = catalog.map(row => row.process_type === name ? { ...row, display_name: displayName } : row);
+        setSnapshot(previous => previous.project === projectName ? { ...previous, rows } : previous);
+      } finally { mutationLock.current = false; }
+      return;
+    }
+    if (action.type === 'add' && catalog.some(row => row.process_type !== name && row.display_name === name)) throw new Error('이미 등록된 공종명입니다.');
     if (action.type === 'add' && visible.some(row => row.process_type === name)) throw new Error('이미 등록된 공종입니다.');
     const next = changeProcessCatalog(catalog, { ...action, name });
     mutationLock.current = true;

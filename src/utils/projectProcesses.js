@@ -14,6 +14,7 @@ export function buildProcessCatalog(defaults, rows) {
   const byName = new Map(rows.map(row => [row.process_type, row]));
   return mergeProjectProcesses(defaults, rows).map((name, index) => ({
     process_type: name, is_enabled: byName.get(name)?.is_enabled !== false,
+    display_name: byName.get(name)?.display_name || name,
     is_archived: byName.get(name)?.is_archived === true,
     sort_order: byName.get(name)?.sort_order ?? (100000 + index),
   })).sort((a, b) => a.sort_order - b.sort_order);

@@ -1,3 +1,4 @@
+import { useProcessLabel } from '../contexts/ProcessLabels.jsx';
 // v52.48.5.44.37 다중공종 Autocomplete 가상 기준좌표 보정
 // v52.48.5.44.6.4 다중공종 셀확대·필로티X·하단타입
 import React, { useEffect, useMemo, useRef, useState } from 'react';
@@ -648,6 +649,7 @@ function MultiStatusCell({
   progressMap,
   cellWidth = GRID_CELL_WIDTH,
 }) {
+  const processLabel = useProcessLabel();
   const cellKey = getCellKey(buildingName, unitCode);
   const cellProgress = progressMap[cellKey] || {};
 
@@ -686,7 +688,7 @@ function MultiStatusCell({
               }}
             />
             <Typography sx={{ fontSize: '0.7rem' }}>
-              {processName}: {isCompleted ? '완료' : '미완료'}
+              {processLabel(processName)}: {isCompleted ? '완료' : '미완료'}
               {isCompleted && item?.date
                 ? ` (${formatCompletionDate(item.date)})`
                 : ''}
@@ -1166,6 +1168,7 @@ export default function MultiProcessProgress({
   processOptions = [],
   buildingConfigs = {},
 }) {
+  const processLabel = useProcessLabel();
   const safeProcessOptions = Array.isArray(processOptions)
     ? processOptions
     : [];
@@ -1692,7 +1695,7 @@ export default function MultiProcessProgress({
               color: '#334155',
             }}
           >
-            집계 구간: {scopeLabel} · 선택 공종: {selectedProcesses.join(', ') || '-'}
+            집계 구간: {scopeLabel} · 선택 공종: {selectedProcesses.map(processLabel).join(', ') || '-'}
           </Typography>
         </Box>
       <Paper
@@ -1722,6 +1725,7 @@ export default function MultiProcessProgress({
           slots={{ popper: ScaleAwareAutocompletePopper }}
           disableCloseOnSelect
           filterSelectedOptions
+          getOptionLabel={processLabel}
           options={safeProcessOptions}
           value={selectedProcesses}
           onChange={handleProcessChange}
@@ -1734,7 +1738,7 @@ export default function MultiProcessProgress({
                 checked={selected}
                 sx={{ mr: 1, p: 0.25 }}
               />
-              {option}
+              {processLabel(option)}
             </li>
           )}
           renderTags={(value, getTagProps) =>
@@ -1746,7 +1750,7 @@ export default function MultiProcessProgress({
                 <Chip
                   {...tagProps}
                   key={option}
-                  label={option}
+                  label={processLabel(option)}
                   size="small"
                   sx={{
                     bgcolor: `${color}22`,
@@ -1859,7 +1863,7 @@ export default function MultiProcessProgress({
               key={stat.processName}
               component="button"
               type="button"
-              aria-label={`${stat.processName} 색상 변경`}
+              aria-label={`${processLabel(stat.processName)} 색상 변경`}
               title="클릭하여 공종 색상 변경"
               onClick={() => { setColorProcess(stat.processName); setDraftColor(stat.color); }}
               variant="outlined"
@@ -1887,7 +1891,7 @@ export default function MultiProcessProgress({
                   noWrap
                   sx={{ fontSize: '0.8rem', fontWeight: 800 }}
                 >
-                  {stat.processName}
+                  {processLabel(stat.processName)}
                 </Typography>
                 <Typography
                   sx={{
@@ -2013,7 +2017,7 @@ export default function MultiProcessProgress({
       </Paper>
       </Box>
       <Dialog open={Boolean(colorProcess)} onClose={() => setColorProcess('')} maxWidth="xs" fullWidth>
-        <DialogTitle>{colorProcess} 색상 설정</DialogTitle>
+        <DialogTitle>{processLabel(colorProcess)} 색상 설정</DialogTitle>
         <DialogContent>
           <Box component="input" type="color" aria-label="공종 색상" value={draftColor}
             onChange={event => setDraftColor(event.target.value)} sx={{ width: '100%', height: 64, cursor: 'pointer' }} />

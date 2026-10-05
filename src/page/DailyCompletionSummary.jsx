@@ -1,3 +1,4 @@
+import { useProcessLabel } from '../contexts/ProcessLabels.jsx';
 import React, {
   useEffect,
   useMemo,
@@ -558,6 +559,7 @@ export default function DailyCompletionSummary({
   processOptions = [],
   buildingConfigs = {},
 }) {
+  const processLabel = useProcessLabel();
   const safeProcessOptions =
     Array.isArray(
       processOptions,
@@ -1127,7 +1129,7 @@ export default function DailyCompletionSummary({
       visibleRows.forEach(
         (row) => {
           worksheet.addRow([
-            row.processName,
+            processLabel(row.processName),
             row.total,
             row.completed,
             `${row.progress.toFixed(
@@ -1350,7 +1352,7 @@ export default function DailyCompletionSummary({
             <Button size="small" onClick={() => setExcludedProcesses([...safeProcessOptions])}>전체 해제</Button>
           </Box>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', maxHeight: 140, overflowY: 'auto' }}>
-            {safeProcessOptions.map(name => <FormControlLabel key={name} label={name}
+            {safeProcessOptions.map(name => <FormControlLabel key={name} label={processLabel(name)}
               control={<Checkbox size="small" checked={!excludedProcesses.includes(name)}
                 onChange={(_event, checked) => setExcludedProcesses(previous => checked
                   ? previous.filter(item => item !== name) : [...previous, name])} />} />)}
@@ -1853,7 +1855,7 @@ export default function DailyCompletionSummary({
                         px: 0.45,
                       }}
                     >
-                      {row.processName}
+                      {processLabel(row.processName)}
                     </TableCell>
 
                     <TableCell

@@ -1,3 +1,4 @@
+import { useProcessLabel } from '../contexts/ProcessLabels.jsx';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
@@ -144,6 +145,7 @@ export default function CompletionSummary({
   processOptions = [],
   buildingConfigs = {},
 }) {
+  const processLabel = useProcessLabel();
   const safeProcessOptions = Array.isArray(processOptions) ? processOptions : [];
   const safeBuildingConfigs = buildingConfigs || {};
   const isMonthly = mode === 'monthly';
@@ -304,7 +306,7 @@ export default function CompletionSummary({
 
     summaryRows.forEach((row) => {
       worksheet.addRow([
-        row.processName,
+        processLabel(row.processName),
         row.total,
         row.completed,
         `${row.progress.toFixed(2)}%`,
@@ -546,7 +548,7 @@ export default function CompletionSummary({
                         color: '#1e293b',
                       }}
                     >
-                      {row.processName}
+                      {processLabel(row.processName)}
                     </TableCell>
                     <TableCell
                       align="right"

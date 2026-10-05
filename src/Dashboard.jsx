@@ -1,3 +1,4 @@
+import { ProcessLabelsContext } from './contexts/ProcessLabels.jsx';
 import { buildMonthlyDailyReport } from './utils/monthlyDailyReportExcel.js';
 // v52.48.5.44.139 자재관리 상단 관리영역·자재마스터 분리
 // v52.48.5.44.118 좌측메뉴 스크롤 발생시 폭 고정
@@ -1044,6 +1045,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
   const projectProcesses = useProjectProcesses(activeProjectName);
   const activeProcessOptions = projectProcesses.options;
+  const processLabels = useMemo(() => Object.fromEntries(projectProcesses.catalog.map(row => [row.process_type, row.display_name || row.process_type])), [projectProcesses.catalog]);
 
   const activeUserProfile = {
     ...(userProfile || {}),
@@ -3613,6 +3615,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         : '공사 관리';
 
   return (
+    <ProcessLabelsContext.Provider value={processLabels}>
     <Box
       sx={{
         display: 'flex',
@@ -5398,5 +5401,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         </Box>
       </Modal>
     </Box>
+    </ProcessLabelsContext.Provider>
   );
 }
