@@ -8,6 +8,7 @@ import {
   Box,
   Button,
   Checkbox,
+  FormControlLabel,
   Chip,
   CircularProgress,
   Dialog,
@@ -646,6 +647,7 @@ function MultiStatusCell({
   selectedProcesses,
   processOptions,
   colors,
+  showInProgress,
   progressMap,
   cellWidth = GRID_CELL_WIDTH,
 }) {
@@ -688,8 +690,8 @@ function MultiStatusCell({
               }}
             />
             <Typography sx={{ fontSize: '0.7rem' }}>
-              {processLabel(processName)}: {isCompleted ? '완료' : '미완료'}
-              {isCompleted && item?.date
+              {processLabel(processName)}: {isCompleted ? '완료' : item?.status === '작업중' ? '작업중' : '미완료'}
+              {(isCompleted || item?.status === '작업중') && item?.date
                 ? ` (${formatCompletionDate(item.date)})`
                 : ''}
             </Typography>
@@ -733,6 +735,11 @@ function MultiStatusCell({
                   flex: '1 1 0',
                   minWidth: 0,
                   bgcolor: isCompleted ? color : '#ffffff',
+                  backgroundImage: showInProgress && cellProgress[processName]?.status === '작업중'
+                    ? `repeating-linear-gradient(135deg, ${color} 0px, ${color} 2px, #ffffff 2px, #ffffff 5px)`
+                    : 'none',
+                  printColorAdjust: 'exact',
+                  WebkitPrintColorAdjust: 'exact',
                   borderRight:
                     index < selectedProcesses.length - 1
                       ? '1px solid rgba(148, 163, 184, 0.45)'
@@ -777,6 +784,7 @@ function MultiProcessBuildingGrid({
   selectedProcesses,
   processOptions,
   colors,
+  showInProgress,
   progressMap,
   unitTypeData = {},
   typeFooterRowSlots = 1,
@@ -999,6 +1007,7 @@ function MultiProcessBuildingGrid({
 
                 return (
                   <MultiStatusCell
+                    showInProgress={showInProgress}
                     key={visualKey}
                     buildingName={buildingName}
                     unitCode={cell.unitCode}
@@ -1169,6 +1178,7 @@ export default function MultiProcessProgress({
   buildingConfigs = {},
 }) {
   const processLabel = useProcessLabel();
+  const [showInProgress, setShowInProgress] = useState(true);
   const safeProcessOptions = Array.isArray(processOptions)
     ? processOptions
     : [];
@@ -1711,13 +1721,13 @@ export default function MultiProcessProgress({
           boxShadow: 'none',
         }}
       >
-        <Box sx={{ minWidth: 190 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexShrink: 0 }}>
           <Typography sx={{ fontWeight: 800 }} color="#334155">
             비교할 공종 선택
           </Typography>
-          <Typography variant="caption" color="text.secondary">
-            같은 세대 셀을 선택 공종 수만큼 나눠서 표시합니다.
-          </Typography>
+          <FormControlLabel sx={{ m: 0, '& .MuiFormControlLabel-label': { fontSize: '0.75rem', whiteSpace: 'nowrap' } }}
+            control={<Checkbox size="small" checked={showInProgress} onChange={(_, checked) => setShowInProgress(checked)} sx={{ p: 0.5 }} />}
+            label="작업중 빗금" />
         </Box>
 
         <Autocomplete
@@ -1994,6 +2004,7 @@ export default function MultiProcessProgress({
               )
               .map(([buildingName, config]) => (
                 <MultiProcessBuildingGrid
+                  showInProgress={showInProgress}
                   key={buildingName}
                   buildingName={buildingName}
                   config={config}
