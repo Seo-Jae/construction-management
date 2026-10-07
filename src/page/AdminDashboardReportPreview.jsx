@@ -320,7 +320,14 @@ function DailyReportPreviewDialog({
                 border: '1px solid #64748b',
               }}
             >
-              <Table size="small">
+              <Table size="small" sx={{
+                '& .MuiTableCell-root': {
+                  borderBottom: '1px solid #94a3b8',
+                  borderRight: '1px solid #94a3b8',
+                },
+                '& .MuiTableCell-root:last-child': { borderRight: 0 },
+                '& tbody tr:last-child .MuiTableCell-root': { borderBottom: 0 },
+              }}>
                 <TableHead>
                   <TableRow>
                     {[
