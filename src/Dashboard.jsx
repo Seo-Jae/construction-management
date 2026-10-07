@@ -1,5 +1,7 @@
 import { ProcessLabelsContext } from './contexts/ProcessLabels.jsx';
 import { dailyReportSuggestions, workerAutocompleteCommitValue } from './utils/dailyReportSuggestions.js';
+import { applyWorkerBulkEdit, duplicateWorkerRows } from './utils/workerRowEditing.js';
+import WorkerBulkEditor from './components/WorkerBulkEditor.jsx';
 import { buildMonthlyDailyReport } from './utils/monthlyDailyReportExcel.js';
 // v52.48.5.44.139 자재관리 상단 관리영역·자재마스터 분리
 // v52.48.5.44.118 좌측메뉴 스크롤 발생시 폭 고정
@@ -38,7 +40,6 @@ import {
   TableBody,
   TableCell,
   TableContainer,
-  TableFooter,
   TableHead,
   TableRow,
   TextField,
@@ -1222,6 +1223,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const [workerRows, setWorkerRows] = useState([]);
   const [taskRows, setTaskRows] = useState([]);
   const [selectedWorkers, setSelectedWorkers] = useState([]);
+  const [workerBulkOpen, setWorkerBulkOpen] = useState(false);
   const [selectedTasks, setSelectedTasks] = useState([]);
 
   const [workerFetchDate, setWorkerFetchDate] = useState('');
@@ -2690,6 +2692,8 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       ),
     );
     setTaskRows(currentData?.tasks || []);
+    setSelectedWorkers([]);
+    setWorkerBulkOpen(false);
     setModalOpen(true);
   };
   const handleCloseModal = () => { setModalOpen(false); setSelectedWorkers([]); setSelectedTasks([]); };
@@ -3198,9 +3202,11 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     }
 
     setWorkerRows(normalizedWorkers);
+    setSelectedWorkers([]);
+    setWorkerBulkOpen(false);
   };
 
-  const handleAddWorker = () =>
+  const handleAddWorker = () => {
     setWorkerRows((prev) => [
       ...prev,
       {
@@ -3214,12 +3220,24 @@ export default function Dashboard({ user, userProfile, onLogout }) {
         night: 0,
       },
     ]);
+    requestAnimationFrame(() => focusWorkerGridCell(workerRows.length, 0));
+  };
+
+  const handleDuplicateWorkers = () => {
+    const copies = duplicateWorkerRows(workerRows, selectedWorkers);
+    if (!copies.length) return;
+    setWorkerRows(previous => [...previous, ...copies]);
+    setSelectedWorkers(copies.map(row => row.id));
+    setWorkerBulkOpen(false);
+    requestAnimationFrame(() => focusWorkerGridCell(workerRows.length, 1));
+  };
 
   const handleDeleteWorkers = () => {
     setWorkerRows((prev) =>
       prev.filter((row) => !selectedWorkers.includes(row.id)),
     );
     setSelectedWorkers([]);
+    setWorkerBulkOpen(false);
   };
 
   const handleSelectAllWorkers = (event) =>
@@ -4719,6 +4737,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           <Box
             sx={{
               flexGrow: 1,
+              minHeight: 0,
               p: 2,
               overflow: 'hidden',
               bgcolor: '#f1f5f9',
@@ -4729,6 +4748,8 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                 height: '100%',
                 display: 'flex',
                 flexDirection: 'column',
+                minHeight: 0,
+                boxSizing: 'border-box',
                 p: 1.5,
               }}
             >
@@ -4740,13 +4761,14 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                   mb: 1,
                   flexWrap: 'wrap',
                   gap: 1.5,
+                  flexShrink: 0,
                 }}
               >
                 <Box>
                   <Typography
                     sx={{ fontSize: 15, fontWeight: 800, lineHeight: 1.5 }}
                   >
-                    근로자 명단
+                    근로자 명단 · {workerRows.length}명
                   </Typography>
 
                   <Box
@@ -4783,6 +4805,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                     display: 'flex',
                     gap: 0.5,
                     alignItems: 'center',
+                    flexWrap: 'wrap',
                   }}
                 >
                   <KoreanDatePicker
@@ -4807,7 +4830,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                       boxShadow: 'none',
                     }}
                   >
-                    가져오기
+                    명단 가져오기
                   </Button>
 
                   <Button
@@ -4820,13 +4843,18 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                       boxShadow: 'none',
                     }}
                   >
-                    추가
+                    행 추가
                   </Button>
+
+                  <Button variant="outlined" size="small" disabled={!selectedWorkers.length} onClick={handleDuplicateWorkers}>선택 행 복사</Button>
+                  <Button variant={workerBulkOpen ? 'contained' : 'outlined'} size="small" disabled={!selectedWorkers.length}
+                    onClick={() => setWorkerBulkOpen(open => !open)}>일괄 수정{selectedWorkers.length > 0 ? ` (${selectedWorkers.length})` : ''}</Button>
 
                   <Button
                     variant="contained"
                     size="small"
                     onClick={handleDeleteWorkers}
+                    disabled={!selectedWorkers.length}
                     sx={{
                       bgcolor: '#ef4444',
                       fontSize: '0.7rem',
@@ -4838,9 +4866,17 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                 </Box>
               </Box>
 
+              {workerBulkOpen && <WorkerBulkEditor count={selectedWorkers.length} processOptions={workerProcessOptions}
+                onClose={() => setWorkerBulkOpen(false)} onApply={values => {
+                  setWorkerRows(previous => applyWorkerBulkEdit(previous, selectedWorkers, values));
+                  setWorkerBulkOpen(false);
+                }} />}
+
               <TableContainer
                 sx={{
                   flexGrow: 1,
+                  minHeight: 0,
+                  overflow: 'auto',
                   border: '1px solid #cbd5e1',
                   borderRadius: '4px',
                   bgcolor: 'white',
@@ -4852,6 +4888,9 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                   sx={{
                     minWidth: 1320,
                     tableLayout: 'fixed',
+                    '& tbody .MuiTableCell-root': { borderBottom: '1px solid #e2e8f0' },
+                    '& tbody tr:focus-within': { bgcolor: '#e0f2fe' },
+                    '& tbody td:focus-within': { bgcolor: '#fff', boxShadow: 'inset 0 0 0 2px #0284c7' },
                   }}
                 >
                   <TableHead>
@@ -4954,12 +4993,17 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                             borderBottom: 'none',
                           }}
                         >
-                          데이터가 존재하지 않습니다.
+                          <Typography fontWeight={700} color="#334155">등록된 근로자가 없습니다.</Typography>
+                          <Typography sx={{ mt: 0.5, mb: 2, fontSize: 12 }}>전일 명단을 가져오거나 새 근로자를 추가해 주세요.</Typography>
+                          <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1 }}>
+                            <Button variant="outlined" size="small" onClick={handleFetchWorkers}>명단 가져오기</Button>
+                            <Button variant="contained" size="small" onClick={handleAddWorker}>근로자 추가</Button>
+                          </Box>
                         </TableCell>
                       </TableRow>
                     ) : (
                       workerRows.map((row, index) => (
-                        <TableRow hover key={row.id}>
+                        <TableRow hover key={row.id} selected={selectedWorkers.includes(row.id)}>
                           <TableCell
                             padding="checkbox"
                             align="center"
@@ -5364,58 +5408,18 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                       ))
                     )}
                   </TableBody>
-
-                  <TableFooter>
-                    <TableRow sx={{ bgcolor: '#f1f5f9' }}>
-                      <TableCell
-                        colSpan={7}
-                        align="center"
-                        sx={{
-                          py: 1.5,
-                          fontWeight: 'bold',
-                          color: '#334155',
-                          borderRight: '1px solid #cbd5e1',
-                        }}
-                      >
-                        합 계
-                      </TableCell>
-
-                      <TableCell
-                        align="center"
-                        sx={{
-                          fontWeight: 'bold',
-                          color: '#0284c7',
-                          fontSize: '0.9rem',
-                          borderRight: '1px solid #cbd5e1',
-                        }}
-                      >
-                        {workerRows.reduce(
-                          (sum, row) => sum + (Number(row.day) || 0),
-                          0,
-                        )}
-                      </TableCell>
-
-                      <TableCell
-                        align="center"
-                        sx={{
-                          fontWeight: 'bold',
-                          color: '#0284c7',
-                          fontSize: '0.9rem',
-                        }}
-                      >
-                        {workerRows.reduce(
-                          (sum, row) => sum + (Number(row.night) || 0),
-                          0,
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  </TableFooter>
                 </Table>
               </TableContainer>
             </Paper>
           </Box>
 
-          <Box sx={{ p: 1.5, display: 'flex', justifyContent: 'center', gap: 1, borderTop: '1px solid #e2e8f0', bgcolor: '#f8fafc' }}>
+          <Box sx={{ p: 1.5, display: 'flex', alignItems: 'center', flexWrap: 'wrap', flexShrink: 0, gap: 1, borderTop: '1px solid #cbd5e1', bgcolor: '#f8fafc' }}>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, flexGrow: 1, fontSize: 13, fontWeight: 700, color: '#334155' }}>
+              <span>총 {workerRows.length}명</span>
+              <span>선택 {selectedWorkers.length}명</span>
+              <span>주간 {workerRows.reduce((sum, row) => sum + (Number(row.day) || 0), 0)}</span>
+              <span>야간 {workerRows.reduce((sum, row) => sum + (Number(row.night) || 0), 0)}</span>
+            </Box>
             <Button variant="contained" size="small" onClick={handleSaveModal} sx={{ bgcolor: '#0284c7', px: 3, boxShadow: 'none' }}>저장</Button>
             <Button variant="outlined" size="small" onClick={handleCloseModal} sx={{ color: '#64748b', borderColor: '#cbd5e1', px: 3 }}>닫기</Button>
           </Box>
