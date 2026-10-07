@@ -318,7 +318,7 @@ const processOptions = DEFAULT_PROJECT_PROCESSES;
 
 const modalStyle = {
   position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)',
-  width: '95vw', maxWidth: '1600px', height: '82vh',
+  width: '95vw', maxWidth: '1400px', height: '82vh',
   bgcolor: 'background.paper', boxShadow: 24, borderRadius: '8px',
   display: 'flex', flexDirection: 'column', overflow: 'hidden',
 };
@@ -4886,7 +4886,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                   stickyHeader
                   size="small"
                   sx={{
-                    minWidth: 1320,
+                    minWidth: 1170,
                     tableLayout: 'fixed',
                     '& tbody .MuiTableCell-root': { borderBottom: '1px solid #e2e8f0' },
                     '& tbody tr:focus-within': { bgcolor: '#e0f2fe' },
@@ -4955,7 +4955,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
                       <TableCell
                         align="center"
-                        sx={{ ...headerCellStyle, width: 420 }}
+                        sx={{ ...headerCellStyle, width: 270 }}
                       >
                         작업내용
                       </TableCell>
