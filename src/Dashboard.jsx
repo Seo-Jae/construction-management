@@ -1,4 +1,5 @@
 import { ProcessLabelsContext } from './contexts/ProcessLabels.jsx';
+import { dailyReportSuggestions, workerAutocompleteCommitValue } from './utils/dailyReportSuggestions.js';
 import { buildMonthlyDailyReport } from './utils/monthlyDailyReportExcel.js';
 // v52.48.5.44.139 자재관리 상단 관리영역·자재마스터 분리
 // v52.48.5.44.118 좌측메뉴 스크롤 발생시 폭 고정
@@ -1209,6 +1210,13 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   };
 
   const [savedData, setSavedData] = useState({});
+  const [savedDataProject, setSavedDataProject] = useState('');
+  const workerJobOptions = useMemo(() => dailyReportSuggestions(
+    savedDataProject === activeProjectName ? savedData : {}, 'job', jobOptions, normalizeDailyReportJob,
+  ), [savedData, savedDataProject, activeProjectName]);
+  const workerProcessOptions = useMemo(() => dailyReportSuggestions(
+    savedDataProject === activeProjectName ? savedData : {}, 'process', jobOptions,
+  ), [savedData, savedDataProject, activeProjectName]);
   const [manualStatus, setManualStatus] = useState({});
 
   const [workerRows, setWorkerRows] = useState([]);
@@ -1752,6 +1760,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
         if (!active) return;
         setSavedData(newData);
+        setSavedDataProject(activeProjectName);
         setManualStatus(newStatus);
       } catch (error) {
         console.error('공사일보 전체 조회 오류:', error);
@@ -3043,6 +3052,14 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     columnIndex,
     muiKeyDown,
   ) => {
+    if (event.key === 'Tab' && (columnIndex === 0 || columnIndex === 2)) {
+      if (event.nativeEvent?.isComposing) {
+        event.preventDefault();
+        return;
+      }
+      const row = workerRows[rowIndex];
+      if (row) handleWorkerChange(row.id, columnIndex === 0 ? 'job' : 'process', workerAutocompleteCommitValue(event.target));
+    }
     const popupWasOpen =
       event.currentTarget?.getAttribute(
         'aria-expanded',
@@ -3056,7 +3073,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
       event.key === 'ArrowDown';
 
     /*
-      Tab은 자동완성 내부 처리보다 먼저 가로 이동시킵니다.
+      Tab은 위에서 입력값을 확정한 뒤 가로 이동시킵니다.
 
       자동완성 목록이 닫힌 상태의 ↑↓도
       목록을 새로 열지 않고 같은 열의 위·아래 행으로 이동합니다.
@@ -3226,14 +3243,14 @@ export default function Dashboard({ user, userProfile, onLogout }) {
           const shouldFollowJob = !row.process || row.process === row.job;
           return {
             ...row,
-            job: value,
-            process: shouldFollowJob ? value : row.process,
+            job: normalizeDailyReportJob(value),
+            process: shouldFollowJob ? normalizeDailyReportJob(value) : row.process,
           };
         }
 
         return {
           ...row,
-          [field]: value,
+          [field]: field === 'process' ? String(value || '').trim() : value,
         };
       }),
     );
@@ -4970,14 +4987,16 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
                           <TableCell align="center" sx={bodyCellStyle}>
                             <Autocomplete
-                              options={jobOptions}
+                              options={workerJobOptions}
+                              freeSolo
+                              autoSelect
+                              autoHighlight={false}
                               value={row.job}
                               onChange={(_, newValue) =>
                                 handleWorkerChange(row.id, 'job', newValue)
                               }
                               disableClearable
                               size="small"
-                              autoHighlight
                               renderInput={(params) => (
                                 <TextField
                                   {...params}
@@ -5079,7 +5098,10 @@ export default function Dashboard({ user, userProfile, onLogout }) {
 
                           <TableCell align="center" sx={bodyCellStyle}>
                             <Autocomplete
-                              options={jobOptions}
+                              options={workerProcessOptions}
+                              freeSolo
+                              autoSelect
+                              autoHighlight={false}
                               value={row.process}
                               onChange={(_, newValue) =>
                                 handleWorkerChange(
@@ -5090,7 +5112,6 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                               }
                               disableClearable
                               size="small"
-                              autoHighlight
                               renderInput={(params) => (
                                 <TextField
                                   {...params}
