@@ -14,7 +14,7 @@ function updateCells(xml, values) {
     const value = values[address];
     if (value === null || value === '') return `<c${attrs}/>`;
     if (typeof value === 'number') return `<c${attrs}><v>${value}</v></c>`;
-    if (typeof value === 'object') return `<c${attrs}><f>${escapeXml(value.formula)}</f><v>${value.result || 0}</v></c>`;
+    if (typeof value === 'object') return `<c${attrs}${typeof value.result === 'string' ? ' t="str"' : ''}><f>${escapeXml(value.formula)}</f><v>${escapeXml(value.result ?? 0)}</v></c>`;
     return `<c${attrs} t="inlineStr"><is><t xml:space="preserve">${escapeXml(value)}</t></is></c>`;
   });
   if (pending.size) throw new Error(`출력일보 양식의 셀을 확인해주세요: ${[...pending].join(', ')}`);
@@ -38,6 +38,7 @@ export async function buildMonthlyDailyReport(template, { projectName, year, mon
     const workers = reports[key]?.workers || [];
     if (workers.length > 60) throw new Error(`${day}일은 ${workers.length}명입니다. 첨부 양식은 하루 60명까지 지원하므로 명단을 잘라서 다운로드하지 않습니다.`);
     const values = { C3: projectName, C4: '(주)욱림건설', C5: excelDate(year, month, day) };
+    values.N7 = { formula: 'COUNTA(C18:C47,I18:I47)', result: workers.filter(worker => worker.name).length };
     for (let index = 0; index < 60; index += 1) {
       const worker = workers[index];
       const row = 18 + index % 30;
@@ -53,6 +54,16 @@ export async function buildMonthlyDailyReport(template, { projectName, year, mon
       values[previousCell] = day === 1 ? 0 : { formula: `'${[...sheetNames.values()][day - 2]}'!${totalCell}`, result: totals[job] || 0 };
       totals[job] = (totals[job] || 0) + count;
       values[totalCell] = { formula: `${todayCell}+${previousCell}`, result: totals[job] };
+    }
+    if (day > 1) {
+      const firstSheetName = [...sheetNames.values()][0];
+      for (const col of ['B', 'H']) {
+        for (let row = 8; row <= 14; row += 1) {
+          const address = `${col}${row}`;
+          const reference = `'${firstSheetName}'!${address}`;
+          values[address] = { formula: `IF(${reference}="","",${reference})`, result: values[address] ?? '' };
+        }
+      }
     }
     const path = `xl/worksheets/sheet${day + 1}.xml`;
     let xml = updateCells(renameReferences(await zip.file(path).async('string')), values);

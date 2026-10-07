@@ -34,6 +34,19 @@ test('monthly macro workbook preserves controls and VBA, stamps site, dates, ros
   assert.match(book.worksheets[0].getCell('E5').formula, /'260901'/);
   assert.equal(book.worksheets[0].getCell('AI5').value, 0);
   assert.equal(book.worksheets[2].getCell('E10').formula, "'260901'!F10");
+  for (const sheet of book.worksheets.slice(1)) {
+    assert.equal(sheet.getCell('N7').formula, 'COUNTA(C18:C47,I18:I47)');
+  }
+  assert.equal(book.worksheets[1].getCell('N7').result, 1);
+  assert.equal(book.worksheets[2].getCell('N7').result, 0);
+  assert.equal(book.worksheets[1].getCell('B10').value, '직영');
+  for (const sheet of book.worksheets.slice(2)) {
+    for (const col of ['B', 'H']) for (let row = 8; row <= 14; row += 1) {
+      const ref = `'260901'!${col}${row}`;
+      assert.equal(sheet.getCell(`${col}${row}`).formula, `IF(${ref}="","",${ref})`);
+    }
+    assert.equal(sheet.getCell('B10').result, '직영');
+  }
   assert.equal(zip.file('xl/calcChain.xml'), null);
   assert.equal(zip.file('xl/worksheets/sheet32.xml'), null);
 });
@@ -45,6 +58,18 @@ test('February and current-month subsets have only valid date sheets; names are 
     assert.equal(book.worksheets.length, lastDay + 1);
     assert.equal(book.worksheets[1].getCell('C3').value, options.projectName);
     assert.equal(book.worksheets[1].getCell('C18').value, null);
+    const firstName = book.worksheets[1].name;
+    assert.equal(book.worksheets[2].getCell('B10').formula, `IF('${firstName}'!B10="","",'${firstName}'!B10)`);
   }
   await assert.rejects(buildMonthlyDailyReport(template, { ...options, reports: { '26.09.01': { workers: Array(61).fill({ name: 'worker' }) } } }), /60명/);
+});
+
+test('N7 counts workers across both roster blocks without a self-reference on the first day', async () => {
+  const workers = Array.from({ length: 31 }, (_, index) => ({ name: `근로자${index + 1}`, job: '직영' }));
+  const output = await buildMonthlyDailyReport(template, { ...options, lastDay: 1, reports: { '26.09.01': { workers } } });
+  const book = new ExcelJS.Workbook(); await book.xlsx.load(output);
+  const sheet = book.worksheets[1];
+  assert.equal(sheet.getCell('I18').value, '근로자31');
+  assert.equal(sheet.getCell('N7').result, 31);
+  assert.equal(sheet.getCell('B10').formula, undefined);
 });
