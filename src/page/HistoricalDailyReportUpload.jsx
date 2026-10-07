@@ -28,6 +28,7 @@ import {
 } from '@mui/material';
 import ExcelJS from 'exceljs';
 import { supabase } from '../supabaseClient';
+import { orderDailyReportWorkers } from '../utils/dailyReportWorkerOrder.js';
 
 const LEGACY_JOB_MAP = {
   먹메김: '먹매김',
@@ -658,7 +659,7 @@ const readWorksheetWorkers = (
 
   return {
     workers:
-      detectedWorkers.slice(
+      orderDailyReportWorkers(detectedWorkers).slice(
         0,
         MAX_HISTORICAL_WORKERS,
       ),

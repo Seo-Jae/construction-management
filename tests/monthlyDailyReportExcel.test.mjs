@@ -13,6 +13,21 @@ const options = {
   cumulativeCells: [{ job: '직영', labelCell: 'B10', todayCell: 'C10', previousCell: 'E10', totalCell: 'F10' }],
 };
 
+test('download restores original NO order across both blocks for previously interleaved uploads', async () => {
+  const workers = Array.from({ length: 30 }, (_, index) => [index + 1, index + 31]).flat()
+    .map(sequence => ({ sequence, name: `근로자${sequence}`, job: '직영', workContent: `작업${sequence}` }));
+  const output = await buildMonthlyDailyReport(template, { ...options, lastDay: 1, reports: { '26.09.01': { workers } } });
+  const book = new ExcelJS.Workbook(); await book.xlsx.load(output);
+  const sheet = book.worksheets[1];
+  for (let index = 0; index < 30; index += 1) {
+    assert.equal(sheet.getCell(`C${18 + index}`).value, `근로자${index + 1}`);
+    assert.equal(sheet.getCell(`I${18 + index}`).value, `근로자${index + 31}`);
+    assert.equal(sheet.getCell(`L${18 + index}`).value, `작업${index + 31}`);
+  }
+  assert.equal(sheet.getCell('N7').result, 60);
+  assert.equal(workers[1].sequence, 31);
+});
+
 test('monthly macro workbook preserves controls and VBA, stamps site, dates, roster and summary', async () => {
   const output = await buildMonthlyDailyReport(template, options);
   const original = await JSZip.loadAsync(template);

@@ -1,4 +1,5 @@
 import JSZip from 'jszip';
+import { orderDailyReportWorkers } from './dailyReportWorkerOrder.js';
 
 const escapeXml = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c]);
 const column = number => number > 26 ? String.fromCharCode(64 + Math.floor((number - 1) / 26)) + String.fromCharCode(65 + (number - 1) % 26) : String.fromCharCode(64 + number);
@@ -35,7 +36,7 @@ export async function buildMonthlyDailyReport(template, { projectName, year, mon
   const totals = {};
   for (let day = 1; day <= lastDay; day += 1) {
     const key = `${String(year).slice(-2)}.${String(month).padStart(2, '0')}.${String(day).padStart(2, '0')}`;
-    const workers = reports[key]?.workers || [];
+    const workers = orderDailyReportWorkers(reports[key]?.workers || []);
     if (workers.length > 60) throw new Error(`${day}일은 ${workers.length}명입니다. 첨부 양식은 하루 60명까지 지원하므로 명단을 잘라서 다운로드하지 않습니다.`);
     const values = { C3: projectName, C4: '(주)욱림건설', C5: excelDate(year, month, day) };
     values.N7 = { formula: 'COUNTA(C18:C47,I18:I47)', result: workers.filter(worker => worker.name).length };
