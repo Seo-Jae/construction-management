@@ -1073,6 +1073,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
   const [workAlertOpen, setWorkAlertOpen] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const [buildingConfigs, setBuildingConfigs] = useState({});
+  const [buildingSetupVersion, setBuildingSetupVersion] = useState(0);
   const [selectedDateKey, setSelectedDateKey] = useState('');
   const [selectedDateDisplay, setSelectedDateDisplay] = useState('');
 
@@ -1776,7 +1777,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
     return () => {
       active = false;
     };
-  }, [activeProjectName, selectedProcess]);
+  }, [activeProjectName, selectedProcess, buildingSetupVersion]);
 
   const syncDataToDB = async (
     dateKey,
@@ -4440,6 +4441,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
             <Box sx={{ flex: 1, minWidth: 0, minHeight: 0 }}>
             {projectProcesses.inputOptions.length > 0 ? <ProgressInput
               hideProcessSelector
+              onBuildingSetupSaved={() => setBuildingSetupVersion(version => version + 1)}
               projectName={activeProjectName || ''}
               selectedCells={selectedCells}
               actionName={actionName}

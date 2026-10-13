@@ -33,5 +33,41 @@ export function buildSetupConfig(draft) {
     const units = parsed.flatMap((line, index) => floor <= line.floors && !line.piloti.includes(floor) && !line.specialFloors.some((special) => Number(special.floor) === floor && special.excluded) ? [index + 1] : []);
     if (units.length !== lines.length) config.exceptions[floor] = { units };
   }
+  // Keep visual line positions, but map merged positions to one real household.
+  // Existing progress grids and unit counts already understand aliasUnits.
+  const mergedGroups = new Map();
+  parsed.forEach((line, index) => line.specialFloors.forEach(special => {
+    const mergeText = String(special.mergeLines || '').trim();
+    if (!mergeText) return;
+    const floor = Number(special.floor);
+    const members = [...new Set([index + 1, ...mergeText.split(',').map(value => Number(value.trim()))])].sort((a, b) => a - b);
+    if (special.excluded || members.length < 2 || members.some((member, i) =>
+      !Number.isInteger(member) || member < 1 || member > parsed.length || (i > 0 && member !== members[i - 1] + 1))) {
+      throw new Error(`${floor}층 병합 라인은 서로 이웃한 라인을 쉼표로 입력해주세요. 세대 제외와 병합은 함께 설정할 수 없습니다.`);
+    }
+    for (const member of members) {
+      const target = parsed[member - 1];
+      const override = target.specialFloors.find(item => Number(item.floor) === floor);
+      if (floor > target.floors || target.piloti.includes(floor) || override?.excluded) {
+        throw new Error(`${floor}층 ${member}라인은 세대가 없어 합칠 수 없습니다.`);
+      }
+      if (override && override.type.trim() !== special.type.trim()) {
+        throw new Error(`${floor}층 병합할 라인의 특수층 타입을 동일하게 설정해주세요.`);
+      }
+    }
+    const groups = mergedGroups.get(floor) || [];
+    if (groups.some(group => group.some(member => members.includes(member)) && group.join(',') !== members.join(','))) {
+      throw new Error(`${floor}층 병합 범위가 겹칩니다. 합칠 라인을 하나의 범위로 설정해주세요.`);
+    }
+    if (!groups.some(group => group.join(',') === members.join(','))) groups.push(members);
+    mergedGroups.set(floor, groups);
+    config.aliasUnits ||= {};
+    config.aliasUnits[floor] ||= {};
+    config.floorUnitTypes[floor] ||= {};
+    for (const member of members) {
+      config.aliasUnits[floor][member] = members[0];
+      config.floorUnitTypes[floor][member] = special.type.trim();
+    }
+  }));
   return config;
 }
