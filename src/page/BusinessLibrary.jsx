@@ -48,8 +48,9 @@ import {
   Typography,
 } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
-import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
 import FolderRoundedIcon from '@mui/icons-material/FolderRounded';
+import FolderOpenRoundedIcon from '@mui/icons-material/FolderOpenRounded';
+import ChevronRightRoundedIcon from '@mui/icons-material/ChevronRightRounded';
 import AddPhotoAlternateOutlinedIcon from '@mui/icons-material/AddPhotoAlternateOutlined';
 import CloudDownloadRoundedIcon from '@mui/icons-material/CloudDownloadRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
@@ -210,6 +211,7 @@ export default function BusinessLibrary({
   const [message, setMessage] = useState(null);
   const [toast, setToast] = useState(null);
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [expandedCategories, setExpandedCategories] = useState([]);
   const [scopeFilter, setScopeFilter] = useState('all');
   const [keyword, setKeyword] = useState('');
   const [selectedId, setSelectedId] = useState('');
@@ -262,14 +264,31 @@ export default function BusinessLibrary({
       }))
   ), [latestRows, matchingRows]);
 
+  const visibleFolders = folders.filter(({ category, count }) => (
+    (categoryFilter === 'all' || category === categoryFilter)
+    && (!keyword.trim() || count > 0)
+  ));
+
   const filteredRows = useMemo(() => (
-    categoryFilter === 'all' ? [] : matchingRows.filter((row) => row.category === categoryFilter)
-  ), [categoryFilter, matchingRows]);
+    matchingRows.filter((row) => (
+      (categoryFilter === 'all' || row.category === categoryFilter)
+      && expandedCategories.includes(row.category)
+    ))
+  ), [categoryFilter, expandedCategories, matchingRows]);
 
   const openFolder = (category) => {
     setSelectedId('');
     setCheckedIds([]);
     setCategoryFilter(category);
+    if (category !== 'all') {
+      setExpandedCategories((current) => [...new Set([...current, category])]);
+    }
+  };
+
+  const toggleFolder = (category) => {
+    setExpandedCategories((current) => current.includes(category)
+      ? current.filter((item) => item !== category)
+      : [...current, category]);
   };
 
   const selected = useMemo(
@@ -837,6 +856,7 @@ export default function BusinessLibrary({
       setMessage({ severity:'success', text:editorMode === 'edit' ? '자료 정보를 수정했습니다.' : '자료를 등록했습니다.' });
       await Promise.all([loadRows(), loadStorageUsage()]);
       setCategoryFilter(form.category);
+      setExpandedCategories((current) => [...new Set([...current, form.category])]);
     } catch (error) {
       console.error('업무자료 저장 실패:', error);
       const rollbackPaths = [];
@@ -1101,7 +1121,10 @@ export default function BusinessLibrary({
           <TextField
             size="small"
             value={keyword}
-            onChange={(event) => setKeyword(event.target.value)}
+            onChange={(event) => {
+              setKeyword(event.target.value);
+              if (event.target.value.trim()) setExpandedCategories(folders.map((folder) => folder.category));
+            }}
             placeholder="제목·설명·파일명 검색"
             InputProps={{ startAdornment:<SearchRoundedIcon sx={{ mr:0.7, color:'#94a3b8', fontSize:18 }} /> }}
             sx={{ ...fieldSx, flex:1 }}
@@ -1115,45 +1138,7 @@ export default function BusinessLibrary({
         </Stack>
       </Paper>
 
-      {categoryFilter === 'all' ? (
-        <Paper variant="outlined" sx={{ flex:1, minHeight:240, overflowY:'auto', borderColor:'#d8e0ea' }}>
-          <Stack direction="row" alignItems="center" gap={0.8} sx={{ px:1.5, py:1.2, bgcolor:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
-            <FolderRoundedIcon sx={{ color:'#d99b28', fontSize:21 }} />
-            <Typography sx={{ fontSize:14, fontWeight:800 }}>분류별 폴더</Typography>
-            <Typography sx={{ fontSize:11, color:'#64748b' }}>자료 {matchingRows.length.toLocaleString()}건</Typography>
-          </Stack>
-          {loading ? (
-            <Stack alignItems="center" sx={{ py:6 }}><CircularProgress size={28} /></Stack>
-          ) : (
-            <Box sx={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(190px, 1fr))', gap:1.2, p:1.5 }}>
-              {folders.filter((folder) => !keyword.trim() || folder.count > 0).map(({ category, count }) => (
-                <ButtonBase
-                  key={category}
-                  onClick={() => openFolder(category)}
-                  aria-label={`${category} 폴더 열기, 자료 ${count}건`}
-                  sx={{ justifyContent:'flex-start', gap:1.2, p:1.8, minHeight:86, border:'1px solid #d8e0ea', borderRadius:1, textAlign:'left', '&:hover':{ bgcolor:'#eff6ff', borderColor:'#93b4e7' }, '&.Mui-focusVisible':{ outline:'2px solid #2563eb', outlineOffset:2 } }}
-                >
-                  <FolderRoundedIcon sx={{ fontSize:40, color:'#e9b44c' }} />
-                  <Box>
-                    <Typography sx={{ fontSize:13, fontWeight:800 }}>{category}</Typography>
-                    <Typography sx={{ mt:0.4, fontSize:11, color:'#64748b' }}>자료 {count.toLocaleString()}건</Typography>
-                  </Box>
-                </ButtonBase>
-              ))}
-              {keyword.trim() && matchingRows.length === 0 && (
-                <Typography sx={{ gridColumn:'1 / -1', py:5, textAlign:'center', fontSize:12, color:'#64748b' }}>조건에 맞는 자료가 없습니다.</Typography>
-              )}
-            </Box>
-          )}
-        </Paper>
-      ) : (
-      <Paper variant="outlined" sx={{ display:'grid', gridTemplateColumns:{ xs:'1fr', lg:'minmax(390px, 42%) minmax(0, 58%)' }, gridTemplateRows:{ lg:'auto minmax(0, 1fr)' }, flex:{ lg:1 }, height:{ xs:'auto', lg:'auto' }, minHeight:{ xs:640, lg:0 }, overflow:'hidden', borderColor:'#d8e0ea' }}>
-        <Stack direction="row" alignItems="center" gap={0.7} sx={{ gridColumn:'1 / -1', px:1.2, py:0.7, borderBottom:'1px solid #e2e8f0' }}>
-          <Button size="small" startIcon={<ArrowBackRoundedIcon />} onClick={() => openFolder('all')}>전체 폴더</Button>
-          <Typography sx={{ color:'#94a3b8' }}>/</Typography>
-          <FolderRoundedIcon sx={{ color:'#d99b28', fontSize:20 }} />
-          <Typography sx={{ fontSize:12, fontWeight:800 }}>{categoryFilter}</Typography>
-        </Stack>
+      <Paper variant="outlined" sx={{ display:'grid', gridTemplateColumns:{ xs:'1fr', lg:'minmax(390px, 42%) minmax(0, 58%)' }, flex:{ lg:1 }, height:{ xs:'auto', lg:'auto' }, minHeight:{ xs:640, lg:0 }, overflow:'hidden', borderColor:'#d8e0ea' }}>
         <Box sx={{ minWidth:0, borderRight:{ lg:'1px solid #e2e8f0' }, borderBottom:{ xs:'1px solid #e2e8f0', lg:0 }, display:'flex', flexDirection:'column', minHeight:0 }}>
           <Box sx={{ display:'flex', alignItems:'center', gap:0.55, width:'100%', minHeight:44, px:1.4, py:0.7, bgcolor:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
             <Tooltip title="현재 목록 전체 선택">
@@ -1173,7 +1158,7 @@ export default function BusinessLibrary({
               자료 목록
             </Typography>
             <Typography component="span" sx={{ flexShrink:0, fontSize:11, fontWeight:500, color:'#64748b' }}>
-              {filteredRows.length.toLocaleString()}건
+              {visibleFolders.reduce((total, folder) => total + folder.count, 0).toLocaleString()}건
             </Typography>
             {isSuperAdmin && (
               <Stack direction="row" gap={0.1} alignItems="center" sx={{ ml:0.35, flexShrink:0 }}>
@@ -1219,14 +1204,30 @@ export default function BusinessLibrary({
           <Box sx={{ flex:1, minHeight:0, overflowY:'auto', position:'relative' }}>
             {loading ? (
               <Stack alignItems="center" justifyContent="center" sx={{ position:'absolute', inset:0, minHeight:180 }}><CircularProgress size={28} /></Stack>
-            ) : filteredRows.length === 0 ? (
+            ) : visibleFolders.length === 0 ? (
               <Box sx={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', px:2 }}>
                 <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ textAlign:'center', color:'#94a3b8' }}>
                   <DescriptionOutlinedIcon sx={{ fontSize:46 }} />
                   <Typography sx={{ fontSize:12, lineHeight:1.6 }}>조건에 맞는 자료가 없습니다.</Typography>
                 </Stack>
               </Box>
-            ) : filteredRows.map((row) => {
+            ) : visibleFolders.map(({ category, count }) => {
+              const expanded = expandedCategories.includes(category);
+              return (
+                <Box key={category}>
+                  <ButtonBase
+                    onClick={() => toggleFolder(category)}
+                    aria-expanded={expanded}
+                    aria-label={`${category} 폴더 ${expanded ? '접기' : '펼치기'}`}
+                    sx={{ display:'flex', width:'100%', justifyContent:'flex-start', gap:0.7, px:1.2, py:0.8, minHeight:38, borderBottom:'1px solid #e2e8f0', bgcolor:'#f8fafc', textAlign:'left', '&:hover':{ bgcolor:'#eff6ff' }, '&.Mui-focusVisible':{ outline:'2px solid #2563eb', outlineOffset:-2 } }}
+                  >
+                    {expanded ? <KeyboardArrowDownRoundedIcon sx={{ fontSize:18 }} /> : <ChevronRightRoundedIcon sx={{ fontSize:18 }} />}
+                    {expanded ? <FolderOpenRoundedIcon sx={{ color:'#d99b28', fontSize:22 }} /> : <FolderRoundedIcon sx={{ color:'#d99b28', fontSize:22 }} />}
+                    <Typography sx={{ fontSize:12, fontWeight:800 }}>{category}</Typography>
+                    <Typography sx={{ ml:'auto', color:'#64748b', fontSize:11 }}>{count.toLocaleString()}건</Typography>
+                  </ButtonBase>
+                  {expanded && count === 0 && <Typography sx={{ pl:5.5, py:1.2, fontSize:11, color:'#94a3b8' }}>등록된 자료가 없습니다.</Typography>}
+                  {expanded && filteredRows.filter((row) => row.category === category).map((row) => {
               const active = selected?.id === row.id;
               return (
                 <Box
@@ -1240,7 +1241,7 @@ export default function BusinessLibrary({
                   }}
                   role="button"
                   tabIndex={0}
-                  sx={{ display:'flex', alignItems:'center', width:'100%', minHeight:36, textAlign:'left', border:0, borderBottom:'1px solid #edf1f5', bgcolor:active ? '#eff6ff' : '#fff', px:1.2, py:0.55, cursor:'pointer', '&:hover':{ bgcolor:active ? '#eff6ff' : '#f8fafc' } }}
+                  sx={{ display:'flex', alignItems:'center', width:'100%', minHeight:36, textAlign:'left', border:0, borderBottom:'1px solid #edf1f5', bgcolor:active ? '#eff6ff' : '#fff', pl:4.8, pr:1.2, py:0.55, cursor:'pointer', '&:hover':{ bgcolor:active ? '#eff6ff' : '#f8fafc' } }}
                 >
                   <Checkbox
                     size="small"
@@ -1252,37 +1253,15 @@ export default function BusinessLibrary({
                     inputProps={{ 'aria-label':`${row.title} 선택` }}
                     sx={{ flexShrink:0, p:0.25, mr:0.25, '& .MuiSvgIcon-root':{ fontSize:18 } }}
                   />
-                  <Chip
-                    size="small"
-                    label={row.category}
-                    variant="outlined"
-                    color={active ? 'primary' : 'default'}
-                    sx={{
-                      flexShrink:0,
-                      width:76,
-                      minWidth:76,
-                      maxWidth:76,
-                      height:20,
-                      mr:0.55,
-                      fontSize:9,
-                      fontWeight:700,
-                      bgcolor:active ? '#ffffff' : '#f8fafc',
-                      '& .MuiChip-label':{
-                        width:'100%',
-                        px:0.5,
-                        textAlign:'center',
-                        overflow:'hidden',
-                        textOverflow:'ellipsis',
-                        whiteSpace:'nowrap',
-                      },
-                    }}
-                  />
                   <Stack direction="row" gap={0.55} alignItems="center" sx={{ width:'100%', minWidth:0 }}>
                     <InsertDriveFileOutlinedIcon sx={{ flexShrink:0, fontSize:18, color:active ? '#2563eb' : '#64748b' }} />
                     <Typography noWrap title={row.title} sx={{ minWidth:0, fontSize:12, fontWeight:active ? 800 : 700, color:'#0f172a' }}>
                       {row.title}
                     </Typography>
                   </Stack>
+                </Box>
+              );
+                  })}
                 </Box>
               );
             })}
@@ -1387,7 +1366,6 @@ export default function BusinessLibrary({
         </Box>
       </Paper>
 
-      )}
       <Dialog open={editorOpen} onClose={saving ? undefined : () => setEditorOpen(false)} fullWidth maxWidth="sm" slotProps={{ paper:{ sx:{ height:'min(720px, calc(100vh - 40px))' } } }}>
         <DialogTitle sx={{ fontSize:15, fontWeight:800 }}>
           {editorMode === 'create' ? '업무자료 등록' : editorMode === 'version' ? '새 버전 등록' : '업무자료 수정'}
