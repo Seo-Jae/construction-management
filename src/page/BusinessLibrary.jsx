@@ -59,8 +59,6 @@ import KeyboardArrowUpRoundedIcon from '@mui/icons-material/KeyboardArrowUpRound
 import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutlined';
 import CloseRoundedIcon from '@mui/icons-material/CloseRounded';
 import OpenInNewRoundedIcon from '@mui/icons-material/OpenInNewRounded';
-import RefreshRoundedIcon from '@mui/icons-material/RefreshRounded';
-import SearchRoundedIcon from '@mui/icons-material/SearchRounded';
 import StorageRoundedIcon from '@mui/icons-material/StorageRounded';
 import UploadFileRoundedIcon from '@mui/icons-material/UploadFileRounded';
 import * as tus from 'tus-js-client';
@@ -1089,8 +1087,11 @@ export default function BusinessLibrary({
       )}
 
       <Paper variant="outlined" sx={{ p:0.9, borderColor:'#d8e0ea' }}>
-        <Stack direction={{ xs:'column', md:'row' }} gap={0.8}>
+        <Box sx={{ display:'grid', gridTemplateColumns:{ xs:'minmax(0, 1fr)', lg:'minmax(390px, 42%) minmax(0, 58%)' }, rowGap:0.8, alignItems:'center' }}>
+          <Stack direction="row" alignItems="center" gap={0.8} sx={{ minWidth:0 }}>
+            <Typography component="label" htmlFor="business-library-search" sx={{ width:56, flexShrink:0, pl:0.7, fontSize:12, fontWeight:700 }}>검색</Typography>
           <TextField
+            id="business-library-search"
             size="small"
             value={keyword}
             onChange={(event) => {
@@ -1098,16 +1099,15 @@ export default function BusinessLibrary({
               if (event.target.value.trim()) setExpandedCategories(folders.map((folder) => folder.category));
             }}
             placeholder="제목·설명·파일명 검색"
-            InputProps={{ startAdornment:<SearchRoundedIcon sx={{ mr:0.7, color:'#94a3b8', fontSize:18 }} /> }}
-            sx={{ ...fieldSx, flex:1 }}
+            sx={{ ...fieldSx, flex:1, minWidth:0 }}
           />
+          </Stack>
           <Stack direction="row" gap={0.7} alignItems="center" justifyContent="flex-end" sx={{ flexShrink:0 }}>
             {isSuperAdmin && (
               <Button size="small" variant="contained" startIcon={<AddRoundedIcon />} onClick={openCreate}>자료 등록</Button>
             )}
-            <Tooltip title="새로고침"><IconButton aria-label="업무자료실 새로고침" size="small" onClick={() => Promise.all([loadRows(), loadStorageUsage()])}><RefreshRoundedIcon fontSize="small" /></IconButton></Tooltip>
           </Stack>
-        </Stack>
+        </Box>
       </Paper>
 
       <Paper variant="outlined" sx={{ display:'grid', gridTemplateColumns:{ xs:'1fr', lg:'minmax(390px, 42%) minmax(0, 58%)' }, flex:{ lg:1 }, height:{ xs:'auto', lg:'auto' }, minHeight:{ xs:640, lg:0 }, overflow:'hidden', borderColor:'#d8e0ea' }}>
