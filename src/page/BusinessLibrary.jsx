@@ -34,13 +34,10 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
-  FormControl,
   IconButton,
-  InputLabel,
   LinearProgress,
   MenuItem,
   Paper,
-  Select,
   Snackbar,
   Stack,
   TextField,
@@ -210,9 +207,7 @@ export default function BusinessLibrary({
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState(null);
   const [toast, setToast] = useState(null);
-  const [categoryFilter, setCategoryFilter] = useState('all');
   const [expandedCategories, setExpandedCategories] = useState([]);
-  const [scopeFilter, setScopeFilter] = useState('all');
   const [keyword, setKeyword] = useState('');
   const [selectedId, setSelectedId] = useState('');
   const [checkedIds, setCheckedIds] = useState([]);
@@ -241,12 +236,6 @@ export default function BusinessLibrary({
   const matchingRows = useMemo(() => {
     const normalized = String(keyword || '').trim().toLowerCase();
     return latestRows.filter((row) => {
-      if (scopeFilter === 'company' && row.scope_type !== 'company') return false;
-      if (scopeFilter === 'project' && row.scope_type !== 'project') return false;
-      if (scopeFilter === 'current' && (
-        row.scope_type !== 'project'
-        || String(row.project_name || '').trim() !== String(projectName || '').trim()
-      )) return false;
       if (!normalized) return true;
       return [
         row.title, row.description, row.category, row.project_name,
@@ -254,7 +243,7 @@ export default function BusinessLibrary({
         ...getDescriptionImages(row).map((image) => image.caption),
       ].some((value) => String(value || '').toLowerCase().includes(normalized));
     }).sort(compareBusinessLibraryRows);
-  }, [keyword, latestRows, projectName, scopeFilter]);
+  }, [keyword, latestRows]);
 
   const folders = useMemo(() => (
     [...new Set([...BUSINESS_LIBRARY_CATEGORIES, ...latestRows.map((row) => row.category)])]
@@ -264,26 +253,11 @@ export default function BusinessLibrary({
       }))
   ), [latestRows, matchingRows]);
 
-  const visibleFolders = folders.filter(({ category, count }) => (
-    (categoryFilter === 'all' || category === categoryFilter)
-    && (!keyword.trim() || count > 0)
-  ));
+  const visibleFolders = folders.filter(({ count }) => !keyword.trim() || count > 0);
 
   const filteredRows = useMemo(() => (
-    matchingRows.filter((row) => (
-      (categoryFilter === 'all' || row.category === categoryFilter)
-      && expandedCategories.includes(row.category)
-    ))
-  ), [categoryFilter, expandedCategories, matchingRows]);
-
-  const openFolder = (category) => {
-    setSelectedId('');
-    setCheckedIds([]);
-    setCategoryFilter(category);
-    if (category !== 'all') {
-      setExpandedCategories((current) => [...new Set([...current, category])]);
-    }
-  };
+    matchingRows.filter((row) => expandedCategories.includes(row.category))
+  ), [expandedCategories, matchingRows]);
 
   const toggleFolder = (category) => {
     setExpandedCategories((current) => current.includes(category)
@@ -329,11 +303,11 @@ export default function BusinessLibrary({
 
   const checkedRows = useMemo(() => {
     const checkedSet = new Set(checkedIds.map(String));
-    return filteredRows.filter((row) => checkedSet.has(String(row.id)));
-  }, [checkedIds, filteredRows]);
+    return matchingRows.filter((row) => checkedSet.has(String(row.id)));
+  }, [checkedIds, matchingRows]);
 
-  const allVisibleChecked = filteredRows.length > 0
-    && checkedRows.length === filteredRows.length;
+  const allVisibleChecked = matchingRows.length > 0
+    && checkedRows.length === matchingRows.length;
   const someVisibleChecked = checkedRows.length > 0 && !allVisibleChecked;
 
   const getSuggestedSortOrder = useCallback((category, fileName = '') => {
@@ -420,8 +394,12 @@ export default function BusinessLibrary({
   }, [loadRows, loadStorageUsage]);
 
   useEffect(() => {
+    const matchingIds = new Set(matchingRows.map((row) => String(row.id)));
+    setCheckedIds((current) => current.filter((id) => matchingIds.has(String(id))));
+  }, [matchingRows]);
+
+  useEffect(() => {
     const visibleIds = new Set(filteredRows.map((row) => String(row.id)));
-    setCheckedIds((current) => current.filter((id) => visibleIds.has(String(id))));
     setSelectedId((current) => (
       visibleIds.has(String(current))
         ? current
@@ -456,7 +434,7 @@ export default function BusinessLibrary({
     setEditorMode('create');
     setForm({
       ...EMPTY_FORM,
-      category:categoryFilter === 'all' ? EMPTY_FORM.category : categoryFilter,
+      category:selected?.category || EMPTY_FORM.category,
       project_name:String(projectName || ''),
     });
     setSelectedFile(null);
@@ -855,7 +833,6 @@ export default function BusinessLibrary({
       setEditorOpen(false);
       setMessage({ severity:'success', text:editorMode === 'edit' ? '자료 정보를 수정했습니다.' : '자료를 등록했습니다.' });
       await Promise.all([loadRows(), loadStorageUsage()]);
-      setCategoryFilter(form.category);
       setExpandedCategories((current) => [...new Set([...current, form.category])]);
     } catch (error) {
       console.error('업무자료 저장 실패:', error);
@@ -970,8 +947,19 @@ export default function BusinessLibrary({
   };
 
   const toggleAllVisible = () => {
-    if (bulkDownloading || filteredRows.length === 0) return;
-    setCheckedIds(allVisibleChecked ? [] : filteredRows.map((row) => String(row.id)));
+    if (bulkDownloading || matchingRows.length === 0) return;
+    setCheckedIds(allVisibleChecked ? [] : matchingRows.map((row) => String(row.id)));
+  };
+
+  const toggleCheckedFolder = (category) => {
+    if (bulkDownloading) return;
+    const folderIds = matchingRows.filter((row) => row.category === category).map((row) => String(row.id));
+    setCheckedIds((current) => {
+      const next = new Set(current.map(String));
+      const allChecked = folderIds.every((id) => next.has(id));
+      folderIds.forEach((id) => allChecked ? next.delete(id) : next.add(id));
+      return [...next];
+    });
   };
 
   const toggleCheckedRow = (rowId) => {
@@ -1102,22 +1090,6 @@ export default function BusinessLibrary({
 
       <Paper variant="outlined" sx={{ p:0.9, borderColor:'#d8e0ea' }}>
         <Stack direction={{ xs:'column', md:'row' }} gap={0.8}>
-          <FormControl size="small" sx={{ minWidth:145 }}>
-            <InputLabel>폴더</InputLabel>
-            <Select label="폴더" value={categoryFilter} onChange={(event) => openFolder(event.target.value)} sx={{ fontSize:12 }}>
-              <MenuItem value="all">전체 폴더</MenuItem>
-              {folders.map(({ category }) => <MenuItem key={category} value={category}>{category}</MenuItem>)}
-            </Select>
-          </FormControl>
-          <FormControl size="small" sx={{ minWidth:145 }}>
-            <InputLabel>공개 범위</InputLabel>
-            <Select label="공개 범위" value={scopeFilter} onChange={(event) => setScopeFilter(event.target.value)} sx={{ fontSize:12 }}>
-              <MenuItem value="all">전체 자료</MenuItem>
-              <MenuItem value="company">회사 공통</MenuItem>
-              <MenuItem value="project">현장 전용 전체</MenuItem>
-              {projectName && <MenuItem value="current">현재 현장</MenuItem>}
-            </Select>
-          </FormControl>
           <TextField
             size="small"
             value={keyword}
@@ -1147,7 +1119,7 @@ export default function BusinessLibrary({
                   size="small"
                   checked={allVisibleChecked}
                   indeterminate={someVisibleChecked}
-                  disabled={bulkDownloading || filteredRows.length === 0}
+                  disabled={bulkDownloading || matchingRows.length === 0}
                   onChange={toggleAllVisible}
                   inputProps={{ 'aria-label':'현재 자료 목록 전체 선택' }}
                   sx={{ p:0.25, mr:0.15, '& .MuiSvgIcon-root':{ fontSize:18 } }}
@@ -1213,19 +1185,31 @@ export default function BusinessLibrary({
               </Box>
             ) : visibleFolders.map(({ category, count }) => {
               const expanded = expandedCategories.includes(category);
+              const checkedCount = checkedRows.filter((row) => row.category === category).length;
               return (
                 <Box key={category}>
+                  <Box sx={{ display:'flex', alignItems:'center', pl:1.2, borderBottom:'1px solid #e2e8f0', bgcolor:'#f8fafc' }}>
+                    <Checkbox
+                      size="small"
+                      checked={count > 0 && checkedCount === count}
+                      indeterminate={checkedCount > 0 && checkedCount < count}
+                      disabled={bulkDownloading || count === 0}
+                      onChange={() => toggleCheckedFolder(category)}
+                      inputProps={{ 'aria-label':`${category} 폴더 자료 전체 선택` }}
+                      sx={{ p:0.25, '& .MuiSvgIcon-root':{ fontSize:18 } }}
+                    />
                   <ButtonBase
                     onClick={() => toggleFolder(category)}
                     aria-expanded={expanded}
                     aria-label={`${category} 폴더 ${expanded ? '접기' : '펼치기'}`}
-                    sx={{ display:'flex', width:'100%', justifyContent:'flex-start', gap:0.7, px:1.2, py:0.8, minHeight:38, borderBottom:'1px solid #e2e8f0', bgcolor:'#f8fafc', textAlign:'left', '&:hover':{ bgcolor:'#eff6ff' }, '&.Mui-focusVisible':{ outline:'2px solid #2563eb', outlineOffset:-2 } }}
+                    sx={{ display:'flex', flex:1, minWidth:0, justifyContent:'flex-start', gap:0.7, px:0.7, pr:1.2, py:0.8, minHeight:38, textAlign:'left', '&:hover':{ bgcolor:'#eff6ff' }, '&.Mui-focusVisible':{ outline:'2px solid #2563eb', outlineOffset:-2 } }}
                   >
                     {expanded ? <KeyboardArrowDownRoundedIcon sx={{ fontSize:18 }} /> : <ChevronRightRoundedIcon sx={{ fontSize:18 }} />}
                     {expanded ? <FolderOpenRoundedIcon sx={{ color:'#d99b28', fontSize:22 }} /> : <FolderRoundedIcon sx={{ color:'#d99b28', fontSize:22 }} />}
                     <Typography sx={{ fontSize:12, fontWeight:800 }}>{category}</Typography>
                     <Typography sx={{ ml:'auto', color:'#64748b', fontSize:11 }}>{count.toLocaleString()}건</Typography>
                   </ButtonBase>
+                  </Box>
                   {expanded && count === 0 && <Typography sx={{ pl:5.5, py:1.2, fontSize:11, color:'#94a3b8' }}>등록된 자료가 없습니다.</Typography>}
                   {expanded && filteredRows.filter((row) => row.category === category).map((row) => {
               const active = selected?.id === row.id;
