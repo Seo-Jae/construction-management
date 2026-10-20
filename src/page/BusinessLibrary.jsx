@@ -26,6 +26,7 @@ import {
   Alert,
   Box,
   Button,
+  ButtonBase,
   Checkbox,
   Chip,
   CircularProgress,
@@ -47,6 +48,8 @@ import {
   Typography,
 } from '@mui/material';
 import AddRoundedIcon from '@mui/icons-material/AddRounded';
+import ArrowBackRoundedIcon from '@mui/icons-material/ArrowBackRounded';
+import FolderRoundedIcon from '@mui/icons-material/FolderRounded';
 import AddPhotoAlternateOutlinedIcon from '@mui/icons-material/AddPhotoAlternateOutlined';
 import CloudDownloadRoundedIcon from '@mui/icons-material/CloudDownloadRounded';
 import DeleteOutlineRoundedIcon from '@mui/icons-material/DeleteOutlineRounded';
@@ -233,10 +236,9 @@ export default function BusinessLibrary({
     [rows],
   );
 
-  const filteredRows = useMemo(() => {
+  const matchingRows = useMemo(() => {
     const normalized = String(keyword || '').trim().toLowerCase();
     return latestRows.filter((row) => {
-      if (categoryFilter !== 'all' && row.category !== categoryFilter) return false;
       if (scopeFilter === 'company' && row.scope_type !== 'company') return false;
       if (scopeFilter === 'project' && row.scope_type !== 'project') return false;
       if (scopeFilter === 'current' && (
@@ -250,7 +252,25 @@ export default function BusinessLibrary({
         ...getDescriptionImages(row).map((image) => image.caption),
       ].some((value) => String(value || '').toLowerCase().includes(normalized));
     }).sort(compareBusinessLibraryRows);
-  }, [categoryFilter, keyword, latestRows, projectName, scopeFilter]);
+  }, [keyword, latestRows, projectName, scopeFilter]);
+
+  const folders = useMemo(() => (
+    [...new Set([...BUSINESS_LIBRARY_CATEGORIES, ...latestRows.map((row) => row.category)])]
+      .map((category) => ({
+        category,
+        count:matchingRows.filter((row) => row.category === category).length,
+      }))
+  ), [latestRows, matchingRows]);
+
+  const filteredRows = useMemo(() => (
+    categoryFilter === 'all' ? [] : matchingRows.filter((row) => row.category === categoryFilter)
+  ), [categoryFilter, matchingRows]);
+
+  const openFolder = (category) => {
+    setSelectedId('');
+    setCheckedIds([]);
+    setCategoryFilter(category);
+  };
 
   const selected = useMemo(
     () => filteredRows.find((row) => String(row.id) === String(selectedId)) || filteredRows[0] || null,
@@ -415,7 +435,11 @@ export default function BusinessLibrary({
 
   const openCreate = () => {
     setEditorMode('create');
-    setForm({ ...EMPTY_FORM, project_name:String(projectName || '') });
+    setForm({
+      ...EMPTY_FORM,
+      category:categoryFilter === 'all' ? EMPTY_FORM.category : categoryFilter,
+      project_name:String(projectName || ''),
+    });
     setSelectedFile(null);
     setDescriptionImages([]);
     setDescriptionImageFiles([]);
@@ -812,6 +836,7 @@ export default function BusinessLibrary({
       setEditorOpen(false);
       setMessage({ severity:'success', text:editorMode === 'edit' ? '자료 정보를 수정했습니다.' : '자료를 등록했습니다.' });
       await Promise.all([loadRows(), loadStorageUsage()]);
+      setCategoryFilter(form.category);
     } catch (error) {
       console.error('업무자료 저장 실패:', error);
       const rollbackPaths = [];
@@ -1058,10 +1083,10 @@ export default function BusinessLibrary({
       <Paper variant="outlined" sx={{ p:0.9, borderColor:'#d8e0ea' }}>
         <Stack direction={{ xs:'column', md:'row' }} gap={0.8}>
           <FormControl size="small" sx={{ minWidth:145 }}>
-            <InputLabel>분류</InputLabel>
-            <Select label="분류" value={categoryFilter} onChange={(event) => setCategoryFilter(event.target.value)} sx={{ fontSize:12 }}>
-              <MenuItem value="all">전체 분류</MenuItem>
-              {BUSINESS_LIBRARY_CATEGORIES.map((category) => <MenuItem key={category} value={category}>{category}</MenuItem>)}
+            <InputLabel>폴더</InputLabel>
+            <Select label="폴더" value={categoryFilter} onChange={(event) => openFolder(event.target.value)} sx={{ fontSize:12 }}>
+              <MenuItem value="all">전체 폴더</MenuItem>
+              {folders.map(({ category }) => <MenuItem key={category} value={category}>{category}</MenuItem>)}
             </Select>
           </FormControl>
           <FormControl size="small" sx={{ minWidth:145 }}>
@@ -1090,7 +1115,45 @@ export default function BusinessLibrary({
         </Stack>
       </Paper>
 
-      <Paper variant="outlined" sx={{ display:'grid', gridTemplateColumns:{ xs:'1fr', lg:'minmax(390px, 42%) minmax(0, 58%)' }, flex:{ lg:1 }, height:{ xs:'auto', lg:'auto' }, minHeight:{ xs:640, lg:0 }, overflow:'hidden', borderColor:'#d8e0ea' }}>
+      {categoryFilter === 'all' ? (
+        <Paper variant="outlined" sx={{ flex:1, minHeight:240, overflowY:'auto', borderColor:'#d8e0ea' }}>
+          <Stack direction="row" alignItems="center" gap={0.8} sx={{ px:1.5, py:1.2, bgcolor:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
+            <FolderRoundedIcon sx={{ color:'#d99b28', fontSize:21 }} />
+            <Typography sx={{ fontSize:14, fontWeight:800 }}>분류별 폴더</Typography>
+            <Typography sx={{ fontSize:11, color:'#64748b' }}>자료 {matchingRows.length.toLocaleString()}건</Typography>
+          </Stack>
+          {loading ? (
+            <Stack alignItems="center" sx={{ py:6 }}><CircularProgress size={28} /></Stack>
+          ) : (
+            <Box sx={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(190px, 1fr))', gap:1.2, p:1.5 }}>
+              {folders.filter((folder) => !keyword.trim() || folder.count > 0).map(({ category, count }) => (
+                <ButtonBase
+                  key={category}
+                  onClick={() => openFolder(category)}
+                  aria-label={`${category} 폴더 열기, 자료 ${count}건`}
+                  sx={{ justifyContent:'flex-start', gap:1.2, p:1.8, minHeight:86, border:'1px solid #d8e0ea', borderRadius:1, textAlign:'left', '&:hover':{ bgcolor:'#eff6ff', borderColor:'#93b4e7' }, '&.Mui-focusVisible':{ outline:'2px solid #2563eb', outlineOffset:2 } }}
+                >
+                  <FolderRoundedIcon sx={{ fontSize:40, color:'#e9b44c' }} />
+                  <Box>
+                    <Typography sx={{ fontSize:13, fontWeight:800 }}>{category}</Typography>
+                    <Typography sx={{ mt:0.4, fontSize:11, color:'#64748b' }}>자료 {count.toLocaleString()}건</Typography>
+                  </Box>
+                </ButtonBase>
+              ))}
+              {keyword.trim() && matchingRows.length === 0 && (
+                <Typography sx={{ gridColumn:'1 / -1', py:5, textAlign:'center', fontSize:12, color:'#64748b' }}>조건에 맞는 자료가 없습니다.</Typography>
+              )}
+            </Box>
+          )}
+        </Paper>
+      ) : (
+      <Paper variant="outlined" sx={{ display:'grid', gridTemplateColumns:{ xs:'1fr', lg:'minmax(390px, 42%) minmax(0, 58%)' }, gridTemplateRows:{ lg:'auto minmax(0, 1fr)' }, flex:{ lg:1 }, height:{ xs:'auto', lg:'auto' }, minHeight:{ xs:640, lg:0 }, overflow:'hidden', borderColor:'#d8e0ea' }}>
+        <Stack direction="row" alignItems="center" gap={0.7} sx={{ gridColumn:'1 / -1', px:1.2, py:0.7, borderBottom:'1px solid #e2e8f0' }}>
+          <Button size="small" startIcon={<ArrowBackRoundedIcon />} onClick={() => openFolder('all')}>전체 폴더</Button>
+          <Typography sx={{ color:'#94a3b8' }}>/</Typography>
+          <FolderRoundedIcon sx={{ color:'#d99b28', fontSize:20 }} />
+          <Typography sx={{ fontSize:12, fontWeight:800 }}>{categoryFilter}</Typography>
+        </Stack>
         <Box sx={{ minWidth:0, borderRight:{ lg:'1px solid #e2e8f0' }, borderBottom:{ xs:'1px solid #e2e8f0', lg:0 }, display:'flex', flexDirection:'column', minHeight:0 }}>
           <Box sx={{ display:'flex', alignItems:'center', gap:0.55, width:'100%', minHeight:44, px:1.4, py:0.7, bgcolor:'#f8fafc', borderBottom:'1px solid #e2e8f0' }}>
             <Tooltip title="현재 목록 전체 선택">
@@ -1324,6 +1387,7 @@ export default function BusinessLibrary({
         </Box>
       </Paper>
 
+      )}
       <Dialog open={editorOpen} onClose={saving ? undefined : () => setEditorOpen(false)} fullWidth maxWidth="sm" slotProps={{ paper:{ sx:{ height:'min(720px, calc(100vh - 40px))' } } }}>
         <DialogTitle sx={{ fontSize:15, fontWeight:800 }}>
           {editorMode === 'create' ? '업무자료 등록' : editorMode === 'version' ? '새 버전 등록' : '업무자료 수정'}
