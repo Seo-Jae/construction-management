@@ -1088,8 +1088,8 @@ export default function BusinessLibrary({
 
       <Paper variant="outlined" sx={{ p:0.9, borderColor:'#d8e0ea' }}>
         <Box sx={{ display:'grid', gridTemplateColumns:{ xs:'minmax(0, 1fr)', lg:'minmax(390px, 42%) minmax(0, 58%)' }, rowGap:0.8, alignItems:'center' }}>
-          <Stack direction="row" alignItems="center" gap={0.8} sx={{ minWidth:0 }}>
-            <Typography component="label" htmlFor="business-library-search" sx={{ width:56, flexShrink:0, pl:0.7, fontSize:12, fontWeight:700 }}>검색</Typography>
+          <Stack direction="row" gap={0.8} sx={{ minWidth:0, alignItems:'center' }}>
+            <Typography component="label" htmlFor="business-library-search" sx={{ width:56, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', textAlign:'center', fontSize:14, fontWeight:800, color:'#0f172a' }}>검색</Typography>
           <TextField
             id="business-library-search"
             size="small"
@@ -1256,7 +1256,7 @@ export default function BusinessLibrary({
           {!selected ? (
             <Box sx={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', px:2 }}>
               <Stack alignItems="center" justifyContent="center" spacing={1} sx={{ textAlign:'center', color:'#94a3b8' }}>
-                <DescriptionOutlinedIcon sx={{ fontSize:46 }} />
+                <DescriptionOutlinedIcon sx={{ fontSize:46, alignSelf:'center' }} />
                 <Typography sx={{ fontSize:12, lineHeight:1.6 }}>왼쪽 목록에서 자료를 선택해주세요.</Typography>
               </Stack>
             </Box>
