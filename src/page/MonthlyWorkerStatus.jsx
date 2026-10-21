@@ -323,11 +323,10 @@ export default function MonthlyWorkerStatus({
     >
       <Box
         sx={{
-          px: 1.5,
-          py: 1.2,
-          border: '1px solid #cbd5e1',
-          borderRadius: 1,
-          bgcolor: '#ffffff',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 1,
+          flexShrink: 0,
         }}
       >
         <Box
@@ -336,6 +335,11 @@ export default function MonthlyWorkerStatus({
             flexDirection: 'column',
             alignItems: 'center',
             gap: 0.5,
+            px: 1.5,
+            py: 1.2,
+            border: '1px solid #94a3b8',
+            borderRadius: 1,
+            bgcolor: '#ffffff',
           }}
         >
               <Typography
@@ -401,11 +405,16 @@ export default function MonthlyWorkerStatus({
 
         <Box
           sx={{
-            mt: 1,
             display: 'flex',
+            flexWrap: 'wrap',
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: 1,
+            px: 1.5,
+            py: 1.2,
+            border: '1px solid #94a3b8',
+            borderRadius: 1,
+            bgcolor: '#ffffff',
           }}
         >
           <Typography
@@ -426,6 +435,8 @@ export default function MonthlyWorkerStatus({
               display: 'flex',
               alignItems: 'center',
               gap: 0.8,
+              flexWrap: 'wrap',
+              maxWidth: '100%',
             }}
           >
             <Autocomplete
@@ -457,6 +468,7 @@ export default function MonthlyWorkerStatus({
               noOptionsText="검색된 근로자가 없습니다."
               sx={{
                 width: 230,
+                maxWidth: '100%',
                 '& .MuiInputBase-root': {
                   minHeight: 34,
                   bgcolor: '#ffffff',
@@ -505,6 +517,7 @@ export default function MonthlyWorkerStatus({
               noOptionsText="검색된 직종이 없습니다."
               sx={{
                 width: 200,
+                maxWidth: '100%',
                 '& .MuiInputBase-root': {
                   minHeight: 34,
                   bgcolor: '#ffffff',
