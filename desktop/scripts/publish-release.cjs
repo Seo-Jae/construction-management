@@ -26,7 +26,7 @@ async function main() {
   const releases = await api(`https://api.github.com/repos/${repo}/releases?per_page=100`);
   const tag = `v${version}`;
   if (releases.some(item => item.tag_name === tag)) throw new Error(`${tag} already exists; existing releases are never overwritten.`);
-  const release = await api(`https://api.github.com/repos/${repo}/releases`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tag_name: tag, target_commitish: 'main', name: `욱림건설 통합관리 ${version}`, draft: true, prerelease: false, body: '웹 화면 배포 변경을 30초 간격으로 확인하여 상단에 업데이트 필요를 표시합니다. 자동 새로고침 없이 작업 저장 안내와 사용자 확인 후 새 화면을 적용합니다. 0.1.9 사용자는 프로그램의 업데이트 확인 기능으로 설치할 수 있습니다.' }) });
+  const release = await api(`https://api.github.com/repos/${repo}/releases`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tag_name: tag, target_commitish: 'main', name: `욱림건설 통합관리 ${version}`, draft: true, prerelease: false, body: '상단 최신 버전 / 업데이트 필요 버튼을 웹 화면 업데이트 전용으로 변경했습니다. 업데이트 필요를 누르면 확인 / 취소 안내가 나오고, 확인 시 프로그램 종료 없이 화면만 새로고침합니다. 설치 프로그램 자체의 업데이트는 더보기 메뉴의 프로그램 업데이트 확인 / 적용에서 별도로 실행합니다.' }) });
   for (const name of [installer, `${installer}.blockmap`, 'latest.yml']) {
     const body = fs.readFileSync(path.join(out, name));
     await api(`${release.upload_url.split('{')[0]}?name=${encodeURIComponent(name)}`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body });

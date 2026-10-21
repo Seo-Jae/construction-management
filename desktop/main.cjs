@@ -36,16 +36,16 @@ let externalPrompt = false;
 
 function publishUpdateState() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  const programState = updater?.getState() || { phase: 'idle' };
+  const programItem = applicationMenu?.getMenuItemById('program-update');
+  if (programItem) {
+    programItem.label = ({ checking: '프로그램 업데이트 확인 중', downloading: `프로그램 업데이트 다운로드 ${programState.percent || 0}%`, ready: '프로그램 업데이트 적용 (재시작)', installing: '프로그램 업데이트 적용 중' })[programState.phase] || '프로그램 업데이트 확인 / 적용';
+    programItem.enabled = !['checking', 'downloading', 'installing'].includes(programState.phase);
+  }
   mainWindow.webContents.send('desktop-update-state', {
-    ...(updater?.getState() || { phase: 'idle' }),
+    ...programState,
     web: webUpdater?.getState() || { phase: 'unknown' },
   });
-}
-
-async function activateUpdates() {
-  if (['ready', 'installing'].includes(updater?.getState().phase)) return updater.activate();
-  if (webUpdater?.getState().phase === 'available') return webUpdater.activate();
-  await Promise.all([webUpdater?.check(), updater?.activate()]);
 }
 
 function setTaskbarIdentity(window) {
@@ -252,7 +252,8 @@ async function runAction(action, window = BrowserWindow.getFocusedWindow() || ma
     case 'undo': case 'redo': case 'cut': case 'copy': case 'paste': case 'selectAll': contents[action](); break;
     case 'devtools': if (!app.isPackaged) contents.toggleDevTools(); break;
     case 'quit': app.quit(); break;
-    case 'update': await activateUpdates(); break;
+    case 'update': await webUpdater?.activate(); break;
+    case 'programUpdate': await updater?.activate(); break;
     case 'menu': applicationMenu.popup({ window, x: Math.max(0, window.getContentBounds().width - 390), y: CHROME_HEIGHT - 4 }); break;
     case 'about': await dialog.showMessageBox(window, { type: 'info', icon: path.join(__dirname, 'assets/app.png'), title: '프로그램 정보', message: '욱림건설 통합관리 ' + app.getVersion(), detail: '닫기(X)를 누르면 트레이로 숨겨집니다.\n완전히 종료하려면 트레이 메뉴에서 선택해주세요.\n로그인 중에는 숨긴 상태에서도 메신저 알림을 받습니다.' }); break;
   }
@@ -267,7 +268,7 @@ function installMenu() {
     { type: 'separator' },
     { label: '보기', submenu: [item('확대', 'zoomIn', 'Ctrl+='), item('축소', 'zoomOut', 'Ctrl+-'), item('원래 크기', 'resetZoom', 'Ctrl+0'), item('전체 화면', 'fullscreen', 'F11'), item('강력 새로고침', 'forceReload', 'Ctrl+F5')] },
     { label: '편집', submenu: [item('실행 취소', 'undo', 'Ctrl+Z'), item('다시 실행', 'redo', 'Ctrl+Y'), item('잘라내기', 'cut', 'Ctrl+X'), item('복사', 'copy', 'Ctrl+C'), item('붙여넣기', 'paste', 'Ctrl+V'), item('전체 선택', 'selectAll', 'Ctrl+A')] },
-    { type: 'separator' }, item('웹 브라우저로 열기', 'browser'), item('업데이트 확인 / 적용', 'update'), item('프로그램 정보', 'about'),
+    { type: 'separator' }, item('웹 브라우저로 열기', 'browser'), { ...item('프로그램 업데이트 확인 / 적용', 'programUpdate'), id: 'program-update' }, item('프로그램 정보', 'about'),
     ...(!app.isPackaged ? [item('개발자 도구', 'devtools')] : []),
     { type: 'separator' }, item('완전히 종료', 'quit'),
   ]);
@@ -381,9 +382,9 @@ else {
       publish: publishUpdateState,
       confirmReload: async () => {
         const answer = await dialog.showMessageBox(mainWindow, { type: 'question', title: '화면 업데이트',
-          message: '새 버전의 화면을 적용하시겠습니까?',
+          message: '새로고침하여 최신 화면으로 업데이트하시겠습니까?',
           detail: '작성 중인 내용을 먼저 저장해주세요. 적용하면 화면이 새로고침되며 저장하지 않은 내용은 사라질 수 있습니다.',
-          buttons: ['저장 완료 · 업데이트', '나중에'], defaultId: 1, cancelId: 1, noLink: true });
+          buttons: ['확인', '취소'], defaultId: 1, cancelId: 1, noLink: true });
         return answer.response === 0;
       },
       reload: () => { if (!pageView.webContents.isDestroyed()) pageView.webContents.reloadIgnoringCache(); },
@@ -396,7 +397,7 @@ else {
       setTimeout(() => void updater.check(), 12000).unref();
       setInterval(() => void updater.check(), 4 * 60 * 60 * 1000).unref();
     }
-    if (smoke) await require('./tests/smoke.cjs')({ app, mainWindow, home, contents: pageView.webContents, pageView, tray, notifications, printPreviews, webUpdater });
+    if (smoke) await require('./tests/smoke.cjs')({ app, mainWindow, home, contents: pageView.webContents, pageView, tray, notifications, printPreviews, webUpdater, updater });
   }).catch(error => {
     if (smoke) { process.stderr.write(`${error.stack}\n`); app.exit(1); }
     else { dialog.showErrorBox('프로그램 시작 오류', '프로그램을 다시 실행해주세요.\n' + error.message); app.quit(); }

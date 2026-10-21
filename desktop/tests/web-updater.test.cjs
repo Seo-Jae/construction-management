@@ -53,7 +53,7 @@ test('a stale check cannot replace state for a newly loaded page', async () => {
   assert.equal(controller.getState().phase, 'unknown');
 });
 
-test('toolbar prioritizes web updates and does not claim latest when offline', () => {
+test('toolbar shows only web updates even when a native installer is ready', () => {
   const fs = require('node:fs');
   const vm = require('node:vm');
   const button = { dataset: {} };
@@ -68,5 +68,6 @@ test('toolbar prioritizes web updates and does not claim latest when offline', (
   assert.equal(button.textContent, '업데이트 필요'); assert.equal(button.disabled, false);
   onUpdate({ phase: 'current', web: { phase: 'unknown' } }); assert.equal(button.textContent, '업데이트 확인');
   onUpdate({ phase: 'current', web: { phase: 'current' } }); assert.equal(button.textContent, '최신 버전');
-  onUpdate({ phase: 'ready', web: { phase: 'available' } }); assert.equal(button.textContent, '재시작하여 업데이트');
+  onUpdate({ phase: 'ready', web: { phase: 'available' } }); assert.equal(button.textContent, '업데이트 필요'); assert.equal(button.disabled, false);
+  onUpdate({ phase: 'ready', web: { phase: 'current' } }); assert.equal(button.textContent, '최신 버전'); assert.equal(button.dataset.pending, 'false');
 });

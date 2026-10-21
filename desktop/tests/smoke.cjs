@@ -4,7 +4,7 @@ const path = require('node:path');
 const { once } = require('node:events');
 const { session, dialog } = require('electron');
 
-module.exports = async ({ app, mainWindow, home, contents, pageView, tray, notifications, printPreviews, webUpdater }) => {
+module.exports = async ({ app, mainWindow, home, contents, pageView, tray, notifications, printPreviews, webUpdater, updater }) => {
   const timeout = setTimeout(() => { process.stderr.write('Desktop smoke test timed out\n'); app.exit(1); }, 60000);
   const output = path.join(app.getPath('userData'), 'results');
   await fs.mkdir(output, { recursive: true });
@@ -36,6 +36,21 @@ module.exports = async ({ app, mainWindow, home, contents, pageView, tray, notif
   assert.equal(webUpdater.getState().phase, 'current', 'Loaded page matches live deployment');
   await webUpdater.check();
   assert.equal(await contents.executeJavaScript('window.desktopRetainedDraft'), 'unsaved-draft', 'Update notification preserves the current page');
+  const webActivate = webUpdater.activate;
+  const programActivate = updater.activate;
+  const programState = updater.getState;
+  let webClicks = 0;
+  let programClicks = 0;
+  webUpdater.activate = async () => { webClicks += 1; };
+  updater.activate = async () => { programClicks += 1; };
+  updater.getState = () => ({ phase: 'ready' });
+  await mainWindow.webContents.executeJavaScript('window.desktopChrome.action("update")');
+  for (let attempt = 0; attempt < 30 && webClicks === 0; attempt += 1) await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(webClicks, 1, 'Top update button requests a web update');
+  assert.equal(programClicks, 0, 'Top update button never activates the native installer');
+  webUpdater.activate = webActivate;
+  updater.activate = programActivate;
+  updater.getState = programState;
   mainWindow.close();
   assert.equal(mainWindow.isDestroyed(), false, 'X preserves the running window');
   assert.equal(mainWindow.isVisible(), false, 'X hides to tray');
@@ -101,8 +116,15 @@ module.exports = async ({ app, mainWindow, home, contents, pageView, tray, notif
   }
   assert.ok(rendered, 'Built-in PDF viewer finishes rendering the document');
   await new Promise(resolve => setTimeout(resolve, 600));
-  await fs.writeFile(path.join(output, 'preview.png'), (await preview.view.webContents.capturePage()).toPNG());
-  await fs.writeFile(path.join(output, 'print-settings.png'), (await preview.window.webContents.capturePage()).toPNG());
+  // Screenshots are optional artifacts; hidden/occluded Windows surfaces can be
+  // unavailable even after the PDF DOM has rendered. Keep all print assertions.
+  try {
+    await fs.writeFile(path.join(output, 'preview.png'), (await preview.view.webContents.capturePage()).toPNG());
+    await fs.writeFile(path.join(output, 'print-settings.png'), (await preview.window.webContents.capturePage()).toPNG());
+  } catch (error) {
+    if (!error.message.includes('Current display surface not available for capture')) throw error;
+    process.stderr.write('Preview screenshot artifact unavailable: Windows display surface is hidden. PDF rendering and print assertions still run.\n');
+  }
   const pdfFrame = preview.view.webContents.mainFrame.frames.find(frame => frame.url.startsWith('chrome-extension:'));
   assert.equal(await pdfFrame.executeJavaScript('document.querySelector("pdf-viewer").toolbarEnabled_'), false, 'PDF native print toolbar is hidden');
   const actualPrint = preview.view.webContents.print;
