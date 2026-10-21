@@ -558,6 +558,7 @@ export default function MonthlyWorkerStatus({
           minHeight: 0,
           overflow: 'auto',
           borderColor: '#808080',
+          '&&': { borderColor: '#808080 !important' },
           boxShadow: 'none',
           bgcolor: '#ffffff',
         }}
@@ -570,7 +571,16 @@ export default function MonthlyWorkerStatus({
             tableLayout: 'fixed',
             borderCollapse: 'separate',
             borderSpacing: 0,
-            '& .MuiTableCell-root': { borderBottom: '1px solid #808080' },
+            '&& .MuiTableCell-root': {
+              borderColor: '#808080 !important',
+              borderBottom: '1px solid #808080',
+            },
+            '&& .MuiTableCell-head': {
+              bgcolor: '#002060',
+              color: '#ffffff',
+              fontWeight: 700,
+              '&[data-overflow="true"]': { bgcolor: '#d1d5db', color: '#64748b' },
+            },
           }}
         >
           <TableHead>
@@ -622,6 +632,7 @@ export default function MonthlyWorkerStatus({
                 return (
                   <TableCell
                     key={column.key}
+                    data-overflow={column.isOverflow ? 'true' : undefined}
                     align="center"
                     sx={{
                       ...stickyHeaderStyle,
@@ -723,13 +734,11 @@ export default function MonthlyWorkerStatus({
                         width: 88,
                         minWidth: 88,
                         maxWidth: 88,
-                        px: 0.5,
+                        px: 0.4,
                         py: 0.65,
                         bgcolor: '#ffffff',
                         borderRight: '1px solid #808080',
                         fontSize: '0.7rem',
-                        fontWeight: 700,
-                        color: '#475569',
                       }}
                     >
                       {worker.job}
@@ -744,14 +753,12 @@ export default function MonthlyWorkerStatus({
                         width: 112,
                         minWidth: 112,
                         maxWidth: 112,
-                        px: 0.5,
+                        px: 0.4,
                         py: 0.65,
                         bgcolor: '#ffffff',
                         borderRight: '1px solid #808080',
                         boxShadow: '2px 0 0 #808080',
-                        fontSize: '0.72rem',
-                        fontWeight: 800,
-                        color: '#0f172a',
+                        fontSize: '0.7rem',
                       }}
                     >
                       {worker.name}
