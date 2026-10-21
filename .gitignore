@@ -25,3 +25,6 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+
+# Windows desktop build output
+desktop/out/

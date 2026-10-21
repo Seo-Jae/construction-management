@@ -1,0 +1,81 @@
+{
+  "name": "wooklim-desktop",
+  "version": "0.1.10",
+  "private": true,
+  "description": "욱림건설 통합관리시스템 Windows 프로그램",
+  "author": "욱림건설",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "node scripts/run.mjs",
+    "build": "electron-builder --win nsis --x64 --publish never",
+    "test": "node --test tests/security.test.cjs tests/print-options.test.cjs tests/updater.test.cjs tests/web-updater.test.cjs",
+    "smoke": "node scripts/run.mjs --desktop-smoke-test"
+  },
+  "devDependencies": {
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "kr.co.wooklim.construction",
+    "productName": "욱림건설 통합관리",
+    "executableName": "WooklimConstruction",
+    "directories": {
+      "output": "out"
+    },
+    "files": [
+      "main.cjs",
+      "security.cjs",
+      "notification-preload.cjs",
+      "print-preview.cjs",
+      "print-options.cjs",
+      "preview/*",
+      "offline.html",
+      "chrome/*",
+      "assets/app.ico",
+      "assets/app.png",
+      "package.json",
+      "tests/smoke.cjs",
+      "updater.cjs",
+      "web-updater.cjs"
+    ],
+    "asar": true,
+    "npmRebuild": false,
+    "win": {
+      "target": "nsis",
+      "icon": "assets/app.ico",
+      "artifactName": "Wooklim-Setup-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": true,
+      "packElevateHelper": true,
+      "installerIcon": "assets/app.ico",
+      "uninstallerIcon": "assets/app.ico",
+      "installerHeader": "assets/installer-header.bmp",
+      "installerSidebar": "assets/installer-sidebar.bmp",
+      "uninstallerSidebar": "assets/installer-sidebar.bmp",
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "욱림건설 통합관리",
+      "runAfterFinish": false,
+      "deleteAppDataOnUninstall": false,
+      "installerLanguages": [
+        "ko_KR",
+        "en_US"
+      ],
+      "language": "1042"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Seo-Jae",
+        "repo": "construction-management",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "6.8.10"
+  }
+}

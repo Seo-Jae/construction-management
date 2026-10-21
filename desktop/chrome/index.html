@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'">
+  <title>욱림건설 통합관리</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="toolbar.js" defer></script>
+</head>
+<body>
+  <header class="appbar">
+    <div class="brand"><img src="../assets/app.png" alt="WL"><div><strong>욱림건설 <span>통합관리</span></strong><small>WOOKLIM CONSTRUCTION</small></div></div>
+    <div class="drag-space"></div>
+    <button id="update-status" data-action="update" hidden aria-live="polite">업데이트 확인</button>
+    <div class="connection" aria-live="polite"><i></i><span id="connection-label">연결 중</span></div>
+    <nav aria-label="프로그램 도구">
+      <button data-action="reload" aria-label="새로고침" title="새로고침 (F5)"><svg viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5M5.5 8a7 7 0 0 1 11.6-2L20 9M4 15l2.9 3A7 7 0 0 0 18.5 16"/></svg></button>
+      <span class="divider"></span>
+      <button data-action="print" aria-label="인쇄 미리보기" title="인쇄 미리보기 (Ctrl+P)"><svg viewBox="0 0 24 24"><path d="M7 8V3h10v5M7 17H4V9h16v8h-3M7 14h10v7H7zM17 11h.01"/></svg></button>
+      <button data-action="pdf" aria-label="PDF 미리보기 및 저장" title="PDF 미리보기 및 저장 (Ctrl+Shift+S)"><svg viewBox="0 0 24 24"><path d="M13 3H5v18h14V9l-6-6zm0 0v6h6M12 12v6m-3-3 3 3 3-3"/></svg></button>
+      <button data-action="menu" aria-label="더보기 메뉴" aria-haspopup="menu" title="더보기"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button>
+    </nav>
+    <div class="window-space" aria-hidden="true"></div>
+  </header>
+</body>
+</html>

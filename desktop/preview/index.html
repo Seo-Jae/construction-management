@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'">
+<title>인쇄 미리보기</title><link rel="stylesheet" href="style.css"><script src="toolbar.js" defer></script></head>
+<body><header><div><strong>인쇄 미리보기</strong><p id="status" role="status">인쇄할 문서를 준비하고 있습니다…</p></div><nav aria-label="출력 도구"><button data-action="save" disabled>PDF 저장</button><button data-action="print" class="primary" disabled>인쇄</button><button data-action="close">닫기</button></nav></header>
+<aside><form id="settings">
+  <label for="printer">프린터</label><select id="printer" required disabled><option value="">불러오는 중…</option></select>
+  <label for="copies">인쇄 매수</label><input id="copies" type="number" min="1" max="999" step="1" value="1" required>
+  <label for="pages">페이지</label><input id="pages" maxlength="500" placeholder="전체 페이지 (예: 1-3, 5)"><small id="page-count"></small>
+  <label for="color">색상</label><select id="color"><option value="color">컬러</option><option value="gray">흑백</option></select>
+  <label for="duplex">단면 / 양면</label><select id="duplex"><option value="simplex">단면 인쇄</option><option value="longEdge">양면 · 긴 면으로 넘김</option><option value="shortEdge">양면 · 짧은 면으로 넘김</option></select>
+  <p class="hint">문서의 기존 용지 방향과 출력 양식을 유지합니다.</p>
+  <p id="feedback" role="status" aria-live="polite"></p>
+</form></aside></body></html>
