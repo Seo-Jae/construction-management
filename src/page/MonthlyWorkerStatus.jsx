@@ -15,6 +15,7 @@ import {
 } from '@mui/material';
 import ChevronLeftIcon from '@mui/icons-material/ChevronLeft';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import KoreanMonthSelect from '../components/KoreanMonthSelect.jsx';
 
 const pad2 = (value) => String(value).padStart(2, '0');
 const TOTAL_DAY_COLUMNS = 31;
@@ -87,6 +88,7 @@ export default function MonthlyWorkerStatus({
   viewMonth,
   handlePrevMonth,
   handleNextMonth,
+  handleGoToMonth,
 }) {
   const [searchName, setSearchName] = useState('');
   const [searchJob, setSearchJob] = useState('');
@@ -301,11 +303,11 @@ export default function MonthlyWorkerStatus({
   const stickyHeaderStyle = {
     position: 'sticky',
     zIndex: 5,
-    bgcolor: '#f1f5f9',
-    borderRight: '1px solid #94a3b8',
-    borderBottom: '1px solid #64748b',
+    bgcolor: '#002060',
+    borderRight: '1px solid #808080',
+    borderBottom: '1px solid #808080',
     fontWeight: 900,
-    color: '#1e293b',
+    color: '#ffffff',
     py: 0.7,
     px: 0.5,
     whiteSpace: 'nowrap',
@@ -378,17 +380,25 @@ export default function MonthlyWorkerStatus({
                 <ChevronLeftIcon fontSize="small" />
               </IconButton>
 
-              <Typography
-                sx={{
-                  minWidth: 92,
-                  textAlign: 'center',
-                  fontSize: 14,
-                  fontWeight: 800,
-                  color: '#475569',
+              <KoreanMonthSelect
+                value={`${viewYear}-${pad2(monthNumber)}`}
+                onChange={(event) => {
+                  const [year, month] = event.target.value.split('-').map(Number);
+                  handleGoToMonth(year, month - 1);
                 }}
-              >
-                {viewYear}년 {pad2(monthNumber)}월
-              </Typography>
+                variant="standard"
+                sx={{
+                  width: 170,
+                  '& .MuiInputBase-input': {
+                    textAlign: 'center',
+                    fontSize: 14,
+                    fontWeight: 800,
+                    color: '#475569',
+                  },
+                  '& .MuiInput-root::before, & .MuiInput-root::after': { borderBottom: 'none' },
+                  '& .MuiInput-root:hover:not(.Mui-disabled)::before': { borderBottom: 'none' },
+                }}
+              />
 
               <IconButton
                 size="small"
@@ -419,8 +429,8 @@ export default function MonthlyWorkerStatus({
         >
           <Typography
             sx={{
-              color: '#64748b',
-              fontSize: '0.72rem',
+              color: '#000000',
+              fontSize: 14,
               fontWeight: 700,
             }}
           >
@@ -547,7 +557,7 @@ export default function MonthlyWorkerStatus({
           flexGrow: 1,
           minHeight: 0,
           overflow: 'auto',
-          borderColor: '#94a3b8',
+          borderColor: '#808080',
           boxShadow: 'none',
           bgcolor: '#ffffff',
         }}
@@ -560,6 +570,7 @@ export default function MonthlyWorkerStatus({
             tableLayout: 'fixed',
             borderCollapse: 'separate',
             borderSpacing: 0,
+            '& .MuiTableCell-root': { borderBottom: '1px solid #808080' },
           }}
         >
           <TableHead>
@@ -601,19 +612,13 @@ export default function MonthlyWorkerStatus({
                   minWidth: 112,
                   maxWidth: 112,
                   zIndex: 8,
-                  boxShadow: '2px 0 0 #94a3b8',
+                  boxShadow: '2px 0 0 #808080',
                 }}
               >
                 성명
               </TableCell>
 
               {dayColumns.map((column) => {
-                const weekendStyle = getWeekendStyle(
-                  column.year,
-                  column.monthIndex,
-                  column.day,
-                );
-
                 return (
                   <TableCell
                     key={column.key}
@@ -627,10 +632,10 @@ export default function MonthlyWorkerStatus({
                       maxWidth: 34,
                       color: column.isOverflow
                         ? '#64748b'
-                        : weekendStyle.color,
+                        : '#ffffff',
                       bgcolor: column.isOverflow
                         ? '#d1d5db'
-                        : weekendStyle.bgcolor,
+                        : '#002060',
                       px: 0,
                     }}
                   >
@@ -648,7 +653,7 @@ export default function MonthlyWorkerStatus({
                   minWidth: 56,
                   maxWidth: 56,
                   zIndex: 8,
-                  boxShadow: '-2px 0 0 #94a3b8',
+                  boxShadow: '-2px 0 0 #808080',
                 }}
               >
                 합계
@@ -702,7 +707,7 @@ export default function MonthlyWorkerStatus({
                         px: 0.4,
                         py: 0.65,
                         bgcolor: '#ffffff',
-                        borderRight: '1px solid #cbd5e1',
+                        borderRight: '1px solid #808080',
                         fontSize: '0.7rem',
                       }}
                     >
@@ -721,7 +726,7 @@ export default function MonthlyWorkerStatus({
                         px: 0.5,
                         py: 0.65,
                         bgcolor: '#ffffff',
-                        borderRight: '1px solid #cbd5e1',
+                        borderRight: '1px solid #808080',
                         fontSize: '0.7rem',
                         fontWeight: 700,
                         color: '#475569',
@@ -742,8 +747,8 @@ export default function MonthlyWorkerStatus({
                         px: 0.5,
                         py: 0.65,
                         bgcolor: '#ffffff',
-                        borderRight: '1px solid #94a3b8',
-                        boxShadow: '2px 0 0 #e2e8f0',
+                        borderRight: '1px solid #808080',
+                        boxShadow: '2px 0 0 #808080',
                         fontSize: '0.72rem',
                         fontWeight: 800,
                         color: '#0f172a',
@@ -774,7 +779,7 @@ export default function MonthlyWorkerStatus({
                             maxWidth: 34,
                             px: 0,
                             py: 0.65,
-                            borderRight: '1px dotted #cbd5e1',
+                            borderRight: '1px solid #808080',
                             bgcolor: column.isOverflow
                               ? '#e5e7eb'
                               : weekendStyle.bgcolor === '#f8fafc'
@@ -804,7 +809,7 @@ export default function MonthlyWorkerStatus({
                         px: 0.4,
                         py: 0.65,
                         bgcolor: '#f8fafc',
-                        borderLeft: '1px solid #94a3b8',
+                        borderLeft: '1px solid #808080',
                         fontSize: '0.72rem',
                         fontWeight: 900,
                         color: '#0369a1',
@@ -827,9 +832,9 @@ export default function MonthlyWorkerStatus({
                       px: 0.5,
                       py: 0.72,
                       bgcolor: '#e0f2fe',
-                      borderTop: '2px solid #0284c7',
-                      borderRight: '1px solid #94a3b8',
-                      boxShadow: '2px 0 0 #bae6fd',
+                      borderTop: '2px solid #808080',
+                      borderRight: '1px solid #808080',
+                      boxShadow: '2px 0 0 #808080',
                       fontSize: '0.74rem',
                       fontWeight: 900,
                       color: '#075985',
@@ -852,8 +857,8 @@ export default function MonthlyWorkerStatus({
                           bgcolor: dailyTotal === null
                             ? '#d1d5db'
                             : '#e0f2fe',
-                          borderTop: '2px solid #0284c7',
-                          borderRight: '1px dotted #7dd3fc',
+                          borderTop: '2px solid #808080',
+                          borderRight: '1px solid #808080',
                           fontSize: '0.72rem',
                           fontWeight: 900,
                           color: dailyTotal === null
@@ -878,8 +883,8 @@ export default function MonthlyWorkerStatus({
                       px: 0.4,
                       py: 0.72,
                       bgcolor: '#bae6fd',
-                      borderTop: '2px solid #0284c7',
-                      borderLeft: '1px solid #0284c7',
+                      borderTop: '2px solid #808080',
+                      borderLeft: '1px solid #808080',
                       fontSize: '0.76rem',
                       fontWeight: 900,
                       color: '#075985',

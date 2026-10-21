@@ -4423,6 +4423,7 @@ export default function Dashboard({ user, userProfile, onLogout }) {
                 viewMonth={viewMonth}
                 handlePrevMonth={handlePrevMonth}
                 handleNextMonth={handleNextMonth}
+                handleGoToMonth={handleGoToMonth}
               />
             )}
 
