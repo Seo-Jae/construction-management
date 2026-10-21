@@ -233,24 +233,6 @@ const getRowBackground = (
   return '#ffffff';
 };
 
-const getRowHoverBackground = (
-  totalMonths,
-) => {
-  if (totalMonths === 10) {
-    return '#ffe4e6';
-  }
-
-  if (totalMonths === 11) {
-    return '#fecdd3';
-  }
-
-  if (totalMonths >= 12) {
-    return '#fda4af';
-  }
-
-  return '#f8fafc';
-};
-
 const resolveWorkers = (workersValue) => {
   if (Array.isArray(workersValue)) {
     return workersValue;
@@ -765,13 +747,13 @@ export default function CumulativeWorkerStatus({
 
   const stickyHeaderSx = {
     position: 'sticky',
-    bgcolor: '#f1f5f9',
+    bgcolor: '#002060',
     borderRight:
-      '1px solid #94a3b8',
+      '1px solid #808080',
     borderBottom:
-      '1px solid #64748b',
-    color: '#1e293b',
-    fontWeight: 900,
+      '1px solid #808080',
+    color: '#ffffff',
+    fontWeight: 700,
     px: 0.45,
     py: 0.6,
     whiteSpace: 'nowrap',
@@ -1087,7 +1069,8 @@ export default function CumulativeWorkerStatus({
           flex: 1,
           minHeight: 0,
           overflow: 'auto',
-          borderColor: '#94a3b8',
+          borderColor: '#808080',
+          '&&': { borderColor: '#808080 !important' },
           bgcolor: '#ffffff',
           boxShadow: 'none',
         }}
@@ -1103,6 +1086,16 @@ export default function CumulativeWorkerStatus({
             borderCollapse:
               'separate',
             borderSpacing: 0,
+            '&& .MuiTableCell-root': {
+              borderColor: '#808080 !important',
+              borderBottom: '1px solid #808080',
+              borderRightStyle: 'solid',
+            },
+            '&& .MuiTableCell-head': {
+              bgcolor: '#002060',
+              color: '#ffffff',
+              fontWeight: 700,
+            },
           }}
         >
           <TableHead>
@@ -1167,7 +1160,7 @@ export default function CumulativeWorkerStatus({
                   maxWidth: 150,
                   zIndex: 12,
                   boxShadow:
-                    '2px 0 0 #94a3b8',
+                    '2px 0 0 #808080',
                 }}
               >
                 현장
@@ -1187,8 +1180,6 @@ export default function CumulativeWorkerStatus({
                       top: 0,
                       zIndex: 7,
                       height: 31,
-                      bgcolor:
-                        '#e2e8f0',
                       fontSize:
                         '0.72rem',
                       letterSpacing:
@@ -1212,7 +1203,7 @@ export default function CumulativeWorkerStatus({
                   maxWidth: 62,
                   zIndex: 12,
                   boxShadow:
-                    '-2px 0 0 #94a3b8',
+                    '-2px 0 0 #808080',
                 }}
               >
                 합계
@@ -1240,10 +1231,6 @@ export default function CumulativeWorkerStatus({
                         width: 46,
                         minWidth: 46,
                         maxWidth: 46,
-                        bgcolor:
-                          month === 12
-                            ? '#eff6ff'
-                            : '#f8fafc',
                         fontSize:
                           '0.66rem',
                       }}
@@ -1286,11 +1273,6 @@ export default function CumulativeWorkerStatus({
                       worker.totalMonths,
                     );
 
-                  const hoverBackground =
-                    getRowHoverBackground(
-                      worker.totalMonths,
-                    );
-
                   const projectLabel =
                     worker.projectNames.join(
                       ', ',
@@ -1300,33 +1282,18 @@ export default function CumulativeWorkerStatus({
                     position:
                       'sticky',
                     zIndex: 4,
-                    bgcolor:
-                      rowBackground,
+                    bgcolor: '#ffffff',
                     borderRight:
-                      '1px solid #cbd5e1',
+                      '1px solid #808080',
                     py: 0.65,
-                    px: 0.45,
+                    px: 0.4,
                     fontSize:
-                      '0.69rem',
-                    '.MuiTableRow-root:hover &':
-                      {
-                        bgcolor:
-                          hoverBackground,
-                      },
+                      '0.7rem',
                   };
 
                   return (
                     <TableRow
                       key={worker.key}
-                      hover
-                      sx={{
-                        bgcolor:
-                          rowBackground,
-                        '&:hover': {
-                          bgcolor:
-                            hoverBackground,
-                        },
-                      }}
                     >
                       <TableCell
                         align="center"
@@ -1349,9 +1316,6 @@ export default function CumulativeWorkerStatus({
                           width: 86,
                           minWidth: 86,
                           maxWidth: 86,
-                          color:
-                            '#475569',
-                          fontWeight: 700,
                         }}
                       >
                         {worker.job}
@@ -1365,11 +1329,6 @@ export default function CumulativeWorkerStatus({
                           width: 108,
                           minWidth: 108,
                           maxWidth: 108,
-                          color:
-                            '#0f172a',
-                          fontSize:
-                            '0.72rem',
-                          fontWeight: 900,
                         }}
                       >
                         {worker.name}
@@ -1392,7 +1351,7 @@ export default function CumulativeWorkerStatus({
                           whiteSpace:
                             'nowrap',
                           boxShadow:
-                            '2px 0 0 #e2e8f0',
+                            '2px 0 0 #808080',
                           color:
                             '#475569',
                           fontSize:
@@ -1422,9 +1381,8 @@ export default function CumulativeWorkerStatus({
                                 px: 0,
                                 py: 0.65,
                                 borderRight:
-                                  '1px dotted #cbd5e1',
-                                bgcolor:
-                                  rowBackground,
+                                  '1px solid #808080',
+                                bgcolor: '#ffffff',
                                 color: worked
                                   ? '#0f172a'
                                   : '#cbd5e1',
@@ -1432,7 +1390,7 @@ export default function CumulativeWorkerStatus({
                                   '0.7rem',
                                 fontWeight:
                                   worked
-                                    ? 900
+                                    ? 800
                                     : 400,
                               }}
                             >
@@ -1461,7 +1419,7 @@ export default function CumulativeWorkerStatus({
                           borderLeft:
                             '1px solid #94a3b8',
                           boxShadow:
-                            '-2px 0 0 #e2e8f0',
+                            '-2px 0 0 #808080',
                           color:
                             worker.totalMonths >=
                             10
@@ -1499,7 +1457,7 @@ export default function CumulativeWorkerStatus({
                   fontWeight: 900,
                   color: '#334155',
                   boxShadow:
-                    '2px 0 0 #94a3b8',
+                    '2px 0 0 #808080',
                 }}
               >
                 월별 투입 근로자
