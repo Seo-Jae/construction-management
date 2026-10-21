@@ -77,7 +77,7 @@ const getWeekendStyle = (year, monthIndex, day) => {
 
   return {
     color: '#334155',
-    bgcolor: '#f8fafc',
+    bgcolor: '#ffffff',
   };
 };
 
@@ -704,7 +704,6 @@ export default function MonthlyWorkerStatus({
                   return (
                   <TableRow
                     key={worker.key}
-                    hover
                   >
                     <TableCell
                       align="center"
@@ -789,9 +788,7 @@ export default function MonthlyWorkerStatus({
                             borderRight: '1px solid #808080',
                             bgcolor: column.isOverflow
                               ? '#e5e7eb'
-                              : weekendStyle.bgcolor === '#f8fafc'
-                                ? '#ffffff'
-                                : weekendStyle.bgcolor,
+                              : weekendStyle.bgcolor,
                             color: attended
                               ? '#0f172a'
                               : '#cbd5e1',
