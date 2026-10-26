@@ -21,6 +21,7 @@ import AttendanceQrDisplay from './page/AttendanceQrDisplay.jsx';
 import AttendanceWorkerPortal from './page/AttendanceWorkerPortal.jsx';
 import MessengerWindow from './page/MessengerWindow.jsx';
 import Login from './Login';
+import { beginSidebarSession, touchSidebarSession } from './utils/sidebarMenuPreferences.js';
 
 const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
 const ACTIVITY_WRITE_INTERVAL_MS = 15 * 1000;
@@ -283,6 +284,7 @@ export default function App() {
 
     supabase.auth.getSession().then(({ data: { session: nextSession } }) => {
       if (!active || authEventReceived) return;
+      beginSidebarSession(nextSession?.user?.id);
       currentSession = nextSession;
       setSession(nextSession);
 
@@ -298,6 +300,11 @@ export default function App() {
     } = supabase.auth.onAuthStateChange((authEvent, nextSession) => {
       if (!active) return;
       authEventReceived = true;
+
+      if (nextSession?.user?.id !== currentSession?.user?.id) {
+        touchSidebarSession(currentSession?.user?.id);
+        beginSidebarSession(nextSession?.user?.id);
+      }
 
       // v52.48.5.44.173: 새 로그인에 이전 접속의 비활동 시간을 적용하지 않습니다.
       // 세션 복원, 토큰 갱신, 창 복귀의 반복 SIGNED_IN은 기존 시간을 유지합니다.
@@ -345,6 +352,21 @@ export default function App() {
       subscription.unsubscribe();
     };
   }, [fetchProfile]);
+
+  useEffect(() => {
+    const userId = session?.user?.id;
+    if (!userId) return undefined;
+
+    // Keep the last connected time current even when no menu is toggled.
+    const touch = () => touchSidebarSession(userId);
+    const timer = window.setInterval(touch, 15 * 1000);
+    window.addEventListener('pagehide', touch);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('pagehide', touch);
+      touch();
+    };
+  }, [session?.user?.id]);
 
   useEffect(() => {
     if (!session?.user?.id || accountStatus !== 'active') {

@@ -2,6 +2,26 @@ const uniqueIds = (items) => Array.isArray(items)
   ? [...new Set(items.filter((item) => typeof item === 'string' && item.length > 0))] : [];
 
 export const MENU_PREFERENCES_CHANGED = 'sidebar-favorites-changed';
+export const SIDEBAR_MEMORY_TIMEOUT_MS = 5 * 60 * 60 * 1000;
+
+export function touchSidebarSession(userId, now = Date.now()) {
+  if (!userId) return;
+  try {
+    localStorage.setItem(`sidebar-last-seen:${userId}`, String(now));
+  } catch { /* Storage restrictions must not interrupt login or navigation. */ }
+}
+
+// Run before rendering the sidebar on login/session restoration, not on token refresh.
+export function beginSidebarSession(userId, now = Date.now()) {
+  if (!userId) return;
+  try {
+    const lastSeen = Number(localStorage.getItem(`sidebar-last-seen:${userId}`));
+    if (!Number.isFinite(lastSeen) || lastSeen <= 0 || now < lastSeen || now - lastSeen >= SIDEBAR_MEMORY_TIMEOUT_MS) {
+      localStorage.removeItem(`sidebar-folders:${userId}`);
+    }
+    touchSidebarSession(userId, now);
+  } catch { /* Storage restrictions must not interrupt login or navigation. */ }
+}
 
 export function saveFavoriteToggle(storageKey, view) {
   const next = toggleFavoriteMenu(readMenuPreferences(storageKey), view);
